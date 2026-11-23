@@ -17,6 +17,7 @@ slopvac = { workspace = true }
 slopvac-model = { workspace = true }
 slopvac-packs = { workspace = true }
 slopvac-rules = { workspace = true }
+slopvac-sanitize = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

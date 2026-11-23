@@ -36,9 +36,49 @@ const LOCK_REQUIRES: u64 = 256;
 /// closest bound it can state.
 const LOCK_SOURCE_CAP: u64 = 4096;
 
-/// A pattern template with the white space class filled in.
-fn with_whitespace(template: &str) -> String {
-    template.replace("{WS}", WHITESPACE)
+/// One code point of a character class. Below U+0100 it is `\xHH`, up to U+FFFF it is `\uHHHH`,
+/// and above that it is the character itself, because Python `re` and ECMA-262 share no escape
+/// for a code point outside the Basic Multilingual Plane.
+fn class_point(code: u32) -> String {
+    if code <= 0xFF {
+        format!("\\x{code:02X}")
+    } else if code <= 0xFFFF {
+        format!("\\u{code:04X}")
+    } else if let Some(c) = char::from_u32(code) {
+        c.to_string()
+    } else {
+        // A surrogate is not a `char`, and the sanitize table holds none.
+        unreachable!("code point {code:#x} is not a scalar value")
+    }
+}
+
+/// The body of a character class that holds every code point in `ranges`.
+fn class_body(ranges: &[(u32, u32)]) -> String {
+    let mut out = String::new();
+    for &(low, high) in ranges {
+        // A range that crosses U+FFFF is written as two, so each side takes its own form.
+        let parts = if low <= 0xFFFF && high > 0xFFFF {
+            vec![(low, 0xFFFF), (0x1_0000, high)]
+        } else {
+            vec![(low, high)]
+        };
+        for (low, high) in parts {
+            out.push_str(&class_point(low));
+            if high != low {
+                out.push('-');
+                out.push_str(&class_point(high));
+            }
+        }
+    }
+    out
+}
+
+/// A pattern template with the white space class and the unsafe-character class filled in. The
+/// unsafe class is the table of `slopvac-sanitize`, the one the lock reader refuses with.
+fn with_classes(template: &str) -> String {
+    template
+        .replace("{WS}", WHITESPACE)
+        .replace("{UNSAFE}", &class_body(slopvac_sanitize::unsafe_ranges()))
 }
 
 fn index_source(schema: &mut Schema) {
@@ -46,20 +86,21 @@ fn index_source(schema: &mut Schema) {
     // optional rest with no white space. A git source ends in `@` and a full commit hash.
     schema.insert(
         "pattern".into(),
-        json!(with_whitespace(
+        json!(with_classes(
             r"^((oci|https)://[^{WS}/?#@]+([/?#][^{WS}]*)?|git\+https://[^{WS}/?#@]+([/?#][^{WS}]*)?@[0-9a-f]{40})(?![\s\S])"
         )),
     );
 }
 
 fn lock_source(schema: &mut Schema) {
-    // The first two alternatives are the URL forms: no white space, no user-info in the
-    // authority. The third is a path: no leading slash, white space or colon, no backslash,
-    // colon or line break anywhere, and no `..` segment.
+    // The first two alternatives are the URL forms: no white space, no unsafe character, no
+    // user-info in the authority. The third is a path: no leading slash, white space or colon,
+    // no backslash, colon or unsafe character anywhere (a line break is unsafe), and no `..`
+    // segment.
     schema.insert(
         "pattern".into(),
-        json!(with_whitespace(
-            r"^((oci|https)://(?=[^{WS}@])[^{WS}/?#@]*([/?#][^{WS}]*)?|git\+https://(?=[^{WS}@])[^{WS}/?#@]*([/?#][^{WS}]*)?@[0-9a-f]{40}|(?=[^{WS}/\\:])(?!([^/]*/)*\.\.(/|(?![\s\S])))[^\\:\n\r\u2028\u2029]*)(?![\s\S])"
+        json!(with_classes(
+            r"^((oci|https)://(?=[^{WS}{UNSAFE}@])[^{WS}{UNSAFE}/?#@]*([/?#][^{WS}{UNSAFE}]*)?|git\+https://(?=[^{WS}{UNSAFE}@])[^{WS}{UNSAFE}/?#@]*([/?#][^{WS}{UNSAFE}]*)?@[0-9a-f]{40}|(?=[^{WS}/\\:])(?!([^/]*/)*\.\.(/|(?![\s\S])))[^\\:{UNSAFE}]*)(?![\s\S])"
         )),
     );
 }
