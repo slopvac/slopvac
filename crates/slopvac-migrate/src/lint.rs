@@ -20,8 +20,9 @@ use crate::{Error, Finding, Linter, Phase};
 const CONFIG_NAME: &str = "slopvac.toml";
 
 /// The settings of one document under a loaded config, from the path of the document
-/// relative to the config's directory.
-pub type SettingsOf<'a> = Box<dyn Fn(&Path) -> Result<Settings, Error> + 'a>;
+/// relative to the config's directory and its text. The text carries the document's own
+/// `slopvac:` block and inline directives, which a lint run reads too.
+pub type SettingsOf<'a> = Box<dyn Fn(&Path, &str) -> Result<Settings, Error> + 'a>;
 
 /// Turns a 3.0 config into engine settings, the way `slopvac lint` resolves it.
 ///
@@ -165,7 +166,7 @@ impl EngineLinter {
                 loaded.insert(dir.clone(), of);
             }
             let rel = doc.path.strip_prefix(&dir).unwrap_or(&doc.path).to_owned();
-            out.push(loaded[&dir](&rel)?);
+            out.push(loaded[&dir](&rel, &doc.text)?);
             if configs.contains_key(&dir.join(CONFIG_NAME)) {
                 doc.rel = Some(slash_path(&rel));
             }

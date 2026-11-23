@@ -4,11 +4,12 @@
 use std::path::Path;
 
 use slopvac_config::LoadedConfig;
+use slopvac_engine::{Engine, Input};
 use slopvac_migrate::{Configure, Error, SettingsOf};
 
-use crate::engine::{config_error, file_settings};
+use crate::engine::{config_error, file_settings, rel_text};
 use crate::errors::CliError;
-use crate::lint_settings::{self, DocumentLayers, Overrides};
+use crate::lint_settings::{self, DocumentBlocks, DocumentLayers, Overrides};
 use crate::rule_catalog::Catalog;
 
 /// The file name of a 3.0 config.
@@ -51,16 +52,38 @@ impl Configure for MigrateConfigure {
         };
         // Unknown rule ids only warn in `slopvac lint`, so they do not stop the comparison.
         lint_settings::validate(&loaded, &self.rules).map_err(lint_error)?;
-        Ok(Box::new(move |rel| {
-            file_settings(
-                &self.rules,
+        // The genre of a document follows its content, and the settings follow the genre, so
+        // an engine over the settings before any genre layer reads each document first, as a
+        // lint run does.
+        let probe = Catalog::load().map_err(lint_error).and_then(|catalog| {
+            let (settings, _) = file_settings(
+                &catalog,
                 &loaded,
-                rel,
+                Path::new(""),
                 &Overrides::default(),
                 &DocumentLayers::default(),
             )
-            .map(|(settings, _)| settings)
-            .map_err(lint_error)
+            .map_err(lint_error)?;
+            Engine::new(catalog.into_sets(), settings).map_err(|e| Error::Lint(e.to_string()))
+        })?;
+        Ok(Box::new(move |rel, text| {
+            let shown = rel.display().to_string();
+            let blocks = DocumentBlocks::read(text, &shown, Some(&loaded));
+            let relative = rel_text(rel);
+            let mut input = Input::new(&shown, text).with_relative_path(&relative);
+            let declared = blocks.declared_genre();
+            if let Some(genre) = &declared {
+                input = input.with_declared_genre(genre);
+            }
+            let detected = probe
+                .preparse(&input)
+                .ok()
+                .and_then(|pre| probe.detect_genre(&input, &pre).ok().flatten())
+                .map(|genre| genre.id.as_str().to_owned());
+            let layers = DocumentLayers::from_blocks(&blocks).with_detected_genre(detected);
+            file_settings(&self.rules, &loaded, rel, &Overrides::default(), &layers)
+                .map(|(settings, _)| settings)
+                .map_err(lint_error)
         }))
     }
 }
