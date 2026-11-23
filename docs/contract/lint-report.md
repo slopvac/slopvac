@@ -73,6 +73,21 @@ keys, and a consumer must ignore keys it does not know.
 | `data.document` | The path of the document that holds the skipped content, as shown in the report. |
 | `data.kind` | What was skipped: the format of the diagram, such as `mermaid`, `plantuml`, `excalidraw`, `drawio`, `drawio-svg` or `drawio-png`. |
 
+`review-model-same` and `review-model-reported-mismatch` locate a model. A notice carries no `path` and no document text. The keys of each code:
+
+| Key | Codes | Meaning |
+| --- | --- | --- |
+| `data.author` | `review-model-same` | The author model name. |
+| `data.author_source` | `review-model-same` | Where the author model came from: `flag`, `config` or `none`. |
+| `data.reviewer` | `review-model-same` | The reviewer model name that matches the author. |
+| `data.reviewer_source` | `review-model-same` | Where the reviewer model came from: `flag`, `config`, `provider` or `reported`. |
+| `data.requested` | `review-model-reported-mismatch` | The reviewer model the review asked for. |
+| `data.requested_source` | `review-model-reported-mismatch` | Where the requested model came from: `flag`, `config` or `provider`. |
+| `data.reported` | `review-model-reported-mismatch` | The model the provider reports. |
+| `data.items` | `review-model-same`, `review-model-reported-mismatch` | The payload items the reported model covers, as an array of `{role, line}`. Present when `reviewer_source` is `reported`, and always on the mismatch notice. |
+
+An `items` entry has the `role` of the payload item (`changed`, `added`, `dropped`, `original_document` or `revised_document`) and its `line`. The line sits in the revision, except for `dropped` and `original_document`, which sit in the original.
+
 `extract-budget` has these keys:
 
 | Key | Meaning |

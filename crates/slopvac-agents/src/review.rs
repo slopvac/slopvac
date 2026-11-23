@@ -218,19 +218,27 @@ fn model_key(model: &str) -> String {
     name.trim().to_lowercase()
 }
 
-/// Refuse a reviewer that is the author's model. Provider prefixes and `#variant`
-/// suffixes do not make a model different. Without an author model the rule cannot
-/// be checked, and this returns `Ok(false)`.
-pub fn check_reviewer_model(author: Option<&str>, reviewer: &str) -> Result<bool, AgentsError> {
-    let Some(author) = author else {
-        return Ok(false);
-    };
-    if model_key(author) == model_key(reviewer) {
-        return Err(AgentsError::coded(&AgentsMessage::SameModel {
-            reviewer: quoted(reviewer),
-        }));
+/// How the reviewer's model compares with the author's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelCheck {
+    /// The author's model is unknown, so the rule cannot be checked.
+    Unchecked,
+    /// The two models differ.
+    Different,
+    /// The reviewer is the author's model.
+    Same,
+}
+
+/// Compare the reviewer's model with the author's. Provider prefixes and `#variant`
+/// suffixes do not make a model different. A match never stops a review. The plan carries
+/// a notice for it, because slopvac cannot see which model a provider really runs.
+#[must_use]
+pub fn compare_models(author: Option<&str>, reviewer: &str) -> ModelCheck {
+    match author {
+        None => ModelCheck::Unchecked,
+        Some(a) if model_key(a) == model_key(reviewer) => ModelCheck::Same,
+        Some(_) => ModelCheck::Different,
     }
-    Ok(true)
 }
 
 /// One piece of text sent to a provider.
@@ -348,8 +356,54 @@ pub trait ModelProvider {
     fn name(&self) -> &str;
     /// The model the provider reports it will use.
     fn model(&self) -> &str;
-    /// Review the payload and return the reviewer's report.
-    fn review(&self, payload: &Payload) -> Result<String, AgentsError>;
+    /// Review the payload and return the reviewer's report with the model each item ran on.
+    ///
+    /// # Errors
+    /// The provider could not review the payload.
+    fn review(&self, payload: &Payload) -> Result<ProviderReply, AgentsError>;
+}
+
+/// The model a provider reports it used for one payload item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ReportedItem {
+    /// Index into [`Payload::items`].
+    pub index: usize,
+    /// The model the provider reports for that item.
+    pub model: String,
+}
+
+impl ReportedItem {
+    /// Report `model` for the payload item at `index`.
+    #[must_use]
+    pub fn new(index: usize, model: impl Into<String>) -> Self {
+        Self {
+            index,
+            model: model.into(),
+        }
+    }
+}
+
+/// A provider's answer: the report text and the models it says it used. This in-process type
+/// accepts a partial list. It does not relax the plugin protocol, whose result must be complete.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ProviderReply {
+    /// The reviewer's report.
+    pub report: String,
+    /// Reported models, at most one entry per payload item.
+    pub items: Vec<ReportedItem>,
+}
+
+impl ProviderReply {
+    /// A reply with `report` and the reported `items`.
+    #[must_use]
+    pub fn new(report: impl Into<String>, items: Vec<ReportedItem>) -> Self {
+        Self {
+            report: report.into(),
+            items,
+        }
+    }
 }
 
 /// Everything about the environment that review depends on.
@@ -499,31 +553,37 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
     )?;
     let uses_provider = review_type != ReviewType::Mechanical;
     // A mechanical review calls no reviewer, so the models and their rule do not apply.
-    let (author, reviewer) = if uses_provider {
-        (
-            matches
-                .get_one::<String>("author-model")
-                .cloned()
-                .or_else(|| env.author_model.clone()),
-            matches
-                .get_one::<String>("reviewer-model")
-                .cloned()
-                .or_else(|| env.reviewer_model.clone())
-                .or_else(|| env.provider.map(|p| p.model().to_owned())),
-        )
+    let (author, reviewer, author_source, reviewer_source) = if uses_provider {
+        let pick = |flag: Option<String>, config: Option<String>| match (flag, config) {
+            (Some(v), _) => (Some(v), "flag"),
+            (None, Some(v)) => (Some(v), "config"),
+            (None, None) => (None, "none"),
+        };
+        let (author, author_source) = pick(
+            matches.get_one::<String>("author-model").cloned(),
+            env.author_model.clone(),
+        );
+        let (reviewer, reviewer_source) = match pick(
+            matches.get_one::<String>("reviewer-model").cloned(),
+            env.reviewer_model.clone(),
+        ) {
+            (None, _) => (env.provider.map(|p| p.model().to_owned()), "provider"),
+            found => found,
+        };
+        (author, reviewer, author_source, reviewer_source)
     } else {
-        (None, None)
+        (None, None, "none", "none")
     };
-    let checked = match (&author, &reviewer) {
-        (Some(a), Some(r)) => check_reviewer_model(Some(a), r)?,
-        _ => false,
-    };
-    let notices = if uses_provider {
-        unchecked_notice(author.is_some(), reviewer.is_some())?
-            .into_iter()
-            .collect()
+    let (checked, notices) = if uses_provider {
+        precall_notices(
+            author.as_deref(),
+            author_source,
+            reviewer.as_deref(),
+            reviewer_source,
+            env.provider,
+        )?
     } else {
-        Vec::new()
+        (false, Vec::new())
     };
     let mut plan = Plan {
         review_type,
@@ -539,7 +599,11 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
         report: None,
     };
     if plan.uses_provider && !matches.get_flag("dry-run") {
-        plan.report = Some(call_provider(env, &plan)?);
+        let sources = Sources {
+            author: author_source,
+            reviewer: reviewer_source,
+        };
+        plan.report = Some(call_provider(env, &mut plan, &sources)?);
     }
     let mut json = serde_json::to_string_pretty(&plan).map_err(|e| {
         AgentsError::usage(
@@ -551,6 +615,89 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
     })?;
     json.push('\n');
     Ok(json)
+}
+
+/// Where the plan got the author and reviewer models: `flag`, `config` or `provider`.
+struct Sources {
+    author: &'static str,
+    reviewer: &'static str,
+}
+
+/// The `{role, line}` locations of payload items, for a notice's `items` key.
+fn item_locations(payload: &Payload, indexes: &[usize]) -> serde_json::Value {
+    indexes
+        .iter()
+        .filter_map(|&i| payload.items.get(i))
+        .map(|item| serde_json::json!({ "role": item.role, "line": item.line }))
+        .collect()
+}
+
+/// The notices known before any call, and whether the reviewer was compared with the author.
+///
+/// A reviewer that is the author's model gets `review-model-same`. The provider declares its own
+/// model too. When that one matches the author, a reviewer flag naming another model does not
+/// hide it. A dry run reports both at no cost.
+fn precall_notices(
+    author: Option<&str>,
+    author_source: &str,
+    reviewer: Option<&str>,
+    reviewer_source: &str,
+    provider: Option<&dyn ModelProvider>,
+) -> Result<(bool, Vec<Notice>), AgentsError> {
+    let comparison = match (author, reviewer) {
+        (Some(a), Some(r)) => compare_models(Some(a), r),
+        _ => ModelCheck::Unchecked,
+    };
+    let mut notices: Vec<Notice> = unchecked_notice(author.is_some(), reviewer.is_some())?
+        .into_iter()
+        .collect();
+    if let (ModelCheck::Same, Some(a), Some(r)) = (comparison, author, reviewer) {
+        notices.push(same_model_notice(
+            a,
+            author_source,
+            r,
+            reviewer_source,
+            None,
+        )?);
+    }
+    if let (ModelCheck::Different, Some(a), Some(p)) = (comparison, author, provider)
+        && compare_models(Some(a), p.model()) == ModelCheck::Same
+    {
+        notices.push(same_model_notice(
+            a,
+            author_source,
+            p.model(),
+            "provider",
+            None,
+        )?);
+    }
+    Ok((comparison != ModelCheck::Unchecked, notices))
+}
+
+/// The notice for a reviewer that is the author's model. `items` is set only when the
+/// provider reported the model for those payload items.
+fn same_model_notice(
+    author: &str,
+    author_source: &str,
+    reviewer: &str,
+    reviewer_source: &str,
+    items: Option<serde_json::Value>,
+) -> Result<Notice, AgentsError> {
+    let mut data = serde_json::Map::new();
+    data.insert("author".into(), author.into());
+    data.insert("author_source".into(), author_source.into());
+    data.insert("reviewer".into(), reviewer.into());
+    data.insert("reviewer_source".into(), reviewer_source.into());
+    if let Some(items) = items {
+        data.insert("items".into(), items);
+    }
+    Ok(notice(
+        NoticeLevel::Warning,
+        &AgentsMessage::ModelSame {
+            reviewer: quoted(reviewer),
+        },
+    )?
+    .with_data(data))
 }
 
 /// The notice for a run whose "different model" rule could not be checked.
@@ -573,7 +720,11 @@ fn unchecked_notice(
     .map(Some)
 }
 
-fn call_provider(env: &ReviewEnv<'_>, plan: &Plan) -> Result<String, AgentsError> {
+fn call_provider(
+    env: &ReviewEnv<'_>,
+    plan: &mut Plan,
+    sources: &Sources,
+) -> Result<String, AgentsError> {
     if env.offline {
         // The code has one home, in the `slopvac-update` catalog, with the command as a parameter.
         let message = UpdateMessage::OfflineNetworkNeeded {
@@ -587,6 +738,74 @@ fn call_provider(env: &ReviewEnv<'_>, plan: &Plan) -> Result<String, AgentsError
     let provider = env
         .provider
         .ok_or_else(|| AgentsError::coded(&AgentsMessage::ProviderMissing))?;
-    check_reviewer_model(plan.author_model.as_deref(), provider.model())?;
-    provider.review(&plan.payload)
+    let declared = provider.model();
+    let reply = provider.review(&plan.payload)?;
+    check_reply(&reply, &plan.payload)?;
+    // Group the reported items by model, in the order models first appear.
+    let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+    for item in &reply.items {
+        match groups
+            .iter_mut()
+            .find(|(m, _)| model_key(m) == model_key(&item.model))
+        {
+            Some((_, indexes)) => indexes.push(item.index),
+            None => groups.push((item.model.clone(), vec![item.index])),
+        }
+    }
+    let (requested, requested_source) = match plan.reviewer_model.clone() {
+        Some(r) => (r, sources.reviewer),
+        None => (declared.to_owned(), "provider"),
+    };
+    for (reported, indexes) in groups {
+        let items = item_locations(&plan.payload, &indexes);
+        if let Some(author) = plan.author_model.clone()
+            && compare_models(Some(&author), &reported) == ModelCheck::Same
+        {
+            plan.notices.push(same_model_notice(
+                &author,
+                sources.author,
+                &reported,
+                "reported",
+                Some(items.clone()),
+            )?);
+        }
+        if model_key(&requested) != model_key(&reported) {
+            let mut data = serde_json::Map::new();
+            data.insert("requested".into(), requested.clone().into());
+            data.insert("requested_source".into(), requested_source.into());
+            data.insert("reported".into(), reported.clone().into());
+            data.insert("items".into(), items);
+            plan.notices.push(
+                notice(
+                    NoticeLevel::Info,
+                    &AgentsMessage::ModelReportedMismatch {
+                        requested: quoted(&requested),
+                        reported: quoted(&reported),
+                    },
+                )?
+                .with_data(data),
+            );
+        }
+    }
+    Ok(reply.report)
+}
+
+/// Reject a reply that names an item the payload lacks, names one twice or reports an empty
+/// model. This owned in-process trait accepts a partial list. The production adapter for
+/// `provider/complete` must refuse every result that the plugin protocol refuses, with this
+/// same error code.
+fn check_reply(reply: &ProviderReply, payload: &Payload) -> Result<(), AgentsError> {
+    let mut seen = std::collections::BTreeSet::new();
+    for item in &reply.items {
+        if item.index >= payload.items.len()
+            || !seen.insert(item.index)
+            || item.model.trim().is_empty()
+        {
+            return Err(AgentsError::coded(&AgentsMessage::ProviderReplyInvalid {
+                index: item.index,
+                count: payload.items.len(),
+            }));
+        }
+    }
+    Ok(())
 }

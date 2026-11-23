@@ -5,12 +5,13 @@ use std::cell::Cell;
 use std::fs;
 use std::path::Path;
 
+use rstest::rstest;
 use slopvac_agents::claims::compare;
 use slopvac_agents::error::AgentsError;
 use slopvac_agents::prime::{self, Level, Settings};
 use slopvac_agents::review::{
-    Approval, ChangeStats, ModelProvider, Payload, ReviewEnv, ReviewType, Scope,
-    check_reviewer_model, command, payload, run, select_type,
+    Approval, ChangeStats, ModelCheck, ModelProvider, Payload, ProviderReply, ReportedItem,
+    ReviewEnv, ReviewType, Scope, command, compare_models, payload, run, select_type,
 };
 
 const ORIGINAL: &str = include_str!("fixtures/claims/original.md");
@@ -74,18 +75,25 @@ fn scope_budget_scales_with_the_change_and_asks_above_it() {
     assert!(bigger.extra_budget >= 5);
 }
 
-#[test]
-fn reviewer_model_must_differ_from_the_author_model() {
-    let same = [
-        ("anthropic/claude-sonnet-5-5#high", "claude-sonnet-5-5"),
-        ("Claude-Sonnet-5-5", "amazon-bedrock/claude-sonnet-5-5"),
-    ];
-    for (author, reviewer) in same {
-        let err = check_reviewer_model(Some(author), reviewer).unwrap_err();
-        assert_eq!(err.code(), "review-same-model", "{author} {reviewer}");
-    }
-    assert!(check_reviewer_model(Some("gpt-5"), "claude-sonnet-5-5").unwrap());
-    assert!(!check_reviewer_model(None, "claude-sonnet-5-5").unwrap());
+#[rstest]
+#[case::variant_and_prefix(
+    Some("anthropic/claude-sonnet-5-5#high"),
+    "claude-sonnet-5-5",
+    ModelCheck::Same
+)]
+#[case::case_and_provider(
+    Some("Claude-Sonnet-5-5"),
+    "amazon-bedrock/claude-sonnet-5-5",
+    ModelCheck::Same
+)]
+#[case::other_model(Some("gpt-5"), "claude-sonnet-5-5", ModelCheck::Different)]
+#[case::unknown_author(None, "claude-sonnet-5-5", ModelCheck::Unchecked)]
+fn reviewer_model_is_compared_with_the_author_model_without_a_refusal(
+    #[case] author: Option<&str>,
+    #[case] reviewer: &str,
+    #[case] expected: ModelCheck,
+) {
+    assert_eq!(compare_models(author, reviewer), expected);
 }
 
 #[test]
@@ -162,9 +170,32 @@ impl ModelProvider for Mock {
     fn model(&self) -> &str {
         self.model
     }
-    fn review(&self, _: &Payload) -> Result<String, AgentsError> {
+    fn review(&self, _: &Payload) -> Result<ProviderReply, AgentsError> {
         self.calls.set(self.calls.get() + 1);
-        Ok("no findings".into())
+        Ok(ProviderReply::new("no findings", Vec::new()))
+    }
+}
+
+/// A provider that declares one model and reports the given model for each listed item.
+struct Reporting {
+    declared: &'static str,
+    reported: Vec<(usize, &'static str)>,
+}
+
+impl ModelProvider for Reporting {
+    fn name(&self) -> &'static str {
+        "reporting"
+    }
+    fn model(&self) -> &str {
+        self.declared
+    }
+    fn review(&self, _: &Payload) -> Result<ProviderReply, AgentsError> {
+        let items = self
+            .reported
+            .iter()
+            .map(|&(i, m)| ReportedItem::new(i, m))
+            .collect();
+        Ok(ProviderReply::new("reported", items))
     }
 }
 
@@ -231,7 +262,7 @@ fn a_run_needs_a_trusted_provider_and_an_online_session() {
 }
 
 #[test]
-fn a_provider_on_the_authors_model_is_refused_before_any_call() {
+fn a_provider_on_the_authors_model_still_runs_and_the_plan_carries_a_notice() {
     let dir = tempfile::tempdir().unwrap();
     let mock = Mock {
         model: "anthropic/claude-sonnet-5-5",
@@ -242,9 +273,10 @@ fn a_provider_on_the_authors_model_is_refused_before_any_call() {
         author_model: Some("claude-sonnet-5-5#high".into()),
         ..ReviewEnv::default()
     };
-    let err = run(&args(dir.path(), &[]), &env).unwrap_err();
-    assert_eq!(err.code(), "review-same-model");
-    assert_eq!(mock.calls.get(), 0);
+    let json = plan_json(dir.path(), &[], &env);
+    assert!(notice_codes(&json).contains(&"review-model-same"), "{json}");
+    assert_eq!(json["report"], "no findings");
+    assert_eq!(mock.calls.get(), 1);
 }
 
 #[test]
@@ -338,7 +370,7 @@ fn prime_review_documents_scope_approval_and_the_reviewer_rule() {
     assert!(ask.contains("ask the user to confirm the exact scope"));
     assert!(ask.contains("--scope-approved"));
     assert!(ask.contains("`review_approval = \"auto\"` in the config skips the question"));
-    assert!(ask.contains("must differ from the author's"));
+    assert!(ask.contains("should differ from the author's"));
     let auto = review_topic(None, Approval::Auto, Level::Default);
     assert!(auto.contains("so go ahead without asking"));
 }
@@ -362,9 +394,9 @@ impl ModelProvider for Recorder {
     fn model(&self) -> &'static str {
         "gpt-5"
     }
-    fn review(&self, payload: &Payload) -> Result<String, AgentsError> {
+    fn review(&self, payload: &Payload) -> Result<ProviderReply, AgentsError> {
         self.seen.borrow_mut().push(payload.clone());
-        Ok("ok".into())
+        Ok(ProviderReply::new("ok", Vec::new()))
     }
 }
 
@@ -572,9 +604,9 @@ fn both_models_known_and_different_are_checked_without_a_notice() {
 }
 
 #[test]
-fn the_author_flag_names_the_author_for_the_same_model_rule() {
+fn the_author_flag_names_the_author_for_the_same_model_notice() {
     let dir = tempfile::tempdir().unwrap();
-    let argv = args(
+    let json = plan_json(
         dir.path(),
         &[
             "--dry-run",
@@ -583,9 +615,10 @@ fn the_author_flag_names_the_author_for_the_same_model_rule() {
             "--reviewer-model",
             "gpt-5",
         ],
+        &ReviewEnv::default(),
     );
-    let err = run(&argv, &ReviewEnv::default()).unwrap_err();
-    assert_eq!(err.code(), "review-same-model");
+    assert!(notice_codes(&json).contains(&"review-model-same"), "{json}");
+    assert_eq!(json["reviewer_model_checked"], true);
 }
 
 #[test]
@@ -747,4 +780,330 @@ fn a_mechanical_review_ignores_matching_author_and_provider_models() {
         assert_eq!(notice_codes(&json), Vec::<&str>::new());
     }
     assert_eq!(mock.calls.get(), 0);
+}
+
+fn rewrite_plan(
+    reported: Vec<(usize, &'static str)>,
+    declared: &'static str,
+    extra: &[&str],
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let provider = Reporting { declared, reported };
+    let env = ReviewEnv {
+        provider: Some(&provider),
+        author_model: Some("claude-sonnet-5-5".into()),
+        ..ReviewEnv::default()
+    };
+    let mut argv = vec!["--type", "rewrite"];
+    argv.extend_from_slice(extra);
+    let out = run(&pair(dir.path(), ORIGINAL, REVISED, &argv), &env)?;
+    Ok(serde_json::from_str(&out)?)
+}
+
+fn notice_with<'a>(json: &'a serde_json::Value, code: &str) -> Vec<&'a serde_json::Value> {
+    json["notices"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|n| n["code"] == code)
+        .collect()
+}
+
+#[test]
+fn a_reported_author_model_gets_a_notice_that_locates_its_items()
+-> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(vec![(1, "anthropic/claude-sonnet-5-5#high")], "gpt-5", &[])?;
+    let found = notice_with(&json, "review-model-same");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(found[0]["level"], "warning");
+    assert_eq!(found[0]["data"]["reviewer_source"], "reported");
+    assert_eq!(found[0]["data"]["author_source"], "config");
+    assert_eq!(
+        found[0]["data"]["items"],
+        serde_json::json!([{"role": "revised_document", "line": 1}])
+    );
+    assert!(found[0].get("path").is_none());
+    Ok(())
+}
+
+#[test]
+fn a_reported_model_other_than_the_requested_one_gets_an_info_notice()
+-> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(
+        vec![(0, "gemini-3"), (1, "gemini-3")],
+        "gpt-5",
+        &["--reviewer-model", "gpt-5"],
+    )?;
+    let found = notice_with(&json, "review-model-reported-mismatch");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(found[0]["level"], "info");
+    let data = &found[0]["data"];
+    assert_eq!(data["requested"], "gpt-5");
+    assert_eq!(data["requested_source"], "flag");
+    assert_eq!(data["reported"], "gemini-3");
+    assert_eq!(
+        data["items"],
+        serde_json::json!([
+            {"role": "original_document", "line": 1},
+            {"role": "revised_document", "line": 1}
+        ])
+    );
+    Ok(())
+}
+
+#[test]
+fn a_reported_model_that_matches_the_request_adds_no_notice()
+-> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(vec![(0, "openai/gpt-5#high"), (1, "GPT-5")], "gpt-5", &[])?;
+    assert!(json["notices"].as_array().unwrap().is_empty(), "{json}");
+    Ok(())
+}
+
+#[test]
+fn reported_models_group_by_normalized_name_across_spellings()
+-> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(
+        vec![(0, "claude-sonnet-5-5"), (1, "bedrock/Claude-Sonnet-5-5#x")],
+        "gpt-5",
+        &[],
+    )?;
+    let same = notice_with(&json, "review-model-same");
+    assert_eq!(same.len(), 1, "{json}");
+    assert_eq!(same[0]["data"]["items"].as_array().unwrap().len(), 2);
+    Ok(())
+}
+
+#[test]
+fn a_reply_may_name_only_some_items() -> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(vec![], "gpt-5", &[])?;
+    assert_eq!(json["report"], "reported");
+    assert_eq!(json["notices"], serde_json::json!([]));
+    Ok(())
+}
+
+#[rstest]
+#[case::outside_the_payload(vec![(2, "gpt-5")])]
+#[case::repeated_item(vec![(0, "gpt-5"), (0, "gpt-5")])]
+#[case::empty_model(vec![(0, "")])]
+#[case::blank_model(vec![(0, "  ")])]
+fn a_reply_the_protocol_would_refuse_fails_with_a_code(
+    #[case] reported: Vec<(usize, &'static str)>,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = Reporting {
+        declared: "gpt-5",
+        reported,
+    };
+    let setting = ReviewEnv {
+        provider: Some(&provider),
+        ..ReviewEnv::default()
+    };
+    let argv = pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]);
+    let err = run(&argv, &setting).unwrap_err();
+    assert_eq!(err.code(), "review-provider-reply-invalid");
+}
+
+#[test]
+fn a_dry_run_between_different_models_reports_no_model_notice() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = plan_json(
+        dir.path(),
+        &["--dry-run", "--reviewer-model", "gpt-5"],
+        &ReviewEnv {
+            author_model: Some("claude-sonnet-5-5".into()),
+            ..ReviewEnv::default()
+        },
+    );
+    assert!(notice_codes(&json).is_empty(), "{json}");
+}
+
+#[test]
+fn a_declared_provider_on_the_author_model_adds_one_notice_with_its_source()
+-> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(vec![], "claude-sonnet-5-5", &[])?;
+    let found = notice_with(&json, "review-model-same");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(found[0]["data"]["reviewer_source"], "provider");
+    assert!(found[0]["data"].get("items").is_none());
+    Ok(())
+}
+
+#[test]
+fn every_data_key_a_model_notice_carries_is_documented() -> Result<(), Box<dyn std::error::Error>> {
+    let plans = [
+        rewrite_plan(vec![], "claude-sonnet-5-5", &[])?,
+        rewrite_plan(vec![(1, "claude-sonnet-5-5")], "gpt-5", &[])?,
+        rewrite_plan(
+            vec![(0, "gemini-3")],
+            "gpt-5",
+            &["--reviewer-model", "gpt-5"],
+        )?,
+    ];
+    let contract = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/contract/lint-report.md"
+    ))?;
+    let mut seen = std::collections::BTreeSet::new();
+    for plan in &plans {
+        for code in ["review-model-same", "review-model-reported-mismatch"] {
+            for notice in notice_with(plan, code) {
+                assert!(notice.get("path").is_none(), "{notice}");
+                for key in notice["data"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .map(|(k, _)| k)
+                {
+                    seen.insert((code, key.clone()));
+                }
+            }
+        }
+    }
+    assert!(seen.len() >= 8, "the scenarios emit too few keys: {seen:?}");
+    for (code, key) in &seen {
+        let row = contract
+            .lines()
+            .find(|l| l.starts_with(&format!("| `data.{key}` |")))
+            .ok_or_else(|| format!("data.{key} is not documented"))?;
+        assert!(row.contains(&format!("`{code}`")), "{code} {key}: {row}");
+    }
+    Ok(())
+}
+
+/// Policies section 1.5: the same model, detected before the call, adds `review-model-same`
+/// (warning). Here the reviewer flag names another model, so only the provider's declared model
+/// matches the author. A dry run reports the notice and calls nothing.
+#[rstest]
+#[case::real_run(false, 1)]
+#[case::dry_run(true, 0)]
+fn a_declared_provider_on_the_author_model_adds_one_notice_when_the_reviewer_flag_differs(
+    #[case] dry_run: bool,
+    #[case] calls: usize,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let mock = Mock {
+        model: "claude-sonnet-5-5",
+        calls: Cell::new(0),
+    };
+    let setting = ReviewEnv {
+        provider: Some(&mock),
+        author_model: Some("claude-sonnet-5-5#high".into()),
+        ..ReviewEnv::default()
+    };
+    let mut extra = vec!["--reviewer-model", "gpt-5"];
+    if dry_run {
+        extra.push("--dry-run");
+    }
+    let json = plan_json(dir.path(), &extra, &setting);
+    let found = notice_with(&json, "review-model-same");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(found[0]["level"], "warning");
+    assert_eq!(found[0]["data"]["reviewer"], "claude-sonnet-5-5");
+    assert_eq!(found[0]["data"]["reviewer_source"], "provider");
+    assert_eq!(found[0]["data"]["author_source"], "config");
+    assert!(found[0]["data"].get("items").is_none());
+    assert_eq!(json.get("report").is_some(), !dry_run, "{json}");
+    assert_eq!(mock.calls.get(), calls);
+}
+
+/// The `*_source` values of notice data, per the notice-data table in `lint-report.md`.
+/// A case names where the author and the reviewer come from, and which notice carries which.
+#[rstest]
+#[case::author_and_reviewer_flags(
+    &["--author-model", "gpt-5", "--reviewer-model", "gpt-5"], None, None, "author_source", "flag", "reviewer_source", "flag"
+)]
+#[case::author_and_reviewer_config(
+    &[], Some("gpt-5"), Some("gpt-5"), "author_source", "config", "reviewer_source", "config"
+)]
+fn the_same_model_notice_names_where_each_model_came_from(
+    #[case] flags: &[&str],
+    #[case] author_config: Option<&str>,
+    #[case] reviewer_config: Option<&str>,
+    #[case] author_key: &str,
+    #[case] author_source: &str,
+    #[case] reviewer_key: &str,
+    #[case] reviewer_source: &str,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let setting = ReviewEnv {
+        author_model: author_config.map(Into::into),
+        reviewer_model: reviewer_config.map(Into::into),
+        ..ReviewEnv::default()
+    };
+    let mut extra = vec!["--dry-run"];
+    extra.extend_from_slice(flags);
+    let json = plan_json(dir.path(), &extra, &setting);
+    let found = notice_with(&json, "review-model-same");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(found[0]["data"][author_key], author_source, "{json}");
+    assert_eq!(found[0]["data"][reviewer_key], reviewer_source, "{json}");
+}
+
+#[rstest]
+#[case::requested_from_config(Some("gpt-5"), "claude-sonnet-5-5", "config")]
+#[case::requested_from_the_provider(None, "gpt-5", "provider")]
+fn the_mismatch_notice_names_where_the_requested_model_came_from(
+    #[case] reviewer_config: Option<&str>,
+    #[case] declared: &'static str,
+    #[case] requested_source: &str,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = Reporting {
+        declared,
+        reported: vec![(0, "gemini-3")],
+    };
+    let setting = ReviewEnv {
+        provider: Some(&provider),
+        reviewer_model: reviewer_config.map(Into::into),
+        ..ReviewEnv::default()
+    };
+    let argv = pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]);
+    let out = run(&argv, &setting).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let found = notice_with(&json, "review-model-reported-mismatch");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(
+        found[0]["data"]["requested_source"], requested_source,
+        "{json}"
+    );
+    assert_eq!(found[0]["data"]["reported"], "gemini-3", "{json}");
+}
+
+/// Policies section 1.5: the two phases give two separate non-gating `review-model-same`
+/// warnings. A provider that declares the author's model and also reports it for items gets
+/// one notice before the call, which names the provider and carries no items, and one after
+/// it, which locates each reported item.
+#[test]
+fn a_provider_that_declares_and_reports_the_author_model_adds_one_notice_per_phase()
+-> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(
+        vec![
+            (0, "anthropic/claude-sonnet-5-5"),
+            (1, "anthropic/claude-sonnet-5-5#high"),
+        ],
+        "claude-sonnet-5-5",
+        &[],
+    )?;
+    assert_eq!(
+        notice_codes(&json),
+        ["review-model-same", "review-model-same"],
+        "{json}"
+    );
+    let found = notice_with(&json, "review-model-same");
+    assert_eq!(found[0]["level"], "warning", "{json}");
+    assert_eq!(found[0]["data"]["reviewer_source"], "provider", "{json}");
+    assert_eq!(found[0]["data"]["author_source"], "config", "{json}");
+    assert!(found[0]["data"].get("items").is_none(), "{json}");
+    assert_eq!(found[1]["level"], "warning", "{json}");
+    assert_eq!(found[1]["data"]["reviewer_source"], "reported", "{json}");
+    assert_eq!(found[1]["data"]["author_source"], "config", "{json}");
+    assert_eq!(
+        found[1]["data"]["items"],
+        serde_json::json!([
+            {"role": "original_document", "line": 1},
+            {"role": "revised_document", "line": 1}
+        ]),
+        "{json}"
+    );
+    Ok(())
 }

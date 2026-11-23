@@ -162,9 +162,24 @@ pub(crate) enum AgentsMessage {
         budget: usize,
     },
     /// The reviewer model is the author's model.
-    #[code("review-same-model")]
-    #[message("reviewer model {reviewer} is the author's model; pick a different one")]
-    SameModel { reviewer: String },
+    #[code("review-model-same")]
+    #[notice(
+        "the reviewer model {reviewer} is the author's model, so the review is not independent. Use a model from a different family than the author's."
+    )]
+    ModelSame { reviewer: String },
+    /// The provider reported a model other than the one the review asked for.
+    #[code("review-model-reported-mismatch")]
+    #[notice(
+        "the provider reported {reported} for part of the review, not the requested {requested}. Check which model reviewed those items."
+    )]
+    ModelReportedMismatch { requested: String, reported: String },
+    /// The provider's reply breaks the completion contract: a repeated, outside or missing item,
+    /// or an entry without text or a model.
+    #[code("review-provider-reply-invalid")]
+    #[message(
+        "the model provider's reply is invalid at payload item {index}: it repeats an item, names an item outside the {count} payload items, leaves an item out, or has an entry without text or a model"
+    )]
+    ProviderReplyInvalid { index: usize, count: usize },
     /// The review type named with --type is lighter than the change needs.
     #[code("review-type-ineligible")]
     #[message(
@@ -458,7 +473,7 @@ pub(crate) enum AgentsPhrase {
     SetupAgent,
     /// Help for the setup --reviewer-model option.
     #[code("agents-help-setup-reviewer-model")]
-    #[text("Model for the reviewer agent; it must differ from the author's model")]
+    #[text("Model for the reviewer agent; use one from a different family than the author's model")]
     SetupReviewerModel,
     /// Help for the claims command.
     #[code("agents-help-claims-about")]
@@ -518,7 +533,7 @@ pub(crate) enum AgentsPhrase {
     ReviewScopeApproved,
     /// Help for the review --reviewer-model option.
     #[code("agents-help-review-reviewer-model")]
-    #[text("Model that reviews; it must differ from the author's")]
+    #[text("Model that reviews; it should differ from the author's")]
     ReviewReviewerModel,
     /// Help for the review --author-model option.
     #[code("agents-help-review-author-model")]
@@ -894,11 +909,26 @@ mod tests {
                  or set review_approval = \"auto\".",
             ),
             (
-                AgentsMessage::SameModel {
+                AgentsMessage::ModelSame {
                     reviewer: quoted("gpt-5"),
                 },
-                "review-same-model",
-                "reviewer model \"gpt-5\" is the author's model; pick a different one",
+                "review-model-same",
+                "the reviewer model \"gpt-5\" is the author's model, so the review is not independent. \
+                 Use a model from a different family than the author's.",
+            ),
+            (
+                AgentsMessage::ModelReportedMismatch {
+                    requested: quoted("gpt-5"),
+                    reported: quoted("claude-sonnet-5-5"),
+                },
+                "review-model-reported-mismatch",
+                "the provider reported \"claude-sonnet-5-5\" for part of the review, not the requested \"gpt-5\". \
+                 Check which model reviewed those items.",
+            ),
+            (
+                AgentsMessage::ProviderReplyInvalid { index: 3, count: 2 },
+                "review-provider-reply-invalid",
+                "the model provider's reply is invalid at payload item 3: it repeats an item, names an item outside the 2 payload items, leaves an item out, or has an entry without text or a model",
             ),
             (
                 AgentsMessage::TypeIneligible {
@@ -956,6 +986,6 @@ mod tests {
             assert_eq!(message.to_string(), text);
             assert!(registered.iter().any(|e| e.code == code), "{code}");
         }
-        assert_eq!(registered.len(), 17);
+        assert_eq!(registered.len(), 19);
     }
 }
