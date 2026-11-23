@@ -224,6 +224,12 @@ fn a_guard_that_repeats_a_block_scope_stops_the_write_and_changes_nothing() {
     "profile = \"relaxed\"\n\n[categories]\nai-tells-formatting = {}\n\n\
      [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
 )]
+// The top-level category is refused before the switch's 2.x glob, which the overlap
+// grammar does not cover, is expanded.
+#[case::top_level_level_with_a_glob_outside_the_grammar(
+    "profile = \"relaxed\"\n\n[categories]\nai-tells-formatting = \"warning\"\n\n\
+     [[overrides]]\nfiles = [\"*.md\"]\nprofile = \"normal\"\n"
+)]
 fn a_category_level_above_a_profile_switch_stops_the_write_and_changes_nothing(
     #[case] config: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
