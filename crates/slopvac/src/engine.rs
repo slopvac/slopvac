@@ -1137,7 +1137,7 @@ fn lint_items(
 
     // A fix changes the text, so what was read of it no longer holds.
     if root.is_some() {
-        preparsed.iter_mut().for_each(|p| *p = None);
+        preparsed.fill_with(|| None);
     }
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
     let mut spare = Some(rules);

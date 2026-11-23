@@ -862,12 +862,11 @@ impl Engine {
         input: &Input<'_>,
     ) -> Result<(Document, Vec<Notice>), EngineError> {
         let owned;
-        let pre = match input.preparsed {
-            Some(pre) => pre,
-            None => {
-                owned = Preparsed::read(input, &self.rst)?;
-                &owned
-            }
+        let pre = if let Some(pre) = input.preparsed {
+            pre
+        } else {
+            owned = Preparsed::read(input, &self.rst)?;
+            &owned
         };
         let front_span = pre.front_span();
         let front_matter = pre
