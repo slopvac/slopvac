@@ -23,6 +23,7 @@
 pub mod api;
 pub mod apply;
 pub mod budget;
+mod cause;
 mod cli;
 pub mod error;
 pub mod extract;
@@ -55,7 +56,7 @@ pub use error::{PluginError, RpcError, StartError};
 pub use host::{
     DrainHook, HostConfig, Plugin, PluginSpec, ReadHook, RunCaps, Shutdown, SpawnGate, Timeouts,
 };
-pub use messages::cli::{Redacted, RunError};
+pub use messages::cli::{Redacted, Reported, RunError};
 pub use messages::message_entries;
 pub use process::{Teardown, kill_all_live};
 pub use protocol::{HookKind, PluginDeclaration};

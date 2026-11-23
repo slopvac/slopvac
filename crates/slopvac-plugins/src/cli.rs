@@ -3,17 +3,16 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use regex::{Captures, Regex};
 use slopvac_fs::{InputKind, ReadOptions, read_capped_regular_to_string};
 use slopvac_messages::{Catalog, render};
 use slopvac_sanitize::line;
 use slopvac_update::messages::UpdateMessage;
 
 use crate::PluginSpec;
+use crate::cause;
 use crate::lock::{
     LockedPack, Lockfile, MAX_LOCK_BYTES, PackId, PackKind, VersionReq, outdated as lock_outdated,
 };
@@ -197,12 +196,12 @@ impl<'a> Runner<'a> {
             vec![vp.clone()],
         )
         .with_revocation_cache(self.revocations.clone());
-        let managed = PythonRuntime::read(&vp.root).map_err(|e| self.redact(&e.to_string()))?;
+        let managed = PythonRuntime::read(&vp.root).map_err(|_| render(&CliText::Withheld))?;
         if managed.is_some() {
             let envs = self.envs.ok_or_else(|| render(&CliText::WhyNoEnvs))?;
             gate = gate
                 .with_python_plugins(envs)
-                .map_err(|e| self.redact(&e.to_string()))?;
+                .map_err(|_| render(&CliText::Withheld))?;
             if let Some((program, args)) = gate.python_launch(&vp.name) {
                 spec.program = program;
                 spec.args = args;
@@ -210,28 +209,6 @@ impl<'a> Runner<'a> {
         }
         Ok((gate, spec))
     }
-
-    /// `text` with every absolute path shown under the project root, or as
-    /// `<external>/<file name>` outside it.
-    fn redact(&self, text: &str) -> String {
-        redact_paths(text, &self.dirs.project_root)
-    }
-}
-
-/// `text` with each absolute path shown as policies section 1.7 says: relative to `root`, or
-/// `<external>/<file name>` outside it.
-fn redact_paths(text: &str, root: &Path) -> String {
-    static ABSOLUTE: OnceLock<Regex> = OnceLock::new();
-    let re = ABSOLUTE
-        .get_or_init(|| Regex::new(r#"(^|[\s`'"(])(/[^\s`'"),;]+)"#).expect("a literal pattern"));
-    re.replace_all(text, |c: &Captures<'_>| {
-        let token = &c[2];
-        let path = token.trim_end_matches(['.', ':']);
-        let tail = &token[path.len()..];
-        let shown = slopvac_fs::display_under_root(Path::new(path), root);
-        format!("{}{shown}{tail}", &c[1])
-    })
-    .into_owned()
 }
 
 fn arg(id: &'static str, help: &CliText) -> Arg {
@@ -300,19 +277,11 @@ pub fn command() -> Command {
 }
 
 impl RunError {
-    /// The code that the failure reports. A failure of a library operation keeps the code of
-    /// its cause, such as `offline-plugin-missing` or `plugin-revoked`, because the code is
-    /// the interface. The code of the wrapper is for the others.
+    /// The code that the failure reports: the code of its cause when it has one. It is the
+    /// same code that a lookup through [`Catalog`] gives.
     #[must_use]
     pub fn code(&self) -> &'static str {
-        match self {
-            Self::Sync { source, .. } => source.code(),
-            Self::Update { source, .. } => source.code(),
-            Self::Revocation { source, .. } | Self::Store { source, .. } => source
-                .code()
-                .unwrap_or_else(|| <Self as Catalog>::code(self)),
-            other => <Self as Catalog>::code(other),
-        }
+        <Self as Catalog>::code(self)
     }
 
     /// The exit status of a failed command. Every failure of the group is an incomplete run.
@@ -405,31 +374,23 @@ fn kind_name(kind: PackKind) -> String {
     kind.as_str().to_owned()
 }
 
-/// A trust store failure, with every path shown under the project root. A revocation failure
-/// inside it keeps its own code.
+/// A trust store failure, with every path shown under the project root. A failure with a code
+/// keeps it.
 fn store_failed(runner: &Runner<'_>, e: &TrustError) -> RunError {
-    if let TrustError::Revocation(inner) = e {
-        return revocation_failed(runner, inner);
-    }
-    let detail = runner.redact(&e.to_string());
-    RunError::Store {
-        source: Redacted::new(detail.clone(), e.code()),
-        detail,
+    match cause::store(&runner.dirs.project_root, e) {
+        Ok(source) => RunError::Failed { source },
+        Err(detail) => RunError::Store {
+            source: Redacted::new(detail.clone()),
+            detail,
+        },
     }
 }
 
 /// A revocation failure, with every path shown under the project root.
 fn revocation_failed(runner: &Runner<'_>, e: &RevocationError) -> RunError {
-    let detail = runner.redact(&e.to_string());
-    RunError::Revocation {
-        source: Redacted::new(detail.clone(), Some(e.code())),
-        detail,
+    RunError::Failed {
+        source: cause::revocation(&runner.dirs.project_root, e),
     }
-}
-
-/// A failed library operation as its sentence, with every path shown under the project root.
-fn sentence(runner: &Runner<'_>, e: &impl std::fmt::Display) -> String {
-    runner.redact(&e.to_string())
 }
 
 fn revoked(runner: &Runner<'_>, pack: &LockedPack, list: &crate::revoke::RevocationList) -> bool {
@@ -450,7 +411,7 @@ fn trust_part(runner: &Runner<'_>, pack: &LockedPack) -> CliText {
     };
     let state = loader
         .load(&id)
-        .map_err(|why| line(&why))
+        .map_err(|_| render(&CliText::Withheld))
         .and_then(|(vp, spec)| {
             runner
                 .prepared(&vp, spec)
@@ -487,9 +448,8 @@ fn statuses(runner: &Runner<'_>, lock: &Lockfile) -> Result<Vec<PackStatus>, Run
         Some(envs) => status_with_python(&store, envs, root, lock),
         None => status(&store, root, lock),
     }
-    .map_err(|source| RunError::Sync {
-        detail: sentence(runner, &source),
-        source: Box::new(source),
+    .map_err(|e| RunError::Failed {
+        source: cause::sync(&runner.dirs.project_root, &e),
     })
 }
 
@@ -588,9 +548,8 @@ fn run_sync(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
         syncer = syncer.with_python(python);
     }
     syncer = syncer.with_executables(runner.executables.clone());
-    let report = syncer.sync(&lock).map_err(|source| RunError::Sync {
-        detail: sentence(runner, &source),
-        source: Box::new(source),
+    let report = syncer.sync(&lock).map_err(|e| RunError::Failed {
+        source: cause::sync(&runner.dirs.project_root, &e),
     })?;
     for p in &report.packs {
         let change = match p.change {
@@ -655,9 +614,8 @@ fn run_update(runner: &Runner<'_>, only: &[String], out: &mut dyn Write) -> Resu
     }
     let report = Updater::new(runner.network, runner.policy, runner.revocations)
         .update(&runner.dirs.project_root, &runner.ranges, &ids)
-        .map_err(|source| RunError::Update {
-            detail: sentence(runner, &source),
-            source: Box::new(source),
+        .map_err(|e| RunError::Failed {
+            source: cause::update(&runner.dirs.project_root, &e),
         })?;
     for p in &report.packs {
         let id = line(p.id.as_str());
@@ -673,7 +631,7 @@ fn run_update(runner: &Runner<'_>, only: &[String], out: &mut dyn Write) -> Resu
             },
             Outcome::Refused(e) => CliText::UpdateRefused {
                 id: id.clone(),
-                reason: line(&e.to_string()),
+                reason: line(&cause::sync(&runner.dirs.project_root, e).to_string()),
             },
         };
         say(out, &text)?;
@@ -720,13 +678,16 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         .revocations
         .cached()
         .map_err(|e| revocation_failed(runner, &e))?;
+    notices(out, &current.notices)?;
     if lock
         .get(&pack_id)
         .is_some_and(|pack| revoked(runner, pack, &current.list))
     {
         return Err(RunError::Revoked { id: line(id) });
     }
-    let (vp, spec) = loader.load(&pack_id).map_err(refused)?;
+    let (vp, spec) = loader
+        .load(&pack_id)
+        .map_err(|_| refused(render(&CliText::Withheld)))?;
     let (gate, spec) = runner.prepared(&vp, spec).map_err(refused)?;
     let (_, state) = gate
         .state(&vp, &spec)

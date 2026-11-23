@@ -28,9 +28,8 @@ use slopvac_plugins::oci::{Anonymous, Client};
 use slopvac_plugins::pyenv::EnvStore;
 use slopvac_plugins::revoke::Revocations;
 use slopvac_plugins::sign::KeyPolicy;
-use slopvac_plugins::sync::{Network, PythonBuild, SyncError};
+use slopvac_plugins::sync::{Network, PythonBuild};
 use slopvac_plugins::trust::{DeclSummary, TrustGate, TrustRecord, TrustStore, VerifiedPlugin};
-use slopvac_plugins::update::UpdateError;
 use slopvac_plugins::{Dirs, PluginLoader, PluginSpec, RunError, Runner, SpawnGate, command, run};
 
 const NOW: &str = "2026-11-22T00:00:00Z";
@@ -514,15 +513,7 @@ fn sync_keeps_its_verification_a_revoked_digest_stops_it_with_the_cause() {
     f.revoke(&[&digest]);
     let err = f.run(&["sync"], true, |s| s).result.unwrap_err();
     assert_eq!(err.code(), "plugin-revoked");
-    assert!(
-        matches!(
-            err.source()
-                .and_then(|e| e.downcast_ref::<Box<SyncError>>())
-                .map(|b| &**b),
-            Some(SyncError::Revoked { .. })
-        ),
-        "{err:?}"
-    );
+    assert!(err.to_string().contains("revocation list"), "{err}");
 }
 
 // ---- outdated and update ------------------------------------------------------------
@@ -597,15 +588,7 @@ fn update_offline_fails_with_the_update_error_as_its_cause() {
     f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
     let err = f.run(&["update"], false, |s| s).result.unwrap_err();
     assert_eq!(err.code(), "offline-network-needed");
-    assert!(
-        matches!(
-            err.source()
-                .and_then(|e| e.downcast_ref::<Box<UpdateError>>())
-                .map(|b| &**b),
-            Some(UpdateError::Offline)
-        ),
-        "{err:?}"
-    );
+    assert_eq!(err.to_string(), "offline: plugins update needs the network");
 }
 
 // ---- trust and untrust --------------------------------------------------------------
@@ -942,7 +925,7 @@ fn a_damaged_revocation_cache_keeps_its_code_and_names_no_absolute_path() {
 }
 
 #[test]
-fn a_refused_program_path_is_shown_as_external_and_never_absolute() {
+fn a_refused_program_path_is_withheld_and_never_absolute() {
     let f = Fixture::new();
     f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
     let outside = f.base.path().join("elsewhere/prog");
@@ -958,7 +941,8 @@ fn a_refused_program_path_is_shown_as_external_and_never_absolute() {
     let shown = names_in_chain(&err);
     let base = f.base.path().to_string_lossy().into_owned();
     assert!(!shown.contains(&base), "absolute path leaked: {shown}");
-    assert!(shown.contains("<external>/prog"), "{shown}");
+    assert!(!shown.contains("prog"), "{shown}");
+    assert!(shown.contains("withheld"), "{shown}");
 }
 
 /// A writer whose every write fails the way a closed pipe does.
@@ -1003,6 +987,127 @@ fn trust_without_a_loader_says_so_in_registered_text() {
 fn code_path_entry(id: &str, dir: &str, digest: &str) -> String {
     path_entry(id, "1.0.0", dir, digest).replace("kind = \"data\"", "kind = \"code\"")
 }
+// ---- round 4: catalog codes, redacted causes, trust notices ----------------------------
+
+/// The code through the trait, as a generic caller and as a trait object see it.
+fn trait_codes(err: &RunError) -> [&'static str; 3] {
+    fn generic<C: slopvac_messages::Catalog>(c: &C) -> &'static str {
+        c.code()
+    }
+    fn dynamic(c: &dyn slopvac_messages::Catalog) -> &'static str {
+        c.code()
+    }
+    [
+        slopvac_messages::Catalog::code(err),
+        generic(err),
+        dynamic(err),
+    ]
+}
+
+#[test]
+fn a_failed_sync_reports_the_code_of_its_cause_through_every_lookup() {
+    let f = Fixture::new();
+    let digest = in_place_project(&f);
+    f.write_lock(&[path_entry("style", "1.0.0", "plugins/style", &digest)]);
+    f.revoke(&[&digest]);
+    let err = f.run(&["sync"], true, |s| s).result.unwrap_err();
+    assert_eq!(err.code(), "plugin-revoked");
+    assert_eq!(trait_codes(&err), ["plugin-revoked"; 3]);
+}
+
+#[test]
+fn a_failed_update_reports_the_code_of_its_cause_through_every_lookup() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
+    let err = f.run(&["update"], false, |s| s).result.unwrap_err();
+    assert_eq!(trait_codes(&err), ["offline-network-needed"; 3]);
+}
+
+#[test]
+fn a_failed_revocation_read_reports_its_code_through_every_lookup() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
+    fs::write(f.revocations().cache_file(), "not a list").unwrap();
+    let err = f.run(&["status"], false, |s| s).result.unwrap_err();
+    assert_eq!(trait_codes(&err), ["revocation-cache-invalid"; 3]);
+}
+
+#[test]
+fn a_failed_sync_keeps_no_absolute_path_anywhere_in_its_source_chain() {
+    let f = Fixture::new();
+    let digest = in_place_project(&f);
+    f.write_lock(&[path_entry("style", "1.0.0", "plugins/style", &digest)]);
+    fs::write(f.revocations().cache_file(), "not a list").unwrap();
+    let err = f.run(&["sync"], false, |s| s).result.unwrap_err();
+    assert_eq!(err.code(), "revocation-cache-invalid");
+    let shown = names_in_chain(&err);
+    let base = f.base.path().to_string_lossy().into_owned();
+    assert!(!shown.contains(&base), "absolute path leaked: {shown}");
+}
+
+/// A loader whose failure text names a local path.
+struct FailingLoader;
+
+impl PluginLoader for FailingLoader {
+    fn load(&self, _: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
+        Err("cannot read /home/someone/secret-dir/plugin.toml".to_owned())
+    }
+}
+
+#[test]
+fn loader_text_is_never_echoed_into_the_failure() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    let err = f
+        .run(&["trust", "fake"], false, |s| s.loader(FailingLoader))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugins-trust-inputs-failed");
+    let shown = names_in_chain(&err);
+    assert!(!shown.contains("secret-dir"), "{shown}");
+    assert!(!shown.contains("cannot read"), "{shown}");
+}
+
+#[test]
+fn trust_tells_a_missing_revocation_list_and_still_records_trust_offline() {
+    let f = Fixture::uncached();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    let ran = f.run(&["trust", "fake"], false, with_loader(&f));
+    assert_eq!(ran.result.unwrap(), 0);
+    assert!(
+        ran.out.contains("notice[revocation-list-missing]:"),
+        "{}",
+        ran.out
+    );
+    assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 1);
+}
+
+#[test]
+fn trust_tells_a_stale_revocation_list_and_still_records_trust() {
+    let f = Fixture::uncached();
+    f.list.serve(Some(Signed::by(
+        &f.root,
+        list_json("2026-11-01T00:00:00Z", "2026-11-10T00:00:00Z", &[], &[]),
+    )));
+    Revocations::new(
+        f.state(),
+        vec![f.root.public()],
+        f.list.source(),
+        "2026-11-05T00:00:00Z",
+    )
+    .unwrap()
+    .refresh(&client())
+    .unwrap();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    let ran = f.run(&["trust", "fake"], false, with_loader(&f));
+    assert_eq!(ran.result.unwrap(), 0);
+    assert!(
+        ran.out.contains("notice[revocation-list-stale]:"),
+        "{}",
+        ran.out
+    );
+}
+
 // ---- sync of a signed native archive -------------------------------------------------------
 
 #[cfg(unix)]

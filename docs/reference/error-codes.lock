@@ -722,6 +722,7 @@ plugins-change-in-place text
 plugins-change-installed text
 plugins-change-reinstalled text
 plugins-change-unchanged text
+plugins-detail-withheld text
 plugins-extract-changed text
 plugins-extract-collision text
 plugins-extract-compressed-size text
@@ -1230,7 +1231,6 @@ plugins-pyenv-zip-directory-outside text
 plugins-pyenv-zip-name-not-utf8 text
 plugins-pyenv-zip64 text
 plugins-pyenv-zip64-entry text
-plugins-revocation-failed error
 plugins-revoke-cache-damaged text
 plugins-revoke-cache-io text
 plugins-revoke-flag-artifact text
@@ -1309,7 +1309,6 @@ plugins-sync-download-file text
 plugins-sync-download-hash text
 plugins-sync-download-store text
 plugins-sync-download-write text
-plugins-sync-failed error
 plugins-sync-git-cat-file-header text
 plugins-sync-git-cat-file-object text
 plugins-sync-git-cat-file-read text
@@ -1454,7 +1453,6 @@ plugins-unknown-plugin error
 plugins-untrust-not-trusted error
 plugins-untrusted text
 plugins-update-budget text
-plugins-update-failed error
 plugins-update-guard-private text
 plugins-update-lock-dir text
 plugins-update-lock-file text

@@ -1,13 +1,14 @@
 //! Messages of the `slopvac plugins` command group: help text, the lines the commands print and
 //! the failures of the group itself.
 
-use slopvac_messages::{Catalog, Entry};
+use std::collections::BTreeMap;
+use std::sync::{Mutex, PoisonError};
+
+use slopvac_messages::{Arg, Catalog, Entry, Kind, Param, ParamKind, Value};
 use slopvac_update::messages::UpdateMessage;
 
 use crate::lock::LockError;
 use crate::oci::OciError;
-use crate::sync::SyncError;
-use crate::update::UpdateError;
 
 /// Help text of the group, its subcommands and their arguments, and the lines the commands
 /// print.
@@ -248,6 +249,10 @@ pub(crate) enum CliText {
     #[code("plugins-why-no-envs")]
     #[text("the managed Python environments are not available")]
     WhyNoEnvs,
+    /// Stands in for failure text that can name a local path.
+    #[code("plugins-detail-withheld")]
+    #[text("details are withheld because they can name paths outside the project")]
+    Withheld,
     /// Trust for a plugin was removed.
     #[code("plugins-untrusted")]
     #[text("removed the trust recorded for `{id}`")]
@@ -288,35 +293,13 @@ pub enum RunError {
         #[source]
         source: LockError,
     },
-    /// Sync failed.
-    #[code("plugins-sync-failed")]
-    #[message("{detail}")]
-    Sync {
-        /// The sentence of the failure.
-        detail: String,
-        /// The sync failure.
-        #[source]
-        source: Box<SyncError>,
-    },
-    /// Update could not run.
-    #[code("plugins-update-failed")]
-    #[message("{detail}")]
-    Update {
-        /// The sentence of the failure.
-        detail: String,
-        /// The update failure.
-        #[source]
-        source: Box<UpdateError>,
-    },
-    /// The revocation list could not be read.
-    #[code("plugins-revocation-failed")]
-    #[message("{detail}")]
-    Revocation {
-        /// The sentence of the failure.
-        detail: String,
-        /// The same sentence as a cause, with no further chain.
-        #[source]
-        source: Redacted,
+    /// A sync, update, revocation or trust store operation failed. The code and the message are
+    /// those of the failure, with every path shown under the project root.
+    #[code(delegate)]
+    Failed {
+        /// The failure as redacted text with its own code.
+        #[from]
+        source: Reported,
     },
     /// A registry could not be listed.
     #[code("plugins-fetch-failed")]
@@ -395,21 +378,15 @@ pub enum RunError {
     },
 }
 
-/// A sentence kept as a cause, with no chain behind it, and the code of the failure it
-/// stands for when that failure has one.
+/// A sentence kept as a cause, with no chain behind it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Redacted {
     text: String,
-    code: Option<&'static str>,
 }
 
 impl Redacted {
-    pub(crate) fn new(text: String, code: Option<&'static str>) -> Self {
-        Self { text, code }
-    }
-
-    pub(crate) fn code(&self) -> Option<&'static str> {
-        self.code
+    pub(crate) fn new(text: String) -> Self {
+        Self { text }
     }
 }
 
@@ -420,6 +397,67 @@ impl std::fmt::Display for Redacted {
 }
 
 impl std::error::Error for Redacted {}
+
+/// A failure of a library operation, kept as its redacted sentence and the code of that
+/// failure. It is a catalog of its own, so a lookup through [`Catalog`] by a generic caller or
+/// a trait object reports the code of the failure and not a wrapper's.
+///
+/// Its entry renders the sentence as `{detail}`. The entries are not in [`entries`]: each code
+/// is already published by the catalog of the failure it stands for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reported {
+    entry: &'static Entry,
+    text: String,
+}
+
+impl Reported {
+    pub(crate) fn new(code: &'static str, text: String) -> Self {
+        Self {
+            entry: entry_for(code),
+            text,
+        }
+    }
+}
+
+/// The entry that renders the sentence under `code`. One is made for each distinct code, once.
+fn entry_for(code: &'static str) -> &'static Entry {
+    static MADE: Mutex<BTreeMap<&'static str, &'static Entry>> = Mutex::new(BTreeMap::new());
+    const PARAMS: &[Param] = &[Param::new("detail", ParamKind::Text)];
+    let mut made = MADE.lock().unwrap_or_else(PoisonError::into_inner);
+    made.entry(code).or_insert_with(|| {
+        // The codes are a closed set of static strings, so the leak is bounded.
+        Box::leak(Box::new(Entry::new(
+            code,
+            Kind::Error,
+            "RunError::Failed",
+            "{detail}",
+            PARAMS,
+            "A failed library operation, reported with the code of the failure.",
+        )))
+    })
+}
+
+impl Catalog for Reported {
+    fn entries() -> &'static [Entry] {
+        &[]
+    }
+
+    fn entry(&self) -> &'static Entry {
+        self.entry
+    }
+
+    fn args(&self) -> Vec<Arg> {
+        vec![Arg::new("detail", Value::Text(self.text.clone()))]
+    }
+}
+
+impl std::fmt::Display for Reported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
+impl std::error::Error for Reported {}
 
 /// The entries of the group's catalogs.
 pub(super) fn entries() -> Vec<Entry> {
