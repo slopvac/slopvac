@@ -5,6 +5,7 @@
 //! (docs/contract/policies.md, section 1.9) and its registry checks apply to every run.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde_json::Value as Json;
 use slopvac_config::LoadedConfig;
@@ -124,7 +125,7 @@ impl PluginSelection {
         sets.push(crate::lint_terms::casing_rule_set()?);
         Ok(Catalog {
             sets,
-            selection: self.clone(),
+            selection: Arc::new(self.clone()),
         })
     }
 }
@@ -138,7 +139,7 @@ fn lock_refusal(err: &LockError) -> CliError {
 #[derive(Debug)]
 pub struct Catalog {
     sets: Vec<RuleSet>,
-    selection: PluginSelection,
+    selection: Arc<PluginSelection>,
 }
 
 impl Catalog {
@@ -150,7 +151,7 @@ impl Catalog {
     pub fn load() -> Result<Self, CliError> {
         Ok(Self {
             sets: vec![core()?, crate::lint_terms::casing_rule_set()?],
-            selection: PluginSelection::default(),
+            selection: Arc::default(),
         })
     }
 
@@ -159,14 +160,14 @@ impl Catalog {
     pub fn from_sets(sets: Vec<RuleSet>) -> Self {
         Self {
             sets,
-            selection: PluginSelection::default(),
+            selection: Arc::default(),
         }
     }
 
     /// The plugins this catalogue was loaded with, to load the same rules again.
     #[must_use]
-    pub fn selection(&self) -> &PluginSelection {
-        &self.selection
+    pub fn selection(&self) -> Arc<PluginSelection> {
+        Arc::clone(&self.selection)
     }
 
     /// The rule sets, core first.

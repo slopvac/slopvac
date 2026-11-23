@@ -1084,7 +1084,7 @@ fn lint_items(
     };
 
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
-    let selection = rules.selection().clone();
+    let selection = rules.selection();
     let mut spare = Some(rules);
     for (settings, terms, indexes) in groups.into_values() {
         // The engine owns its rule sets, and a set does not clone: reload them for later groups.
