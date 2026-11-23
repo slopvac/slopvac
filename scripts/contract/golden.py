@@ -51,6 +51,7 @@ RULE_EXAMPLES = GOLDEN / "inputs" / "rule-examples"
 LEGACY_STYLES = ROOT / "docs" / "contract" / "compat" / "profiles"
 PROFILES = ("strict", "normal", "relaxed")
 MODES = ("parity", "preserve", "policy")
+BOM = "\ufeff".encode()
 LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
 # Fixture inputs that live outside tests/golden. Each is pinned by sha256 in inputs.toml.
@@ -247,6 +248,10 @@ def derive_span(
     starts = line_starts(data)
     text = data.decode("utf-8")
     lines_text = LINE_BREAK.split(text)
+    if text.startswith("\ufeff"):
+        # A leading BOM counts in byte offsets but is no column (positions.md).
+        starts[0] = len(BOM)
+        lines_text[0] = lines_text[0][1:]
     try:
         start = starts[line - 1] + len(
             lines_text[line - 1][: column - 1].encode("utf-8")
