@@ -373,10 +373,11 @@ fn a_budget_failure_in_a_code_block_wins_over_a_later_tagger_that_fails()
 #[test]
 fn the_antecedent_look_back_asks_the_earlier_block_only_for_the_records_it_is_missing() {
     // The match sits in a sentence whose text before it, `It reads JSON`, is one sentence, so
-    // one of the two antecedents is missing. The paragraph before it holds 300000 sentences:
-    // it is asked for one record, so at most one is alive at once.
+    // one of the two antecedents is missing. The table cell before it holds 300000 sentences,
+    // which preparation reads as one: the cell is asked for one record, so at most one is
+    // alive at once.
     let source = format!(
-        "{}\n\nIt reads JSON; it does not read YAML.\n",
+        "| h |\n|---|\n| {} |\n\nIt reads JSON; it does not read YAML.\n",
         "Go. ".repeat(300_000)
     );
     let _ = slopvac_text::take_peak_sentences_held();

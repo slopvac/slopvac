@@ -221,7 +221,9 @@ impl NegatedAntecedent {
             && let Some(i) = owner
             && let Some(previous) = blocks[..i].iter().rev().find_map(|b| b.projection.as_ref())
         {
-            let mut earlier = split_sentences_tail(previous.text(), ANTECEDENT_SENTENCES).ok()?;
+            // Only the records still missing are asked of the earlier block.
+            let missing = ANTECEDENT_SENTENCES - sentences.len();
+            let mut earlier = split_sentences_tail(previous.text(), missing).ok()?;
             earlier.append(&mut sentences);
             sentences = earlier;
         }
