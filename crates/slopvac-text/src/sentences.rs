@@ -39,7 +39,7 @@ pub fn cell_sentence(text: &str) -> Result<Option<Sentence>, TextError> {
         return Ok(None);
     }
     let leading = text.len() - py_lstrip(text).len();
-    counted::built();
+    counted::cell();
     Ok(Some(Sentence {
         text: part.to_owned(),
         start: leading,
@@ -306,11 +306,20 @@ mod counted {
     thread_local! {
         static BUILT: Cell<usize> = const { Cell::new(0) };
         static CUTS: Cell<usize> = const { Cell::new(0) };
+        static CELLS: Cell<usize> = const { Cell::new(0) };
         static HELD: Cell<usize> = const { Cell::new(0) };
     }
 
     pub(super) fn cut() {
         CUTS.with(|c| c.set(c.get() + 1));
+    }
+
+    pub(super) fn cell() {
+        CELLS.with(|c| c.set(c.get() + 1));
+    }
+
+    pub(super) fn take_cells() -> usize {
+        CELLS.with(|c| c.replace(0))
     }
 
     pub(super) fn take_cuts() -> usize {
@@ -343,6 +352,9 @@ mod counted {
     pub(super) fn cut() {}
 
     #[inline(always)]
+    pub(super) fn cell() {}
+
+    #[inline(always)]
     pub(super) fn held(_n: usize) {}
 }
 
@@ -364,6 +376,14 @@ pub fn take_sentences_built() -> usize {
 #[must_use]
 pub fn take_cuts_found() -> usize {
     counted::take_cuts()
+}
+
+/// The records [`cell_sentence`] built on this thread since the last call.
+#[cfg(feature = "work-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn take_cell_records_built() -> usize {
+    counted::take_cells()
 }
 
 /// The most sentence records one split held at once on this thread since the last call.

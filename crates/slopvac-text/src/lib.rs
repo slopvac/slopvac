@@ -37,5 +37,7 @@ pub use sentences::{
 };
 #[cfg(feature = "work-counters")]
 #[doc(hidden)]
-pub use sentences::{take_cuts_found, take_peak_sentences_held, take_sentences_built};
+pub use sentences::{
+    take_cell_records_built, take_cuts_found, take_peak_sentences_held, take_sentences_built,
+};
 pub use tokens::{count_words, joined_words, tokens};

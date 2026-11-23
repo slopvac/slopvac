@@ -130,7 +130,7 @@ fn a_table_of_cells_of_one_character_is_not_checked_and_builds_no_index() {
     let source = table(3_000, 100);
     let limit = source.len() / 4 + 65_536;
     let _ = (take_build_elements(), take_materialised_tags());
-    let _ = slopvac_text::take_sentences_built();
+    let _ = slopvac_text::take_cell_records_built();
     let result = engine().lint(&Input::markdown("a.md", &source));
     assert_eq!(
         result.map(|d| d.findings.len()),
@@ -138,7 +138,7 @@ fn a_table_of_cells_of_one_character_is_not_checked_and_builds_no_index() {
     );
     assert_eq!(take_build_elements(), 0, "an index was built");
     // The cells are charged before their records are built, so no record passes the budget.
-    let built = slopvac_text::take_sentences_built();
+    let built = slopvac_text::take_cell_records_built();
     assert!(
         built <= limit + 1,
         "{built} records for a budget of {limit}"
