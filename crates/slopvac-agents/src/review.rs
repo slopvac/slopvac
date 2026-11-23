@@ -384,8 +384,8 @@ impl ReportedItem {
     }
 }
 
-/// A provider's answer: the report text and the models it says it used. A provider may name
-/// only some items, or none; slopvac does not require a complete list.
+/// A provider's answer: the report text and the models it says it used. This in-process type
+/// accepts a partial list. It does not relax the plugin protocol, whose result must be complete.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ProviderReply {
@@ -777,12 +777,17 @@ fn call_provider(
     Ok(reply.report)
 }
 
-/// Reject a reply that names an item the payload lacks or names one twice. A reply may leave
-/// items out: slopvac has no promise from providers that the list is complete.
+/// Reject a reply that names an item the payload lacks, names one twice or reports an empty
+/// model. This owned in-process trait accepts a partial list. The production adapter for
+/// `provider/complete` must refuse every result that the plugin protocol refuses, with this
+/// same error code.
 fn check_reply(reply: &ProviderReply, payload: &Payload) -> Result<(), AgentsError> {
     let mut seen = std::collections::BTreeSet::new();
     for item in &reply.items {
-        if item.index >= payload.items.len() || !seen.insert(item.index) {
+        if item.index >= payload.items.len()
+            || !seen.insert(item.index)
+            || item.model.trim().is_empty()
+        {
             return Err(AgentsError::coded(&AgentsMessage::ProviderReplyInvalid {
                 index: item.index,
                 count: payload.items.len(),

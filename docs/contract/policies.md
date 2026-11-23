@@ -116,7 +116,12 @@ Two features need consent beyond installing slopvac: issue submission and model-
 - Slopvac sends a provider only the text that the review type needs: changed claims for fact checking, the changed passages for `update`, and the whole document for `rewrite`. `slopvac review --dry-run` prints the exact payload without calling the provider.
 - During `lint`, every provider stays idle.
 - In offline mode no provider call happens, even for a trusted provider.
-- The reviewer model must differ from the author model. Slopvac cannot verify this for a provider it does not control. The check compares the model names that the config and the provider report.
+- The reviewer model should differ from the author model. Slopvac cannot verify this for a provider it does not control. The check compares the model names that the config and the provider report.
+  - When slopvac detects the same model, before the call or from the model the provider reports, the review still runs and the plan carries a `review-model-same` notice at level `warning`.
+  - A difference between the requested reviewer model and the model the provider reports adds a `review-model-reported-mismatch` notice at level `info`.
+  - Neither notice changes the exit code. `review-model-unchecked` is unchanged.
+  - The comparison drops a `#variant` suffix, keeps the text after the last `/`, trims the name and lower-cases it. It does not resolve aliases or model families.
+  - A dry-run plan carries the pre-call `review-model-same` notice, so the user learns of it before any paid call.
 
 Owners: `slopvac-8l4.12.6`, `slopvac-8l4.9.6`, `slopvac-8l4.11.3`.
 
@@ -417,6 +422,7 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 - Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `plugin-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation. Until the generated reference ships, the tables in this contract are the list of codes.
 - The `report` command uses these codes, and each exits 2: `report-incomplete` (a required form field is missing), `report-body-file` (the `--body-file` path is refused or cannot be written), `report-gh-missing` (`gh` is not found), `report-gh-not-logged-in` (`gh` is not logged in to github.com), `report-gh-failed` (`gh issue create` failed or ran longer than 60 seconds), `report-invalid` (a title, field or sample holds a control character) and `report-sample-unreadable` (the `--include-text` file cannot be read).
 - No code is reused, and no code changes meaning. A code that stops occurring stays in the documentation, marked retired.
+- The `review` command uses these codes: `review-model-same` (a `warning` notice) and `review-model-reported-mismatch` (an `info` notice), neither of which changes the exit code, and `review-provider-reply-invalid` (an error that exits 2: a provider result names an item twice or outside the payload, or reports an empty model). `review-same-model` is retired: a reviewer on the author's model no longer stops a review, and the notice `review-model-same` replaces the refusal.
 - Registry logins have two codes. Slopvac asks for a login only when a registry demands one.
   - `credential-helper-untrusted`: the credential helper exists only in a directory that is not trusted (section 1.7 paths: relative to the project, or `<external>/<name>`). Slopvac leaves the helper unstarted and sends the request without a login. When the registry allows that, the run continues and the log carries a warning. When the registry demands a login, the operation fails with this code and exits 2. The user tightens the permissions of the directory or signs in with a static `auths` login or the environment variables.
   - `credential-helper-project-unknown`: the caller did not name the project, so no helper starts. The credential constructors take the project, so only a caller that builds the credentials by hand can reach this code, and a user cannot. It is an internal invariant, with the same outcome.

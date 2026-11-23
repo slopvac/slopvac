@@ -176,7 +176,7 @@ pub(crate) enum AgentsMessage {
     /// The provider's reply names payload items that do not exist or repeats one.
     #[code("review-provider-reply-invalid")]
     #[message(
-        "the model provider's reply names payload item {index} twice or outside the {count} payload items"
+        "the model provider's reply is invalid at payload item {index}: it repeats an item, names an item outside the {count} payload items, or reports an empty model"
     )]
     ProviderReplyInvalid { index: usize, count: usize },
     /// The review type named with --type is lighter than the change needs.
@@ -532,7 +532,7 @@ pub(crate) enum AgentsPhrase {
     ReviewScopeApproved,
     /// Help for the review --reviewer-model option.
     #[code("agents-help-review-reviewer-model")]
-    #[text("Model that reviews; it must differ from the author's")]
+    #[text("Model that reviews; it should differ from the author's")]
     ReviewReviewerModel,
     /// Help for the review --author-model option.
     #[code("agents-help-review-author-model")]
@@ -927,7 +927,7 @@ mod tests {
             (
                 AgentsMessage::ProviderReplyInvalid { index: 3, count: 2 },
                 "review-provider-reply-invalid",
-                "the model provider's reply names payload item 3 twice or outside the 2 payload items",
+                "the model provider's reply is invalid at payload item 3: it repeats an item, names an item outside the 2 payload items, or reports an empty model",
             ),
             (
                 AgentsMessage::TypeIneligible {

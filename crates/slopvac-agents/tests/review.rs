@@ -901,7 +901,25 @@ fn a_reply_that_repeats_or_invents_an_item_fails_with_a_code() {
 }
 
 #[test]
-fn a_dry_run_reports_no_model_notice() {
+fn a_reply_that_reports_an_empty_model_fails_with_a_code() {
+    for model in ["", "  "] {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Reporting {
+            declared: "gpt-5",
+            reported: vec![(0, model)],
+        };
+        let env = ReviewEnv {
+            provider: Some(&provider),
+            ..ReviewEnv::default()
+        };
+        let argv = pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]);
+        let err = run(&argv, &env).unwrap_err();
+        assert_eq!(err.code(), "review-provider-reply-invalid", "{model:?}");
+    }
+}
+
+#[test]
+fn a_dry_run_between_different_models_reports_no_model_notice() {
     let dir = tempfile::tempdir().unwrap();
     let json = plan_json(
         dir.path(),
@@ -922,5 +940,50 @@ fn a_declared_provider_on_the_author_model_adds_one_notice_with_its_source()
     assert_eq!(found.len(), 1, "{json}");
     assert_eq!(found[0]["data"]["reviewer_source"], "provider");
     assert!(found[0]["data"].get("items").is_none());
+    Ok(())
+}
+
+#[test]
+fn every_data_key_a_model_notice_carries_is_documented() -> Result<(), Box<dyn std::error::Error>> {
+    let plans = [
+        rewrite_plan(vec![], "claude-sonnet-5-5", &[])?,
+        rewrite_plan(vec![(1, "claude-sonnet-5-5")], "gpt-5", &[])?,
+        rewrite_plan(
+            vec![(0, "gemini-3")],
+            "gpt-5",
+            &["--reviewer-model", "gpt-5"],
+        )?,
+    ];
+    let contract = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/contract/lint-report.md"
+    ))?;
+    let mut seen = std::collections::BTreeSet::new();
+    for plan in &plans {
+        for code in ["review-model-same", "review-model-reported-mismatch"] {
+            for notice in notice_with(plan, code) {
+                assert!(notice.get("path").is_none(), "{notice}");
+                for key in notice["data"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .map(|(k, _)| k)
+                {
+                    seen.insert((code, key.clone()));
+                }
+            }
+        }
+    }
+    assert!(seen.len() >= 8, "the scenarios emit too few keys: {seen:?}");
+    for (code, key) in &seen {
+        let row = contract
+            .lines()
+            .find(|l| l.starts_with(&format!("| `data.{key}` |")))
+            .ok_or_else(|| format!("data.{key} is not documented"))?;
+        assert!(
+            row.contains(&format!("`{code}`")) || row.contains("both"),
+            "{code} {key}: {row}"
+        );
+    }
     Ok(())
 }

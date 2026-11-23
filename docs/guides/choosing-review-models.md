@@ -1,6 +1,6 @@
 # Choosing models for review
 
-Slopvac review has two models: the author that wrote the text and the reviewer that checks it. The reviewer must be a different model from the author, because a reviewer on the author's model tends to repeat the author's blind spots.
+Slopvac review has two models: the author that wrote the text and the reviewer that checks it. The reviewer should be a different model from the author, because a reviewer on the author's model tends to repeat the author's blind spots. Slopvac adds a notice when the two match and the review still runs.
 
 `slopvac setup`, `slopvac prime` and `slopvac review` are not wired into the `slopvac` binary yet. The commands below describe the interface the agents library provides. They work as written once the binary mounts them.
 
