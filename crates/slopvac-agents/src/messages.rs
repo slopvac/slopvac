@@ -140,6 +140,10 @@ pub(crate) enum AgentsMessage {
     #[code("claims-text-failed")]
     #[message("text segmentation failed: {detail}")]
     TextFailed { detail: String },
+    /// A `claims` input file is larger than the cap. The message names the role, never the path.
+    #[code("claims-input-too-large")]
+    #[message("the {input} file is larger than the cap of {cap} bytes")]
+    ClaimsInputTooLarge { input: String, cap: u64 },
     /// A notice could not be built from its code and message.
     #[code("agents-notice-invalid")]
     #[message("cannot build notice {notice_code}: {reason}")]
