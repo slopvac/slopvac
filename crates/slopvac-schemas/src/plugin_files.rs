@@ -1,10 +1,11 @@
 //! Schema-only types for the plugin index and the plugin lockfile.
 //!
-//! The readers in `slopvac-plugins` parse both documents by hand and have no type to derive a
-//! schema from. These types describe the same documents so the generator can write
-//! `plugin-index.schema.json` and `plugins-lock.schema.json`. No code reads a value of them. The
-//! two-sided corpus under `schemas/v3/conformance` keeps them honest: each case runs through the
-//! real reader and through the committed schema.
+//! The readers in `slopvac-plugins` build typed `Index` and `Lockfile` models, but those are
+//! validated domain types that hand-written parsers fill, not wire models, so a derive from them
+//! would not describe the documents. These types describe the documents instead, so the
+//! generator can write `plugin-index.schema.json` and `plugins-lock.schema.json`. No code reads a
+//! value of them. The two-sided corpus under `schemas/v3/conformance` keeps them honest: each
+//! case runs through the real reader and through the committed schema.
 
 use schemars::{JsonSchema, Schema};
 use serde_json::json;
