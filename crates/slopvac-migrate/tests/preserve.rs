@@ -511,15 +511,34 @@ fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[cas
     assert!(walked >= 1, "the check walked no layer\n{}", rw.text);
 }
 
+const TOP_RULE: &str = "\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
+
 #[test]
-#[should_panic(
-    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
-)]
 fn the_sweep_fails_when_an_override_carries_the_top_level_rule() {
-    let authored = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n";
-    let broken = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
-    check_no_generated_vocabulary_entry(broken, authored)
-        .unwrap_or_else(|why| panic!("written config: {why}"));
+    let authored =
+        format!("schema_version = 2\n[rules]\n{TOP_RULE}\n[[overrides]]\nfiles = [\"docs/**\"]\n");
+    let broken = format!(
+        "schema_version = 2\n[rules]\n{TOP_RULE}\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n{TOP_RULE}"
+    );
+    let result = check_no_generated_vocabulary_entry(&broken, &authored);
+    let why = result.expect_err("the sweep accepted an override that carries the top-level rule");
+    assert!(
+        why.contains("generated vocabulary entry ste-words.word-outside-controlled-vocabulary"),
+        "{why}"
+    );
+}
+
+#[test]
+fn a_guard_with_the_selector_of_a_dropped_override_gets_no_authored_allowance() {
+    let authored = format!(
+        "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n{TOP_RULE}\n[[overrides]]\nfiles = [\"api/**\"]\n"
+    );
+    let broken = "schema_version = 2\n[[overrides]]\nfiles = [\"api/**\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
+    let result = check_no_generated_vocabulary_entry(broken, &authored);
+    assert!(
+        result.is_err(),
+        "the sweep accepted a guard as the authored override: {result:?}"
+    );
 }
 
 #[rstest]
