@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 
 use slopvac_model::Span;
 use slopvac_parse::{Document, Projection};
-use slopvac_text::{Pattern, split_sentences};
+use slopvac_text::{Pattern, split_sentences_tail};
 
 /// Where a [`MatchSite`]'s text sits in the projection it was cut from.
 ///
@@ -201,10 +201,6 @@ struct NegatedAntecedent;
 
 impl NegatedAntecedent {
     /// The last [`ANTECEDENT_SENTENCES`] sentences before the match, nearest last.
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "both texts are prefixes of block projections that `Prepared::new` already split under the document's sentence budget, so neither holds more sentences than that"
-    )]
     fn preceding(site: &MatchSite<'_>) -> Option<Vec<String>> {
         let blocks = &site.document.blocks;
         // The projection's own offset locates the match, so a repeated sentence, a
@@ -220,12 +216,12 @@ impl NegatedAntecedent {
                     .is_some_and(|p| std::ptr::eq(p, o.projection))
             })
         });
-        let mut sentences = split_sentences(before).ok()?;
+        let mut sentences = split_sentences_tail(before, ANTECEDENT_SENTENCES).ok()?;
         if sentences.len() < ANTECEDENT_SENTENCES
             && let Some(i) = owner
             && let Some(previous) = blocks[..i].iter().rev().find_map(|b| b.projection.as_ref())
         {
-            let mut earlier = split_sentences(previous.text()).ok()?;
+            let mut earlier = split_sentences_tail(previous.text(), ANTECEDENT_SENTENCES).ok()?;
             earlier.append(&mut sentences);
             sentences = earlier;
         }
@@ -338,7 +334,7 @@ mod tests {
                 seen += text.matches(needle).count();
                 continue;
             };
-            let sentence = split_sentences(text)
+            let sentence = slopvac_text::split_sentences(text)
                 .unwrap()
                 .into_iter()
                 .find(|s| s.start <= at && at < s.end)
