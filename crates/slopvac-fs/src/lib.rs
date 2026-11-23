@@ -33,7 +33,9 @@ pub use dirs::{
     state_dir_with,
 };
 pub use error::{Error, InputKind, Op, Reason, Result};
-pub use io::{MAX_DOCUMENT_BYTES, WriteOptions, read_capped, read_text_capped, write_atomic};
+pub use io::{
+    MAX_DOCUMENT_BYTES, WriteOptions, read_capped, read_text_capped, write_atomic, write_atomic_if,
+};
 pub use path::{
     EXTERNAL, display_physical, display_under_root, lexical_normalize, resolve_physical,
 };

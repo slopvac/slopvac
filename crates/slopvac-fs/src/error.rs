@@ -55,6 +55,14 @@ pub enum Error {
         /// The path as the caller passed it. Not part of the Display text.
         path: PathBuf,
     },
+    /// The check a caller passed to [`write_atomic_if`](crate::write_atomic_if) refused the
+    /// replace, so the destination is unchanged. Read the path with [`Error::path`].
+    #[error("write refused: the destination failed the caller's check")]
+    #[non_exhaustive]
+    Precondition {
+        /// The path as the caller passed it. Not part of the Display text.
+        path: PathBuf,
+    },
     /// A file read by path did not hold valid UTF-8. Read the path with [`Error::path`].
     #[error("not valid UTF-8")]
     #[non_exhaustive]
@@ -100,6 +108,8 @@ pub enum Op {
     Write,
     /// Checking that the temporary file is still the one that was created.
     VerifyStaged,
+    /// Running the caller's check before the rename.
+    Precondition,
     /// Renaming the temporary file over the destination.
     Replace,
     /// Syncing the destination's directory.
@@ -122,6 +132,7 @@ impl Op {
             Self::CreateTemp => "create temporary file for",
             Self::Write => "write",
             Self::VerifyStaged => "verify staged file of",
+            Self::Precondition => "check before replacing",
             Self::Replace => "replace",
             Self::SyncDirectory => "sync directory of",
             Self::ResolveParent => "open parent of",
@@ -226,6 +237,7 @@ impl Error {
         match self {
             Self::Io { path, .. }
             | Self::UnsafeTarget { path, .. }
+            | Self::Precondition { path }
             | Self::NotUtf8 { path, .. }
             | Self::Input { path, .. } => Some(path),
             _ => None,
@@ -252,6 +264,12 @@ impl Error {
     pub(crate) fn unsafe_target(reason: Reason, path: &Path) -> Self {
         Self::UnsafeTarget {
             reason,
+            path: path.to_path_buf(),
+        }
+    }
+
+    pub(crate) fn precondition(path: &Path) -> Self {
+        Self::Precondition {
             path: path.to_path_buf(),
         }
     }
@@ -306,6 +324,7 @@ impl std::fmt::Debug for Error {
                 .debug_struct("UnsafeTarget")
                 .field("reason", &reason.as_str())
                 .finish_non_exhaustive(),
+            Self::Precondition { .. } => f.write_str("Precondition"),
             Self::NotUtf8 { .. } => f.write_str("NotUtf8"),
             Self::Read { source } => f
                 .debug_struct("Read")
