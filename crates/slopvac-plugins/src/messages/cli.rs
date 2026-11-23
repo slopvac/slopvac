@@ -6,7 +6,6 @@ use slopvac_update::messages::UpdateMessage;
 
 use crate::lock::LockError;
 use crate::oci::OciError;
-use crate::revoke::RevocationError;
 use crate::sync::SyncError;
 use crate::update::UpdateError;
 
@@ -241,6 +240,14 @@ pub(crate) enum CliText {
         "Trust is not containment: a trusted plugin runs with your rights, and slopvac has no sandbox."
     )]
     TrustNotContainment,
+    /// No loader was given for the plugin files.
+    #[code("plugins-why-no-loader")]
+    #[text("the plugin files are not loaded")]
+    WhyNoLoader,
+    /// No store of managed Python environments was given.
+    #[code("plugins-why-no-envs")]
+    #[text("the managed Python environments are not available")]
+    WhyNoEnvs,
     /// Trust for a plugin was removed.
     #[code("plugins-untrusted")]
     #[text("removed the trust recorded for `{id}`")]
@@ -307,9 +314,9 @@ pub enum RunError {
     Revocation {
         /// The sentence of the failure.
         detail: String,
-        /// The revocation failure.
+        /// The same sentence as a cause, with no further chain.
         #[source]
-        source: Box<RevocationError>,
+        source: Redacted,
     },
     /// A registry could not be listed.
     #[code("plugins-fetch-failed")]
@@ -382,16 +389,33 @@ pub enum RunError {
     Output {
         /// What went wrong.
         detail: String,
+        /// The failure, reduced to its kind: the text carries no path.
+        #[source]
+        source: std::io::Error,
     },
 }
 
-/// A sentence kept as a cause, with no chain behind it.
+/// A sentence kept as a cause, with no chain behind it, and the code of the failure it
+/// stands for when that failure has one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Redacted(pub(crate) String);
+pub struct Redacted {
+    text: String,
+    code: Option<&'static str>,
+}
+
+impl Redacted {
+    pub(crate) fn new(text: String, code: Option<&'static str>) -> Self {
+        Self { text, code }
+    }
+
+    pub(crate) fn code(&self) -> Option<&'static str> {
+        self.code
+    }
+}
 
 impl std::fmt::Display for Redacted {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.text)
     }
 }
 

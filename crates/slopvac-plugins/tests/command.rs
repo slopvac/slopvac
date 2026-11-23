@@ -22,7 +22,6 @@ use std::path::{Path, PathBuf};
 
 use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
-use slopvac_messages::Catalog;
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::{PackId, VersionReq, parse_version_req};
 use slopvac_plugins::oci::{Anonymous, Client};
@@ -157,6 +156,7 @@ impl Fixture {
         if let Some(python) = setup.python {
             runner = runner.with_python(python);
         }
+        runner = runner.with_executables(setup.executables);
         let words = std::iter::once("plugins").chain(args.iter().copied());
         let matches = command().try_get_matches_from(words).unwrap();
         run(&matches, &runner, out)
@@ -169,6 +169,7 @@ struct Setup<'a> {
     configured: Vec<String>,
     loader: Option<Box<dyn PluginLoader + 'a>>,
     policy: Option<KeyPolicy>,
+    executables: BTreeMap<PackId, std::collections::HashSet<String>>,
     envs: Option<&'a EnvStore>,
     python: Option<PythonBuild<'a>>,
 }
@@ -197,6 +198,14 @@ impl<'a> Setup<'a> {
 
     fn loader(mut self, loader: impl PluginLoader + 'a) -> Self {
         self.loader = Some(Box::new(loader));
+        self
+    }
+
+    fn executables(
+        mut self,
+        executables: BTreeMap<PackId, std::collections::HashSet<String>>,
+    ) -> Self {
+        self.executables = executables;
         self
     }
 
@@ -895,11 +904,11 @@ fn trust_refuses_a_locked_digest_that_the_revocation_list_names_even_when_the_lo
 }
 
 #[test]
-fn a_sync_failure_keeps_the_code_of_its_cause() {
+fn an_unsigned_oci_entry_stops_sync_with_sync_unsigned() {
     let f = Fixture::new();
     f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
     let err = f.run(&["sync"], false, |s| s).result.unwrap_err();
-    assert_eq!(err.code(), "offline-plugin-missing");
+    assert_eq!(err.code(), "sync-unsigned");
 }
 
 #[test]
@@ -993,4 +1002,166 @@ fn trust_without_a_loader_says_so_in_registered_text() {
 /// A lock entry for a code plugin in a project directory.
 fn code_path_entry(id: &str, dir: &str, digest: &str) -> String {
     path_entry(id, "1.0.0", dir, digest).replace("kind = \"data\"", "kind = \"code\"")
+}
+// ---- sync of a signed native archive -------------------------------------------------------
+
+#[cfg(unix)]
+mod native_archive {
+    use std::collections::{HashMap, HashSet};
+    use std::io::{Cursor, Write};
+    use std::os::unix::fs::PermissionsExt;
+
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use slopvac_plugins::oci::{Descriptor, Digest, MEDIA_MANIFEST, Manifest};
+    use slopvac_plugins::sign::{
+        ANNOTATION_ID, ANNOTATION_VERSION, MEDIA_MINISIG, MEDIA_STATEMENT, PublicKey, Statement,
+    };
+    use slopvac_plugins::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER};
+
+    use super::*;
+
+    const FLOOR: &str = "2026-11-01T00:00:00Z";
+
+    /// A signed `acme/style:1.0.0` artifact with one program in it, ready to serve.
+    struct Artifact {
+        manifest: Vec<u8>,
+        digest: String,
+        key_id: String,
+        blobs: HashMap<String, Vec<u8>>,
+        public: PublicKey,
+    }
+
+    fn archive(files: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(Vec::new());
+        for (name, data) in files {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_entry_type(tar::EntryType::Regular);
+            builder.append_data(&mut header, name, *data).unwrap();
+        }
+        let raw = builder.into_inner().unwrap();
+        let mut gz = GzEncoder::new(Vec::new(), Compression::default());
+        gz.write_all(&raw).unwrap();
+        gz.finish().unwrap()
+    }
+
+    fn artifact() -> Artifact {
+        let pair = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+        let public = PublicKey::from_base64(&pair.pk.to_base64()).unwrap();
+        let layer = archive(&[("plugin", b"#!/bin/sh\n")]);
+        let mut manifest = Manifest {
+            schema_version: 2,
+            media_type: Some(MEDIA_MANIFEST.into()),
+            artifact_type: Some(ARTIFACT_TYPE_PACK.into()),
+            config: Descriptor::for_bytes("application/vnd.oci.empty.v1+json", b"{}"),
+            layers: vec![Descriptor::for_bytes(MEDIA_PACK_LAYER, &layer)],
+            subject: None,
+            annotations: BTreeMap::from([
+                (ANNOTATION_ID.to_owned(), "style".to_owned()),
+                (ANNOTATION_VERSION.to_owned(), "1.0.0".to_owned()),
+            ]),
+        };
+        let key_id = public.key_id();
+        let statement =
+            Statement::for_manifest("acme", "style", "1.0.0", &key_id, FLOOR, &manifest)
+                .canonical_bytes();
+        let minisig = minisign::sign(
+            Some(&pair.pk),
+            &pair.sk,
+            Cursor::new(&statement),
+            None,
+            None,
+        )
+        .unwrap()
+        .to_string();
+        manifest
+            .layers
+            .push(Descriptor::for_bytes(MEDIA_STATEMENT, &statement));
+        manifest
+            .layers
+            .push(Descriptor::for_bytes(MEDIA_MINISIG, minisig.as_bytes()));
+        let body = serde_json::to_vec(&manifest).unwrap();
+        let mut blobs = HashMap::new();
+        blobs.insert(Digest::of(&layer).to_string(), layer);
+        blobs.insert(Digest::of(&statement).to_string(), statement);
+        blobs.insert(
+            Digest::of(minisig.as_bytes()).to_string(),
+            minisig.into_bytes(),
+        );
+        blobs.insert(Digest::of(b"{}").to_string(), b"{}".to_vec());
+        Artifact {
+            digest: Digest::of(&body).to_string(),
+            manifest: body,
+            key_id,
+            blobs,
+            public,
+        }
+    }
+
+    fn serve(a: &Artifact) -> Server {
+        let (manifest, digest, blobs) = (a.manifest.clone(), a.digest.clone(), a.blobs.clone());
+        Server::start(move |req| {
+            let Some(rest) = req.path.strip_prefix("/v2/acme/style/") else {
+                return Response::new(404);
+            };
+            if let Some(reference) = rest.strip_prefix("manifests/") {
+                return if reference == "1.0.0" || reference == digest {
+                    Response::new(200)
+                        .header("Content-Type", MEDIA_MANIFEST)
+                        .body(manifest.clone())
+                } else {
+                    Response::new(404)
+                };
+            }
+            let blob = rest.rsplit('/').next().unwrap_or_default();
+            blobs.get(blob).map_or_else(
+                || Response::new(404),
+                |b| Response::new(200).body(b.clone()),
+            )
+        })
+    }
+
+    #[test]
+    fn sync_installs_a_signed_native_archive_with_its_program_executable() {
+        let f = Fixture::new();
+        let a = artifact();
+        let server = serve(&a);
+        f.write_lock(&[format!(
+            "\n[[plugins]]\nid = \"style\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"oci://{}/acme/style:1.0.0\"\ndigest = \"{}\"\n\n\
+             [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{FLOOR}\"\n",
+            server.registry(),
+            a.digest,
+            a.key_id
+        )]);
+        let policy = KeyPolicy {
+            pinned: BTreeMap::from([("acme".to_owned(), vec![a.public.clone()])]),
+            ..KeyPolicy::default()
+        };
+        let executables = BTreeMap::from([(
+            "style".parse::<PackId>().unwrap(),
+            HashSet::from(["plugin".to_owned()]),
+        )]);
+        let ran = f.run(&["sync"], true, |s| {
+            s.policy(policy).executables(executables)
+        });
+        assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
+        assert!(
+            ran.out.starts_with("style 1.0.0: installed\n"),
+            "{}",
+            ran.out
+        );
+        let tree = fs::read_dir(f.cache().join("trees"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.join("plugin").exists())
+            .expect("an installed tree holds the program");
+        let mode = fs::metadata(tree.join("plugin"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o111, 0o111, "mode {mode:o}");
+    }
 }

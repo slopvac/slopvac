@@ -1,13 +1,15 @@
 //! The `slopvac plugins` command group: its clap tree, the context the binary builds and the
 //! subcommands that run on the library.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use regex::{Captures, Regex};
 use slopvac_fs::{InputKind, ReadOptions, read_capped_regular_to_string};
-use slopvac_messages::render;
+use slopvac_messages::{Catalog, render};
 use slopvac_sanitize::line;
 use slopvac_update::messages::UpdateMessage;
 
@@ -17,8 +19,8 @@ use crate::lock::{
 };
 use crate::messages::cli::{CliText, Redacted, RunError};
 use crate::oci::Digest;
-use crate::pyenv::EnvStore;
-use crate::revoke::{RevocationNotice, Revocations};
+use crate::pyenv::{EnvStore, PythonRuntime};
+use crate::revoke::{RevocationError, RevocationNotice, Revocations};
 use crate::sign::KeyPolicy;
 use crate::sync::{
     Change, Network, PackState, PackStatus, PythonBuild, PythonState, Store, Syncer, status,
@@ -84,6 +86,7 @@ pub struct Runner<'a> {
     loader: Option<&'a dyn PluginLoader>,
     python: Option<PythonBuild<'a>>,
     envs: Option<&'a EnvStore>,
+    executables: BTreeMap<PackId, HashSet<String>>,
 }
 
 impl<'a> Runner<'a> {
@@ -110,6 +113,7 @@ impl<'a> Runner<'a> {
             loader: None,
             python: None,
             envs: None,
+            executables: BTreeMap::new(),
         }
     }
 
@@ -163,14 +167,71 @@ impl<'a> Runner<'a> {
         self
     }
 
+    /// The files that become executable in each plugin's tree, by plugin id, as the plugin
+    /// manifests declare them. `sync` extracts a native archive plugin with exactly these.
+    #[must_use]
+    pub fn with_executables(mut self, executables: BTreeMap<PackId, HashSet<String>>) -> Self {
+        self.executables = executables;
+        self
+    }
+
     fn trust_store(&self) -> TrustStore {
         TrustStore::open(&self.dirs.state_dir)
     }
 
-    fn gate(&self) -> TrustGate {
-        TrustGate::new(self.trust_store(), self.trusted_env.clone(), Vec::new())
-            .with_revocation_cache(self.revocations.clone())
+    /// The gate that the host spawns through, built over `vp`, and the spec to hash. A managed
+    /// Python plugin runs the interpreter of its environment, so the gate is wired to that
+    /// environment and the spec takes the launch the gate gives: the trust hash then matches
+    /// what the spawn gate checks.
+    ///
+    /// # Errors
+    /// The reason, as one sentence, when the plugin needs an environment that is not there.
+    fn prepared(
+        &self,
+        vp: &VerifiedPlugin,
+        mut spec: PluginSpec,
+    ) -> Result<(TrustGate, PluginSpec), String> {
+        let mut gate = TrustGate::new(
+            self.trust_store(),
+            self.trusted_env.clone(),
+            vec![vp.clone()],
+        )
+        .with_revocation_cache(self.revocations.clone());
+        let managed = PythonRuntime::read(&vp.root).map_err(|e| self.redact(&e.to_string()))?;
+        if managed.is_some() {
+            let envs = self.envs.ok_or_else(|| render(&CliText::WhyNoEnvs))?;
+            gate = gate
+                .with_python_plugins(envs)
+                .map_err(|e| self.redact(&e.to_string()))?;
+            if let Some((program, args)) = gate.python_launch(&vp.name) {
+                spec.program = program;
+                spec.args = args;
+            }
+        }
+        Ok((gate, spec))
     }
+
+    /// `text` with every absolute path shown under the project root, or as
+    /// `<external>/<file name>` outside it.
+    fn redact(&self, text: &str) -> String {
+        redact_paths(text, &self.dirs.project_root)
+    }
+}
+
+/// `text` with each absolute path shown as policies section 1.7 says: relative to `root`, or
+/// `<external>/<file name>` outside it.
+fn redact_paths(text: &str, root: &Path) -> String {
+    static ABSOLUTE: OnceLock<Regex> = OnceLock::new();
+    let re = ABSOLUTE
+        .get_or_init(|| Regex::new(r#"(^|[\s`'"(])(/[^\s`'"),;]+)"#).expect("a literal pattern"));
+    re.replace_all(text, |c: &Captures<'_>| {
+        let token = &c[2];
+        let path = token.trim_end_matches(['.', ':']);
+        let tail = &token[path.len()..];
+        let shown = slopvac_fs::display_under_root(Path::new(path), root);
+        format!("{}{shown}{tail}", &c[1])
+    })
+    .into_owned()
 }
 
 fn arg(id: &'static str, help: &CliText) -> Arg {
@@ -239,6 +300,21 @@ pub fn command() -> Command {
 }
 
 impl RunError {
+    /// The code that the failure reports. A failure of a library operation keeps the code of
+    /// its cause, such as `offline-plugin-missing` or `plugin-revoked`, because the code is
+    /// the interface. The code of the wrapper is for the others.
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Sync { source, .. } => source.code(),
+            Self::Update { source, .. } => source.code(),
+            Self::Revocation { source, .. } | Self::Store { source, .. } => source
+                .code()
+                .unwrap_or_else(|| <Self as Catalog>::code(self)),
+            other => <Self as Catalog>::code(other),
+        }
+    }
+
     /// The exit status of a failed command. Every failure of the group is an incomplete run.
     #[must_use]
     pub fn exit_code(&self) -> u8 {
@@ -286,6 +362,7 @@ pub fn run(matches: &ArgMatches, runner: &Runner<'_>, out: &mut dyn Write) -> Re
 fn write(out: &mut dyn Write, bytes: &[u8]) -> Result<(), RunError> {
     out.write_all(bytes).map_err(|e| RunError::Output {
         detail: e.kind().to_string(),
+        source: std::io::Error::from(e.kind()),
     })
 }
 
@@ -328,21 +405,31 @@ fn kind_name(kind: PackKind) -> String {
     kind.as_str().to_owned()
 }
 
-/// `text` as a store failure, with every path shown under the project root.
+/// A trust store failure, with every path shown under the project root. A revocation failure
+/// inside it keeps its own code.
 fn store_failed(runner: &Runner<'_>, e: &TrustError) -> RunError {
-    let root = &runner.dirs.project_root;
-    let mut detail = e.to_string();
-    let shown = |p: &Path| slopvac_fs::display_under_root(p, root);
-    if let TrustError::Corrupt { path, .. } = e {
-        detail = detail.replace(&line(&path.to_string_lossy()), &shown(path));
+    if let TrustError::Revocation(inner) = e {
+        return revocation_failed(runner, inner);
     }
-    for dir in [&runner.dirs.state_dir, &runner.dirs.cache_dir] {
-        detail = detail.replace(&line(&dir.to_string_lossy()), &shown(dir));
-    }
+    let detail = runner.redact(&e.to_string());
     RunError::Store {
-        source: Redacted(detail.clone()),
+        source: Redacted::new(detail.clone(), e.code()),
         detail,
     }
+}
+
+/// A revocation failure, with every path shown under the project root.
+fn revocation_failed(runner: &Runner<'_>, e: &RevocationError) -> RunError {
+    let detail = runner.redact(&e.to_string());
+    RunError::Revocation {
+        source: Redacted::new(detail.clone(), Some(e.code())),
+        detail,
+    }
+}
+
+/// A failed library operation as its sentence, with every path shown under the project root.
+fn sentence(runner: &Runner<'_>, e: &impl std::fmt::Display) -> String {
+    runner.redact(&e.to_string())
 }
 
 fn revoked(runner: &Runner<'_>, pack: &LockedPack, list: &crate::revoke::RevocationList) -> bool {
@@ -358,7 +445,7 @@ fn trust_part(runner: &Runner<'_>, pack: &LockedPack) -> CliText {
     let id = pack.id.clone();
     let Some(loader) = runner.loader else {
         return CliText::PartTrustUnknown {
-            why: "the plugin files are not loaded".to_owned(),
+            why: render(&CliText::WhyNoLoader),
         };
     };
     let state = loader
@@ -366,8 +453,11 @@ fn trust_part(runner: &Runner<'_>, pack: &LockedPack) -> CliText {
         .map_err(|why| line(&why))
         .and_then(|(vp, spec)| {
             runner
-                .gate()
-                .state(&vp, &spec)
+                .prepared(&vp, spec)
+                .map(|(gate, spec)| (gate, vp, spec))
+        })
+        .and_then(|(gate, vp, spec)| {
+            gate.state(&vp, &spec)
                 .map(|(_, s)| s)
                 .map_err(|e| store_failed(runner, &e).to_string())
         });
@@ -398,7 +488,7 @@ fn statuses(runner: &Runner<'_>, lock: &Lockfile) -> Result<Vec<PackStatus>, Run
         None => status(&store, root, lock),
     }
     .map_err(|source| RunError::Sync {
-        detail: source.to_string(),
+        detail: sentence(runner, &source),
         source: Box::new(source),
     })
 }
@@ -417,10 +507,7 @@ fn run_status(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> 
     let current = runner
         .revocations
         .cached()
-        .map_err(|source| RunError::Revocation {
-            detail: source.to_string(),
-            source: Box::new(source),
-        })?;
+        .map_err(|e| revocation_failed(runner, &e))?;
     let mut complete = true;
     for s in &statuses {
         let Some(pack) = lock.get(&s.id) else {
@@ -500,8 +587,9 @@ fn run_sync(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
     if let Some(python) = runner.python {
         syncer = syncer.with_python(python);
     }
+    syncer = syncer.with_executables(runner.executables.clone());
     let report = syncer.sync(&lock).map_err(|source| RunError::Sync {
-        detail: source.to_string(),
+        detail: sentence(runner, &source),
         source: Box::new(source),
     })?;
     for p in &report.packs {
@@ -568,7 +656,7 @@ fn run_update(runner: &Runner<'_>, only: &[String], out: &mut dyn Write) -> Resu
     let report = Updater::new(runner.network, runner.policy, runner.revocations)
         .update(&runner.dirs.project_root, &runner.ranges, &ids)
         .map_err(|source| RunError::Update {
-            detail: source.to_string(),
+            detail: sentence(runner, &source),
             source: Box::new(source),
         })?;
     for p in &report.packs {
@@ -624,10 +712,22 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
     };
     let loader = runner
         .loader
-        .ok_or_else(|| refused("the plugin files are not loaded".to_owned()))?;
+        .ok_or_else(|| refused(render(&CliText::WhyNoLoader)))?;
     let pack_id = id.parse::<PackId>().map_err(|e| refused(e.to_string()))?;
+    // The locked digest and signing key come first: a path or git source has no manifest
+    // digest or key id in the loader's plugin, so the list can name it only through the lock.
+    let current = runner
+        .revocations
+        .cached()
+        .map_err(|e| revocation_failed(runner, &e))?;
+    if lock
+        .get(&pack_id)
+        .is_some_and(|pack| revoked(runner, pack, &current.list))
+    {
+        return Err(RunError::Revoked { id: line(id) });
+    }
     let (vp, spec) = loader.load(&pack_id).map_err(refused)?;
-    let gate = runner.gate();
+    let (gate, spec) = runner.prepared(&vp, spec).map_err(refused)?;
     let (_, state) = gate
         .state(&vp, &spec)
         .map_err(|e| store_failed(runner, &e))?;
