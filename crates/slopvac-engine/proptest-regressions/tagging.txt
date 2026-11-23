@@ -1,7 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc b762db76f2f36209b84111efd0677e16faa027363491a9008df93c283273c794 # shrinks to projections = [Projection { tokens: [Token { kind: Identity, text: "Go on. ", src: Span { start: 0, end: 0 } }, Token { kind: Identity, text: "Go on. ", src: Span { start: 0, end: 0 } }], text: "Go on. Go on. ", bridges: [] }], spans = [(0, 100)]
