@@ -11,6 +11,6 @@ allow-dbg-in-tests = true
 # use the limited forms with the document's remaining budget. Allow one of these only where
 # the input is bounded by construction, with a scoped `#[expect]` that says why.
 disallowed-methods = [
-    { path = "slopvac_text::sentences::split_sentences", reason = "builds every sentence with no limit; use `split_sentences_within` with the document's remaining sentence budget" },
-    { path = "slopvac_context::view::split_sentences", reason = "builds every sentence with no limit; use `split_sentences_within` with the document's remaining sentence budget" },
+  { path = "slopvac_text::sentences::split_sentences", reason = "builds every sentence with no limit; use `split_sentences_within` with the document's remaining sentence budget" },
+  { path = "slopvac_context::view::split_sentences", reason = "builds every sentence with no limit; use `split_sentences_within` with the document's remaining sentence budget" },
 ]
