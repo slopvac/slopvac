@@ -943,7 +943,7 @@ fn a_refused_program_path_is_withheld_and_never_absolute() {
         .run(&["trust", "fake"], false, |s| s.loader(loader))
         .result
         .unwrap_err();
-    assert_eq!(err.code(), "plugins-store-failed");
+    assert_eq!(err.code(), "plugin-usage");
     let shown = names_in_chain(&err);
     let base = f.base.path().to_string_lossy().into_owned();
     assert!(!shown.contains(&base), "absolute path leaked: {shown}");
@@ -1194,6 +1194,192 @@ fn a_malformed_trust_store_shows_no_parser_text_in_the_chain() {
         .unwrap_err();
     let shown = names_in_chain(&err);
     assert!(!shown.contains("SENSITIVE_MARKER"), "{shown}");
+}
+
+// ---- round 4d: every withheld sentence shows the code of its failure ------------------------
+
+const WITHHELD: &str = "details are withheld because they can name paths outside the project";
+
+/// The manifest of a managed Python plugin.
+const PY_MANIFEST: &str = "schema_version = 3\nid = \"fake\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
+
+/// What the user sees of a run: the failure, or the report.
+fn seen(ran: &Ran) -> String {
+    match &ran.result {
+        Ok(_) => ran.out.clone(),
+        Err(e) => e.to_string(),
+    }
+}
+
+fn code_fixture() -> Fixture {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f
+}
+
+fn broken_python_manifest(f: &Fixture) {
+    let loader = TreeLoader::new(f.base.path(), "fake");
+    fs::write(loader.root.join("slopvac-plugin.toml"), "not = [toml").unwrap();
+}
+
+fn corrupt_store(f: &Fixture) {
+    fs::create_dir_all(f.state()).unwrap();
+    fs::write(f.state().join("trust.json"), "not json").unwrap();
+}
+
+fn run_with_missing_env(f: &Fixture, command: &str) -> String {
+    let loader = TreeLoader::new(f.base.path(), "fake");
+    fs::write(loader.root.join("slopvac-plugin.toml"), PY_MANIFEST).unwrap();
+    let envs = EnvStore::open(f.base.path().join("envs"));
+    seen(&f.run(
+        &[command, "fake"][..1 + usize::from(command == "trust")],
+        false,
+        |s| s.loader(loader).envs(&envs),
+    ))
+}
+
+fn run_with_program_outside(f: &Fixture, command: &str) -> String {
+    let loader = OutsideProgram {
+        inner: TreeLoader::new(f.base.path(), "fake"),
+        program: f.base.path().join("elsewhere/prog"),
+    };
+    seen(&f.run(
+        &[command, "fake"][..1 + usize::from(command == "trust")],
+        false,
+        |s| s.loader(loader),
+    ))
+}
+
+/// A site that renders the withheld sentence: how to reach it through `run()`, and the code
+/// that must stand beside the sentence.
+struct Site {
+    name: &'static str,
+    code: &'static str,
+    reach: fn() -> String,
+}
+
+fn sites() -> Vec<Site> {
+    vec![
+        Site {
+            name: "python manifest, trust",
+            code: "plugins-trust-inputs-failed",
+            reach: || {
+                let f = code_fixture();
+                broken_python_manifest(&f);
+                seen(&f.run(&["trust", "fake"], false, with_loader(&f)))
+            },
+        },
+        Site {
+            name: "python manifest, status",
+            code: "plugins-part-trust-unknown",
+            reach: || {
+                let f = code_fixture();
+                broken_python_manifest(&f);
+                seen(&f.run(&["status"], false, with_loader(&f)))
+            },
+        },
+        Site {
+            name: "python environment, trust",
+            code: "plugins-trust-inputs-failed",
+            reach: || run_with_missing_env(&code_fixture(), "trust"),
+        },
+        Site {
+            name: "python environment, status",
+            code: "plugins-part-trust-unknown",
+            reach: || run_with_missing_env(&code_fixture(), "status"),
+        },
+        Site {
+            name: "loader, status",
+            code: "plugins-part-trust-unknown",
+            reach: || seen(&code_fixture().run(&["status"], false, |s| s.loader(FailingLoader))),
+        },
+        Site {
+            name: "loader, trust",
+            code: "plugins-trust-inputs-failed",
+            reach: || {
+                seen(&code_fixture().run(&["trust", "fake"], false, |s| s.loader(FailingLoader)))
+            },
+        },
+        Site {
+            name: "damaged store, status",
+            code: "plugins-store-failed",
+            reach: || {
+                let f = code_fixture();
+                corrupt_store(&f);
+                seen(&f.run(&["status"], false, with_loader(&f)))
+            },
+        },
+        Site {
+            name: "damaged store, trust",
+            code: "plugins-store-failed",
+            reach: || {
+                let f = code_fixture();
+                corrupt_store(&f);
+                seen(&f.run(&["trust", "fake"], false, with_loader(&f)))
+            },
+        },
+        Site {
+            name: "damaged store, untrust",
+            code: "plugins-store-failed",
+            reach: || {
+                let f = code_fixture();
+                corrupt_store(&f);
+                seen(&f.run(&["untrust", "fake"], false, |s| s))
+            },
+        },
+        Site {
+            name: "refused program, trust",
+            code: "plugin-usage",
+            reach: || run_with_program_outside(&code_fixture(), "trust"),
+        },
+        Site {
+            name: "refused program, status",
+            code: "plugin-usage",
+            reach: || run_with_program_outside(&code_fixture(), "status"),
+        },
+        Site {
+            name: "revocation list unavailable, sync",
+            code: "revocation-list-unavailable",
+            reach: || {
+                let f = Fixture::new();
+                let digest = in_place_project(&f);
+                f.write_lock(&[path_entry("style", "1.0.0", "plugins/style", &digest)]);
+                f.list.serve(None);
+                seen(&f.run(&["sync"], true, |s| s))
+            },
+        },
+        Site {
+            name: "sync source, sync",
+            code: "sync-failed",
+            reach: || {
+                let f = Fixture::new();
+                f.write_lock(&[path_entry("style", "1.0.0", "plugins/missing", OTHER_HASH)]);
+                seen(&f.run(&["sync"], false, |s| s))
+            },
+        },
+        Site {
+            name: "update lock, update",
+            code: "update-failed",
+            reach: || {
+                let f = Fixture::new();
+                f.write_lock(&["not a lock".to_owned()]);
+                seen(&f.run(&["update"], true, |s| s))
+            },
+        },
+    ]
+}
+
+#[test]
+fn every_withheld_sentence_shows_the_code_of_its_failure() {
+    for site in sites() {
+        let shown = (site.reach)();
+        let expected = format!("{}: {WITHHELD}", site.code);
+        assert!(
+            shown.contains(&expected),
+            "{}: expected `{expected}` in `{shown}`",
+            site.name
+        );
+    }
 }
 
 // ---- sync of a signed native archive -------------------------------------------------------
