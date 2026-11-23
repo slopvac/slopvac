@@ -436,19 +436,7 @@ const VOCABULARY_RULES: [&str; 4] = [
     "ste-words.word-used-in-wrong-part-of-speech",
 ];
 
-fn rule_ids(layer: &toml::Table) -> BTreeSet<String> {
-    layer
-        .get("rules")
-        .and_then(toml::Value::as_table)
-        .map(|r| {
-            r.keys()
-                .map(|k| k.strip_prefix("core:").unwrap_or(k).to_owned())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// The vocabulary and other rule entries of a layer, by id, with their authored value.
+/// The rule entries of a layer, by id, with their authored value.
 fn rule_levels(layer: &toml::Table) -> BTreeMap<String, toml::Value> {
     layer
         .get("rules")
