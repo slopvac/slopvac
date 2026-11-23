@@ -150,10 +150,13 @@ fn sized_file(dir: &std::path::Path, name: &str, len: u64, sparse: bool) {
             .set_len(len)
             .expect("set_len");
     } else {
-        // One long word with no sentence break: valid UTF-8 that costs no sentence budget.
-        let chunk = vec![b'x'; 1 << 20];
+        // A normal one-sentence document, padded with blank lines to exactly `len` bytes:
+        // valid Markdown that the cap accepts and the segmenter reads without a long token.
+        let text = b"The cache holds 10 entries.\n";
         let mut file = fs::File::create(&path).expect("create");
-        let mut left = len;
+        std::io::Write::write_all(&mut file, text).expect("write");
+        let chunk = vec![b'\n'; 1 << 20];
+        let mut left = len - text.len() as u64;
         while left > 0 {
             let n = usize::try_from(left.min(chunk.len() as u64)).expect("fits");
             std::io::Write::write_all(&mut file, &chunk[..n]).expect("write");
@@ -179,7 +182,7 @@ fn an_input_one_byte_over_the_cap_is_refused_as_a_too_large_document(#[case] big
         stderr.as_ref(),
         format!("error[document-too-large]: {big} is larger than {DOCUMENT_CAP} bytes\n"),
     );
-    assert!(out.stdout.is_empty());
+    assert_eq!(out.stdout, Vec::<u8>::new());
 }
 
 #[rstest::rstest]
