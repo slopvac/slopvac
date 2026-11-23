@@ -105,53 +105,63 @@ pub(crate) struct Comment {
     pub body: Range<usize>,
 }
 
-/// Every comment in `doc`, in order.
-pub(crate) fn comments(doc: &str, fam: Family) -> Vec<Comment> {
+/// Hand each comment in `doc`, in order, to `visit`, and stop when it returns `false`. Nothing
+/// is collected here, so a caller that bounds its own work bounds the memory of the scan.
+pub(crate) fn scan(doc: &str, fam: Family, mut visit: impl FnMut(Comment) -> bool) {
     let b = doc.as_bytes();
-    let mut out = Vec::new();
     let mut i = 0;
     while i < b.len() {
         let next = b.get(i + 1).copied();
         match b[i] {
             b'/' if fam.c_like && next == Some(b'/') => {
                 let end = line_end(b, i);
-                out.push(Comment {
+                if !visit(Comment {
                     marker: i,
                     body: i + 2..end,
-                });
+                }) {
+                    return;
+                }
                 i = end;
             }
             b'/' if fam.c_like && next == Some(b'*') => {
                 let (end, closed) = block_end(b, i + 2, fam.rust);
                 let body_end = if closed { end - 2 } else { end };
-                out.push(Comment {
+                if !visit(Comment {
                     marker: i,
                     body: i + 2..body_end,
-                });
+                }) {
+                    return;
+                }
                 i = end;
             }
             b'#' if fam.hash => {
                 let end = line_end(b, i);
-                out.push(Comment {
+                if !visit(Comment {
                     marker: i,
                     body: i + 1..end,
-                });
+                }) {
+                    return;
+                }
                 i = end;
             }
             b'-' if fam.dash && next == Some(b'-') => {
                 let end = line_end(b, i);
-                out.push(Comment {
+                if !visit(Comment {
                     marker: i,
                     body: i + 2..end,
-                });
+                }) {
+                    return;
+                }
                 i = end;
             }
             b';' if fam.semi => {
                 let end = line_end(b, i);
-                out.push(Comment {
+                if !visit(Comment {
                     marker: i,
                     body: i + 1..end,
-                });
+                }) {
+                    return;
+                }
                 i = end;
             }
             b'"' | b'\'' | b'`' => i = skip_string(doc, i, fam),
@@ -161,7 +171,6 @@ pub(crate) fn comments(doc: &str, fam: Family) -> Vec<Comment> {
             _ => i += 1,
         }
     }
-    out
 }
 
 fn ident_before(b: &[u8], i: usize) -> bool {

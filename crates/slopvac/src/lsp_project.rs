@@ -545,11 +545,7 @@ impl Project {
             &DocumentLayers::default(),
         )
         .ok()?;
-        // The RST adapter takes no interpreter from `PATH` until it knows the project, so the
-        // probe is told the root the lint of the buffer is told.
-        let built = Engine::new(catalog.into_sets(), settings)
-            .ok()?
-            .with_project_roots(vec![self.root.clone()]);
+        let built = Engine::new(catalog.into_sets(), settings).ok()?;
         let probe = Arc::new(EngineLinter::from_engine(built, HashMap::new()));
         let mut loaded = self.current(epoch)?;
         if let State::Ready(ready) = &mut loaded.state {
@@ -602,9 +598,8 @@ impl Project {
             // The engine owns its rule sets, and a set does not clone: load them again.
             let sets = Catalog::load().map_err(shown)?.into_sets();
             let reasons = slopvac_lsp::exception_names(&sets);
-            let built = lint_terms::build_engine(sets, settings, &terms, &self.root)
-                .map_err(shown)?
-                .with_project_roots(vec![self.root.clone()]);
+            let built =
+                lint_terms::build_engine(sets, settings, &terms, &self.root).map_err(shown)?;
             let engine = Arc::new(EngineLinter::from_engine(built, reasons));
             #[cfg(test)]
             self.paused_at(Stage::EngineBuilt);

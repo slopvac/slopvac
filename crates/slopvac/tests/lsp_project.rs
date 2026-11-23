@@ -726,71 +726,59 @@ fn a_bad_inline_directive_is_a_diagnostic_of_the_buffer() -> TestResult {
     Ok(())
 }
 
-/// What a fake docutils driver prints for one RST document: a title and a paragraph, as the
-/// real driver reports them, with 1-based lines.
-fn rst_driver_output(title: &str, paragraph: &str) -> String {
-    json!({
-        "docutils": "0.21.2",
-        "nodes": [
-            {"tag": "title", "start": 1, "end": 1, "level": 1, "containers": [],
-             "pieces": [{"k": "t", "t": title}]},
-            {"tag": "paragraph", "start": 4, "end": 4, "containers": [],
-             "pieces": [{"k": "t", "t": paragraph}]},
-        ],
-    })
-    .to_string()
-}
-
-/// The genre of an RST buffer follows its content, as the genre of a Markdown buffer does. The
-/// interpreter is the first `python3` on `PATH`, outside the project, so the server finds it
-/// only when it knows the project roots.
-///
-/// The fake driver answers by the text it reads. `Release notes` is a heading signal of
-/// `change-comms` (weight 3, its minimum), which turns the history rule off. `Overview` is no
-/// signal, so the buffer stays `consumer`, where the rule is a warning. The two buffers have
-/// no path signal.
+/// A buffer of RST never runs an interpreter found on `PATH`: the server gives the lint no
+/// project roots, so discovery stays off and the buffer reports `rst-converter-missing`, as it
+/// does without docutils. The fake `python3` leaves a marker file if it runs.
 #[cfg(unix)]
 #[test]
-fn an_rst_buffer_gets_the_genre_its_content_signals() -> TestResult {
+fn an_rst_buffer_never_runs_a_python_found_on_path() -> TestResult {
     use std::os::unix::fs::PermissionsExt;
-    const SENTENCE: &str = "The retry loop landed in commit 3f9a2c1 after the outage.";
     let tools = tempfile::tempdir()?;
-    let notes = tools.path().join("notes.json");
-    let overview = tools.path().join("overview.json");
-    fs::write(&notes, rst_driver_output("Release notes", SENTENCE))?;
-    fs::write(&overview, rst_driver_output("Overview", SENTENCE))?;
+    let marker = tools.path().join("executed");
     let driver = tools.path().join("python3");
     fs::write(
         &driver,
-        format!(
-            "#!/bin/sh\ninput=$(cat)\ncase \"$input\" in\n*'Release notes'*) cat '{}' ;;\n*) cat '{}' ;;\nesac\n",
-            notes.display(),
-            overview.display()
-        ),
+        format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()),
     )?;
     fs::set_permissions(&driver, fs::Permissions::from_mode(0o755))?;
     let path = format!("{}:/usr/bin:/bin", tools.path().canonicalize()?.display());
     let dir = project("schema_version = 3\n", &[])?;
     let root = dir.path().canonicalize()?;
     let mut session = Session::start_with(&root, &[("PATH", &path)])?;
-    session.open(
-        &root,
-        "notes.rst",
-        &format!("Release notes\n=============\n\n{SENTENCE}\n"),
-    )?;
-    session.open(
-        &root,
-        "overview.rst",
-        &format!("Overview\n========\n\n{SENTENCE}\n"),
-    )?;
-    let signalled = session.codes(&root, "notes.rst")?;
-    let plain = session.codes(&root, "overview.rst")?;
-    // The plain buffer reports the rule, which shows the adapter ran; the other does not.
-    assert!(plain.iter().any(|c| c == HISTORY_RULE), "{plain:?}");
-    assert!(
-        !signalled.iter().any(|c| c == HISTORY_RULE),
-        "{signalled:?}"
-    );
+    session.open(&root, "a.rst", "Title\n=====\n\nText.\n")?;
+    let codes = session.codes(&root, "a.rst")?;
     session.finish()?;
+    assert!(!marker.exists(), "the interpreter on PATH was run");
+    assert!(
+        codes.iter().any(|c| c == "rst-converter-missing"),
+        "{codes:?}"
+    );
+    Ok(())
+}
+
+/// A directive diagnostic carries the code and a fixed text, never the value of the document
+/// (policies, logging and redaction). `zz-ZZ` is no locale, so the check refuses it.
+#[test]
+fn a_directive_diagnostic_does_not_quote_the_value_it_refused() -> TestResult {
+    const VALUE: &str = "zz-ZZ-secretvalue";
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start(&root)?;
+    session.open(
+        &root,
+        "a.md",
+        &format!("<!-- slopvac: locale={VALUE} -->\n# T\n"),
+    )?;
+    let uri = uri_of(&root, "a.md");
+    let published = session.wait_for(|m| {
+        m["method"] == "textDocument/publishDiagnostics" && m["params"]["uri"] == uri
+    })?;
+    session.finish()?;
+    let diagnostics = published["params"]["diagnostics"].to_string();
+    assert!(
+        diagnostics.contains("config-invalid-value"),
+        "{diagnostics}"
+    );
+    assert!(!diagnostics.contains(VALUE), "{diagnostics}");
     Ok(())
 }
