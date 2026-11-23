@@ -559,3 +559,51 @@ fn a_config_without_a_blocklist_gets_no_vocabulary_companion_style() {
     let doc = toml::from_str::<toml::Table>(&rw.text).unwrap();
     assert_eq!(doc["styles"].as_array().unwrap().len(), 1, "{}", rw.text);
 }
+
+const VOCABULARY_RULE: &str = "ste-words.word-outside-controlled-vocabulary";
+
+#[rstest]
+#[case::top_level(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules.\"ste-words.word-outside-controlled-vocabulary\"]\nseverity = \"error\"\n",
+    "/rules/core:ste-words.word-outside-controlled-vocabulary"
+)]
+#[case::in_an_override(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules.\"ste-words.word-outside-controlled-vocabulary\"]\nseverity = \"error\"\n",
+    "/overrides/0/rules/core:ste-words.word-outside-controlled-vocabulary"
+)]
+fn an_authored_severity_table_rule_is_written_as_a_bare_level(
+    #[case] config: &str,
+    #[case] at: &str,
+) {
+    let rw = preserve(config).unwrap();
+    assert_eq!(
+        as_json(&rw.text).pointer(at),
+        Some(&json!("error")),
+        "{}",
+        rw.text
+    );
+}
+
+#[test]
+fn an_override_keeps_its_own_blocklist_beside_an_authored_off_rule() {
+    // The override both turns the rule off and names its own blocklist. A block that kept
+    // only the `off` entry would look the same as a guard with that selector, so the
+    // blocklist is what shows the authored override survived.
+    let rw = preserve(&format!(
+        "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"{VOCABULARY_RULE}\" = \"off\"\n[overrides.vocabulary]\npath = \"o.toml\"\n"
+    ))
+    .unwrap();
+    let doc = as_json(&rw.text);
+    assert_eq!(
+        doc.pointer("/overrides/0/terms/blocklists"),
+        Some(&json!(["o.toml"])),
+        "{}",
+        rw.text
+    );
+    assert_eq!(
+        doc.pointer(&format!("/overrides/0/rules/core:{VOCABULARY_RULE}")),
+        Some(&json!("off")),
+        "{}",
+        rw.text
+    );
+}
