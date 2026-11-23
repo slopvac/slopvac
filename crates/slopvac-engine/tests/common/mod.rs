@@ -166,19 +166,22 @@ pub fn legacy_engine(profile: &str) -> Engine {
     Engine::new(vec![core_set()], legacy_settings(profile)).unwrap()
 }
 
-/// The engine for a 2.x config that sets a word blocklist: the legacy style, with each
-/// vocabulary rule at the 2.x level of the profile. The styles leave those rules off, and
-/// `slopvac migrate --preserve-behavior` writes these levels when a blocklist moves.
+/// The engine for a 2.x config that sets a word blocklist: the legacy style, then its
+/// vocabulary companion `core:legacy-<profile>-vocabulary`, which is what `slopvac migrate
+/// --preserve-behavior` lists when a blocklist moves. The legacy style leaves the vocabulary
+/// rules off.
 pub fn legacy_engine_with_blocklist(profile: &str, blocklist: &Blocklist) -> Engine {
     let mut settings = legacy_settings(profile);
-    let mapping = read_json(&root().join("docs/contract/compat/profiles/mapping.json"));
-    for (id, name) in mapping["profiles"][profile]["vocabulary_levels"]
-        .as_object()
-        .unwrap()
-    {
+    let companion: toml::Table = std::fs::read_to_string(root().join(format!(
+        "docs/contract/compat/profiles/legacy-{profile}-vocabulary.toml"
+    )))
+    .unwrap()
+    .parse()
+    .unwrap();
+    for (id, value) in companion["rules"].as_table().unwrap() {
         settings.rule_levels.insert(
             RuleId::new(format!("core:{id}")).unwrap(),
-            level(name.as_str().unwrap()),
+            level(value.as_str().unwrap()),
         );
     }
     Engine::new(vec![core_set()], settings)

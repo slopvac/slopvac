@@ -28,6 +28,9 @@ OUTPUTS = (
     "data/legacy/legacy-strict.toml",
     "data/legacy/legacy-normal.toml",
     "data/legacy/legacy-relaxed.toml",
+    "data/legacy/legacy-strict-vocabulary.toml",
+    "data/legacy/legacy-normal-vocabulary.toml",
+    "data/legacy/legacy-relaxed-vocabulary.toml",
     "tests/fixtures/preserve/vectors.json",
 )
 

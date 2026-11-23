@@ -43,7 +43,7 @@ pub struct Overrides {
     pub disable: Vec<String>,
 }
 
-const LEGACY: [(&str, &str); 3] = [
+const LEGACY: [(&str, &str); 6] = [
     (
         "legacy-strict",
         include_str!("../../../docs/contract/compat/profiles/legacy-strict.toml"),
@@ -56,6 +56,18 @@ const LEGACY: [(&str, &str); 3] = [
         "legacy-relaxed",
         include_str!("../../../docs/contract/compat/profiles/legacy-relaxed.toml"),
     ),
+    (
+        "legacy-strict-vocabulary",
+        include_str!("../../../docs/contract/compat/profiles/legacy-strict-vocabulary.toml"),
+    ),
+    (
+        "legacy-normal-vocabulary",
+        include_str!("../../../docs/contract/compat/profiles/legacy-normal-vocabulary.toml"),
+    ),
+    (
+        "legacy-relaxed-vocabulary",
+        include_str!("../../../docs/contract/compat/profiles/legacy-relaxed-vocabulary.toml"),
+    ),
 ];
 
 /// The thresholds of a profile (`docs/contract/profiles.md`, section 2).
@@ -67,7 +79,7 @@ fn profile_thresholds(profile: &str) -> (Option<f64>, Option<usize>, Option<f64>
     }
 }
 
-fn legacy_style(profile: &str) -> &'static Style {
+fn legacy_style(name: &str) -> &'static Style {
     static STYLES: OnceLock<BTreeMap<&'static str, Style>> = OnceLock::new();
     let styles = STYLES.get_or_init(|| {
         LEGACY
@@ -80,9 +92,7 @@ fn legacy_style(profile: &str) -> &'static Style {
             })
             .collect()
     });
-    styles
-        .get(format!("legacy-{profile}").as_str())
-        .unwrap_or_else(|| &styles["legacy-normal"])
+    styles.get(name).unwrap_or_else(|| &styles["legacy-normal"])
 }
 
 fn rule_id_of(rules: &Catalog, key: &str) -> Option<RuleId> {
@@ -206,7 +216,9 @@ pub fn validate_located(
                     "unknown-style",
                     format!(
                         "slopvac.toml: unknown style {name:?}; the styles that ship are: {}, \
-                         core:legacy-strict, core:legacy-normal, core:legacy-relaxed.",
+                         core:legacy-strict, core:legacy-normal, core:legacy-relaxed, \
+                         core:legacy-strict-vocabulary, core:legacy-normal-vocabulary, \
+                         core:legacy-relaxed-vocabulary.",
                         BuiltinSource::names().collect::<Vec<_>>().join(", ")
                     ),
                 ),
@@ -261,14 +273,15 @@ fn without_repeats(mut unknown: Vec<UnknownRule>) -> Vec<UnknownRule> {
 }
 
 /// The name a config lists to ask for the 2.x levels of a profile: `core:legacy-normal`,
-/// `core:legacy-strict` or `core:legacy-relaxed`. `slopvac migrate --preserve-behavior`
-/// writes it. Nothing applies it by default (docs/contract/profiles.md, section 1).
+/// `core:legacy-strict` or `core:legacy-relaxed`, or the vocabulary companion of one, such as
+/// `core:legacy-normal-vocabulary`. `slopvac migrate --preserve-behavior` writes them. Nothing
+/// applies them by default (docs/contract/profiles.md, section 1).
 fn legacy_name(listed: &str) -> Option<&'static Style> {
-    let profile = listed.strip_prefix("core:legacy-")?;
+    let name = listed.strip_prefix("core:")?;
     LEGACY
         .iter()
-        .any(|(name, _)| name.strip_prefix("legacy-") == Some(profile))
-        .then(|| legacy_style(profile))
+        .any(|(known, _)| *known == name)
+        .then(|| legacy_style(name))
 }
 
 /// The built-in style presets, plus the `core:legacy-<profile>` styles.

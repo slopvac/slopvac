@@ -1,6 +1,6 @@
 //! The 2.x profile data that `--preserve-behavior` expands against: the
 //! `core:legacy-<profile>` styles, each rule's kind and tiers, and the per-rule
-//! defaults of each profile, and the level of each vocabulary rule when a blocklist is set.
+//! defaults of each profile, and the vocabulary levels of the companion styles.
 //!
 //! `tests/fixtures/generate.py` writes the data files from
 //! `docs/contract/compat/profiles/` and the 2.x ruleset.
@@ -16,6 +16,11 @@ const STYLES: [&str; 3] = [
     include_str!("../data/legacy/legacy-strict.toml"),
     include_str!("../data/legacy/legacy-normal.toml"),
     include_str!("../data/legacy/legacy-relaxed.toml"),
+];
+const VOCABULARY_STYLES: [&str; 3] = [
+    include_str!("../data/legacy/legacy-strict-vocabulary.toml"),
+    include_str!("../data/legacy/legacy-normal-vocabulary.toml"),
+    include_str!("../data/legacy/legacy-relaxed-vocabulary.toml"),
 ];
 const CATALOGUE: &str = include_str!("../data/legacy/catalogue.toml");
 
@@ -177,13 +182,7 @@ impl Legacy {
                     .and_then(Item::as_table_like),
             )
         });
-        let vocabulary = PROFILES.map(|p| {
-            levels(
-                cat.get("vocabulary")
-                    .and_then(|d| d.get(p))
-                    .and_then(Item::as_table_like),
-            )
-        });
+        let vocabulary = VOCABULARY_STYLES.map(|text| style(text).rules);
         let rules = cat
             .get("rules")
             .and_then(Item::as_table_like)
@@ -223,8 +222,8 @@ impl Legacy {
         &self.defaults[profile_index(profile)]
     }
 
-    /// The 2.x level of each vocabulary rule under a profile when a word blocklist is set.
-    /// The legacy styles leave these rules off, so a config with a blocklist needs them back.
+    /// The 2.x level of each vocabulary rule under a profile once a word blocklist is set.
+    /// These are the rules of the companion style `core:legacy-<profile>-vocabulary`.
     pub(crate) fn vocabulary(&self, profile: &str) -> &BTreeMap<String, String> {
         &self.vocabulary[profile_index(profile)]
     }

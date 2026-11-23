@@ -352,7 +352,8 @@ impl Sink {
 /// The line and the reason of a failed `--preserve-behavior` rewrite.
 fn located(e: &Error) -> (usize, String) {
     match e {
-        Error::OverrideOverlap { line, reason, .. } => (*line, reason.clone()),
+        Error::OverrideOverlap { line, reason, .. }
+        | Error::BlocklistLayout { line, reason, .. } => (*line, reason.clone()),
         Error::Dropped(records) => records
             .first()
             .map_or_else(|| (1, e.to_string()), |r| (r.line, r.reason.clone())),

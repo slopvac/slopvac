@@ -13,8 +13,6 @@ use crate::overlap::{UnsupportedGlob, build_regions};
 #[derive(Debug, Clone)]
 pub(crate) struct Block2 {
     pub(crate) files: Vec<String>,
-    /// The block sets `vocabulary.path`.
-    pub(crate) blocklist: bool,
     pub(crate) profile: Option<String>,
     pub(crate) layer: Layer,
 }
@@ -23,8 +21,6 @@ pub(crate) struct Block2 {
 #[derive(Debug, Clone)]
 pub(crate) struct Config2 {
     pub(crate) profile: String,
-    /// The project sets `vocabulary.path`.
-    pub(crate) blocklist: bool,
     pub(crate) layer: Layer,
     pub(crate) overrides: Vec<Block2>,
 }
@@ -107,37 +103,6 @@ fn sticky_for(
         .iter()
         .filter(|(qid, _)| categories.contains_key(category_of(qid)) && !own.contains_key(*qid))
         .map(|(qid, level)| (qid.clone(), level.clone()))
-        .collect()
-}
-
-/// The vocabulary rules that a 2.x blocklist turns on, at their 2.x level under `profile`.
-/// The legacy styles leave them off, so a layer that moved a blocklist writes these entries.
-/// A rule the layer authored keeps its level. An authored category level applies as in 2.x:
-/// the profile's per-rule default if it has one, else the category level.
-fn vocabulary_rules(
-    legacy: &Legacy,
-    profile: &str,
-    categories: &BTreeMap<String, Dials>,
-    set: &BTreeMap<String, String>,
-) -> BTreeMap<String, String> {
-    legacy
-        .vocabulary(profile)
-        .iter()
-        .filter(|(qid, _)| !set.contains_key(*qid))
-        .filter_map(|(qid, base)| {
-            let category = categories.get(category_of(qid)).and_then(severity);
-            let level = if legacy.rules[qid].tier_for(profile) == Tier::Excluded {
-                "off"
-            } else if let Some(level) = category {
-                legacy
-                    .defaults(profile)
-                    .get(qid)
-                    .map_or(level, String::as_str)
-            } else {
-                base
-            };
-            (level != "off" || category.is_some()).then(|| (qid.clone(), level.to_owned()))
-        })
         .collect()
 }
 
@@ -253,10 +218,6 @@ pub(crate) fn expand(config: &Config2, legacy: &Legacy) -> Result<Expanded, Unsu
     let top_rules = cx.kept_rules(None, &config.layer.rules, &scopes, &mut dropped);
     let mut rules = sticky_for(legacy, &top_cat, top, &top_rules);
     rules.extend(top_rules.clone());
-    if config.blocklist {
-        let vocabulary = vocabulary_rules(legacy, top, &top_cat, &rules);
-        rules.extend(vocabulary);
-    }
     let top_layer = Layer {
         categories: top_cat,
         rules,
@@ -275,10 +236,6 @@ pub(crate) fn expand(config: &Config2, legacy: &Legacy) -> Result<Expanded, Unsu
         let own = cx.kept_rules(Some(index), &block.layer.rules, &visible, &mut dropped);
         let mut rules = sticky_for(legacy, &cats, in_force, &own);
         rules.extend(own);
-        if block.blocklist {
-            let vocabulary = vocabulary_rules(legacy, in_force, &cats, &rules);
-            rules.extend(vocabulary);
-        }
         blocks.push(Layer {
             categories: cats,
             rules,
@@ -370,18 +327,6 @@ fn switch_layer(
         }
         if let Some(state) = legacy.state(profile, qid) {
             rules.insert(qid.clone(), state);
-        }
-    }
-    if config.blocklist {
-        // The styles leave the vocabulary rules off, so a switch states each one at the
-        // level of the target profile, or off where the profile does not run it.
-        let cats = authored(legacy, top_real, profile);
-        let on = vocabulary_rules(legacy, profile, &cats, top_rules);
-        for qid in legacy.vocabulary(profile).keys() {
-            if !top_rules.contains_key(qid) {
-                let level = on.get(qid).map_or("off", String::as_str);
-                rules.insert(qid.clone(), level.to_owned());
-            }
         }
     }
     Layer { categories, rules }

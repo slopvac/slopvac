@@ -59,6 +59,11 @@ pub(crate) enum MigrateMessage {
     #[code("migrate-lint-failed")]
     #[message("lint: {detail}")]
     LintFailed { detail: String },
+    /// A config that the migration would write is refused: it does not load in 3.0, or it
+    /// would not keep the 2.x levels. Nothing is written.
+    #[code("migrate-output-invalid")]
+    #[message("{file}: the migrated config is refused, so nothing is written: {reason}")]
+    OutputInvalid { file: String, reason: String },
     /// A run read more files or bytes than its limits allow. `what` is `files` or `bytes`.
     #[code("migrate-run-limit")]
     #[message("{path}: run limit reached: more than {limit} {what} in one run")]
@@ -367,6 +372,29 @@ pub(crate) enum MigrateText {
     #[code("migrate-note-set-rule-level")]
     #[text("set {at} to \"{level}\": the 2.x profile default replaces an entry 2.x ignored")]
     NoteSetRuleLevel { at: String, level: String },
+    /// Why a migrated config is refused: a blocklist applies to some files only.
+    #[code("migrate-reason-blocklist-in-override")]
+    #[text(
+        "`{at}` on line {line} sets a word blocklist, and the top level sets none. `--preserve-behavior` cannot keep the 2.x vocabulary levels for a blocklist that applies to some files only. A follow-up will support these layouts."
+    )]
+    ReasonBlocklistInOverride { at: String, line: String },
+    /// Why a migrated config is refused: a blocklist and a profile switch to another level.
+    #[code("migrate-reason-blocklist-under-switch")]
+    #[text(
+        "`{at}` on line {line} switches files to the 2.x {profile} profile, which gives the vocabulary rules a different level than the {top} profile, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels there. A follow-up will support these layouts."
+    )]
+    ReasonBlocklistUnderSwitch {
+        at: String,
+        line: String,
+        profile: String,
+        top: String,
+    },
+    /// The vocabulary companion style was added.
+    #[code("migrate-note-added-vocabulary-style")]
+    #[text(
+        "added \"{style}\" to styles: 2.x ran the vocabulary rules once a word blocklist was set, at the level of the {profile} profile"
+    )]
+    NoteAddedVocabularyStyle { style: String, profile: String },
     /// One rule entry was added.
     #[code("migrate-note-added-rule-entry")]
     #[text(
@@ -881,6 +909,10 @@ pub(crate) fn of(error: &Error) -> Option<Box<dyn Catalog>> {
             file: file.clone(),
             line: line.to_string(),
             block: block.to_string(),
+            reason: reason.clone(),
+        }),
+        Error::BlocklistLayout { file, reason, .. } => Box::new(MigrateMessage::OutputInvalid {
+            file: file.clone(),
             reason: reason.clone(),
         }),
         Error::RenameTable(detail) => Box::new(MigrateMessage::RenameTable {
