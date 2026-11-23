@@ -115,3 +115,12 @@ fn a_paragraph_of_one_character_sentences_is_not_checked_before_its_sentences_ar
         Err(EngineError::TagBuildBudget { limit })
     );
 }
+
+#[test]
+fn a_table_of_one_character_cells_is_checked_whatever_the_sentence_budget() {
+    // 300000 rows of one cell of 4 bytes: a cell is one sentence, so the table holds one
+    // sentence for every 4 bytes, over the one for every 8 that prose may hold.
+    let source = format!("|a|\n|-|\n{}", "|a|\n".repeat(300_000));
+    let result = engine().lint(&Input::markdown("a.md", &source));
+    assert!(result.is_ok(), "{:?}", result.map(|d| d.findings.len()));
+}

@@ -336,14 +336,15 @@ impl<'a> Prepared<'a> {
             }
             // The reference counts a table cell as one sentence, whatever it contains.
             let sentences = if matches!(block.kind, BlockKind::TableCell { .. }) {
+                // One sentence for each cell, which is one for each block the parser
+                // already holds, so a table of tiny cells needs no charge of its own.
                 cell_sentence(projection.text())?.into_iter().collect()
             } else {
-                split_sentences_within(projection.text(), left)?
-                    .ok_or(EngineError::TagBuildBudget { limit })?
+                let found = split_sentences_within(projection.text(), left)?
+                    .ok_or(EngineError::TagBuildBudget { limit })?;
+                left -= found.len();
+                found
             };
-            left = left
-                .checked_sub(sentences.len())
-                .ok_or(EngineError::TagBuildBudget { limit })?;
             blocks.push(ProseBlock {
                 kind: &block.kind,
                 contained: !block.containers.is_empty(),
