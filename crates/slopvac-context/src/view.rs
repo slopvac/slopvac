@@ -1,6 +1,7 @@
 //! Read-only view of a parsed document, as the taggers need it.
 //!
-//! STUB(slopvac-8l4.5.11): stands in for the `slopvac-model` document types.
+//! These types are `slopvac-context`'s input contract. `slopvac-engine` implements them over
+//! its prepared blocks and sentences.
 //! Offsets are byte offsets into the original file bytes, as in
 //! `docs/contract/positions.md`.
 

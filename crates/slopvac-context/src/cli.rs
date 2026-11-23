@@ -112,7 +112,7 @@ fn explain(
     assignments: &[GenreAssignment],
     declared: &mut DeclaredGenres<'_>,
 ) -> Result<String, Error> {
-    // STUB(slopvac-8l4.5.11): PlainDocument stands in for the real Markdown parser.
+    // STUB(slopvac-4kq): PlainDocument stands in for the real Markdown parser.
     let src = read_document(path)?;
     let doc = PlainDocument::from_markdown(path, &src);
     let declared = declared(path, &src);
