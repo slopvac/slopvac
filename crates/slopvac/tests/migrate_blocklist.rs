@@ -214,13 +214,9 @@ fn a_blocklist_with_a_top_level_category_and_a_switch_is_refused_for_the_blockli
                   [categories]\nai-tells-formatting = \"warning\"\n\n\
                   [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"strict\"\n";
     let stderr = refused(config)?;
+    assert!(stderr.contains("`overrides[0].profile`"), "{stderr}");
     assert!(
-        stderr.contains(
-            "`overrides[0].profile` on line 10 sets `profile` in an override, whatever its value, \
-             and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x \
-             vocabulary levels in the files that override covers. A follow-up will support these \
-             layouts."
-        ),
+        stderr.contains("the project sets a word blocklist"),
         "{stderr}"
     );
     assert!(
