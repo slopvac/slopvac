@@ -571,7 +571,27 @@ fn a_guard_with_the_selector_of_a_dropped_override_gets_no_authored_allowance() 
     let broken = "schema_version = 2\n[[overrides]]\nfiles = [\"api/**\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
     assert_eq!(
         check_no_generated_vocabulary_entry(broken, &authored),
-        Err(Offence::AuthoredOverrideMissing { index: 0 })
+        Err(Offence::GeneratedEntry {
+            rule: "ste-words.word-outside-controlled-vocabulary".to_owned(),
+            layer: 2,
+        })
+    );
+}
+
+#[test]
+fn a_guard_that_takes_the_slot_of_a_dropped_last_override_gets_no_allowance() {
+    // Authored: the override that authors the rule is last. Written: it is gone, and a guard
+    // with the same `files` sits in exactly the slot the authored override would fill.
+    let authored = format!(
+        "schema_version = 2\n[[overrides]]\nfiles = [\"api/**\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n{TOP_RULE}"
+    );
+    let broken = "schema_version = 2\n[[overrides]]\nfiles = [\"api/**\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
+    assert_eq!(
+        check_no_generated_vocabulary_entry(broken, &authored),
+        Err(Offence::GeneratedEntry {
+            rule: "ste-words.word-outside-controlled-vocabulary".to_owned(),
+            layer: 2,
+        })
     );
 }
 
