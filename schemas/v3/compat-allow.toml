@@ -557,3 +557,73 @@ pointer = "/properties/provides/$ref(plugin-manifest.schema.json#/$defs/Provides
 kind = "pattern-changed"
 reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
 approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-index.schema.json"
+pointer = "/properties/plugins/items/$ref(plugin-index.schema.json#/$defs/PackIndexEntry)/properties/source/$ref(plugin-index.schema.json#/$defs/PackIndexSource)/pattern"
+kind = "pattern-changed"
+reason = "The index source pattern now spells out the white space class that the shorthand classes stood for, which the portable pattern subset requires. The class is the one that Python reads for white space, so the reference validator judges every document as before, and the Rust validator now agrees with it. The reader accepts four control characters (U+001C to U+001F) that the schema refused before and still refuses. Contract ruling on slopvac-8l4.2.56: the contract owner approves the rewrite."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-index.schema.json"
+pointer = "/$defs/PackIndexSource/pattern"
+kind = "pattern-changed"
+reason = "The index source pattern now spells out the white space class that the shorthand classes stood for, which the portable pattern subset requires. The class is the one that Python reads for white space, so the reference validator judges every document as before, and the Rust validator now agrees with it. The reader accepts four control characters (U+001C to U+001F) that the schema refused before and still refuses. Contract ruling on slopvac-8l4.2.56: the contract owner approves the rewrite."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-index.schema.json"
+pointer = "/$defs/PackIndexEntry/properties/source/$ref(plugin-index.schema.json#/$defs/PackIndexSource)/pattern"
+kind = "pattern-changed"
+reason = "The index source pattern now spells out the white space class that the shorthand classes stood for, which the portable pattern subset requires. The class is the one that Python reads for white space, so the reference validator judges every document as before, and the Rust validator now agrees with it. The reader accepts four control characters (U+001C to U+001F) that the schema refused before and still refuses. Contract ruling on slopvac-8l4.2.56: the contract owner approves the rewrite."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugins-lock.schema.json"
+pointer = "/properties/plugins/maxItems"
+kind = "bound-tightened"
+reason = "The lock `source` pattern and bounds now match the reader (`Source::from_str` and `Lockfile::new`) wherever a pattern can say so: no user-info in a URL, no colon in a path, no path that starts with white space, a slash, a backslash or a colon, no line break in a path, an explicit white space class, at most 4096 characters in a source, at most 1000 plugins and at most 256 `requires`. The reader already refuses every such document, so no lockfile that loads is refused. Contract ruling on slopvac-8l4.2.56: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugins-lock.schema.json"
+pointer = "/properties/plugins/items/$ref(plugins-lock.schema.json#/$defs/Locked)/properties/source/maxLength"
+kind = "bound-tightened"
+reason = "The lock `source` pattern and bounds now match the reader (`Source::from_str` and `Lockfile::new`) wherever a pattern can say so: no user-info in a URL, no colon in a path, no path that starts with white space, a slash, a backslash or a colon, no line break in a path, an explicit white space class, at most 4096 characters in a source, at most 1000 plugins and at most 256 `requires`. The reader already refuses every such document, so no lockfile that loads is refused. Contract ruling on slopvac-8l4.2.56: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugins-lock.schema.json"
+pointer = "/properties/plugins/items/$ref(plugins-lock.schema.json#/$defs/Locked)/properties/source/pattern"
+kind = "pattern-changed"
+reason = "The lock `source` pattern and bounds now match the reader (`Source::from_str` and `Lockfile::new`) wherever a pattern can say so: no user-info in a URL, no colon in a path, no path that starts with white space, a slash, a backslash or a colon, no line break in a path, an explicit white space class, at most 4096 characters in a source, at most 1000 plugins and at most 256 `requires`. The reader already refuses every such document, so no lockfile that loads is refused. Contract ruling on slopvac-8l4.2.56: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugins-lock.schema.json"
+pointer = "/properties/plugins/items/$ref(plugins-lock.schema.json#/$defs/Locked)/properties/requires/maxItems"
+kind = "bound-tightened"
+reason = "The lock `source` pattern and bounds now match the reader (`Source::from_str` and `Lockfile::new`) wherever a pattern can say so: no user-info in a URL, no colon in a path, no path that starts with white space, a slash, a backslash or a colon, no line break in a path, an explicit white space class, at most 4096 characters in a source, at most 1000 plugins and at most 256 `requires`. The reader already refuses every such document, so no lockfile that loads is refused. Contract ruling on slopvac-8l4.2.56: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugins-lock.schema.json"
+pointer = "/$defs/Locked/properties/source/maxLength"
+kind = "bound-tightened"
+reason = "The lock `source` pattern and bounds now match the reader (`Source::from_str` and `Lockfile::new`) wherever a pattern can say so: no user-info in a URL, no colon in a path, no path that starts with white space, a slash, a backslash or a colon, no line break in a path, an explicit white space class, at most 4096 characters in a source, at most 1000 plugins and at most 256 `requires`. The reader already refuses every such document, so no lockfile that loads is refused. Contract ruling on slopvac-8l4.2.56: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugins-lock.schema.json"
+pointer = "/$defs/Locked/properties/source/pattern"
+kind = "pattern-changed"
+reason = "The lock `source` pattern and bounds now match the reader (`Source::from_str` and `Lockfile::new`) wherever a pattern can say so: no user-info in a URL, no colon in a path, no path that starts with white space, a slash, a backslash or a colon, no line break in a path, an explicit white space class, at most 4096 characters in a source, at most 1000 plugins and at most 256 `requires`. The reader already refuses every such document, so no lockfile that loads is refused. Contract ruling on slopvac-8l4.2.56: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugins-lock.schema.json"
+pointer = "/$defs/Locked/properties/requires/maxItems"
+kind = "bound-tightened"
+reason = "The lock `source` pattern and bounds now match the reader (`Source::from_str` and `Lockfile::new`) wherever a pattern can say so: no user-info in a URL, no colon in a path, no path that starts with white space, a slash, a backslash or a colon, no line break in a path, an explicit white space class, at most 4096 characters in a source, at most 1000 plugins and at most 256 `requires`. The reader already refuses every such document, so no lockfile that loads is refused. Contract ruling on slopvac-8l4.2.56: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
