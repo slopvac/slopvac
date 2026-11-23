@@ -16,7 +16,7 @@ impl Configure for NoConfig {
             return Err(Error::Lint("this double reads no config".into()));
         }
         let failed = |e: &dyn std::fmt::Display| Error::Lint(e.to_string());
-        Ok(Box::new(move |_| {
+        Ok(Box::new(move |_, _| {
             Ok(Settings::new(
                 NonEmptyString::new("normal").map_err(|e| failed(&e))?,
                 GenreResult {
