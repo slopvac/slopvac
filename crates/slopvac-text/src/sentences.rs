@@ -304,6 +304,24 @@ mod counted {
 
     thread_local! {
         static BUILT: Cell<usize> = const { Cell::new(0) };
+        static CUTS: Cell<usize> = const { Cell::new(0) };
+        static HELD: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn cut() {
+        CUTS.with(|c| c.set(c.get() + 1));
+    }
+
+    pub(super) fn take_cuts() -> usize {
+        CUTS.with(|c| c.replace(0))
+    }
+
+    pub(super) fn held(n: usize) {
+        HELD.with(|c| c.set(c.get().max(n)));
+    }
+
+    pub(super) fn take_held() -> usize {
+        HELD.with(|c| c.replace(0))
     }
 
     pub(super) fn built() {
@@ -319,6 +337,12 @@ mod counted {
 mod counted {
     #[inline(always)]
     pub(super) fn built() {}
+
+    #[inline(always)]
+    pub(super) fn cut() {}
+
+    #[inline(always)]
+    pub(super) fn held(_n: usize) {}
 }
 
 /// The sentence records [`split_sentences`] and [`split_sentences_within`] built on this
@@ -329,6 +353,24 @@ mod counted {
 #[must_use]
 pub fn take_sentences_built() -> usize {
     counted::take()
+}
+
+/// The sentence boundaries the splitter found on this thread since the last call. A split
+/// that stops at its limit finds about that many, and one that finds every boundary before it
+/// checks the limit finds them all.
+#[cfg(feature = "work-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn take_cuts_found() -> usize {
+    counted::take_cuts()
+}
+
+/// The most sentence records one split held at once on this thread since the last call.
+#[cfg(feature = "work-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn take_peak_sentences_held() -> usize {
+    counted::take_held()
 }
 
 /// Split prose into sentences, applying vertical-list structure before punctuation.
@@ -388,6 +430,7 @@ fn split_limited(
             if matches!(c, '.' | '!' | '?')
                 && let Some(end) = terminal_cut(chunk, index, &scan, work)?
             {
+                counted::cut();
                 cuts.push(end);
                 index = end;
                 continue;
@@ -409,6 +452,7 @@ fn split_limited(
                 return Ok(None);
             }
             counted::built();
+            counted::held(out.len() + 1);
             out.push(Sentence {
                 text: part.to_owned(),
                 start: absolute,

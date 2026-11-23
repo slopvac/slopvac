@@ -244,3 +244,18 @@ fn the_split_of_a_composite_text_builds_no_record_past_the_budget() {
         "{built} records for a budget of {limit}"
     );
 }
+
+#[test]
+fn the_split_of_a_dense_paragraph_finds_no_boundary_past_the_budget() {
+    // The splitter finds the boundaries of a chunk as it goes and stops at the budget. One
+    // that finds every boundary of the chunk first, and checks afterwards, finds 300000.
+    let source = paragraph("Go.", 300_000);
+    let limit = source.len() / 8 + 65_536;
+    let _ = slopvac_text::take_cuts_found();
+    assert!(engine().lint(&Input::markdown("a.md", &source)).is_err());
+    let found = slopvac_text::take_cuts_found();
+    assert!(
+        found <= limit + 1,
+        "{found} boundaries for a budget of {limit}"
+    );
+}

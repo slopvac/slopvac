@@ -32,8 +32,8 @@ pub use measure::{
 };
 pub use messages::message_entries;
 pub use pattern::{Pattern, PatternError, TextError};
+pub use sentences::{Sentence, cell_sentence, split_sentences, split_sentences_within};
 #[cfg(feature = "work-counters")]
 #[doc(hidden)]
-pub use sentences::take_sentences_built;
-pub use sentences::{Sentence, cell_sentence, split_sentences, split_sentences_within};
+pub use sentences::{take_cuts_found, take_peak_sentences_held, take_sentences_built};
 pub use tokens::{count_words, joined_words, tokens};
