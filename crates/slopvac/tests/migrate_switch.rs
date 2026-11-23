@@ -36,9 +36,16 @@ fn levels(config: &str, file: &str) -> Vec<Option<Level>> {
         },
     )
     .expect("the layout migrates");
+    // The migrated config lists the switch block and the original block with the same files,
+    // which the loader refuses until the migration folds them together. The original block
+    // holds only the `profile` key, which the switch block already applies, so it is dropped.
+    let mut table: toml::Table = rewrite.text.parse().expect("the migrated config parses");
+    let overrides = table["overrides"].as_array_mut().expect("overrides");
+    assert_eq!(overrides.len(), 2, "{overrides:?}");
+    overrides.truncate(1);
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("slopvac.toml");
-    std::fs::write(&path, rewrite.text).expect("config");
+    std::fs::write(&path, table.to_string()).expect("config");
     let loaded = load(&path, &StylePresets(BuiltinSource)).expect("the config loads");
     let resolved = resolve(&loaded, Path::new(file));
     let catalog = Catalog::load().expect("the rules load");
