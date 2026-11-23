@@ -251,8 +251,8 @@ pub(crate) enum CliText {
     WhyNoEnvs,
     /// Stands in for failure text that can name a local path.
     #[code("plugins-detail-withheld")]
-    #[text("details are withheld because they can name paths outside the project")]
-    Withheld,
+    #[text("{code}: details are withheld because they can name paths outside the project")]
+    Withheld { code: String },
     /// Trust for a plugin was removed.
     #[code("plugins-untrusted")]
     #[text("removed the trust recorded for `{id}`")]
@@ -402,7 +402,7 @@ impl std::error::Error for Redacted {}
 /// failure. It is a catalog of its own, so a lookup through [`Catalog`] by a generic caller or
 /// a trait object reports the code of the failure and not a wrapper's.
 ///
-/// Its entry renders the sentence as `{detail}`. The entries are not in [`entries`]: each code
+/// Its entry renders the sentence as `{detail}`. The entries are not in the published catalog: each code
 /// is already published by the catalog of the failure it stands for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reported {

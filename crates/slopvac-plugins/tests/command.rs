@@ -1072,6 +1072,55 @@ fn loader_text_is_never_echoed_into_the_failure() {
     let shown = names_in_chain(&err);
     assert!(!shown.contains("secret-dir"), "{shown}");
     assert!(!shown.contains("cannot read"), "{shown}");
+    assert_eq!(
+        err.to_string(),
+        "cannot load `fake` to record trust: plugins-trust-inputs-failed: details are withheld because they can name paths outside the project"
+    );
+}
+#[test]
+fn status_names_the_code_beside_a_withheld_loader_failure() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    let ran = f.run(&["status"], false, |s| s.loader(FailingLoader));
+    assert!(
+        ran.out.contains(
+            "trust state unknown: plugins-part-trust-unknown: details are withheld because they can name paths outside the project"
+        ),
+        "{}",
+        ran.out
+    );
+}
+
+const STORE_WITHHELD: &str =
+    "plugins-store-failed: details are withheld because they can name paths outside the project";
+
+#[test]
+fn trust_names_the_code_beside_a_withheld_damaged_store() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    fs::create_dir_all(f.state()).unwrap();
+    fs::write(f.state().join("trust.json"), "not json").unwrap();
+    let err = f
+        .run(&["trust", "fake"], false, with_loader(&f))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugins-store-failed");
+    assert_eq!(err.to_string(), STORE_WITHHELD);
+}
+
+#[test]
+fn status_names_the_code_beside_a_withheld_damaged_store() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    fs::create_dir_all(f.state()).unwrap();
+    fs::write(f.state().join("trust.json"), "not json").unwrap();
+    let ran = f.run(&["status"], false, with_loader(&f));
+    assert!(
+        ran.out
+            .contains(&format!("trust state unknown: {STORE_WITHHELD}")),
+        "{}",
+        ran.out
+    );
 }
 
 #[test]

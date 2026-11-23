@@ -17,9 +17,16 @@ use crate::sync::SyncError;
 use crate::trust::TrustError;
 use crate::update::UpdateError;
 
-fn withheld() -> String {
-    render(&CliText::Withheld)
+/// The sentence that stands in for withheld detail, with the code of the failure it replaces.
+/// Every withheld text goes through here, so the code always shows beside it.
+pub(crate) fn withheld(code: &str) -> String {
+    render(&CliText::Withheld {
+        code: code.to_owned(),
+    })
 }
+
+/// The code of a trust store failure that has none of its own: the group's store failure.
+const STORE_FAILED: &str = "plugins-store-failed";
 
 fn under(path: &Path, root: &Path) -> String {
     display_under_root(path, root)
@@ -37,7 +44,7 @@ pub(crate) fn revocation(e: &RevocationError) -> Reported {
         | RevocationError::Rollback { .. }
         | RevocationError::Equivocation { .. }
         | RevocationError::Clock(_) => e.to_string(),
-        _ => withheld(),
+        _ => withheld(e.code()),
     };
     Reported::new(e.code(), text)
 }
@@ -52,7 +59,7 @@ pub(crate) fn sync(root: &Path, e: &SyncError) -> Reported {
         | SyncError::DigestMismatch { .. }
         | SyncError::Revoked { .. }
         | SyncError::LockMismatch(_) => e.to_string(),
-        _ => withheld(),
+        _ => withheld(e.code()),
     };
     Reported::new(e.code(), text)
 }
@@ -65,7 +72,7 @@ pub(crate) fn update(root: &Path, e: &UpdateError) -> Reported {
             update_busy(&under(Path::new(path), root), timeout.as_secs_f32())
         }
         UpdateError::Offline | UpdateError::UnknownPlugin(_) => e.to_string(),
-        _ => withheld(),
+        _ => withheld(e.code()),
     };
     Reported::new(e.code(), text)
 }
@@ -80,10 +87,64 @@ pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
         | TrustError::NotPinned(_)
         | TrustError::Revoked(_)
         | TrustError::TooLarge { .. } => e.to_string(),
-        _ => withheld(),
+        _ => withheld(e.code().unwrap_or(STORE_FAILED)),
     };
     match e.code() {
         Some(code) => Ok(Reported::new(code, text)),
         None => Err(text),
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn a_fallback_variant_shows_its_own_code_beside_the_withheld_sentence() {
+        let e = SyncError::Store("failed at /home/someone/secret".to_owned());
+        let shown = sync(Path::new("/project"), &e).to_string();
+        assert_eq!(
+            shown,
+            "sync-failed: details are withheld because they can name paths outside the project"
+        );
+    }
+
+    #[test]
+    fn the_withheld_sentence_always_carries_the_code_it_was_given() {
+        assert!(withheld("some-code").starts_with("some-code: "));
+    }
+
+    /// Every source file under `dir`, as its path and text.
+    fn sources(dir: &Path, out: &mut Vec<(String, String)>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                sources(&path, out);
+            } else if path.extension().is_some_and(|x| x == "rs") {
+                out.push((
+                    path.to_string_lossy().into_owned(),
+                    fs::read_to_string(&path).unwrap(),
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn no_code_outside_the_renderer_builds_the_withheld_sentence() {
+        let mut files = Vec::new();
+        sources(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        let offenders: Vec<&str> = files
+            .iter()
+            .filter(|(path, text)| {
+                !path.ends_with("/cause.rs")
+                    && !path.ends_with("/messages/cli.rs")
+                    && text.contains("CliText::Withheld")
+            })
+            .map(|(path, _)| path.as_str())
+            .collect();
+        assert!(offenders.is_empty(), "{offenders:?}");
     }
 }

@@ -12,7 +12,7 @@ use slopvac_sanitize::line;
 use slopvac_update::messages::UpdateMessage;
 
 use crate::PluginSpec;
-use crate::cause;
+use crate::cause::{self, withheld};
 use crate::lock::{
     LockedPack, Lockfile, MAX_LOCK_BYTES, PackId, PackKind, VersionReq, outdated as lock_outdated,
 };
@@ -189,6 +189,7 @@ impl<'a> Runner<'a> {
         &self,
         vp: &VerifiedPlugin,
         mut spec: PluginSpec,
+        code: &'static str,
     ) -> Result<(TrustGate, PluginSpec), String> {
         let mut gate = TrustGate::new(
             self.trust_store(),
@@ -196,12 +197,10 @@ impl<'a> Runner<'a> {
             vec![vp.clone()],
         )
         .with_revocation_cache(self.revocations.clone());
-        let managed = PythonRuntime::read(&vp.root).map_err(|_| render(&CliText::Withheld))?;
+        let managed = PythonRuntime::read(&vp.root).map_err(|_| withheld(code))?;
         if managed.is_some() {
             let envs = self.envs.ok_or_else(|| render(&CliText::WhyNoEnvs))?;
-            gate = gate
-                .with_python_plugins(envs)
-                .map_err(|_| render(&CliText::Withheld))?;
+            gate = gate.with_python_plugins(envs).map_err(|_| withheld(code))?;
             if let Some((program, args)) = gate.python_launch(&vp.name) {
                 spec.program = program;
                 spec.args = args;
@@ -402,6 +401,10 @@ fn revoked(runner: &Runner<'_>, pack: &LockedPack, list: &crate::revoke::Revocat
             .is_some_and(|s| list.revokes_key(s.key_id.as_str()))
 }
 
+/// The codes of the messages that carry a withheld sentence in the status and trust commands.
+const TRUST_UNKNOWN: &str = "plugins-part-trust-unknown";
+const TRUST_INPUTS: &str = "plugins-trust-inputs-failed";
+
 fn trust_part(runner: &Runner<'_>, pack: &LockedPack) -> CliText {
     let id = pack.id.clone();
     let Some(loader) = runner.loader else {
@@ -411,10 +414,10 @@ fn trust_part(runner: &Runner<'_>, pack: &LockedPack) -> CliText {
     };
     let state = loader
         .load(&id)
-        .map_err(|_| render(&CliText::Withheld))
+        .map_err(|_| withheld(TRUST_UNKNOWN))
         .and_then(|(vp, spec)| {
             runner
-                .prepared(&vp, spec)
+                .prepared(&vp, spec, TRUST_UNKNOWN)
                 .map(|(gate, spec)| (gate, vp, spec))
         })
         .and_then(|(gate, vp, spec)| {
@@ -687,8 +690,8 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
     }
     let (vp, spec) = loader
         .load(&pack_id)
-        .map_err(|_| refused(render(&CliText::Withheld)))?;
-    let (gate, spec) = runner.prepared(&vp, spec).map_err(refused)?;
+        .map_err(|_| refused(withheld(TRUST_INPUTS)))?;
+    let (gate, spec) = runner.prepared(&vp, spec, TRUST_INPUTS).map_err(refused)?;
     let (_, state) = gate.state(&vp, &spec).map_err(|e| store_failed(&e))?;
     if state == TrustState::Revoked {
         return Err(RunError::Revoked { id: line(id) });
