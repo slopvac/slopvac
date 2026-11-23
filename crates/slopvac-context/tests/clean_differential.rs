@@ -95,7 +95,12 @@ mod old {
             if matches!(b.kind, BlockKind::Heading | BlockKind::CodeBlock) {
                 continue;
             }
-            for s in doc.sentences(&b).unwrap() {
+            let sentences = doc.sentences(&b);
+            assert!(
+                sentences.is_ok(),
+                "the sentence limit ended a corpus document"
+            );
+            for s in sentences.into_iter().flatten() {
                 if let Some(evidence) = test(s.text)? {
                     out.push(Tag {
                         kind: kind.to_string(),

@@ -271,8 +271,8 @@ fn the_split_of_a_dense_paragraph_finds_no_boundary_past_the_budget() {
 /// `negated-antecedent` finds the negated word in the two sentences before it.
 fn antecedent_engine(extra: &serde_json::Value) -> Engine {
     let mut rule = json!({"exceptions": [{"name": "n", "detector": "negated-antecedent"}]});
-    for (k, v) in extra.as_object().into_iter().flatten() {
-        rule[k] = v.clone();
+    if let Some(map) = rule.as_object_mut() {
+        map.extend(extra.as_object().cloned().unwrap_or_default());
     }
     common::engine(&[common::rule(
         "r",
