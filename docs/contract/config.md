@@ -139,7 +139,7 @@ The block is the mapping under the `slopvac:` key of a document's front matter. 
 - `rules` takes a bare level. The 2.x table form `[rules."x"] severity = "off"` is not valid, because a level is the only field.
 - Two blocks in `[[overrides]]` or `[[genres]]` with the same `files` set are an error: `config-duplicate-scope`. This keeps `Config._reject_duplicate_scopes` from 2.x. The patterns compare as a set after whitespace is trimmed.
 - A `[[genres]]` block assigns a genre to the files it matches and patches their settings. The genre itself is defined in a genre file (`genre.schema.json`, owned by another bead).
-- `exclude` and `files` patterns use gitignore syntax: a leading `!` negates, and the last matching pattern wins. A path that no pattern matches takes the result of the nearest parent directory that a pattern matches.
+- Config `exclude` and `files` patterns use gitignore syntax. Slopvac checks the file path first, then its parent directories from nearest to farthest, and stops at the first path or directory that any pattern matches. At that path or directory, the last matching pattern wins. A positive match excludes the file for `exclude` or selects it for `files`. A pattern that starts with `!` does neither. If no pattern matches the file or its parents, the list does not exclude or select the file.
 - A threshold absent from a profile and from every layer is unset, and its gate does not run.
 
 ## 5. Moving from 2.x
@@ -155,7 +155,7 @@ Owners for the behavior: `slopvac-8l4.16.1` for `migrate`, `slopvac-8l4.4.5` for
 
 ### 5.1 Dispositions
 
-- **preserve**: the key and its meaning carry over. `migrate` copies the value.
+- **preserve**: the key and its meaning carry over. `migrate` copies the value. For the `exclude` and `files` pattern rows, the key and the patterns carry over, but the files that match can differ, because 3.0 matches as section 4 states.
 - **migrate**: 3.0 has the setting under a new key or form. `migrate` rewrites it.
 - **remove**: 3.0 has no equivalent. `migrate` fails with `config-legacy-dropped`, except where the table says the removal is lossless or ends in a notice.
 
@@ -171,8 +171,8 @@ Rule and category names change with the plugin model. `migrate` maps a 2.x name 
 | No version field | migrate | `schema_version = 3` | Adds it. |
 | `mode` | preserve | `mode` | Copies it. |
 | `profile` | preserve | `profile`, as a name | Copies the name. What a tier does changes: it sets thresholds and a severity shift only. The rule defaults it carried move to styles and rule definitions (`slopvac-8l4.2.10`). |
-| `exclude` | preserve | `exclude` | Copies the list. A list replaces the default, as in 2.x. |
-| Negated globs in `exclude` | preserve | `!pattern` | Copies them. Order matters and is kept. |
+| `exclude` | preserve | `exclude` | Copies the patterns in order. A list replaces the default, as in 2.x. The excluded files can differ: for `["*.md", "!keep/"]`, 2.x lints `keep/a.md` and 3.0 excludes it. |
+| Negated globs in `exclude` | preserve | `!pattern` | Copies them in order. 3.0 stops at the first path or directory that a pattern matches, so a negated directory does not bring back a file that a pattern matches itself. |
 | `categories.<name>` as a bare level | preserve | `categories.<name>` | Renames the category. |
 | `categories.<name>.severity` | preserve | `categories.<name>.severity`, or a bare level when it is the only field | Renames the category. |
 | `categories.<name>.minimum_severity` | preserve | same key, `off` included | Renames the category. In 2.x, `off` sets no floor (`engine.py`, the rank test skips it), and 3.0 gives it the same meaning. |
@@ -199,7 +199,7 @@ Rule and category names change with the plugin model. `migrate` maps a 2.x name 
 | `guidance.review_depth` | preserve | `guidance.review_depth` | Copies it. |
 | `guidance.report` | preserve | `guidance.report` | Copies it. |
 | None (new) | none | `guidance.level` | Not written. The default is `standard`. |
-| `overrides[].files` | preserve | `overrides[].files` | Copies it, negated globs included. Patterns now match from the nearest config's directory. |
+| `overrides[].files` | preserve | `overrides[].files` | Copies the patterns in order, negated globs included. The selected files can differ, as for `exclude`. Patterns now match from the nearest config's directory. |
 | `overrides[].profile` | preserve | same key | Copies it. |
 | `overrides[].categories` | preserve | same key | Renames the categories. |
 | `overrides[].rules` | preserve | same key | Renames the rules and writes bare levels. |

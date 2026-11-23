@@ -84,7 +84,7 @@ The mapping relies on this precedence for the level of one checked rule. It is a
   A second profile override then resets everything the first one set.
 
   Limit: `migrate` refuses a category entry that applies above a profile switch, with `migrate-output-invalid` and exit 2, before it writes anything. For a block i that sets `profile`, these entries are refused:
-  - any field of a category in block i, in an earlier block that contains i, in an earlier block inside i, or in a later block whose files meet those of i;
+  - any category that 3.0 keeps, even an empty entry, in block i, in an earlier block that contains i, in an earlier block inside i, or in a later block whose files meet those of i;
   - any named category at the top level, even an empty entry, with any profile switch.
 
   E5 gives such a category a level, and a `rules` entry at `off` in a lower layer holds against it (section 3, rule 3). The migrated config would then not keep the 2.x levels. A follow-up will support these layouts.
