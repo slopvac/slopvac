@@ -77,10 +77,16 @@ pub struct Retired {
 }
 
 /// Codes removed from the catalogs. Never reuse one.
-pub static RETIRED: &[Retired] = &[Retired {
-    code: "config-invalid-toml",
-    note: "Merged into config-parse.",
-}];
+pub static RETIRED: &[Retired] = &[
+    Retired {
+        code: "config-invalid-toml",
+        note: "Merged into config-parse.",
+    },
+    Retired {
+        code: "config-explain-front-matter",
+        note: "Front matter takes part in resolution, so the explain output has no such line.",
+    },
+];
 
 /// The entries of [`ALL`], paired with their catalog names.
 #[must_use]

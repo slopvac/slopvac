@@ -182,3 +182,44 @@ fn an_inline_genre_is_the_genre_of_the_document_and_of_its_settings() {
     assert_eq!(doc["genre"]["source"], "explicit", "{doc}");
     assert_eq!(doc["profile"], "relaxed", "{doc}");
 }
+
+/// The `--explain-config` text of `doc.md` with `text`, in a project with `CONFIG`.
+fn explain_doc(text: &str) -> String {
+    let (_dir, path) = project(CONFIG, text);
+    explain(&path)
+}
+
+/// The explanation uses the inputs of the lint (docs/contract/config.md, section 1.4.1): a
+/// value from the block or a directive names the document, the line and the column of its key.
+#[test]
+fn the_explanation_shows_a_front_matter_value_at_its_line_and_column() {
+    // `    allow:` sits on line 5, and its key starts at column 5.
+    let text = explain_doc("---\nslopvac:\n  v: 3\n  terms:\n    allow: [zorblax]\n---\n# T\n");
+    assert!(
+        text.contains("terms.allow = [\"zorblax\"]  [front-matter "),
+        "{text}"
+    );
+    assert!(text.contains("doc.md:5:5]"), "{text}");
+}
+
+#[test]
+fn the_explanation_shows_a_directive_value_at_its_line_and_column() {
+    // The directive is on line 3 and `<!-- slopvac: ` is 14 bytes, so the key is at column 15.
+    let text = explain_doc("# T\n\n<!-- slopvac: locale=en-GB -->\n");
+    assert!(text.contains("locale = \"en-GB\"  [directive "), "{text}");
+    assert!(text.contains("doc.md:3:15]"), "{text}");
+}
+
+#[test]
+fn the_explanation_follows_the_detected_genre() {
+    // `reference/` is a path signal for `reference`, whose genre file sets `profile: strict`.
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("slopvac.toml"), "schema_version = 3\n").expect("config");
+    fs::create_dir(dir.path().join("reference")).expect("dir");
+    fs::write(dir.path().join("reference/e.md"), BODY).expect("doc");
+    let text = explain(&dir.path().join("reference/e.md"));
+    assert!(
+        text.contains("profile.name = \"strict\"  [genre plugin:core/genres/reference.yaml:4:1]"),
+        "{text}"
+    );
+}

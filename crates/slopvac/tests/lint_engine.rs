@@ -1412,10 +1412,7 @@ fn explain_config_prints_each_value_with_its_source_and_what_it_replaced_and_lin
         "{stdout}"
     );
     assert!(!stdout.contains("FAIL"), "{stdout}");
-    assert!(
-        stdout.ends_with("front matter overrides are not shown\n"),
-        "{stdout}"
-    );
+    assert!(!stdout.contains("front matter overrides"), "{stdout}");
 }
 
 #[test]
@@ -1432,15 +1429,8 @@ fn explain_config_gives_each_file_its_own_block_in_argument_order() {
         .split_once("\ndocs/a.md\n")
         .unwrap_or_else(|| panic!("no second block: {stdout}"));
     assert!(first.starts_with("a.md\n"), "{stdout}");
-    // Every block ends with the fixed line, and a blank line separates the blocks.
-    assert!(
-        first.ends_with("front matter overrides are not shown\n"),
-        "{stdout}"
-    );
-    assert!(
-        second.ends_with("front matter overrides are not shown\n"),
-        "{stdout}"
-    );
+    // A blank line separates the blocks, and no block ends with a fixed line.
+    assert!(!stdout.contains("front matter overrides"), "{stdout}");
     assert!(first.contains("locale = \"en-GB\"  [project slopvac.toml:2:1]\n"));
     assert!(!first.contains("override slopvac.toml"), "{stdout}");
     assert!(second.contains("locale = \"en-US\"  [override slopvac.toml:6:1]\n"));

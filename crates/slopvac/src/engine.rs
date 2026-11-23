@@ -362,15 +362,21 @@ impl Linter for EngineLinter {
             }
         };
         let none = LoadedConfig::without_files(request.root.clone());
+        let reads = preparse(request, &items);
         let mut text = String::new();
-        for item in &items {
+        for (index, item) in items.iter().enumerate() {
             let (config, rel) = match &item.config {
                 Some((config, rel)) => (config.as_ref(), rel.clone()),
                 None => (&none, PathBuf::from(&item.shown)),
             };
-            let mut explained =
-                lint_settings::resolve(config, &rel, &lint_settings::DocumentLayers::default())
-                    .explain();
+            // The same document inputs as the lint of the file takes.
+            let layers = DocumentLayers::read(
+                &item.text,
+                &item.shown,
+                item.config.as_ref().map(|(c, _)| &**c),
+            )
+            .with_detected_genre(reads.detected[index].clone());
+            let mut explained = lint_settings::resolve(config, &rel, &layers).explain();
             for entry in &mut explained {
                 redact_urls(&mut entry.value);
                 for replaced in &mut entry.overridden {

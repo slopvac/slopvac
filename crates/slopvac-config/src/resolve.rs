@@ -526,8 +526,5 @@ pub fn render_explain(config: &LoadedConfig, explained: &[Explained], root: &str
             let _ = writeln!(out, "    {replaced}");
         }
     }
-    // STUB(slopvac-8l4.12.70): front matter takes no part in resolution yet. Remove this line
-    // when that bead wires it in.
-    let _ = writeln!(out, "{}", ConfigText::ExplainFrontMatter);
     out
 }
