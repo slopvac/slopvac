@@ -4,7 +4,7 @@
 //! `slopvac.toml` for each, builds one [`slopvac_engine::Engine`] per distinct settings, lints
 //! every input and assembles the v3 [`Report`] with its summary and gate.
 //!
-//! Rules come from [`crate::rule_catalog`]; see that module for what is still a stub.
+//! Rules come from [`crate::rule_catalog`], which loads the core pack and the config's plugins through `slopvac-packs`.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};

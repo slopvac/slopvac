@@ -4,7 +4,7 @@
 //!
 //! Expected counts come from the converted 2.x core files under
 //! `crates/slopvac-rules/tests/fixtures/core-v3` and the term-casing pack data, not from
-//! the code under test. The rules are embedded by STUB(slopvac-8l4.12.27).
+//! the code under test. The rules load through the core pack.
 #![allow(
     clippy::expect_used,
     clippy::unwrap_used,
