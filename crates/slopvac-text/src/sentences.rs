@@ -297,6 +297,40 @@ fn split_vertical_list<'a>(
     Ok(vec![(text, 0)])
 }
 
+/// Sentence records built on this thread, for the tests that bound allocation.
+#[cfg(feature = "test-counters")]
+mod counted {
+    use std::cell::Cell;
+
+    thread_local! {
+        static BUILT: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn built() {
+        BUILT.with(|c| c.set(c.get() + 1));
+    }
+
+    pub(super) fn take() -> usize {
+        BUILT.with(|c| c.replace(0))
+    }
+}
+
+#[cfg(not(feature = "test-counters"))]
+mod counted {
+    #[inline(always)]
+    pub(super) fn built() {}
+}
+
+/// The sentence records [`split_sentences`] and [`split_sentences_within`] built on this
+/// thread since the last call. A test that lints a document of very short sentences and
+/// reads the count shows whether the split stops at its limit or builds every sentence first.
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn take_sentences_built() -> usize {
+    counted::take()
+}
+
 /// Split prose into sentences, applying vertical-list structure before punctuation.
 pub fn split_sentences(text: &str) -> Result<Vec<Sentence>, TextError> {
     split_sentences_counted(text, &mut Work::default())
@@ -374,6 +408,7 @@ fn split_limited(
             if out.len() >= max {
                 return Ok(None);
             }
+            counted::built();
             out.push(Sentence {
                 text: part.to_owned(),
                 start: absolute,

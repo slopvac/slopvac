@@ -81,6 +81,16 @@ pub trait DocumentView {
 /// Split a block into sentences at `.`, `!` or `?` followed by whitespace.
 #[must_use]
 pub fn split_sentences<'a>(block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
+    split_sentences_within(block, usize::MAX).unwrap_or_default()
+}
+
+/// Split a block as [`split_sentences`] does, but stop as soon as more than `max` sentences
+/// are found, so the result never holds more than `max`. Returns `None` in that case.
+#[must_use]
+pub fn split_sentences_within<'a>(
+    block: &BlockView<'a>,
+    max: usize,
+) -> Option<Vec<SentenceView<'a>>> {
     let text = block.text;
     let mut out = Vec::new();
     let mut start = 0;
@@ -100,7 +110,7 @@ pub fn split_sentences<'a>(block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
                 && !at_end
                 && bytes[j].is_ascii_digit();
             if (at_end || spaced) && !digit_dot {
-                push(&mut out, block, start, j);
+                push(&mut out, block, start, j, max)?;
                 start = j;
             }
             i = j;
@@ -108,22 +118,35 @@ pub fn split_sentences<'a>(block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
             i += 1;
         }
     }
-    push(&mut out, block, start, text.len());
-    out
+    push(&mut out, block, start, text.len(), max)?;
+    Some(out)
 }
 
-fn push<'a>(out: &mut Vec<SentenceView<'a>>, block: &BlockView<'a>, a: usize, b: usize) {
-    let raw = &block.text[a..b];
+/// Add the sentence in `a..b` of the block, unless it is empty. `None` when `out` already
+/// holds `max` sentences.
+fn push<'a>(
+    out: &mut Vec<SentenceView<'a>>,
+    block: &BlockView<'a>,
+    a: usize,
+    b: usize,
+    max: usize,
+) -> Option<()> {
+    let raw = block.text.get(a..b).unwrap_or_default();
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return;
+        return Some(());
+    }
+    if out.len() >= max {
+        return None;
     }
     let lead = raw.len() - raw.trim_start().len();
     let s = block.span.start + a + lead;
+    crate::work::sentence(1);
     out.push(SentenceView {
         span: s..s + trimmed.len(),
         text: trimmed,
     });
+    Some(())
 }
 
 /// Plain in-memory document for tests and tools.
