@@ -347,12 +347,20 @@ fn plugin_schema(schema: &mut Schema) {
 /// hashes. See the PluginDeclaration def in plugin-protocol.schema.json. The manifest closes the
 /// hook entries and the features table: they take only the declared keys and x- keys, so the
 /// hashed bytes carry no unreviewed data.
+#[expect(
+    clippy::doc_markdown,
+    reason = "the text is the published schema description, which names the definitions without backticks"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[schemars(rename = "Plugin", transform = plugin_schema)]
 #[non_exhaustive]
 pub struct PluginTable {
     /// Executable inside the plugin, or a bare name that the plugin's own environment provides.
     /// With runtime python it is a script inside the plugin (PackPath, no leading dash).
+    #[expect(
+        clippy::doc_markdown,
+        reason = "the text is the published schema description, which names the definitions without backticks"
+    )]
     #[schemars(length(min = 1))]
     pub command: String,
     /// How the host runs the command. native (the default) runs it as a program from the plugin.
@@ -362,6 +370,10 @@ pub struct PluginTable {
     /// The Python version request for the managed environment, for example 3.12. Required with
     /// runtime python and invalid otherwise. It is a VersionReq without whitespace, so it can
     /// never start with a dash that uv would read as an option.
+    #[expect(
+        clippy::doc_markdown,
+        reason = "the text is the published schema description, which names the definitions without backticks"
+    )]
     #[schemars(transform = python_request)]
     pub python: Option<String>,
     /// Arguments.
