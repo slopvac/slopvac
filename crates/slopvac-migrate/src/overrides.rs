@@ -46,7 +46,7 @@ pub(crate) fn item(t: &dyn TableLike) -> Option<&Item> {
 }
 
 /// The `overrides` item of `t`, to change.
-pub(crate) fn item_mut<'a>(_: Checked, t: &'a mut dyn TableLike) -> Option<&'a mut Item> {
+pub(crate) fn item_mut(_: Checked, t: &mut dyn TableLike) -> Option<&mut Item> {
     t.get_mut(KEY)
 }
 
