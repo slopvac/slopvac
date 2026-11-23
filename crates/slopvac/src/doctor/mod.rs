@@ -263,8 +263,8 @@ struct DoctorConfigFile {
     layer: &'static str,
     #[schemars(with = "schema::PathText")]
     file: String,
-    /// `ok` when the file parses and declares schema_version 3. `legacy` for a 2.x file (no
-    /// schema_version or 2). `missing`, `unreadable` or `invalid` otherwise.
+    /// `ok` when the file parses and declares `schema_version` 3. `legacy` for a 2.x file (no
+    /// `schema_version` or 2). `missing`, `unreadable` or `invalid` otherwise.
     status: SourceStatus,
     #[schemars(schema_with = "schema::nullable_message")]
     error: Option<String>,
