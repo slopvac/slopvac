@@ -49,17 +49,6 @@ const PENDING: &[(&str, &str, &str)] = &[
         "slopvac-8l4.2.56",
     ),
     (
-        "plugin-manifest.schema.json",
-        "/$defs/PackPath",
-        "slopvac-8l4.2.52",
-    ),
-    // Pending because of `\S`, which the subset forbids. The end anchor is portable.
-    (
-        "plugin-manifest.schema.json",
-        "/$defs/Plugin/properties/python",
-        "slopvac-8l4.2.52",
-    ),
-    (
         "plugins-lock.schema.json",
         "/$defs/Locked/properties/source",
         "slopvac-8l4.2.56",

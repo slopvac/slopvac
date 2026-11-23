@@ -3,7 +3,7 @@
     "PackPath": {
       "description": "A path inside a pack: relative, with forward slashes and no `..` segment. A glob is allowed.",
       "minLength": 1,
-      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S])))",
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?=[^\\\\]*(?![\\s\\S]))(?!([^/]*/)*\\.\\.(/|(?![\\s\\S])))",
       "type": "string"
     },
     "PathList": {
@@ -87,7 +87,7 @@
           "$ref": "#/$defs/VersionReq",
           "description": "The Python version request for the managed environment, for example 3.12. Required with runtime python and invalid otherwise. It is a VersionReq without whitespace, so it can never start with a dash that uv would read as an option.",
           "maxLength": 64,
-          "pattern": "^\\S+(?![\\s\\S])"
+          "pattern": "^[^\\x09-\\x0D\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]+(?![\\s\\S])"
         },
         "runtime": {
           "description": "How the host runs the command. native (the default) runs it as a program from the plugin. python runs it as a script of the plugin in a managed Python environment that sync builds from the plugin's pylock.toml (threat-model.md section 6.6).",

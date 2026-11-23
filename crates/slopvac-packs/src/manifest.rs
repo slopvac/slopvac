@@ -84,14 +84,14 @@ pub enum PackKind {
 
 /// A path inside a pack: relative, with forward slashes and no `..` segment. A glob is allowed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, JsonSchema)]
-// The pattern is the contract's own text, copied from the published schema. The `.` in it
-// reads the same way in every validator for the paths that can occur, and rewriting it is a
-// contract change.
+// The pattern refuses what `PackPath::parse` refuses: a leading `/`, a drive letter, a backslash
+// anywhere and a `..` segment. Negated classes stand for "any character", newline included,
+// because the engines disagree on what `.` matches.
 #[schemars(
     with = "String",
     extend(
         "minLength" = 1,
-        "pattern" = r"^(?![/\\])(?![A-Za-z]:)(?!.*\\)(?!(.*/)?\.\.(/|(?![\s\S])))"
+        "pattern" = r"^(?![/\\])(?![A-Za-z]:)(?=[^\\]*(?![\s\S]))(?!([^/]*/)*\.\.(/|(?![\s\S])))"
     )
 )]
 pub struct PackPath(String);
@@ -262,6 +262,12 @@ pub enum PluginRuntime {
     Python,
 }
 
+/// One or more characters that are not Unicode `White_Space`, the set `char::is_whitespace` uses,
+/// which is the check the reader makes. The engines read `\S` differently, so the set is spelled
+/// out.
+const NO_WHITESPACE: &str =
+    r"^[^\x09-\x0D\x20\x85\xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]+(?![\s\S])";
+
 /// The `python` member: a [`VersionRequest`] with no whitespace, short enough that it can never
 /// pass for an option, and absent unless the runtime is Python.
 fn python_request(schema: &mut Schema) {
@@ -269,7 +275,7 @@ fn python_request(schema: &mut Schema) {
     schema.insert("$ref".into(), json!("#/$defs/VersionReq"));
     schema.remove("type");
     schema.insert("maxLength".into(), json!(64));
-    schema.insert("pattern".into(), json!(r"^\S+(?![\s\S])"));
+    schema.insert("pattern".into(), json!(NO_WHITESPACE));
 }
 
 /// An environment variable name, listed once.

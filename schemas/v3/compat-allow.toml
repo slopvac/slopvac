@@ -396,3 +396,164 @@ pointer = "/$defs/Semver"
 kind = "def-removed"
 reason = "The definition moved to common.schema.json, which the plugin manifest and the plugins lock both reference now. A shared definition must live in a file that follows the output rule, and a def name means one thing across schemas/v3. Nothing outside the schemas references the old name, and the conformance corpus holds no instance of it."
 approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/PackPath/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/PathList/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Plugin/properties"
+kind = "constraint-changed"
+reason = "Follows from the `python` pattern change in the same object. Contract ruling for slopvac-8l4.2.52: the contract owner approves it."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Plugin/properties/python/pattern"
+kind = "pattern-changed"
+reason = "The `python` pattern spells out the Unicode White_Space set that `char::is_whitespace` uses, in place of `\\S`, which the engines read differently. The loader already refuses those strings, so no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the change."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Plugin/then/properties/command/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Provides/properties/blocklists/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Provides/properties/categories/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Provides/properties/configs/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Provides/properties/genres/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Provides/properties/prime/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Provides/properties/styles/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Provides/properties/taggers/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Provides/properties/terms/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/plugin/$ref(plugin-manifest.schema.json#/$defs/Plugin)/properties/python/pattern"
+kind = "pattern-changed"
+reason = "The `python` pattern spells out the Unicode White_Space set that `char::is_whitespace` uses, in place of `\\S`, which the engines read differently. The loader already refuses those strings, so no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the change."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/plugin/$ref(plugin-manifest.schema.json#/$defs/Plugin)/then/properties/command/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/provides/$ref(plugin-manifest.schema.json#/$defs/Provides)/properties/blocklists/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/provides/$ref(plugin-manifest.schema.json#/$defs/Provides)/properties/categories/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/provides/$ref(plugin-manifest.schema.json#/$defs/Provides)/properties/configs/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/provides/$ref(plugin-manifest.schema.json#/$defs/Provides)/properties/genres/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/provides/$ref(plugin-manifest.schema.json#/$defs/Provides)/properties/prime/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/provides/$ref(plugin-manifest.schema.json#/$defs/Provides)/properties/styles/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/provides/$ref(plugin-manifest.schema.json#/$defs/Provides)/properties/taggers/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/provides/$ref(plugin-manifest.schema.json#/$defs/Provides)/properties/terms/$ref(plugin-manifest.schema.json#/$defs/PathList)/items/$ref(plugin-manifest.schema.json#/$defs/PackPath)/pattern"
+kind = "pattern-changed"
+reason = "The pack path pattern now refuses a path with a backslash or a `..` segment after a newline, which the old `.` did not reach. `PackPath::parse` already refuses every such path, so the schema now accepts exactly what the loader accepts and no document that loads is refused. Contract ruling for slopvac-8l4.2.52: the contract owner approves the tightening."
+approved_by = "contract owner (8l4.2)"
