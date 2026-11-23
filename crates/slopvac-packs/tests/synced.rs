@@ -17,8 +17,8 @@ use rstest::rstest;
 use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
-    ArtifactFault, Budget, Limits, LoadedPack, PackError, Packs, Reference, SyncedError,
-    load_synced, load_synced_within,
+    Budget, Limits, LoadedPack, PackError, Packs, Reference, SyncedError, load_synced,
+    load_synced_within,
 };
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::Lockfile;
@@ -452,9 +452,8 @@ fn a_synced_pack_registers_its_taggers_after_the_core_ones() {
     assert_eq!(ids.last(), Some(&"t"));
 }
 
-// Policies section 1.9: an authored tagger pattern over 8,192 bytes is refused, whichever pack
-// supplies it. The contract also names the code `tagger-pattern-too-long`, which the loader does
-// not report yet: it files a too-long pattern under the general pattern fault.
+// Policies section 1.9: an authored tagger pattern over 8,192 bytes is refused with the code
+// `tagger-pattern-too-long`, whichever pack supplies it. The text names the length and the cap.
 #[test]
 fn a_synced_tagger_over_the_pattern_cap_is_refused() {
     let mut w = World::new();
@@ -471,14 +470,10 @@ fn a_synced_tagger_over_the_pattern_cap_is_refused() {
 
     let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
 
+    assert_eq!(err.code(), Some("tagger-pattern-too-long"), "{err}");
     assert!(
-        matches!(
-            err,
-            SyncedError::Pack(PackError::Artifact {
-                fault: ArtifactFault::Pattern,
-                ..
-            })
-        ),
+        err.to_string()
+            .ends_with("pattern is 8193 bytes, over the 8192-byte limit"),
         "{err}"
     );
 }

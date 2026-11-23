@@ -40,6 +40,13 @@ impl PackError {
             Self::Source(e) => e.code(),
             Self::Registry(e) => e.code(),
             Self::Budget { budget, .. } => Some(budget.code()),
+            Self::TaggerPatternTooLong { len, max, .. } => Some(
+                slopvac_context::Error::PatternTooLong {
+                    len: *len,
+                    max: *max,
+                }
+                .code(),
+            ),
             Self::GlobTooComplex => Some(code_of!(GlobTooComplex {
                 depth,
                 alternatives,
@@ -89,6 +96,21 @@ pub enum PackError {
         path: String,
         /// What went wrong, without file text.
         fault: ArtifactFault,
+    },
+    /// A tagger pattern is over the pattern cap (policies, section 1.9). The code and the text
+    /// are those of the context crate's own refusal, which holds only the two sizes.
+    #[error(
+        "`{}` does not load: {}",
+        slopvac_sanitize::line(.path),
+        slopvac_context::Error::PatternTooLong { len: *.len, max: *.max }
+    )]
+    TaggerPatternTooLong {
+        /// The pack-relative path.
+        path: String,
+        /// The length of the pattern, in bytes.
+        len: usize,
+        /// The cap, in bytes.
+        max: usize,
     },
     /// Two packs supply the same name.
     #[error(transparent)]

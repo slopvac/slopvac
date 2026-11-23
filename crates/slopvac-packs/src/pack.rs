@@ -62,6 +62,13 @@ impl Reader<'_> {
 /// Reduce a parse failure of `text` to a location and a fixed reason.
 fn artifact(path: &PackPath, text: &str, source: &slopvac_context::Error) -> PackError {
     use slopvac_context::Error as E;
+    if let E::PatternTooLong { len, max } = source {
+        return PackError::TaggerPatternTooLong {
+            path: path.as_str().to_owned(),
+            len: *len,
+            max: *max,
+        };
+    }
     let fault = match source {
         E::Yaml(_) => match slopvac_config::tree::parse_yaml(text) {
             Err(e) => return syntax(path, text, &e),
