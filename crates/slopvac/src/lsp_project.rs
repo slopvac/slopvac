@@ -489,8 +489,8 @@ impl Project {
     }
 
     /// The genre that the engine of `config` chooses for the buffer at `path`, which the
-    /// settings of the buffer then follow. Only Markdown and MDX are read here: a
-    /// reStructuredText buffer would start an interpreter for the sake of a genre.
+    /// settings of the buffer then follow. The probe engine reads the buffer with its own RST
+    /// adapter, which is the parse the lint of the buffer needs.
     fn detected_genre(
         &self,
         epoch: u64,
@@ -501,7 +501,7 @@ impl Project {
     ) -> Option<String> {
         let kind = match path.rsplit('.').next() {
             Some("mdx") => Kind::Mdx,
-            Some("rst") => return None,
+            Some("rst") => Kind::Rst,
             _ => Kind::Markdown,
         };
         let probe = self.probe(epoch, config, rel)?;
