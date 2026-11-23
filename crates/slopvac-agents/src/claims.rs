@@ -209,16 +209,13 @@ fn normalize(t: &str) -> String {
     }
 }
 
-/// Sentences of one Markdown paragraph.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "reviews two files the user names, outside any lint run and its document budget; bounding it is a separate change"
-)]
+/// Sentences of one Markdown paragraph, at most as many as `slopvac-context` allows a text
+/// of its length.
 fn sentences(paragraph: &str) -> Result<Vec<String>, AgentsError> {
-    Ok(slopvac_text::split_sentences(paragraph)?
-        .into_iter()
-        .map(|s| s.text)
-        .collect())
+    let limit = slopvac_context::sentence_budget(paragraph.len());
+    let found = slopvac_text::split_sentences_within(paragraph, limit)?
+        .ok_or(slopvac_context::Error::TagLimit { limit })?;
+    Ok(found.into_iter().map(|s| s.text).collect())
 }
 
 /// Content tokens for alignment: the engine's word tokens, lowercased, without

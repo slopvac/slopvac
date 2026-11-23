@@ -28,6 +28,7 @@ serde.workspace = true
 serde-saphyr.workspace = true
 serde_json.workspace = true
 slopvac-config.workspace = true
+slopvac-context.workspace = true
 slopvac-fs.workspace = true
 slopvac-messages.workspace = true
 slopvac-migrate.workspace = true
