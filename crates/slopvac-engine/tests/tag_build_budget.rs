@@ -259,3 +259,51 @@ fn the_split_of_a_dense_paragraph_finds_no_boundary_past_the_budget() {
         "{found} boundaries for a budget of {limit}"
     );
 }
+
+/// An engine whose one rule matches `; it does not read` and drops the match when
+/// `negated-antecedent` finds the negated word in the two sentences before it.
+fn antecedent_engine(extra: &serde_json::Value) -> Engine {
+    let mut rule = json!({"exceptions": [{"name": "n", "detector": "negated-antecedent"}]});
+    for (k, v) in extra.as_object().into_iter().flatten() {
+        rule[k] = v.clone();
+    }
+    common::engine(&[common::rule(
+        "r",
+        &json!({"kind": "pattern", "pattern": "; it does not read"}),
+        &rule,
+    )])
+}
+
+/// The records the antecedent look-back holds: two sentences, whatever the text before.
+const ANTECEDENT_SENTENCES: usize = 2;
+
+#[test]
+fn the_antecedent_look_back_in_a_table_cell_holds_only_the_sentences_it_needs() {
+    // One cell of 300000 sentences, then a match. Preparation reads the cell as one
+    // sentence, so the look-back is the only split of its text.
+    let source = format!(
+        "| h |\n|---|\n| {}It reads JSON; it does not read YAML. |\n",
+        "Go. ".repeat(300_000)
+    );
+    let _ = slopvac_text::take_peak_sentences_held();
+    let result = antecedent_engine(&json!({})).lint(&Input::markdown("a.md", &source));
+    assert!(result.is_ok(), "{:?}", result.map(|d| d.findings.len()));
+    let held = slopvac_text::take_peak_sentences_held();
+    assert!(held <= ANTECEDENT_SENTENCES, "{held} records held at once");
+}
+
+#[test]
+fn the_antecedent_look_back_in_a_raw_scope_line_holds_only_the_sentences_it_needs() {
+    // A raw-scope rule reads the lines of the file, and preparation splits none of a code
+    // block: the line of 300000 sentences is split only by the look-back.
+    let source = format!(
+        "```\n{}It reads JSON; it does not read YAML.\n```\n",
+        "Go. ".repeat(300_000)
+    );
+    let _ = slopvac_text::take_peak_sentences_held();
+    let result =
+        antecedent_engine(&json!({"scope": "raw"})).lint(&Input::markdown("a.md", &source));
+    assert!(result.is_ok(), "{:?}", result.map(|d| d.findings.len()));
+    let held = slopvac_text::take_peak_sentences_held();
+    assert!(held <= ANTECEDENT_SENTENCES, "{held} records held at once");
+}

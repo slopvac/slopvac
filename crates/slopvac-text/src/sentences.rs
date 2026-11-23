@@ -404,23 +404,48 @@ fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>,
     Ok(split_limited(text, work, usize::MAX)?.unwrap_or_default())
 }
 
-/// The sentences of `text`, or `None` when there are more than `max`.
-fn split_limited(
+/// The sentence in `start..end` of `chunk`, which starts at `chunk_offset` in the text, or
+/// `None` when it holds no word.
+fn sentence_in(
+    chunk: &str,
+    chunk_offset: usize,
+    start: usize,
+    end: usize,
+) -> Result<Option<Sentence>, TextError> {
+    let raw = chunk.get(start..end).unwrap_or_default();
+    let part = py_strip(raw);
+    let leading = raw.len() - py_lstrip(raw).len();
+    let absolute = chunk_offset + start + leading;
+    if part.is_empty() || !WORDLIKE.is_match(part)? {
+        return Ok(None);
+    }
+    counted::built();
+    Ok(Some(Sentence {
+        text: part.to_owned(),
+        start: absolute,
+        end: absolute + part.len(),
+        word_count: count_words(part)?,
+        text_type: classify_text_type(part)?,
+    }))
+}
+
+/// Hand each sentence of `text` to `visit` as the splitter finds it, and stop when `visit`
+/// returns `false`. Nothing is held between sentences, so the caller decides what to keep.
+fn each_sentence(
     text: &str,
     work: &mut Work,
-    max: usize,
-) -> Result<Option<Vec<Sentence>>, TextError> {
+    mut visit: impl FnMut(Sentence) -> bool,
+) -> Result<(), TextError> {
     if py_strip(text).is_empty() {
-        return Ok(Some(Vec::new()));
+        return Ok(());
     }
-    let mut out = Vec::new();
     for (chunk, chunk_offset) in split_vertical_list(text, work)? {
         work.tick(chunk.len());
         let scan = Scan {
             protected: Protected::new(protected_ranges(chunk)?),
             runs: dotted_runs(chunk.as_bytes()),
         };
-        let mut cuts = Vec::new();
+        let mut start = 0;
         let mut index = 0;
         while index < chunk.len() {
             let c = chunk[index..]
@@ -431,38 +456,62 @@ fn split_limited(
                 && let Some(end) = terminal_cut(chunk, index, &scan, work)?
             {
                 counted::cut();
-                cuts.push(end);
+                if let Some(found) = sentence_in(chunk, chunk_offset, start, end)?
+                    && !visit(found)
+                {
+                    return Ok(());
+                }
+                start = end;
                 index = end;
                 continue;
             }
             index += c.len_utf8();
         }
-        let mut start = 0;
-        cuts.push(chunk.len());
-        for end in cuts {
-            let raw = &chunk[start..end];
-            let part = py_strip(raw);
-            let leading = raw.len() - py_lstrip(raw).len();
-            let absolute = chunk_offset + start + leading;
-            start = end;
-            if part.is_empty() || !WORDLIKE.is_match(part)? {
-                continue;
-            }
-            if out.len() >= max {
-                return Ok(None);
-            }
-            counted::built();
-            counted::held(out.len() + 1);
-            out.push(Sentence {
-                text: part.to_owned(),
-                start: absolute,
-                end: absolute + part.len(),
-                word_count: count_words(part)?,
-                text_type: classify_text_type(part)?,
-            });
+        if let Some(found) = sentence_in(chunk, chunk_offset, start, chunk.len())?
+            && !visit(found)
+        {
+            return Ok(());
         }
     }
-    Ok(Some(out))
+    Ok(())
+}
+
+/// The sentences of `text`, or `None` when there are more than `max`.
+fn split_limited(
+    text: &str,
+    work: &mut Work,
+    max: usize,
+) -> Result<Option<Vec<Sentence>>, TextError> {
+    let mut out = Vec::new();
+    let mut over = false;
+    each_sentence(text, work, |found| {
+        if out.len() >= max {
+            over = true;
+            return false;
+        }
+        counted::held(out.len() + 1);
+        out.push(found);
+        true
+    })?;
+    Ok((!over).then_some(out))
+}
+
+/// The last `keep` sentences of `text`, nearest last, as [`split_sentences`] splits it, held
+/// at most `keep` at a time whatever the length of the text.
+///
+/// # Errors
+/// Returns a [`TextError`] when a pattern fails.
+pub fn split_sentences_tail(text: &str, keep: usize) -> Result<Vec<Sentence>, TextError> {
+    let mut tail = std::collections::VecDeque::new();
+    each_sentence(text, &mut Work::default(), |found| {
+        if tail.len() >= keep {
+            tail.pop_front();
+        }
+        tail.push_back(found);
+        counted::held(tail.len());
+        true
+    })?;
+    Ok(tail.into())
 }
 
 #[cfg(test)]
