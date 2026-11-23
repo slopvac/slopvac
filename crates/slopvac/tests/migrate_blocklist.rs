@@ -160,7 +160,7 @@ fn a_moved_blocklist_reports_at_the_2x_level_in_every_file(
 /// Run `migrate --preserve-behavior --write` on a project with `config`, assert that it stops
 /// with exit 2 and `migrate-output-invalid` and leaves the project as it was, and return its
 /// stderr.
-fn refused(config: &str) -> String {
+fn refused(config: &str) -> Result<String, Box<dyn std::error::Error>> {
     let dir = project(config);
     let assert = slopvac()
         .arg("migrate")
@@ -170,12 +170,9 @@ fn refused(config: &str) -> String {
         .code(2);
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
     assert!(stderr.contains("error[migrate-output-invalid]"), "{stderr}");
-    assert_eq!(
-        fs::read_to_string(dir.path().join("slopvac.toml")).expect("config"),
-        config
-    );
+    assert_eq!(fs::read_to_string(dir.path().join("slopvac.toml"))?, config);
     assert!(!dir.path().join(".slopvac").exists());
-    stderr
+    Ok(stderr)
 }
 
 #[rstest]
@@ -200,9 +197,10 @@ fn refused(config: &str) -> String {
 fn a_layout_the_migration_cannot_keep_is_refused_and_nothing_is_written(
     #[case] config: &str,
     #[case] at: &str,
-) {
-    let stderr = refused(config);
+) -> Result<(), Box<dyn std::error::Error>> {
+    let stderr = refused(config)?;
     assert!(stderr.contains(&format!("`{at}`")), "{stderr}");
+    Ok(())
 }
 
 /// A blocklist, a top-level category and a profile switch break both limits of
@@ -210,11 +208,12 @@ fn a_layout_the_migration_cannot_keep_is_refused_and_nothing_is_written(
 /// switch. The blocklist check runs first, so the run names the switch and gives the blocklist
 /// reason.
 #[test]
-fn a_blocklist_with_a_top_level_category_and_a_switch_is_refused_for_the_blocklist() {
+fn a_blocklist_with_a_top_level_category_and_a_switch_is_refused_for_the_blocklist()
+-> Result<(), Box<dyn std::error::Error>> {
     let config = "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n\
                   [categories]\nai-tells-formatting = \"warning\"\n\n\
                   [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"strict\"\n";
-    let stderr = refused(config);
+    let stderr = refused(config)?;
     assert!(
         stderr.contains(
             "`overrides[0].profile` on line 10 sets `profile` in an override, whatever its value, \
@@ -228,4 +227,5 @@ fn a_blocklist_with_a_top_level_category_and_a_switch_is_refused_for_the_blockli
         !stderr.contains("sets a category that applies above the profile switch"),
         "{stderr}"
     );
+    Ok(())
 }
