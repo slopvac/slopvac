@@ -1068,3 +1068,42 @@ fn the_mismatch_notice_names_where_the_requested_model_came_from(
     );
     assert_eq!(found[0]["data"]["reported"], "gemini-3", "{json}");
 }
+
+/// Policies section 1.5: the two phases give two separate non-gating `review-model-same`
+/// warnings. A provider that declares the author's model and also reports it for items gets
+/// one notice before the call, which names the provider and carries no items, and one after
+/// it, which locates each reported item.
+#[test]
+fn a_provider_that_declares_and_reports_the_author_model_adds_one_notice_per_phase()
+-> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(
+        vec![
+            (0, "anthropic/claude-sonnet-5-5"),
+            (1, "anthropic/claude-sonnet-5-5#high"),
+        ],
+        "claude-sonnet-5-5",
+        &[],
+    )?;
+    assert_eq!(
+        notice_codes(&json),
+        ["review-model-same", "review-model-same"],
+        "{json}"
+    );
+    let found = notice_with(&json, "review-model-same");
+    assert_eq!(found[0]["level"], "warning", "{json}");
+    assert_eq!(found[0]["data"]["reviewer_source"], "provider", "{json}");
+    assert_eq!(found[0]["data"]["author_source"], "config", "{json}");
+    assert!(found[0]["data"].get("items").is_none(), "{json}");
+    assert_eq!(found[1]["level"], "warning", "{json}");
+    assert_eq!(found[1]["data"]["reviewer_source"], "reported", "{json}");
+    assert_eq!(found[1]["data"]["author_source"], "config", "{json}");
+    assert_eq!(
+        found[1]["data"]["items"],
+        serde_json::json!([
+            {"role": "original_document", "line": 1},
+            {"role": "revised_document", "line": 1}
+        ]),
+        "{json}"
+    );
+    Ok(())
+}
