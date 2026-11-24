@@ -361,6 +361,14 @@ fn plugin_dirs(env: &dyn Env, root: PathBuf) -> Result<slopvac_plugins::Dirs, Cl
     Ok(slopvac_plugins::Dirs::new(root, store, state))
 }
 
+/// A `[[plugins]]` entry that the config accepts but the plugins group cannot use. The message
+/// is the sentence from the plugins catalog, which names the entry and never a value. The
+/// code is the config's own: contract has not ruled whether this failure keeps it or reports
+/// `lock-mismatch`, so this is the one place that chooses.
+fn plugin_config_invalid(message: String) -> CliError {
+    CliError::new("config-invalid-value", message)
+}
+
 /// `slopvac plugins`: build the runner from the environment and the resolved project config,
 /// then run the subcommand the library selects.
 fn plugins(
@@ -391,21 +399,19 @@ fn plugins(
     if let Some(serde_json::Value::Array(entries)) =
         config.as_ref().and_then(|c| c.project_value(&["plugins"]))
     {
-        for entry in &entries {
+        for (index, entry) in entries.iter().enumerate() {
             let Some(id) = entry.get("id").and_then(|v| v.as_str()) else {
                 continue;
             };
+            // An id that is not a valid plugin id stops the run, and so does an invalid range:
+            // dropping either would let the drift check and `outdated` ignore the entry.
+            let pack = slopvac_plugins::config_id(index + 1, id).map_err(plugin_config_invalid)?;
             configured.push(id.to_owned());
             let Some(text) = entry.get("version").and_then(|v| v.as_str()) else {
                 continue;
             };
-            // An invalid range stops the run: dropping it would let `outdated` and `update`
-            // ignore the limit the user set.
-            let range = slopvac_plugins::config_range(id, text)
-                .map_err(|message| CliError::new("config-invalid-value", message))?;
-            if let Ok(pack) = id.parse() {
-                ranges.insert(pack, range);
-            }
+            let range = slopvac_plugins::config_range(id, text).map_err(plugin_config_invalid)?;
+            ranges.insert(pack, range);
         }
     }
     let now = sign::utc_time(

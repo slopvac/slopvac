@@ -29,6 +29,15 @@ use crate::sync::{
 use crate::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
 use crate::update::{LISTING_BUDGET_BYTES, Outcome, Updater, list_candidates};
 
+/// Parse the id of the plugin entry at `position` (counted from 1) in the config.
+///
+/// # Errors
+/// The sentence that names the entry and never the value, when the id is not a valid plugin id.
+pub fn config_id(position: usize, text: &str) -> Result<PackId, String> {
+    text.parse()
+        .map_err(|_| render(&CliText::ConfigIdInvalid { position }))
+}
+
 /// Parse the version range that the config sets for plugin `id`.
 ///
 /// # Errors

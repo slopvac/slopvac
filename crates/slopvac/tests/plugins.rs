@@ -9,6 +9,9 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
+use std::net::TcpListener;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// A project directory and per-user directories that belong to one test.
 struct Sandbox {
@@ -192,6 +195,122 @@ fn sync_offline_from_any_source_reports_the_missing_cache_entry(
         .stderr(predicate::str::starts_with(
             "error[offline-plugin-missing]: ",
         ));
+}
+
+/// The network boundary of a run: a local proxy that counts every connection the binary opens.
+/// The registry and revocation clients read the proxy settings of the environment, so any
+/// request, the revocation fetch included, reaches it. It answers nothing.
+struct NetworkTally {
+    port: u16,
+    seen: Arc<AtomicUsize>,
+    stop: Arc<AtomicBool>,
+}
+
+impl NetworkTally {
+    fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (seen, stop) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicBool::new(false)));
+        let (count, done) = (Arc::clone(&seen), Arc::clone(&stop));
+        std::thread::spawn(move || {
+            while !done.load(Ordering::Acquire) {
+                match listener.accept() {
+                    Ok(_) => {
+                        count.fetch_add(1, Ordering::AcqRel);
+                    }
+                    Err(_) => std::thread::sleep(std::time::Duration::from_millis(5)),
+                }
+            }
+        });
+        Self { port, seen, stop }
+    }
+
+    fn requests(&self) -> usize {
+        self.seen.load(Ordering::Acquire)
+    }
+
+    /// Route every request of `cmd` through this proxy.
+    fn route(&self, cmd: &mut Command) {
+        let url = format!("http://127.0.0.1:{}", self.port);
+        for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
+            cmd.env(var, &url);
+        }
+        for var in ["NO_PROXY", "no_proxy"] {
+            cmd.env_remove(var);
+        }
+    }
+}
+
+impl Drop for NetworkTally {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+    }
+}
+
+/// Sticky offline: the extended file turns it on, the project turns it off, and the run opens no
+/// connection at all, the revocation fetch included.
+#[test]
+fn sticky_offline_opens_no_connection_when_a_later_layer_says_false() {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"base.toml\"]\n[network]\noffline = false\n",
+    )
+    .unwrap();
+    fs::write(
+        sandbox.project().join("base.toml"),
+        "schema_version = 3\n[network]\noffline = true\n",
+    )
+    .unwrap();
+    let tally = NetworkTally::start();
+    let mut cmd = sandbox.slopvac();
+    tally.route(&mut cmd);
+    cmd.args(["plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[offline-plugin-missing]: "));
+    assert_eq!(tally.requests(), 0, "an offline run opened a connection");
+}
+
+/// The control for the test above: an online run does reach the tally, so a count of zero
+/// there means the run stayed off the network.
+#[test]
+fn an_online_sync_reaches_the_network_tally() {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    let tally = NetworkTally::start();
+    let mut cmd = sandbox.slopvac();
+    tally.route(&mut cmd);
+    cmd.args(["plugins", "sync"]).assert().code(2);
+    assert!(tally.requests() > 0, "the tally saw no connection from an online run");
+}
+
+/// A config id that is not a valid plugin id stops the run. The message names the entry and
+/// never the value. The code awaits contract: `config-invalid-value` or `lock-mismatch`.
+#[rstest::rstest]
+#[case::too_long("a".repeat(5000))]
+#[case::bad_characters("Not A Valid Id!".to_owned())]
+fn an_invalid_plugin_id_in_the_config_exits_2_and_names_no_value(#[case] id: String) {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        format!(
+            "schema_version = 3\n[[plugins]]\nid = \"{id}\"\nsource = \"oci://registry.invalid/acme/x\"\n"
+        ),
+    )
+    .unwrap();
+    sandbox
+        .slopvac()
+        .env("CI", "true")
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[config-invalid-value]: "))
+        .stderr(predicate::str::contains("plugin entry 1"))
+        .stderr(predicate::str::contains(&id).not());
 }
 
 /// A range that does not parse must stop the run and name the plugin, never the value.

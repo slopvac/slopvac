@@ -26,9 +26,9 @@ pub(crate) enum SyncMessage {
         digest: String,
         what: String,
     },
-    /// The resolved plugins differ from the lock.
+    /// The configured or resolved plugins differ from the lock.
     #[code("lock-mismatch")]
-    #[message("the lock does not match the resolved plugins:\n{diff}")]
+    #[message("the lock does not match the configured plugins:\n{diff}")]
     LockMismatch { diff: String },
     /// An installed tree changed and offline sync cannot fetch it again.
     #[code("cache-tampered")]
@@ -1523,7 +1523,7 @@ mod tests {
                 SyncMessage::LockMismatch {
                     diff: s("added: x 1.0.0 is not in the lock\n"),
                 },
-                "the lock does not match the resolved plugins:\nadded: x 1.0.0 is not in the lock\n",
+                "the lock does not match the configured plugins:\nadded: x 1.0.0 is not in the lock\n",
             ),
             (
                 SyncMessage::CacheTampered {
