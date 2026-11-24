@@ -4,7 +4,9 @@ Conformance instances live in schemas/v3/conformance/<artifact>/{valid,invalid}/
 in native JSON, TOML or YAML. For a schema without a root shape (common), an
 instance named ``<Def>--<name>.<ext>`` validates against ``#/$defs/<Def>``.
 ``invalid/cases.toml`` maps each invalid file to a JSON pointer where validation
-must report an error.
+must report an error. ``schema-only/`` holds documents that the schema refuses and the
+reader accepts on purpose; ``schema-only/cases.toml`` maps each to its pointer, and only this
+harness reads the directory.
 """
 
 from __future__ import annotations
@@ -147,6 +149,38 @@ def test_invalid_instance_fails_at_declared_pointer(artifact: str, path: Path) -
 
 
 _MANIFESTS = sorted(CONFORMANCE.glob("*/invalid/cases.toml"))
+
+# Documents the published schema refuses and the reader accepts on purpose. Only this harness
+# reads them: the reader corpora read ``valid/`` and ``invalid/`` and nothing else.
+_SCHEMA_ONLY = [
+    (_artifact(s), p)
+    for s in SCHEMA_FILES
+    for p in sorted((CONFORMANCE / _artifact(s) / "schema-only").glob("*.json"))
+]
+
+
+@pytest.mark.parametrize(
+    ("artifact", "path"), _SCHEMA_ONLY, ids=lambda v: v if isinstance(v, str) else v.name
+)
+def test_schema_only_instance_fails_at_declared_pointer(
+    artifact: str, path: Path
+) -> None:
+    cases = tomllib.loads((path.parent / "cases.toml").read_text(encoding="utf-8"))
+    assert path.name in cases, f"{path.name} missing from cases.toml"
+    errors = list(_validator(artifact, path.name).iter_errors(_load(path)))
+    assert errors, "instance was accepted"
+    assert cases[path.name] in {_pointer(e) for e in errors}
+
+
+@pytest.mark.parametrize(
+    "folder",
+    sorted(CONFORMANCE.glob("*/schema-only")),
+    ids=lambda p: p.parent.name,
+)
+def test_schema_only_cases_toml_keys_match_instance_files(folder: Path) -> None:
+    cases = tomllib.loads((folder / "cases.toml").read_text(encoding="utf-8"))
+    files = {p.name for p in folder.iterdir() if p.name != "cases.toml"}
+    assert set(cases) == files
 
 
 @pytest.mark.parametrize("manifest", _MANIFESTS, ids=lambda p: p.parts[-3])

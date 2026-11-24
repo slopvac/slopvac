@@ -1,0 +1,8001 @@
+schema_version = 3
+
+[[plugins]]
+id = "p0000"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0001"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0002"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0003"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0004"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0005"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0006"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0007"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0008"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0009"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0010"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0011"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0012"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0013"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0014"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0015"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0016"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0017"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0018"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0019"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0020"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0021"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0022"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0023"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0024"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0025"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0026"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0027"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0028"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0029"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0030"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0031"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0032"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0033"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0034"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0035"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0036"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0037"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0038"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0039"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0040"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0041"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0042"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0043"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0044"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0045"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0046"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0047"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0048"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0049"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0050"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0051"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0052"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0053"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0054"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0055"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0056"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0057"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0058"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0059"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0060"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0061"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0062"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0063"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0064"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0065"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0066"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0067"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0068"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0069"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0070"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0071"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0072"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0073"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0074"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0075"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0076"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0077"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0078"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0079"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0080"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0081"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0082"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0083"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0084"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0085"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0086"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0087"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0088"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0089"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0090"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0091"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0092"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0093"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0094"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0095"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0096"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0097"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0098"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0099"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0100"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0101"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0102"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0103"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0104"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0105"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0106"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0107"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0108"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0109"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0110"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0111"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0112"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0113"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0114"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0115"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0116"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0117"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0118"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0119"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0120"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0121"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0122"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0123"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0124"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0125"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0126"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0127"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0128"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0129"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0130"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0131"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0132"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0133"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0134"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0135"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0136"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0137"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0138"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0139"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0140"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0141"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0142"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0143"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0144"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0145"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0146"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0147"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0148"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0149"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0150"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0151"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0152"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0153"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0154"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0155"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0156"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0157"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0158"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0159"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0160"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0161"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0162"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0163"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0164"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0165"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0166"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0167"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0168"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0169"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0170"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0171"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0172"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0173"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0174"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0175"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0176"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0177"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0178"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0179"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0180"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0181"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0182"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0183"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0184"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0185"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0186"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0187"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0188"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0189"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0190"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0191"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0192"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0193"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0194"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0195"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0196"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0197"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0198"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0199"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0200"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0201"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0202"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0203"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0204"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0205"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0206"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0207"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0208"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0209"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0210"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0211"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0212"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0213"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0214"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0215"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0216"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0217"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0218"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0219"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0220"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0221"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0222"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0223"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0224"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0225"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0226"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0227"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0228"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0229"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0230"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0231"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0232"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0233"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0234"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0235"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0236"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0237"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0238"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0239"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0240"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0241"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0242"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0243"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0244"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0245"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0246"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0247"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0248"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0249"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0250"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0251"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0252"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0253"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0254"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0255"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0256"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0257"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0258"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0259"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0260"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0261"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0262"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0263"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0264"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0265"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0266"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0267"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0268"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0269"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0270"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0271"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0272"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0273"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0274"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0275"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0276"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0277"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0278"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0279"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0280"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0281"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0282"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0283"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0284"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0285"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0286"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0287"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0288"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0289"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0290"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0291"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0292"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0293"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0294"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0295"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0296"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0297"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0298"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0299"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0300"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0301"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0302"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0303"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0304"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0305"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0306"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0307"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0308"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0309"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0310"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0311"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0312"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0313"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0314"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0315"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0316"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0317"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0318"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0319"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0320"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0321"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0322"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0323"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0324"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0325"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0326"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0327"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0328"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0329"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0330"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0331"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0332"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0333"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0334"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0335"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0336"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0337"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0338"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0339"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0340"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0341"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0342"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0343"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0344"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0345"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0346"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0347"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0348"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0349"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0350"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0351"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0352"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0353"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0354"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0355"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0356"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0357"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0358"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0359"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0360"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0361"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0362"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0363"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0364"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0365"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0366"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0367"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0368"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0369"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0370"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0371"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0372"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0373"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0374"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0375"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0376"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0377"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0378"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0379"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0380"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0381"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0382"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0383"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0384"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0385"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0386"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0387"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0388"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0389"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0390"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0391"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0392"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0393"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0394"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0395"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0396"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0397"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0398"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0399"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0400"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0401"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0402"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0403"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0404"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0405"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0406"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0407"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0408"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0409"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0410"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0411"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0412"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0413"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0414"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0415"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0416"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0417"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0418"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0419"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0420"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0421"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0422"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0423"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0424"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0425"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0426"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0427"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0428"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0429"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0430"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0431"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0432"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0433"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0434"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0435"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0436"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0437"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0438"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0439"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0440"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0441"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0442"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0443"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0444"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0445"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0446"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0447"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0448"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0449"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0450"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0451"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0452"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0453"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0454"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0455"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0456"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0457"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0458"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0459"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0460"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0461"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0462"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0463"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0464"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0465"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0466"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0467"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0468"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0469"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0470"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0471"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0472"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0473"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0474"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0475"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0476"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0477"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0478"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0479"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0480"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0481"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0482"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0483"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0484"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0485"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0486"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0487"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0488"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0489"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0490"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0491"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0492"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0493"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0494"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0495"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0496"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0497"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0498"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0499"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0500"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0501"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0502"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0503"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0504"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0505"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0506"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0507"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0508"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0509"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0510"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0511"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0512"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0513"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0514"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0515"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0516"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0517"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0518"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0519"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0520"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0521"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0522"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0523"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0524"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0525"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0526"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0527"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0528"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0529"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0530"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0531"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0532"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0533"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0534"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0535"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0536"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0537"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0538"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0539"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0540"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0541"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0542"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0543"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0544"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0545"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0546"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0547"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0548"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0549"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0550"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0551"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0552"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0553"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0554"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0555"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0556"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0557"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0558"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0559"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0560"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0561"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0562"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0563"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0564"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0565"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0566"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0567"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0568"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0569"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0570"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0571"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0572"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0573"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0574"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0575"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0576"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0577"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0578"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0579"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0580"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0581"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0582"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0583"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0584"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0585"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0586"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0587"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0588"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0589"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0590"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0591"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0592"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0593"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0594"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0595"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0596"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0597"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0598"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0599"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0600"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0601"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0602"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0603"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0604"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0605"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0606"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0607"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0608"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0609"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0610"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0611"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0612"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0613"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0614"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0615"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0616"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0617"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0618"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0619"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0620"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0621"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0622"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0623"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0624"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0625"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0626"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0627"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0628"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0629"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0630"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0631"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0632"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0633"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0634"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0635"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0636"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0637"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0638"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0639"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0640"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0641"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0642"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0643"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0644"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0645"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0646"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0647"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0648"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0649"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0650"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0651"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0652"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0653"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0654"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0655"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0656"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0657"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0658"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0659"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0660"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0661"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0662"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0663"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0664"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0665"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0666"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0667"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0668"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0669"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0670"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0671"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0672"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0673"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0674"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0675"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0676"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0677"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0678"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0679"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0680"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0681"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0682"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0683"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0684"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0685"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0686"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0687"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0688"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0689"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0690"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0691"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0692"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0693"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0694"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0695"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0696"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0697"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0698"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0699"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0700"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0701"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0702"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0703"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0704"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0705"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0706"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0707"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0708"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0709"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0710"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0711"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0712"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0713"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0714"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0715"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0716"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0717"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0718"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0719"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0720"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0721"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0722"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0723"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0724"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0725"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0726"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0727"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0728"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0729"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0730"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0731"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0732"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0733"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0734"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0735"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0736"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0737"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0738"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0739"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0740"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0741"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0742"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0743"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0744"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0745"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0746"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0747"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0748"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0749"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0750"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0751"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0752"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0753"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0754"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0755"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0756"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0757"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0758"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0759"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0760"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0761"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0762"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0763"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0764"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0765"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0766"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0767"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0768"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0769"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0770"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0771"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0772"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0773"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0774"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0775"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0776"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0777"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0778"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0779"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0780"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0781"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0782"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0783"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0784"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0785"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0786"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0787"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0788"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0789"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0790"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0791"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0792"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0793"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0794"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0795"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0796"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0797"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0798"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0799"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0800"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0801"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0802"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0803"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0804"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0805"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0806"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0807"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0808"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0809"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0810"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0811"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0812"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0813"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0814"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0815"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0816"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0817"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0818"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0819"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0820"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0821"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0822"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0823"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0824"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0825"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0826"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0827"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0828"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0829"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0830"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0831"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0832"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0833"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0834"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0835"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0836"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0837"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0838"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0839"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0840"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0841"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0842"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0843"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0844"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0845"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0846"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0847"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0848"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0849"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0850"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0851"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0852"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0853"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0854"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0855"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0856"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0857"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0858"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0859"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0860"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0861"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0862"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0863"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0864"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0865"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0866"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0867"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0868"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0869"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0870"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0871"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0872"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0873"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0874"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0875"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0876"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0877"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0878"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0879"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0880"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0881"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0882"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0883"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0884"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0885"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0886"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0887"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0888"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0889"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0890"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0891"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0892"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0893"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0894"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0895"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0896"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0897"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0898"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0899"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0900"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0901"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0902"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0903"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0904"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0905"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0906"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0907"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0908"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0909"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0910"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0911"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0912"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0913"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0914"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0915"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0916"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0917"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0918"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0919"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0920"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0921"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0922"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0923"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0924"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0925"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0926"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0927"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0928"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0929"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0930"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0931"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0932"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0933"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0934"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0935"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0936"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0937"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0938"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0939"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0940"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0941"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0942"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0943"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0944"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0945"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0946"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0947"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0948"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0949"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0950"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0951"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0952"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0953"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0954"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0955"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0956"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0957"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0958"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0959"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0960"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0961"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0962"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0963"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0964"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0965"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0966"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0967"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0968"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0969"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0970"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0971"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0972"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0973"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0974"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0975"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0976"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0977"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0978"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0979"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0980"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0981"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0982"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0983"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0984"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0985"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0986"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0987"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0988"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0989"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0990"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0991"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0992"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0993"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0994"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0995"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0996"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0997"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0998"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0999"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

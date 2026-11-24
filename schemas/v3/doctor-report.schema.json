@@ -1,40 +1,500 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Binary": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "install_method": {
+          "description": "How this binary was installed. `unknown` when no channel matches.",
+          "enum": [
+            "installer",
+            "uv-tool",
+            "uvx",
+            "pip",
+            "uv-pip",
+            "homebrew",
+            "mise",
+            "cargo",
+            "unknown"
+          ],
+          "x-slopvac-extensible": true
+        },
+        "upgrade_command": {
+          "description": "The command that upgrades this install, or null when the channel is unknown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "description": "The running version.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "install_method",
+        "upgrade_command"
+      ],
+      "type": "object"
+    },
+    "Config": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "ok": {
+          "description": "True when every listed source has status `ok`. True with no sources: the defaults apply.",
+          "type": "boolean"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/DoctorConfigFile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ok",
+        "sources"
+      ],
+      "type": "object"
+    },
+    "Directories": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "cache": {
+          "$ref": "#/$defs/Directory"
+        },
+        "data": {
+          "$ref": "#/$defs/Directory"
+        },
+        "state": {
+          "$ref": "#/$defs/Directory"
+        }
+      },
+      "required": [
+        "cache",
+        "data",
+        "state"
+      ],
+      "type": "object"
+    },
+    "Directory": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "bytes": {
+          "description": "Total size of regular files found, or null when the directory does not exist. Counts at most 10000 entries.",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "exists": {
+          "type": "boolean"
+        },
+        "path": {
+          "$ref": "#/$defs/Path"
+        },
+        "source": {
+          "description": "How the location was chosen: an environment variable name, or `default`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "truncated": {
+          "description": "True when the walk stopped at the entry limit, so `bytes` is a lower bound.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "source",
+        "exists",
+        "bytes",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "DoctorConfigFile": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Message"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "file": {
+          "$ref": "#/$defs/Path"
+        },
+        "layer": {
+          "description": "`explicit` for a file named with `--config`, `project` for the nearest `slopvac.toml`.",
+          "enum": [
+            "explicit",
+            "project"
+          ]
+        },
+        "status": {
+          "description": "`ok` when the file parses and declares `schema_version` 3. `legacy` for a 2.x file (no `schema_version` or 2). `missing`, `unreadable` or `invalid` otherwise.",
+          "enum": [
+            "ok",
+            "legacy",
+            "missing",
+            "unreadable",
+            "invalid"
+          ],
+          "x-slopvac-extensible": true
+        }
+      },
+      "required": [
+        "layer",
+        "file",
+        "status",
+        "error"
+      ],
+      "type": "object"
+    },
+    "LockedPlugin": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "data",
+            "code"
+          ]
+        },
+        "state": {
+          "description": "`recorded`: installed and intact. `in-place`: a project directory that matches the lock. `changed`: a project directory that differs from the lock. `tampered`: installed but differs from its record. `not-installed`: absent from the store.",
+          "enum": [
+            "recorded",
+            "in-place",
+            "changed",
+            "tampered",
+            "not-installed"
+          ],
+          "x-slopvac-extensible": true
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "kind",
+        "state"
+      ],
+      "type": "object"
+    },
+    "Message": {
+      "description": "A human message with no absolute path. Not an interface: branch on the status fields.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "Offline": {
+      "additionalProperties": false,
+      "description": "Sticky offline mode (policies.md, section 1.3).",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "effective": {
+          "type": "boolean"
+        },
+        "sources": {
+          "description": "Every source that turned offline on, in the order flag, env, config.",
+          "items": {
+            "enum": [
+              "flag",
+              "env",
+              "config"
+            ],
+            "x-slopvac-extensible": true
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "effective",
+        "sources"
+      ],
+      "type": "object"
+    },
+    "Path": {
+      "description": "A path made safe to print: relative to the working directory (`.` for the directory itself), or `<external>/<file name>` outside it.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "PinnedKey": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "fingerprint": {
+          "description": "SHA-256 of the public key, 64 lowercase hex digits, derived by doctor from the stored key. The key itself is never printed.",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+          "type": "string"
+        },
+        "namespace": {
+          "description": "The pinned namespace, in the plugin id pattern. Doctor reports a store that holds any other text as unreadable.",
+          "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "namespace",
+        "fingerprint"
+      ],
+      "type": "object"
+    },
+    "Platform": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "arch": {
+          "description": "CPU architecture, as Rust reports it (`x86_64`, `aarch64`).",
+          "minLength": 1,
+          "type": "string"
+        },
+        "os": {
+          "description": "Operating system, as Rust reports it (`linux`, `macos`, `windows`).",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "os",
+        "arch"
+      ],
+      "type": "object"
+    },
+    "Plugins": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "items": {
+          "description": "One entry per locked plugin, sorted by id. Empty unless the lockfile status is `ok`.",
+          "items": {
+            "$ref": "#/$defs/LockedPlugin"
+          },
+          "type": "array"
+        },
+        "lockfile": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x-": true
+          },
+          "properties": {
+            "error": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Message"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "file": {
+              "$ref": "#/$defs/Path"
+            },
+            "status": {
+              "description": "`absent` is not an error: a project need not use plugins.",
+              "enum": [
+                "absent",
+                "ok",
+                "invalid",
+                "unreadable"
+              ]
+            }
+          },
+          "required": [
+            "file",
+            "status",
+            "error"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "lockfile",
+        "items"
+      ],
+      "type": "object"
+    },
+    "Trust": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Message"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pinned_keys": {
+          "items": {
+            "$ref": "#/$defs/PinnedKey"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "`absent` when no trust file exists yet.",
+          "enum": [
+            "absent",
+            "ok",
+            "unreadable"
+          ]
+        },
+        "trusted_plugins": {
+          "description": "Number of recorded plugin approvals.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status",
+        "error",
+        "trusted_plugins",
+        "pinned_keys"
+      ],
+      "type": "object"
+    },
+    "Update": {
+      "additionalProperties": false,
+      "description": "What the cached update check says. Doctor reads the cache and starts no request in this build.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "checked_at": {
+          "description": "Unix seconds of the cached check, or null.",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "checks": {
+          "description": "`enabled` or `disabled`. Disabled when `disabled_by` is set.",
+          "enum": [
+            "enabled",
+            "disabled"
+          ]
+        },
+        "disabled_by": {
+          "description": "Why checks are off: offline mode, the CI variable, an opt-out variable, or `[network] update_check = false`. Null when enabled.",
+          "enum": [
+            null,
+            "offline",
+            "ci",
+            "env",
+            "config"
+          ],
+          "x-slopvac-extensible": true
+        },
+        "latest": {
+          "description": "The cached latest release version, or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "`available` when the cached latest release is newer than the running version, `current` when it is not, `unknown` when no cached answer exists or the cached version is not a semantic version.",
+          "enum": [
+            "available",
+            "current",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "checks",
+        "disabled_by",
+        "state",
+        "latest",
+        "checked_at"
+      ],
+      "type": "object"
+    }
+  },
   "$id": "https://slopvac.github.io/slopvac/schemas/v3/doctor-report.schema.json",
-  "title": "slopvac v3 doctor report",
-  "description": "The document that `slopvac doctor --format json` prints. It reports the binary, update state, configuration sources, locked plugins, plugin trust and the per-user directories. Doctor reads local files only and never changes them. Paths are relative to the working directory, or `<external>/<name>` outside it (policies.md, section 1.7). Unknown keys are errors, and keys that start with `x-` are ignored. Semantics are specified in docs/contract/doctor.md. Owner: slopvac-8l4.12.5.",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The document that `slopvac doctor --format json` prints. It reports the binary, update state, configuration sources, locked plugins, plugin trust and the per-user directories. Doctor reads local files only and never changes them. Paths are relative to the working directory, or `<external>/<name>` outside it (policies.md, section 1.7). Unknown keys are errors, and keys that start with `x-` are ignored. Semantics are specified in docs/contract/doctor.md.",
+  "patternProperties": {
+    "^x-": true
+  },
   "properties": {
-    "schema_version": {
-      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    "config": {
+      "$ref": "#/$defs/Config"
+    },
+    "directories": {
+      "$ref": "#/$defs/Directories"
+    },
+    "offline": {
+      "$ref": "#/$defs/Offline"
     },
     "ok": {
       "description": "True when nothing needs attention: configuration is valid, the lockfile parses, no plugin is tampered and the trust store is readable. The exit code is 0 when true and 2 when false. An available update, a missing lockfile or an empty trust store do not make it false.",
       "type": "boolean"
     },
-    "slopvac": {
-      "$ref": "#/$defs/Binary"
-    },
     "platform": {
       "$ref": "#/$defs/Platform"
-    },
-    "update": {
-      "$ref": "#/$defs/Update"
-    },
-    "offline": {
-      "$ref": "#/$defs/Offline"
-    },
-    "config": {
-      "$ref": "#/$defs/Config"
     },
     "plugins": {
       "$ref": "#/$defs/Plugins"
     },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "slopvac": {
+      "$ref": "#/$defs/Binary"
+    },
     "trust": {
       "$ref": "#/$defs/Trust"
     },
-    "directories": {
-      "$ref": "#/$defs/Directories"
+    "update": {
+      "$ref": "#/$defs/Update"
     }
   },
   "required": [
@@ -49,334 +509,6 @@
     "trust",
     "directories"
   ],
-  "patternProperties": {
-    "^x-": {}
-  },
-  "additionalProperties": false,
-  "$defs": {
-    "Path": {
-      "description": "A path made safe to print: relative to the working directory (`.` for the directory itself), or `<external>/<file name>` outside it.",
-      "type": "string",
-      "minLength": 1
-    },
-    "Message": {
-      "description": "A human message with no absolute path. Not an interface: branch on the status fields.",
-      "type": "string",
-      "minLength": 1
-    },
-    "Binary": {
-      "type": "object",
-      "properties": {
-        "version": {
-          "description": "The running version.",
-          "type": "string",
-          "minLength": 1
-        },
-        "install_method": {
-          "description": "How this binary was installed. `unknown` when no channel matches.",
-          "enum": ["installer", "uv-tool", "uvx", "pip", "uv-pip", "homebrew", "mise", "cargo", "unknown"],
-          "x-slopvac-extensible": true
-        },
-        "upgrade_command": {
-          "description": "The command that upgrades this install, or null when the channel is unknown.",
-          "type": ["string", "null"]
-        }
-      },
-      "required": ["version", "install_method", "upgrade_command"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "Platform": {
-      "type": "object",
-      "properties": {
-        "os": {
-          "description": "Operating system, as Rust reports it (`linux`, `macos`, `windows`).",
-          "type": "string",
-          "minLength": 1
-        },
-        "arch": {
-          "description": "CPU architecture, as Rust reports it (`x86_64`, `aarch64`).",
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": ["os", "arch"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "Update": {
-      "description": "What the cached update check says. Doctor reads the cache and starts no request in this build.",
-      "type": "object",
-      "properties": {
-        "checks": {
-          "description": "`enabled` or `disabled`. Disabled when `disabled_by` is set.",
-          "enum": ["enabled", "disabled"]
-        },
-        "disabled_by": {
-          "description": "Why checks are off: offline mode, the CI variable, an opt-out variable, or `[network] update_check = false`. Null when enabled.",
-          "enum": [null, "offline", "ci", "env", "config"],
-          "x-slopvac-extensible": true
-        },
-        "state": {
-          "description": "`available` when the cached latest release is newer than the running version, `current` when it is not, `unknown` when no cached answer exists or the cached version is not a semantic version.",
-          "enum": ["available", "current", "unknown"]
-        },
-        "latest": {
-          "description": "The cached latest release version, or null.",
-          "type": ["string", "null"]
-        },
-        "checked_at": {
-          "description": "Unix seconds of the cached check, or null.",
-          "type": ["integer", "null"],
-          "minimum": 0
-        }
-      },
-      "required": ["checks", "disabled_by", "state", "latest", "checked_at"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "Offline": {
-      "description": "Sticky offline mode (policies.md, section 1.3).",
-      "type": "object",
-      "properties": {
-        "effective": {
-          "type": "boolean"
-        },
-        "sources": {
-          "description": "Every source that turned offline on, in the order flag, env, config.",
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "enum": ["flag", "env", "config"],
-            "x-slopvac-extensible": true
-          }
-        }
-      },
-      "required": ["effective", "sources"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "DoctorConfigFile": {
-      "type": "object",
-      "properties": {
-        "layer": {
-          "description": "`explicit` for a file named with `--config`, `project` for the nearest `slopvac.toml`.",
-          "enum": ["explicit", "project"]
-        },
-        "file": {
-          "$ref": "#/$defs/Path"
-        },
-        "status": {
-          "description": "`ok` when the file parses and declares schema_version 3. `legacy` for a 2.x file (no schema_version or 2). `missing`, `unreadable` or `invalid` otherwise.",
-          "enum": ["ok", "legacy", "missing", "unreadable", "invalid"],
-          "x-slopvac-extensible": true
-        },
-        "error": {
-          "oneOf": [
-            { "$ref": "#/$defs/Message" },
-            { "type": "null" }
-          ]
-        }
-      },
-      "required": ["layer", "file", "status", "error"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "Config": {
-      "type": "object",
-      "properties": {
-        "ok": {
-          "description": "True when every listed source has status `ok`. True with no sources: the defaults apply.",
-          "type": "boolean"
-        },
-        "sources": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/DoctorConfigFile"
-          }
-        }
-      },
-      "required": ["ok", "sources"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "LockedPlugin": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "version": {
-          "type": "string",
-          "minLength": 1
-        },
-        "kind": {
-          "enum": ["data", "code"]
-        },
-        "state": {
-          "description": "`recorded`: installed and intact. `in-place`: a project directory that matches the lock. `changed`: a project directory that differs from the lock. `tampered`: installed but differs from its record. `not-installed`: absent from the store.",
-          "enum": ["recorded", "in-place", "changed", "tampered", "not-installed"],
-          "x-slopvac-extensible": true
-        }
-      },
-      "required": ["id", "version", "kind", "state"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "Plugins": {
-      "type": "object",
-      "properties": {
-        "lockfile": {
-          "type": "object",
-          "properties": {
-            "file": {
-              "$ref": "#/$defs/Path"
-            },
-            "status": {
-              "description": "`absent` is not an error: a project need not use plugins.",
-              "enum": ["absent", "ok", "invalid", "unreadable"]
-            },
-            "error": {
-              "oneOf": [
-                { "$ref": "#/$defs/Message" },
-                { "type": "null" }
-              ]
-            }
-          },
-          "required": ["file", "status", "error"],
-          "patternProperties": {
-            "^x-": {}
-          },
-          "additionalProperties": false
-        },
-        "items": {
-          "description": "One entry per locked plugin, sorted by id. Empty unless the lockfile status is `ok`.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/LockedPlugin"
-          }
-        }
-      },
-      "required": ["lockfile", "items"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "PinnedKey": {
-      "type": "object",
-      "properties": {
-        "namespace": {
-          "description": "The pinned namespace, in the plugin id pattern. Doctor reports a store that holds any other text as unreadable.",
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])"
-        },
-        "fingerprint": {
-          "description": "SHA-256 of the public key, 64 lowercase hex digits, derived by doctor from the stored key. The key itself is never printed.",
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
-        }
-      },
-      "required": ["namespace", "fingerprint"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "Trust": {
-      "type": "object",
-      "properties": {
-        "status": {
-          "description": "`absent` when no trust file exists yet.",
-          "enum": ["absent", "ok", "unreadable"]
-        },
-        "error": {
-          "oneOf": [
-            { "$ref": "#/$defs/Message" },
-            { "type": "null" }
-          ]
-        },
-        "trusted_plugins": {
-          "description": "Number of recorded plugin approvals.",
-          "type": "integer",
-          "minimum": 0
-        },
-        "pinned_keys": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/PinnedKey"
-          }
-        }
-      },
-      "required": ["status", "error", "trusted_plugins", "pinned_keys"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "Directory": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "$ref": "#/$defs/Path"
-        },
-        "source": {
-          "description": "How the location was chosen: an environment variable name, or `default`.",
-          "type": "string",
-          "minLength": 1
-        },
-        "exists": {
-          "type": "boolean"
-        },
-        "bytes": {
-          "description": "Total size of regular files found, or null when the directory does not exist. Counts at most 10000 entries.",
-          "type": ["integer", "null"],
-          "minimum": 0
-        },
-        "truncated": {
-          "description": "True when the walk stopped at the entry limit, so `bytes` is a lower bound.",
-          "type": "boolean"
-        }
-      },
-      "required": ["path", "source", "exists", "bytes", "truncated"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "Directories": {
-      "type": "object",
-      "properties": {
-        "cache": {
-          "$ref": "#/$defs/Directory"
-        },
-        "data": {
-          "$ref": "#/$defs/Directory"
-        },
-        "state": {
-          "$ref": "#/$defs/Directory"
-        }
-      },
-      "required": ["cache", "data", "state"],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    }
-  }
+  "title": "slopvac v3 doctor report",
+  "type": "object"
 }

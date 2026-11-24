@@ -44,16 +44,6 @@ const PENDING: &[(&str, &str, &str)] = &[
         "slopvac-8l4.2.54",
     ),
     (
-        "plugin-index.schema.json",
-        "/$defs/PackIndexSource",
-        "slopvac-8l4.2.56",
-    ),
-    (
-        "plugins-lock.schema.json",
-        "/$defs/Locked/properties/source",
-        "slopvac-8l4.2.56",
-    ),
-    (
         "plugin-protocol.schema.json",
         "/$defs/FeatureName",
         "slopvac-8l4.2.53",

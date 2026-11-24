@@ -6,6 +6,7 @@
 
 pub mod dirs;
 pub mod read;
+mod schema;
 pub mod stubs;
 pub mod update;
 
@@ -13,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use schemars::JsonSchema;
 use serde::Serialize;
+use slopvac_model::x_extensions;
 use slopvac_plugins::lock::{LockError, Lockfile, PackKind};
 use slopvac_plugins::sign::PublicKey;
 use slopvac_plugins::sync::{PackState, Store, status};
@@ -66,6 +68,7 @@ pub trait UpdateProbe {
 /// One status of a config source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline, transform = schema::extensible)]
 pub enum SourceStatus {
     /// Parses and declares `schema_version` 3.
     Ok,
@@ -175,9 +178,15 @@ pub const SCHEMA_VERSION: u8 = 3;
 
 /// The report. Field order is the JSON key order.
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 pub struct Report {
+    // The shared definition, not the Rust integer range.
+    #[schemars(schema_with = "schema::schema_version")]
     schema_version: u8,
-    /// Nothing needs attention.
+    /// True when nothing needs attention: configuration is valid, the lockfile parses, no plugin
+    /// is tampered and the trust store is readable. The exit code is 0 when true and 2 when
+    /// false. An available update, a missing lockfile or an empty trust store do not make it
+    /// false.
     pub ok: bool,
     slopvac: Binary,
     platform: Platform,
@@ -190,92 +199,165 @@ pub struct Report {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 struct Binary {
+    /// The running version.
+    #[schemars(length(min = 1))]
     version: String,
+    /// How this binary was installed. `unknown` when no channel matches.
+    #[schemars(schema_with = "schema::install_method")]
     install_method: &'static str,
+    /// The command that upgrades this install, or null when the channel is unknown.
     upgrade_command: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 struct Platform {
+    /// Operating system, as Rust reports it (`linux`, `macos`, `windows`).
+    #[schemars(length(min = 1))]
     os: &'static str,
+    /// CPU architecture, as Rust reports it (`x86_64`, `aarch64`).
+    #[schemars(length(min = 1))]
     arch: &'static str,
 }
 
+/// What the cached update check says. Doctor reads the cache and starts no request in this
+/// build.
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 struct Update {
+    /// `enabled` or `disabled`. Disabled when `disabled_by` is set.
+    #[schemars(schema_with = "schema::update_checks")]
     checks: &'static str,
+    /// Why checks are off: offline mode, the CI variable, an opt-out variable, or
+    /// `[network] update_check = false`. Null when enabled.
+    #[schemars(schema_with = "schema::update_disabled_by")]
     disabled_by: Option<&'static str>,
+    /// `available` when the cached latest release is newer than the running version, `current`
+    /// when it is not, `unknown` when no cached answer exists or the cached version is not a
+    /// semantic version.
+    #[schemars(schema_with = "schema::update_state")]
     state: &'static str,
+    /// The cached latest release version, or null.
     latest: Option<String>,
+    /// Unix seconds of the cached check, or null.
     checked_at: Option<u64>,
 }
 
+/// Sticky offline mode (policies.md, section 1.3).
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 struct Offline {
     effective: bool,
+    /// Every source that turned offline on, in the order flag, env, config.
+    #[schemars(schema_with = "schema::offline_sources")]
     sources: Vec<&'static str>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 struct DoctorConfigFile {
+    /// `explicit` for a file named with `--config`, `project` for the nearest `slopvac.toml`.
+    #[schemars(schema_with = "schema::config_layer")]
     layer: &'static str,
+    #[schemars(with = "schema::PathText")]
     file: String,
+    /// `ok` when the file parses and declares `schema_version` 3. `legacy` for a 2.x file (no
+    /// `schema_version` or 2). `missing`, `unreadable` or `invalid` otherwise.
     status: SourceStatus,
+    #[schemars(schema_with = "schema::nullable_message")]
     error: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 struct Config {
+    /// True when every listed source has status `ok`. True with no sources: the defaults apply.
     ok: bool,
     sources: Vec<DoctorConfigFile>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(rename = "LockedPlugin", transform = x_extensions)]
 struct PackEntry {
+    #[schemars(length(min = 1))]
     id: String,
+    #[schemars(length(min = 1))]
     version: String,
+    #[schemars(schema_with = "schema::plugin_kind")]
     kind: &'static str,
+    /// `recorded`: installed and intact. `in-place`: a project directory that matches the lock.
+    /// `changed`: a project directory that differs from the lock. `tampered`: installed but
+    /// differs from its record. `not-installed`: absent from the store.
+    #[schemars(schema_with = "schema::plugin_state")]
     state: &'static str,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(inline, transform = x_extensions)]
 struct Lock {
+    #[schemars(with = "schema::PathText")]
     file: String,
+    /// `absent` is not an error: a project need not use plugins.
+    #[schemars(schema_with = "schema::lockfile_status")]
     status: &'static str,
+    #[schemars(schema_with = "schema::nullable_message")]
     error: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(rename = "Plugins", transform = x_extensions)]
 struct Packs {
     lockfile: Lock,
+    /// One entry per locked plugin, sorted by id. Empty unless the lockfile status is `ok`.
     items: Vec<PackEntry>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 struct PinnedKey {
+    /// The pinned namespace, in the plugin id pattern. Doctor reports a store that holds any
+    /// other text as unreadable.
+    #[schemars(extend("pattern" = r"^[a-z][a-z0-9-]{0,63}(?![\s\S])"))]
     namespace: String,
+    /// SHA-256 of the public key, 64 lowercase hex digits, derived by doctor from the stored
+    /// key. The key itself is never printed.
+    #[schemars(extend("pattern" = r"^[0-9a-f]{64}(?![\s\S])"))]
     fingerprint: String,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 struct Trust {
+    /// `absent` when no trust file exists yet.
+    #[schemars(schema_with = "schema::trust_status")]
     status: &'static str,
+    #[schemars(schema_with = "schema::nullable_message")]
     error: Option<String>,
+    /// Number of recorded plugin approvals.
     trusted_plugins: usize,
     pinned_keys: Vec<PinnedKey>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 struct Directory {
+    #[schemars(with = "schema::PathText")]
     path: String,
+    /// How the location was chosen: an environment variable name, or `default`.
+    #[schemars(length(min = 1))]
     source: String,
     exists: bool,
+    /// Total size of regular files found, or null when the directory does not exist. Counts at
+    /// most 10000 entries.
     bytes: Option<u64>,
+    /// True when the walk stopped at the entry limit, so `bytes` is a lower bound.
     truncated: bool,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 struct Directories {
     cache: Directory,
     data: Directory,

@@ -537,6 +537,8 @@ Owners: `slopvac-8l4.9.7`, `slopvac-8l4.19.1`.
 
 **Generation.** The files in `schemas/v3/` are generated from the Rust types by the `slopvac-schemas` crate. CI regenerates them and fails on any difference. Edit the Rust types, never the generated files. The conformance corpus under `schemas/v3/conformance/` is hand-written and stays the referee: the Python and Rust implementations must accept and reject it exactly as each `cases.toml` says. Each artifact moves to generation in its own change.
 
+**Pattern dialect.** Published patterns assume ECMA-262 with the `u` flag, as JSON Schema 2020-12 section 6.4 recommends, and a validator without Unicode mode may refuse to compile them, which fails closed.
+
 **Additive-only check.** `scripts/contract/schema_compat.py` compares `schemas/v3/*.schema.json` with a baseline and enforces section 3.2. It fails on these changes:
 
 - a removed file, or a changed `$id`

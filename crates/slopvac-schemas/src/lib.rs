@@ -10,6 +10,7 @@ mod canonical;
 mod error;
 mod files;
 mod link;
+mod plugin_files;
 
 pub use artifacts::{ARTIFACTS, Artifact};
 pub use canonical::to_canonical_json;
