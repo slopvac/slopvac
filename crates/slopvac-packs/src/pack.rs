@@ -326,35 +326,43 @@ fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
     Ok(())
 }
 
-/// Refuse a pack that supplies a rule, or a category, with the local id of one an earlier pack
-/// supplies. Rule ids are qualified by pack, but the engine keys category settings and scoring by
-/// the category id and a bare key reads as the first pack with that rule, so a second pack with
-/// the same local id would overwrite or switch off the first one's. Nothing from the pack loads.
+/// Refuse a plugin that supplies a rule, or a category, with the local id of one the core pack
+/// supplies, and any rule whose qualified id another pack supplies. Rule ids are qualified by
+/// plugin (`<plugin>:<category>.<rule>`, docs/contract/plugins.md, section 2), so two plugins may
+/// share a bare id. The core is different: the engine keys category settings and scoring by the
+/// category id, and a bare key reads as the first pack with that rule, so a plugin with a core id
+/// would overwrite or switch off the core's. Nothing from the plugin loads.
 fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
-    let mut categories: HashSet<&str> = HashSet::new();
-    let mut rules: HashSet<&str> = HashSet::new();
+    let mut core_categories: HashSet<&str> = HashSet::new();
+    let mut core_rules: HashSet<&str> = HashSet::new();
+    let mut qualified: HashSet<&str> = HashSet::new();
     for pack in packs {
+        let is_core = pack.origin == Source::Core;
         for category in pack.rules.categories() {
-            let collision = category
+            let local_clash = category
                 .rules()
                 .iter()
                 .map(|r| r.id().local())
-                .find(|local| rules.contains(local))
+                .find(|local| !is_core && core_rules.contains(local))
                 .or_else(|| {
-                    categories
-                        .contains(category.id().as_str())
+                    (!is_core && core_categories.contains(category.id().as_str()))
                         .then_some(category.id().as_str())
                 });
-            if let Some(rule) = collision {
+            let same_id = category
+                .rules()
+                .iter()
+                .find(|r| !qualified.insert(r.id().as_str()))
+                .map(|r| r.id().local());
+            if let Some(rule) = local_clash.or(same_id) {
                 return Err(PackError::RuleIdCollision {
                     plugin: pack.manifest.id.to_string(),
                     rule: rule.to_owned(),
                 });
             }
-        }
-        for category in pack.rules.categories() {
-            categories.insert(category.id().as_str());
-            rules.extend(category.rules().iter().map(|r| r.id().local()));
+            if is_core {
+                core_categories.insert(category.id().as_str());
+                core_rules.extend(category.rules().iter().map(|r| r.id().local()));
+            }
         }
     }
     Ok(())

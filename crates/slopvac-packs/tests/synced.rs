@@ -973,3 +973,42 @@ fn the_directory_source_caps_a_file_at_two_mebibytes(
         "{read:?}"
     );
 }
+
+// Rule ids are qualified by plugin (docs/contract/plugins.md, section 2), so two plugins that
+// share a bare rule id are two rules: `base:c.r0` and `top:c.r0`.
+#[test]
+fn two_plugins_that_share_a_bare_rule_id_both_load() {
+    let mut w = World::new();
+    w.install(&Spec::new("base").rules(&["a"]));
+    w.install(&Spec::new("top").requires("base").rules(&["b"]));
+
+    let packs = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store()).unwrap();
+
+    let ids: Vec<String> = packs
+        .rule_sets()
+        .flat_map(|s| s.rules().map(|r| r.id().to_string()))
+        .filter(|id| id.ends_with(":c.r0"))
+        .collect();
+    assert_eq!(ids, ["base:c.r0", "top:c.r0"]);
+}
+
+#[test]
+fn a_plugin_rule_with_a_core_rule_id_is_refused_with_its_own_code() {
+    let packs = Packs::core().unwrap();
+    let core_rule = packs.rule_sets().next().unwrap().rules().next().unwrap();
+    let local = core_rule.id().local().to_owned();
+    let (category, rule) = local.split_once('.').unwrap();
+    let text = format!(
+        r#"{{"schema_version":3,"id":"{category}","title":"T","description":"D","rules":[{{"id":"{rule}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"a"}},"citation":{{"source":"s"}}}}]}}"#
+    );
+    let mut w = World::new();
+    let mut spec = Spec::new("acme");
+    spec.provides = "categories = [\"categories/c.json\"]".into();
+    spec.files.push(("categories/c.json", text));
+    w.install(&spec);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert_eq!(err.code(), Some("pack-rule-id-collision"), "{err}");
+    assert!(err.to_string().contains(&format!("`{local}`")), "{err}");
+}
