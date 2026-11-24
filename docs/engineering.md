@@ -41,7 +41,7 @@ Each rule gives a source. A repository source is a link. A source written as ski
 
 - Declare every dependency version once under `[workspace.dependencies]` and use `dep.workspace = true` in the crate. This includes dev-dependencies, patch pins and feature sets. Target: after `slopvac-8l4.21.5`, because 15 dependency declarations are still inline in member manifests. Source: skill `lang-rust-packaging`.
 - Every crate except `slopvac-pcre2` sets `[lints] workspace = true`. Every crate inherits `version`, `edition`, `rust-version` and `license` from `[workspace.package]`. Source: [`Cargo.toml`](../Cargo.toml).
-- Keep the toolchain pin and the `rust-version` floor. `rust-toolchain.toml` pins the dev toolchain. `rust-version` in `Cargo.toml` trails stable by two minor releases. Raise it only with a recorded reason. Source: [`Cargo.toml`](../Cargo.toml).
+- Keep the toolchain pin and the `rust-version` floor. `rust-toolchain.toml` pins the dev toolchain. `mise.toml` repeats its version and components, so a global mise `rust` setting cannot override it. Bump both together. The quick-lint job fails when they differ. `rust-version` in `Cargo.toml` trails stable by two minor releases. Raise it only with a recorded reason. Source: [`Cargo.toml`](../Cargo.toml).
 - Pin a dependency only with a comment that gives the reason. Source: [`Cargo.toml`](../Cargo.toml) (`pcre2-sys`, `saphyr-parser`).
 - A new crate needs a `Cargo.lock` entry in `extra-files` of `release-please-config.json`. Run `just sync-release-please`. Source: [CONTRIBUTING, Rust workspace](../CONTRIBUTING.md#rust-workspace).
 

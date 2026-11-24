@@ -172,6 +172,29 @@ jobs:
             echo "ok $f"
           done
 
+      - name: Rust pins agree
+        run: |
+          python3 - <<'EOF'
+          import sys, tomllib
+          toolchain = tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]
+          rust = tomllib.load(open("mise.toml", "rb"))["tools"]["rust"]
+          if isinstance(rust, str):
+              rust = {"version": rust}
+          want = {
+              "version": toolchain["channel"],
+              "components": sorted(toolchain.get("components", [])),
+              "profile": toolchain.get("profile", "default"),
+          }
+          got = {
+              "version": rust.get("version"),
+              "components": sorted(c for c in rust.get("components", "").split(",") if c),
+              "profile": rust.get("profile", "default"),
+          }
+          if got != want:
+              sys.exit(f"mise.toml rust {got} differs from rust-toolchain.toml {want}")
+          print(f"ok: rust pins agree on {want}")
+          EOF
+
       # These tests inspect repository-wide documentation, configuration, and the
       # public command surface. Keep them in the small always-on job so those
       # invariants cannot be bypassed without making every docs-only change pay for
