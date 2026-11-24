@@ -249,3 +249,29 @@ fn a_symlink_to_a_fifo_is_refused_without_blocking(#[case] linked: &str) {
     assert_eq!(out.status.code(), Some(2), "{stderr}");
     assert!(stderr.starts_with("error[setup-io]"), "{stderr}");
 }
+
+#[test]
+fn a_json_report_of_a_text_over_the_sentence_budget_is_a_refusal_notice_with_the_budget() {
+    let dir = project();
+    // 300000 sentences of 4 bytes ("Go. ") and a newline: 1,200,001 bytes. One sentence for
+    // every 8 bytes plus 65,536 is 150,000 + 65,536 = 215,536.
+    fs::write(
+        dir.path().join("new.md"),
+        format!("{}\n", "Go. ".repeat(300_000)),
+    )
+    .expect("new");
+    let out = slopvac(dir.path())
+        .args(["claims", "new.md", "--original", "old.md"])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    let report: Value = serde_json::from_slice(&out.stdout).expect("json on stdout");
+    let notice = &report["notices"][0];
+    assert_eq!(notice["code"], "context-budget-exceeded", "{report}");
+    assert_eq!(notice["data"]["budget"], "sentences", "{report}");
+    assert_eq!(notice["data"]["limit"], 215_536, "{report}");
+    let message = notice["message"].as_str().expect("message");
+    assert!(!message.contains("Go."), "{message}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("error[context-budget-exceeded]"), "{stderr}");
+}

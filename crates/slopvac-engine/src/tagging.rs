@@ -110,8 +110,15 @@ struct View<'a> {
     prepared: HashMap<usize, &'a [Sentence]>,
     /// Set when a sentence offset did not lie on the text of its block.
     unmapped: Cell<bool>,
-    /// The prose sentences the document may still hold, and the whole budget it had.
-    sentences_left: (usize, usize),
+    /// The sentences the document may still hold after the prose, the composite text and the
+    /// code blocks split so far.
+    sentences_left: Cell<usize>,
+    /// The whole sentence budget the document had.
+    sentence_limit: usize,
+    /// The sentences of each code block a tagger read, by the address and length of its text:
+    /// the span, and the offset and length of the text inside the block. A block is split and
+    /// charged once, however many taggers read it.
+    code_splits: RefCell<HashMap<(usize, usize), Vec<(Range<usize>, usize, usize)>>>,
 }
 
 /// The key of a projection in `View::prepared`.
@@ -198,7 +205,7 @@ impl<'a> View<'a> {
             .enumerate()
             .map(|(i, e)| ((e.span.start, e.span.end), i))
             .collect();
-        let prepared_budget = prepared.sentences_left();
+        let (sentences_left, sentence_limit) = prepared.sentences_left();
         let prepared = prepared
             .blocks()
             .iter()
@@ -216,12 +223,57 @@ impl<'a> View<'a> {
             by_text,
             prepared,
             unmapped: Cell::new(false),
-            sentences_left: prepared_budget,
+            sentences_left: Cell::new(sentences_left),
+            sentence_limit,
+            code_splits: RefCell::new(HashMap::new()),
         }
     }
 }
 
 impl View<'_> {
+    /// The sentences of a code block, charged to the document's sentence budget the first time
+    /// any tagger reads the block.
+    fn code_sentences<'a>(
+        &self,
+        block: &BlockView<'a>,
+    ) -> Result<Vec<SentenceView<'a>>, ContextError> {
+        let key = (block.text.as_ptr().addr(), block.text.len());
+        let cached = self.code_splits.borrow().get(&key).cloned();
+        let ranges = if let Some(ranges) = cached {
+            ranges
+        } else {
+            let left = self.sentences_left.get();
+            let found = slopvac_context::split_sentences_within(block, left).ok_or(
+                ContextError::SentenceLimit {
+                    limit: self.sentence_limit,
+                },
+            )?;
+            self.sentences_left.set(left.saturating_sub(found.len()));
+            let base = block.text.as_ptr().addr();
+            let ranges: Vec<_> = found
+                .iter()
+                .map(|s| {
+                    (
+                        s.span.clone(),
+                        s.text.as_ptr().addr().saturating_sub(base),
+                        s.text.len(),
+                    )
+                })
+                .collect();
+            self.code_splits.borrow_mut().insert(key, ranges.clone());
+            ranges
+        };
+        Ok(ranges
+            .into_iter()
+            .filter_map(|(span, offset, len)| {
+                block
+                    .text
+                    .get(offset..offset.checked_add(len)?)
+                    .map(|text| SentenceView { span, text })
+            })
+            .collect())
+    }
+
     /// Replace the tags that sit on interleaved text by tags on the text that contributed.
     ///
     /// The cells of a table whose left cell wraps over several lines read cell by cell, so
@@ -354,12 +406,8 @@ impl DocumentView for View<'_> {
         else {
             // No projection, so the engine split no sentences: a code block. A tagger may
             // read the sentences of a code block whether or not any matches, so the split
-            // stops at what the document may still hold.
-            return slopvac_context::split_sentences_within(block, self.sentences_left.0).ok_or(
-                ContextError::SentenceLimit {
-                    limit: self.sentences_left.1,
-                },
-            );
+            // draws on what the document may still hold, once for each block.
+            return self.code_sentences(block);
         };
         let Some(sentences) = self.prepared.get(&projection_key(projection)) else {
             return Ok(Vec::new());

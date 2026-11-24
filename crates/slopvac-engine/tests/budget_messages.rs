@@ -1,10 +1,5 @@
 //! Each budget a document can pass has its own refusal text: the text names the budget that
 //! ran out and its limit, and holds none of the document.
-#![allow(
-    clippy::expect_used,
-    clippy::unwrap_used,
-    reason = "test code: a panic is a failed test"
-)]
 #![cfg(unix)]
 #![allow(missing_docs, reason = "test crate: nothing public to document")]
 

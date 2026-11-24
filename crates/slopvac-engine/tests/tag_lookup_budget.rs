@@ -109,3 +109,17 @@ fn a_kind_that_both_gate_lists_name_is_looked_up_once() {
     let (_, result) = run_gated(1, 400, 60, &gate);
     assert_eq!(result, Ok(0));
 }
+
+#[test]
+fn a_document_that_passes_the_lookup_budget_is_refused_with_its_budget_name_and_limit() {
+    // 400 kinds on the cell, and 40 rules that each name every kind in the gate: each of the
+    // 59 breaks looks at all 400 kinds for each rule, about 944,000 looks, against a budget of
+    // 8 per byte of the document plus 16,384.
+    let (kinds, rules, lines) = (400, 40, 60);
+    let every_kind: Vec<String> = (0..kinds).map(|i| format!("k{i}")).collect();
+    let (_, result) = run_gated(kinds, rules, lines, &json!({"only": every_kind}));
+    let limit = 8 * wrapped_table(lines).len() + 16_384;
+    let error = result.expect_err("the lookups pass their budget");
+    assert_eq!(error, EngineError::TagLookupBudget { limit });
+    assert_eq!(error.budget(), Some(("tag-lookups", limit)));
+}

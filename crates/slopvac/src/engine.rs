@@ -510,12 +510,11 @@ fn validate_configs(
     Ok(notices)
 }
 
-/// An outcome for a run that could not start.
-fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome {
+/// The notice that marks a refused run: the error's code, text and data.
+fn failure_notice(error: &CliError) -> Notice {
     // The notice keeps the raw text when the error text was escaped for stderr.
     let notice_message = error.report_message.as_deref().unwrap_or(&error.message);
-    // The report must not read as a clean run: a notice marks it unsuccessful.
-    run.notices.push(Notice {
+    Notice {
         code: KebabName::new(error.code)
             .unwrap_or_else(|_| KebabName::new("lint-failed").expect("lint-failed is kebab-case")),
         level: NoticeLevel::Warning,
@@ -523,7 +522,19 @@ fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome 
             .unwrap_or_else(|_| NonEmptyString::new("lint failed").expect("not empty")),
         path: None,
         data: error.data.clone(),
-    });
+    }
+}
+
+/// The report of a command that was refused before it produced one: no documents, and a
+/// notice that carries the error, as a refused lint run reports it.
+pub(crate) fn failure_report(error: &CliError) -> Report {
+    assemble(&[], vec![failure_notice(error)])
+}
+
+/// An outcome for a run that could not start.
+fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome {
+    // The report must not read as a clean run: a notice marks it unsuccessful.
+    run.notices.push(failure_notice(error));
     run.incomplete.push(error.clone());
     RunOutcome {
         incomplete: run.incomplete,
@@ -1485,6 +1496,25 @@ mod skip_tests {
         assert_eq!(run.notices[0].code.as_str(), code);
         assert_eq!(run.notices[0].level, NoticeLevel::Warning);
         assert_eq!(run.notices[0].path.as_deref(), Some("docs/a.md"));
+    }
+
+    #[rstest]
+    #[case::tags(EngineError::TagBuildBudget { limit: 70_000 }, "tags", 70_000)]
+    #[case::sentences(EngineError::SentenceBudget { limit: 71_000 }, "sentences", 71_000)]
+    #[case::table_cells(EngineError::CellBudget { limit: 72_000 }, "table-cells", 72_000)]
+    #[case::tag_lookups(EngineError::TagLookupBudget { limit: 17_000 }, "tag-lookups", 17_000)]
+    fn a_budget_refusal_names_its_budget_limit_and_file_in_the_notice_data(
+        #[case] err: EngineError,
+        #[case] budget: &str,
+        #[case] limit: u64,
+    ) {
+        let mut run = Run::default();
+        run.skip_engine_error("docs/a.md", &err);
+
+        let data = &run.notices[0].data;
+        assert_eq!(data["budget"], budget);
+        assert_eq!(data["limit"], limit);
+        assert_eq!(data["path"], "docs/a.md");
     }
 
     /// A context failure holds a pattern with a backslash and a newline. The engine error keeps

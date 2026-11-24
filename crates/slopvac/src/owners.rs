@@ -258,7 +258,26 @@ pub fn review(m: &ArgMatches, offline: bool, out: &mut dyn Write) -> Result<u8, 
 
 /// `slopvac claims`. Reads the two named files and nothing else, so it needs no network.
 pub fn claims(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
-    let text = claims::run(m).map_err(|e| agents_error(&e, &cwd()))?;
+    let text = match claims::run(m) {
+        Ok(text) => text,
+        Err(e) => {
+            let error = agents_error(&e, &cwd());
+            // The JSON report is the default format. A refused budget reports as a lint run
+            // does, so a program reads the budget and its limit from the notice data. The
+            // text error still goes to stderr, and the exit code is the same.
+            let json = m.get_one::<String>("format").is_none_or(|f| f != "text");
+            if json && e.budget().is_some() {
+                // A report that cannot be serialized leaves the error itself to say why.
+                if let Ok(mut report) =
+                    serde_json::to_string_pretty(&engine::failure_report(&error))
+                {
+                    report.push('\n');
+                    write(out, &report)?;
+                }
+            }
+            return Err(error);
+        }
+    };
     write(out, &text)?;
     Ok(exit::PASS)
 }

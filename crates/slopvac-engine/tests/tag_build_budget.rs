@@ -386,3 +386,24 @@ fn the_antecedent_look_back_asks_the_earlier_block_only_for_the_records_it_is_mi
     let held = slopvac_text::take_peak_sentences_held();
     assert_eq!(held, 1, "{held} records alive at once");
 }
+
+#[test]
+fn code_blocks_that_together_pass_the_budget_are_not_checked_when_a_tagger_reads_them()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Three fenced code blocks of 100000 sentences of 3 bytes each, and a tagger that matches
+    // none. The text is about 900,000 bytes, so the budget is 900,000 / 8 + 65,536, about
+    // 178,000. Each block fits it on its own, but the three together hold 300000.
+    let block = format!("```\n{}\n```\n\n", "a. ".repeat(100_000));
+    let source = block.repeat(3);
+    let limit = source.len() / 8 + 65_536;
+    assert!(100_000 <= limit, "each block fits on its own");
+    assert!(300_000 > limit, "the three together do not");
+    let result = engine()
+        .with_taggers(code_sentence_tagger()?)
+        .lint(&Input::markdown("a.md", &source));
+    assert_eq!(
+        result.map(|d| d.findings.len()),
+        Err(EngineError::SentenceBudget { limit })
+    );
+    Ok(())
+}
