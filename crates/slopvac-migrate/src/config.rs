@@ -3,13 +3,16 @@
 //! The input is TOML text. The output keeps comments and key order. Settings with no
 //! 3.0 equivalent are collected as [`Dropped`] and block the rewrite.
 
+use std::path::Path;
+
+use slopvac_config::{Code, ConfigError, PackFile, Presets, Setting};
 use toml_edit::{Array, DocumentMut, Item, RawString, Table, TableLike, Value, value};
 
 use crate::capped::Blockers;
 use crate::messages::{MigratePhrase, MigrateText};
 use crate::nesting::{self, Refusal, TABLES_KEY};
 use crate::provenance::{KeyLines, key_lines};
-use crate::{Dropped, Error, Options, RenameTable, preserve_doc};
+use crate::{Dropped, Error, Options, RenameTable, overrides, preserve_doc};
 
 const THRESHOLD_KEYS: &[&str] = &[
     "max_total_per_100_words",
@@ -112,10 +115,12 @@ pub(crate) fn migrate_config_in(
         });
     }
     let original = doc.clone();
+    let checked = overrides::check(&original, file, lines)?;
     let mut cx = Cx {
         file,
         lines,
         renames,
+        checked,
         dropped: Blockers::default(),
         notes: Vec::new(),
         removed_categories: Vec::new(),
@@ -130,6 +135,7 @@ pub(crate) fn migrate_config_in(
                 file,
                 lines,
                 renames,
+                checked,
                 dropped: &mut cx.dropped,
                 notes: &mut cx.notes,
             },
@@ -145,6 +151,100 @@ pub(crate) fn migrate_config_in(
         })
     } else {
         Err(Error::Dropped(cx.dropped.finish()))
+    }
+}
+
+/// Load `text`, the migrated config that would be written at `path`, through the 3.0
+/// config loader, so `migrate` never writes a config that 3.0 refuses. `label` names it in
+/// the error. Only the directory of `path` must exist.
+///
+/// No pack is consulted: migrate writes no `extends` or genre, and a style name is checked
+/// when the lint resolves it.
+///
+/// # Errors
+/// [`Error::InvalidOutput`], with every problem the loader names as its [`LoadRefusal`].
+pub(crate) fn check_loads(path: &Path, label: &str, text: &str) -> Result<(), Error> {
+    slopvac_config::load_text(path, label, text.to_owned(), &NoPacks)
+        .map(drop)
+        .map_err(|e| Error::InvalidOutput {
+            file: label.to_owned(),
+            cause: LoadRefusal::new(e),
+        })
+}
+
+/// Why the 3.0 loader refused a config that `migrate` produced, by the loader's codes.
+///
+/// Its text pairs each code with the value-free summary of the loader's message catalog.
+/// It keeps no config text, no rejected value, no source span and no path. A failed read
+/// keeps the operating-system error as its source, which names no path.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum LoadRefusal {
+    /// The loader read the config and refused it: one code per problem, in document order.
+    #[error("{}", describe(.0))]
+    Rejected(Vec<Code>),
+    /// The loader could not resolve the directory the config would sit in.
+    #[error("{}", describe(&[Code::Io]))]
+    Unreadable(#[source] std::io::Error),
+    /// The config is larger than the loader accepts.
+    #[error("{}", describe(&[Code::TooLarge]))]
+    TooLarge,
+}
+
+impl LoadRefusal {
+    fn new(error: ConfigError) -> Self {
+        match error {
+            ConfigError::Rejected(rejected) => {
+                Self::Rejected(rejected.diagnostics.iter().map(|d| d.code).collect())
+            }
+            ConfigError::Io { source, .. } => Self::Unreadable(source),
+            ConfigError::TooLarge { .. } => Self::TooLarge,
+        }
+    }
+
+    /// The code of each problem, in the order the loader gave them.
+    pub fn codes(&self) -> impl Iterator<Item = Code> + '_ {
+        let codes: &[Code] = match self {
+            Self::Rejected(codes) => codes,
+            Self::Unreadable(_) => &[Code::Io],
+            Self::TooLarge => &[Code::TooLarge],
+        };
+        codes.iter().copied()
+    }
+}
+
+/// Each code with the summary that the loader's catalog gives it, joined into one line.
+fn describe(codes: &[Code]) -> String {
+    codes
+        .iter()
+        .map(|code| {
+            let code = code.as_str();
+            slopvac_config::error_entries()
+                .iter()
+                .find(|entry| entry.code == code)
+                .map_or_else(
+                    || code.to_owned(),
+                    |entry| format!("{code}: {}", entry.summary),
+                )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// The loader's view of packs for [`check_loads`]: none.
+struct NoPacks;
+
+impl Presets for NoPacks {
+    fn style(&self, _name: &str) -> Option<Vec<Setting>> {
+        None
+    }
+
+    fn genre_chain(&self, _name: &str) -> Vec<Vec<Setting>> {
+        Vec::new()
+    }
+
+    fn pack_config(&self, _name: &str) -> Option<PackFile> {
+        None
     }
 }
 
@@ -206,6 +306,7 @@ struct Cx<'a> {
     file: &'a str,
     lines: Lines<'a>,
     renames: &'a RenameTable,
+    checked: overrides::Checked,
     dropped: Blockers,
     notes: Vec<String>,
     removed_categories: Vec<Dropped>,
@@ -301,19 +402,8 @@ fn check_keys(t: &mut dyn TableLike, key: &str, path: &str, known: &[&str], cx: 
 }
 
 fn migrate_overrides(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
-    let Some(item) = t.get_mut("overrides") else {
-        return;
-    };
-    if let Item::ArrayOfTables(aot) = item {
-        for (i, table) in aot.iter_mut().enumerate() {
-            migrate_scope(table, &format!("{path}[{i}]"), Scope::Override, cx);
-        }
-    } else if let Some(arr) = item.as_array_mut() {
-        for (i, v) in arr.iter_mut().enumerate() {
-            if let Some(table) = v.as_inline_table_mut() {
-                migrate_scope(table, &format!("{path}[{i}]"), Scope::Override, cx);
-            }
-        }
+    for (i, table) in overrides::tables_mut(cx.checked, t).into_iter().enumerate() {
+        migrate_scope(table, &format!("{path}[{i}]"), Scope::Override, cx);
     }
 }
 

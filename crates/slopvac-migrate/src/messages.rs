@@ -353,10 +353,40 @@ pub(crate) enum MigrateText {
     #[code("migrate-note-added-style")]
     #[text("added styles = [\"{style}\"] to reproduce the 2.x {profile} profile")]
     NoteAddedStyle { style: String, profile: String },
-    /// Override blocks were added before the others.
-    #[code("migrate-note-added-switch-blocks")]
-    #[text("added {blocks} before the others that switch files to another 2.x profile")]
-    NoteAddedSwitchBlocks { blocks: String },
+    /// A profile switch was folded into the override block that selects the profile.
+    #[code("migrate-note-merged-switch")]
+    #[text("merged the switch to the 2.x {profile} profile into {at}")]
+    NoteMergedSwitch { profile: String, at: String },
+    /// Earlier blocks that hold every file of a switching block were restated in it.
+    #[code("migrate-note-restated-blocks")]
+    #[text("restated in {at} the categories and rules of {blocks}, which also match its files")]
+    NoteRestatedBlocks { at: String, blocks: String },
+    /// A block moved after a later block that holds its files and switches their profile.
+    #[code("migrate-note-moved-block")]
+    #[text(
+        "moved {at} after {after}, which holds its files and switches them to another 2.x profile; it drops the settings that {blocks} also sets, which won in 2.x"
+    )]
+    NoteMovedBlock {
+        at: String,
+        after: String,
+        blocks: String,
+    },
+    /// One guard entry was folded into the block with the same files.
+    #[code("migrate-note-guarded-rule-entry")]
+    #[text("turned off {count} rule entry in {at} that 2.x ignored for its files")]
+    NoteGuardedRuleEntry {
+        #[count]
+        count: usize,
+        at: String,
+    },
+    /// Several guard entries were folded into the block with the same files.
+    #[code("migrate-note-guarded-rule-entries")]
+    #[text("turned off {count} rule entries in {at} that 2.x ignored for its files")]
+    NoteGuardedRuleEntries {
+        #[count]
+        count: usize,
+        at: String,
+    },
     /// Override blocks were added after the others.
     #[code("migrate-note-added-guard-blocks")]
     #[text("added {blocks} after the others that turn off rule entries 2.x ignored")]
@@ -384,12 +414,36 @@ pub(crate) enum MigrateText {
         "`{at}` on line {line} sets `profile` in an override, whatever its value, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels in the files that override covers. A follow-up will support these layouts."
     )]
     ReasonBlocklistUnderSwitch { at: String, line: String },
+    /// Why a migrated config is refused: `overrides` holds an entry that is not a table.
+    #[code("migrate-reason-override-not-table")]
+    #[text(
+        "`{at}` on line {line} is not an override table. 2.x reads `overrides` as a list of tables, and the migration cannot rewrite the list without dropping that entry."
+    )]
+    ReasonOverrideNotTable { at: String, line: String },
     /// The vocabulary companion style was added.
     #[code("migrate-note-added-vocabulary-style")]
     #[text(
         "added \"{style}\" to styles: 2.x ran the vocabulary rules once a word blocklist was set, at the level of the {profile} profile"
     )]
     NoteAddedVocabularyStyle { style: String, profile: String },
+    /// Why a migrated config is refused: the 3.0 loader refused it.
+    #[code("migrate-reason-does-not-load")]
+    #[text("it does not load in 3.0: {problems}")]
+    ReasonDoesNotLoad { problems: String },
+    /// Why a migrated config is refused: a category entry applies above a profile switch.
+    #[code("migrate-reason-category-under-switch")]
+    #[text(
+        "`{at}` on line {line} sets a category that applies above the profile switch in `{switch}`, and `--preserve-behavior` cannot keep the 2.x levels there"
+    )]
+    ReasonCategoryUnderSwitch {
+        at: String,
+        line: String,
+        switch: String,
+    },
+    /// A rule level in a moved or switching block was changed to the level 2.x applied.
+    #[code("migrate-note-set-rule-level-applied")]
+    #[text("set {at} to \"{level}\", the level 2.x applied")]
+    NoteSetRuleLevelApplied { at: String, level: String },
     /// One rule entry was added.
     #[code("migrate-note-added-rule-entry")]
     #[text(
@@ -699,12 +753,6 @@ pub(crate) enum MigratePhrase {
     #[code("migrate-override-block-one")]
     #[text("1 override block")]
     OverrideBlockOne,
-    /// The comment above the switch blocks of `--preserve-behavior`.
-    #[code("migrate-comment-switch-blocks")]
-    #[text(
-        "Added by `slopvac migrate --preserve-behavior`: switch these files to the 2.x\n# profile that the block below with the same files selects."
-    )]
-    CommentSwitchBlocks,
     /// The comment above the guard blocks of `--preserve-behavior`.
     #[code("migrate-comment-guard-blocks")]
     #[text(
@@ -870,6 +918,33 @@ pub(crate) fn path_reason(path: &str, reason: &str) -> String {
 
 /// The message a failure renders from this crate's catalogs, or `None` for a failure that the
 /// catalog of another crate renders.
+/// Why `--preserve-behavior` refuses a config whose category entry, on `line` of block
+/// `block` (or of the top-level `categories`), applies above the switch in block `switch`.
+pub(crate) fn category_under_switch_reason(
+    line: usize,
+    block: Option<usize>,
+    switch: usize,
+) -> String {
+    MigrateText::ReasonCategoryUnderSwitch {
+        at: block.map_or_else(
+            || "categories".to_owned(),
+            |b| format!("overrides[{b}].categories"),
+        ),
+        line: line.to_string(),
+        switch: format!("overrides[{switch}]"),
+    }
+    .to_string()
+}
+
+/// Why the migration refuses `overrides` when the entry `at`, on `line`, is not a table.
+pub(crate) fn override_shape_reason(line: usize, at: &str) -> String {
+    MigrateText::ReasonOverrideNotTable {
+        at: at.to_owned(),
+        line: line.to_string(),
+    }
+    .to_string()
+}
+
 pub(crate) fn of(error: &Error) -> Option<Box<dyn Catalog>> {
     Some(match error {
         Error::Dropped(records) => Box::new(MigrateMessage::LegacyDropped {
@@ -910,11 +985,31 @@ pub(crate) fn of(error: &Error) -> Option<Box<dyn Catalog>> {
             file: file.clone(),
             reason: reason.clone(),
         }),
+        Error::OverrideShape { file, line, at } => Box::new(MigrateMessage::OutputInvalid {
+            file: file.clone(),
+            reason: override_shape_reason(*line, at),
+        }),
         Error::RenameTable(detail) => Box::new(MigrateMessage::RenameTable {
             detail: detail.clone(),
         }),
         Error::Lint(detail) => Box::new(MigrateMessage::LintFailed {
             detail: detail.clone(),
+        }),
+        Error::InvalidOutput { file, cause } => Box::new(MigrateMessage::OutputInvalid {
+            file: file.clone(),
+            reason: MigrateText::ReasonDoesNotLoad {
+                problems: cause.to_string(),
+            }
+            .to_string(),
+        }),
+        Error::CategoryUnderSwitch {
+            file,
+            line,
+            block,
+            switch,
+        } => Box::new(MigrateMessage::OutputInvalid {
+            file: file.clone(),
+            reason: category_under_switch_reason(*line, *block, *switch),
         }),
         Error::InvalidType {
             file,

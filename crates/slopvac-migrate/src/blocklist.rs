@@ -20,7 +20,7 @@ use crate::limits::{Budget, Kind, Refused};
 use crate::messages::{MigratePhrase, MigrateText};
 use crate::nesting::{self, Refusal};
 use crate::provenance::{KeyLines, key_lines};
-use crate::{Dropped, Error};
+use crate::{Dropped, Error, overrides};
 
 /// A `vocabulary.path` in a 2.x config.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,23 +41,8 @@ pub(crate) fn references(config: &str) -> Vec<Reference> {
     };
     let mut out = Vec::new();
     collect(doc.as_table(), "", &mut out);
-    if let Some(overrides) = doc.get("overrides") {
-        let tables: Vec<(usize, &dyn TableLike)> = match overrides {
-            Item::ArrayOfTables(aot) => aot
-                .iter()
-                .enumerate()
-                .map(|(i, t)| (i, t as &dyn TableLike))
-                .collect(),
-            Item::Value(Value::Array(arr)) => arr
-                .iter()
-                .enumerate()
-                .filter_map(|(i, v)| Some((i, v.as_inline_table()? as &dyn TableLike)))
-                .collect(),
-            _ => Vec::new(),
-        };
-        for (i, table) in tables {
-            collect(table, &format!("overrides[{i}]."), &mut out);
-        }
+    for (i, table) in overrides::tables(doc.as_table()).into_iter().enumerate() {
+        collect(table, &format!("overrides[{i}]."), &mut out);
     }
     out
 }

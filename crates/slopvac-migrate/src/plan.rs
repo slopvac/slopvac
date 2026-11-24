@@ -10,10 +10,10 @@ use toml_edit::{DocumentMut, Item, Value};
 
 use crate::blocklist::{self, Planned};
 use crate::capped::{Blockers, Capped, Listed};
-use crate::config::migrate_config_in;
+use crate::config::{check_loads, migrate_config_in};
 use crate::directives::before_directives;
 use crate::limits::{Budget, Kind, Limits};
-use crate::messages::{MigratePhrase, MigrateText};
+use crate::messages::{self, MigratePhrase, MigrateText};
 use crate::nesting::Refusal;
 use crate::provenance::{KeyLines, key_lines};
 use crate::walk::{Dir, discover};
@@ -126,7 +126,8 @@ struct Sink {
 ///
 /// # Errors
 /// A setting 3.0 cannot represent, or a file that is unreadable, not UTF-8, over its size
-/// cap, a malformed `pyproject.toml`, or over the default per-run [`Limits`].
+/// cap, a malformed `pyproject.toml`, or over the default per-run [`Limits`]. A migrated
+/// config that the 3.0 loader refuses is [`Error::InvalidOutput`].
 pub fn plan(
     root: &Path,
     renames: &RenameTable,
@@ -267,6 +268,7 @@ fn plan_dir(
         }
     };
     let target = rel(root, &main_cfg);
+    check_loads(&main_cfg, &target.display().to_string(), &rewrite.text)?;
     plan.record_before(target, &label, options, &rewrite.text, migrate);
     for n in rewrite.notes {
         plan.notes.push(format!("{label}: {n}"));
@@ -354,6 +356,18 @@ fn located(e: &Error) -> (usize, String) {
     match e {
         Error::OverrideOverlap { line, reason, .. }
         | Error::BlocklistLayout { line, reason, .. } => (*line, reason.clone()),
+        Error::CategoryUnderSwitch {
+            line,
+            block,
+            switch,
+            ..
+        } => (
+            *line,
+            messages::category_under_switch_reason(*line, *block, *switch),
+        ),
+        Error::OverrideShape { line, at, .. } => {
+            (*line, messages::override_shape_reason(*line, at))
+        }
         Error::Dropped(records) => records
             .first()
             .map_or_else(|| (1, e.to_string()), |r| (r.line, r.reason.clone())),

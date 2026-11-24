@@ -24,6 +24,7 @@ mod lint;
 mod messages;
 mod nesting;
 pub mod overlap;
+mod overrides;
 mod plan;
 mod preserve;
 mod preserve_doc;
@@ -41,7 +42,7 @@ use crate::messages::{MigrateMessage, MigrateText};
 
 pub use backup::{Point, Restored, apply, apply_hooked, restore, restore_hooked};
 pub use cli::{CliFailure, command, execute, run};
-pub use config::{Rewrite, migrate_config};
+pub use config::{LoadRefusal, Rewrite, migrate_config};
 pub use directives::{Found, RemovedId, UnknownId, rewrite_directives};
 pub use guide::{doc as guide_doc, prime_migrate};
 pub use limits::Limits;
@@ -208,12 +209,48 @@ pub enum Error {
         /// Why the layout is refused, from the message catalog.
         reason: String,
     },
+    /// `overrides` is not a list of tables, so the migration cannot rewrite it without
+    /// dropping an entry. Its code is `migrate-output-invalid`. Nothing is written.
+    #[error("{}", messages::text(self))]
+    OverrideShape {
+        /// The file.
+        file: String,
+        /// One-based line of the entry, or of `overrides`.
+        line: usize,
+        /// The first entry that is not a table, as `overrides[<i>]`, or `overrides` when
+        /// the value is not a list.
+        at: String,
+    },
     /// The rename table is malformed.
     #[error("{}", messages::text(self))]
     RenameTable(String),
     /// The engine could not lint the project.
     #[error("{}", messages::text(self))]
     Lint(String),
+    /// A 3.0 config that the migration produced does not load in 3.0. Its code is
+    /// `migrate-output-invalid`. Nothing is written.
+    #[error("{}", messages::text(self))]
+    InvalidOutput {
+        /// The config the migration would write.
+        file: String,
+        /// What the 3.0 loader refused, with its codes.
+        #[source]
+        cause: LoadRefusal,
+    },
+    /// `--preserve-behavior` refuses a category entry that applies above a profile switch,
+    /// because the migrated config would not keep the 2.x levels there. Its code is
+    /// `migrate-output-invalid`. Nothing is written.
+    #[error("{}", messages::text(self))]
+    CategoryUnderSwitch {
+        /// The file.
+        file: String,
+        /// One-based line of the block that authors the category entry.
+        line: usize,
+        /// Index in `overrides` of that block, or `None` for the top-level `categories`.
+        block: Option<usize>,
+        /// Index in `overrides` of the block whose profile switch the entry applies above.
+        switch: usize,
+    },
     /// `schema_version` is not an integer.
     #[error("{}", messages::text(self))]
     InvalidType {

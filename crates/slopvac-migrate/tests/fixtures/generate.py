@@ -13,14 +13,18 @@ Every output comes from one snapshot of its source, so the crate cannot drift fr
 - `data/legacy/legacy-<profile>.toml`: the `core:legacy-<profile>` styles, copied
   verbatim from `docs/contract/compat/profiles/` (docs/contract/profiles.md).
 - `data/legacy/catalogue.toml`: each 2.x rule's kind and tier per profile, from the
-  2.x ruleset, and each profile's per-rule defaults, from
-  `docs/contract/compat/profiles/mapping.json`.
+  2.x ruleset, each profile's per-rule defaults, from
+  `docs/contract/compat/profiles/mapping.json`, and each category's own weight, from the
+  2.x ruleset.
 - `tests/fixtures/preserve/refused-blocklist.json`: the word blocklist layouts that
   `--preserve-behavior` refuses, with the key each refusal names.
 - `tests/fixtures/preserve/vectors.json`: what `expand()` and `build_regions()` in
   `tests/contract/preserve_expansion.py` return for the scenarios, glob errors and
   region cases of `tests/contract/test_profile_mapping.py`, plus the crate's own
-  scenarios below, with 2.x names renamed through the table above.
+  scenarios below, with 2.x names renamed through the table above. `measured_2x` holds
+  what the 2.x engine (`engine_states` in `scripts/contract/profile_mapping.py`)
+  resolves for each scenario on each listed file: the level of every rule and the
+  budget and weight of every category, under 2.x names.
 
 `--check` regenerates in memory and exits 1, naming each stale or missing file, without
 writing. `--out DIR` writes or checks a copy of the crate layout instead of the crate.
@@ -90,6 +94,168 @@ EXTRA_SCENARIOS = {
         "profile": "normal",
         "overrides": [{"files": ["docs/**"], "profile": "strict"}],
     },
+    # E3 folds a profile switch into its own block. An earlier block that holds the
+    # switched files authored a category, and 2.x applied it under the new profile.
+    "profile-override-inside-an-earlier-category-block": {
+        "profile": "strict",
+        "overrides": [
+            {"files": ["docs/**"], "categories": {"prose-craft": "warning"}},
+            {"files": ["docs/api"], "profile": "relaxed"},
+        ],
+    },
+    # An earlier block inside the switched files authored a category: 2.x applied it
+    # under the profile of the later, enclosing block.
+    "profile-override-around-an-earlier-category-block": {
+        "profile": "strict",
+        "overrides": [
+            {"files": ["docs/api/**"], "categories": {"prose-craft": "warning"}},
+            {"files": ["docs/**"], "profile": "relaxed"},
+        ],
+    },
+    # Two enclosing profile switches move the first block twice. The second block beat
+    # it in 2.x, and still does after the second move.
+    "block-moved-by-two-profile-switches": {
+        "profile": "strict",
+        "overrides": [
+            {"files": ["docs/api/v1/**"], "categories": {"prose-craft": "warning"}},
+            {
+                "files": ["docs/api/**"],
+                "profile": "normal",
+                "categories": {"prose-craft": "error"},
+            },
+            {"files": ["docs/**"], "profile": "relaxed"},
+        ],
+    },
+    # The relaxed style turns the rule off by rule. The switch to normal and the
+    # block's own category level enable it again in 2.x. `--preserve-behavior` refuses
+    # this layout (tests/fixtures/preserve/refused.json).
+    "switching-block-category-revives-a-style-off-rule": {
+        "profile": "relaxed",
+        "overrides": [
+            {
+                "files": ["docs/**"],
+                "profile": "normal",
+                "categories": {"ai-tells-agentic": "warning"},
+            }
+        ],
+    },
+    # The same, with the category level in an earlier block that the switch moves.
+    "moved-block-category-revives-a-style-off-rule": {
+        "profile": "relaxed",
+        "overrides": [
+            {"files": ["docs/api/**"], "categories": {"ai-tells-agentic": "warning"}},
+            {"files": ["docs/**"], "profile": "normal"},
+        ],
+    },
+    # Two enclosing profile switches move the first block twice, with rule entries only.
+    # The second block's entry beat the first block's in 2.x, and still does after the
+    # second move.
+    "block-moved-twice-keeps-a-rule-entry-it-lost": {
+        "profile": "strict",
+        "overrides": [
+            {
+                "files": ["docs/api/v1/**"],
+                "rules": {"prose-inflation.business-jargon": "suggestion"},
+            },
+            {
+                "files": ["docs/api/**"],
+                "profile": "normal",
+                "rules": {"prose-inflation.business-jargon": "error"},
+            },
+            {"files": ["docs/**"], "profile": "relaxed"},
+        ],
+    },
+    # The relaxed style turns `ai-tells-formatting.bold-spray` off by rule. 2.x applied
+    # the top-level category level to it after the switch to normal. `--preserve-behavior`
+    # refuses a top-level category level with any profile switch.
+    "top-category-level-under-a-switch-revives-an-advisory-rule": {
+        "profile": "relaxed",
+        "categories": {"ai-tells-formatting": "warning"},
+        "overrides": [{"files": ["docs/**"], "profile": "normal"}],
+    },
+    # The same with only a `weight` at the top level. 2.x credits the whole category as
+    # authored from any field, so `--preserve-behavior` refuses it too.
+    "top-category-weight-under-a-switch-revives-an-advisory-rule": {
+        "profile": "relaxed",
+        "categories": {"ai-tells-formatting": {"weight": 2.0}},
+        "overrides": [{"files": ["docs/**"], "profile": "normal"}],
+    },
+    # The same with only a budget at the top level.
+    "top-category-budget-under-a-switch-revives-an-advisory-rule": {
+        "profile": "relaxed",
+        "categories": {"ai-tells-formatting": {"max_per_100_words": 2.0}},
+        "overrides": [{"files": ["docs/**"], "profile": "normal"}],
+    },
+    # A top-level category level with a switch away from the relaxed style, which turns
+    # `ai-tells-agentic.formulaic-universal-heading` off by rule. `--preserve-behavior`
+    # refuses it, because the top level sets a category level next to a profile switch.
+    "top-category-level-under-a-switch-from-relaxed": {
+        "profile": "relaxed",
+        "categories": {"ai-tells-agentic": "warning"},
+        "overrides": [{"files": ["docs/**"], "profile": "normal"}],
+    },
+    # The relaxed style gives `prose-craft` no weight and the strict style does, so the
+    # switch writes the category's own 2.x weight (E6). `--preserve-behavior` refuses it,
+    # because the top level sets a category level next to a profile switch.
+    "switch-writes-a-weight-the-target-style-lacks": {
+        "profile": "strict",
+        "categories": {"prose-craft": "warning"},
+        "overrides": [{"files": ["docs/**"], "profile": "relaxed"}],
+    },
+    # A guard for docs/api cannot merge into the block with its files, because the later
+    # docs/** block sets the level of the guarded rule's category. That category level
+    # applies above the switch, so `--preserve-behavior` refuses this layout.
+    "guard-held-back-by-a-later-category-level": {
+        "profile": "strict",
+        "rules": {"ai-tells-agentic.formulaic-universal-heading": "error"},
+        "overrides": [
+            {"files": ["docs/api/**"], "profile": "relaxed"},
+            {"files": ["docs/**"], "categories": {"ai-tells-agentic": "warning"}},
+        ],
+    },
+}
+
+# The files each crate scenario is measured on, one per region.
+EXTRA_PATHS = {
+    "authored-category-without-severity-in-override": ["docs/a.md", "a.md"],
+    "dropped-entry-takes-the-profile-default-at-the-top": ["a.md"],
+    "dropped-entry-takes-the-profile-default-in-an-override": ["docs/a.md", "a.md"],
+    "profile-override-clears-a-budget-with-none": ["docs/a.md", "a.md"],
+    "profile-override-inside-an-earlier-category-block": [
+        "docs/api/x.md",
+        "docs/a.md",
+        "a.md",
+    ],
+    "profile-override-around-an-earlier-category-block": [
+        "docs/api/x.md",
+        "docs/a.md",
+        "a.md",
+    ],
+    "block-moved-by-two-profile-switches": [
+        "docs/api/v1/x.md",
+        "docs/api/x.md",
+        "docs/a.md",
+        "a.md",
+    ],
+    "guard-held-back-by-a-later-category-level": ["docs/api/x.md", "docs/a.md", "a.md"],
+    "top-category-level-under-a-switch-revives-an-advisory-rule": ["docs/a.md", "a.md"],
+    "top-category-weight-under-a-switch-revives-an-advisory-rule": ["docs/a.md", "a.md"],
+    "top-category-budget-under-a-switch-revives-an-advisory-rule": ["docs/a.md", "a.md"],
+    "top-category-level-under-a-switch-from-relaxed": ["docs/a.md", "a.md"],
+    "switch-writes-a-weight-the-target-style-lacks": ["docs/a.md", "a.md"],
+    "block-moved-twice-keeps-a-rule-entry-it-lost": [
+        "docs/api/v1/x.md",
+        "docs/api/x.md",
+        "docs/a.md",
+        "a.md",
+    ],
+    "switching-block-category-revives-a-style-off-rule": ["docs/a.md", "a.md"],
+    "moved-block-category-revives-a-style-off-rule": [
+        "docs/api/x.md",
+        "docs/a.md",
+        "a.md",
+    ],
+    "ignored-rule-entry-is-dropped": ["a.md"],
 }
 
 
@@ -289,13 +455,19 @@ def catalogue_toml(ruleset) -> str:
     lines = [
         f"# Generated by {GENERATOR}. Do not edit.",
         "# The 2.x rule catalogue that `migrate --preserve-behavior` needs: each rule's kind",
-        "# (checked or judgement) and tier per profile, from the 2.x ruleset, and each",
-        "# profile's per-rule defaults, from docs/contract/compat/profiles/mapping.json.",
+        "# (checked or judgement) and tier per profile, from the 2.x ruleset, each",
+        "# profile's per-rule defaults, from docs/contract/compat/profiles/mapping.json,",
+        "# and each category's own weight, which 2.x used where no profile set one.",
     ]
     for profile in PROFILES:
         lines += ["", f"[defaults.{profile}]"]
         defaults = mapping["profiles"][profile]["rule_defaults"]
         lines.extend(f"{_q(k)} = {_q(v)}" for k, v in sorted(defaults.items()))
+    lines += ["", "[weights]"]
+    lines.extend(
+        f"{_q(name)} = {_inline(float(weight))}"
+        for name, weight in sorted(_category_weights(ruleset).items())
+    )
     lines += ["", "[rules]"]
     for rule in sorted(ruleset.all_rules, key=lambda r: r.qualified_id):
         kind = "judgement" if rule.kind.value == "judgement" else "checked"
@@ -345,6 +517,83 @@ def _error_block(config2: dict) -> int:
     raise AssertionError("no block is outside the grammar")
 
 
+def _category_weights(ruleset) -> dict[str, float]:
+    """Each style category's own weight, as 2.x scoring falls back to it
+    (``score._category_result``): the category YAML's weight, else 1.0."""
+    names = {n for p in PROFILES for n in reference.style_layer(p)["categories"]}
+    return {name: ruleset.weights.get(name, 1.0) for name in names}
+
+
+def _dials(resolved, weights: dict[str, float]) -> dict:
+    """Each category's budget and effective weight as 2.x resolved them, or ``off``.
+
+    The weight is the one 2.x scored with: the resolved weight, else the category's own.
+    """
+    out = {}
+    for name, settings in sorted(resolved.categories.items()):
+        if settings.severity.value == "off":
+            out[name] = "off"
+        else:
+            weight = settings.weight
+            out[name] = {
+                "budget": settings.max_per_100_words,
+                "weight": weights.get(name, 1.0) if weight is None else weight,
+            }
+    return out
+
+
+def _measure(config2: dict, path: str | None, weights: dict) -> tuple[str, dict, dict]:
+    """The 2.x engine's profile, level per rule and dials per category for one file."""
+    profile = config2.get("profile", "normal")
+    config = reference.to_2x_config(config2) if path else None
+    _, resolved, states = reference.mapping.engine_states(
+        profile, config, path or "doc.md"
+    )
+    levels = {qid: state[1] for qid, state in sorted(states.items())}
+    return resolved.profile.value, levels, _dials(resolved, weights)
+
+
+def measured_2x(ruleset, configs: dict, paths: dict[str, list[str]]) -> dict:
+    """What the 2.x engine resolves for each scenario and file: the ground truth that
+    the migrated config must reproduce (M1).
+
+    ``base`` holds each profile with no authored config. A file names the profile 2.x
+    applied to it and lists only the rule levels and category dials that differ from
+    the base of that profile.
+    """
+    weights = _category_weights(ruleset)
+    base = {p: _measure({"profile": p}, None, weights)[1:] for p in PROFILES}
+    out: dict = {
+        "base": {
+            p: {"levels": levels, "dials": dials} for p, (levels, dials) in base.items()
+        },
+        "files": {},
+    }
+    for name, config2 in configs.items():
+        files = {}
+        for path in paths[name]:
+            profile, levels, dials = _measure(config2, path, weights)
+            levels0, dials0 = base[profile]
+            files[path] = {
+                "profile": profile,
+                "levels": {k: v for k, v in levels.items() if levels0[k] != v},
+                "dials": {k: v for k, v in dials.items() if dials0[k] != v},
+            }
+        out["files"][name] = files
+    return out
+
+
+def category_fields() -> list[str]:
+    """Every field of a 2.x `[categories.<name>]` table, from the 2.x config model.
+
+    2.x credits a category as authored when a layer writes any of them, so the
+    `--preserve-behavior` refusal tests cover each one.
+    """
+    from slopvac.config import CategorySettings
+
+    return sorted(CategorySettings.model_fields)
+
+
 def vectors_json(ruleset, rules: dict[str, str], categories: dict[str, str]) -> str:
     excluded = next(
         r for r in ruleset.rules if r.tier_for("relaxed").value == "excluded"
@@ -356,6 +605,11 @@ def vectors_json(ruleset, rules: dict[str, str], categories: dict[str, str]) -> 
         "profile": "relaxed",
         "rules": {excluded.qualified_id: "error"},
     }
+    paths = {name: list(files) for name, (_, files) in scenarios.SCENARIOS.items()}
+    paths |= EXTRA_PATHS
+    missing = sorted(set(configs) - set(paths))
+    if missing:
+        raise AssertionError(f"scenarios without measured files: {missing}")
     expansions = {
         name: {
             "input": config_toml(config2),
@@ -404,8 +658,10 @@ def vectors_json(ruleset, rules: dict[str, str], categories: dict[str, str]) -> 
 
     data = {
         "_generated": f"Generated by {GENERATOR}. Do not edit.",
+        "category_fields": category_fields(),
         "errors": errors,
         "expansions": expansions,
+        "measured_2x": measured_2x(ruleset, configs, paths),
         "regions": regions,
     }
     return json.dumps(data, indent=1, sort_keys=True, ensure_ascii=False) + "\n"

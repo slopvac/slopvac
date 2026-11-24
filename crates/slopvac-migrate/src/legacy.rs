@@ -94,6 +94,10 @@ pub(crate) struct Legacy {
     pub(crate) rules: BTreeMap<String, RuleInfo>,
     /// Categories that some legacy style gives a budget.
     pub(crate) budgeted: BTreeSet<String>,
+    /// Categories that some legacy style gives a weight.
+    pub(crate) weighted: BTreeSet<String>,
+    /// Each category's own weight, which 2.x scored with where no profile set one.
+    pub(crate) weights: BTreeMap<String, f64>,
 }
 
 fn profile_index(profile: &str) -> usize {
@@ -190,17 +194,31 @@ impl Legacy {
                 (qid.to_owned(), info)
             })
             .collect();
-        let budgeted = styles
-            .iter()
-            .flat_map(|s| s.categories.iter())
-            .filter(|(_, d)| d.contains_key("max_per_100_words"))
-            .map(|(name, _)| name.clone())
+        let with_dial = |dial: &str| -> BTreeSet<String> {
+            styles
+                .iter()
+                .flat_map(|s| s.categories.iter())
+                .filter(|(_, d)| d.contains_key(dial))
+                .map(|(name, _)| name.clone())
+                .collect()
+        };
+        let budgeted = with_dial("max_per_100_words");
+        let weighted = with_dial("weight");
+        // The generator writes every weight as a float, and the M1 vectors fail on a lost one.
+        let weights = cat
+            .get("weights")
+            .and_then(Item::as_table_like)
+            .into_iter()
+            .flat_map(TableLike::iter)
+            .filter_map(|(name, v)| Some((name.to_owned(), v.as_float()?)))
             .collect();
         Self {
             styles,
             defaults,
             rules,
             budgeted,
+            weighted,
+            weights,
         }
     }
 

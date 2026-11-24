@@ -402,10 +402,47 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
             "`overrides[0].profile` on line 5 sets `profile` in an override, whatever its value, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels in the files that override covers. A follow-up will support these layouts.",
         ),
         (
-            MigrateText::NoteAddedSwitchBlocks {
-                blocks: s("2 override blocks"),
+            MigrateText::ReasonOverrideNotTable {
+                at: s("overrides[1]"),
+                line: s("1"),
             },
-            "added 2 override blocks before the others that switch files to another 2.x profile",
+            "`overrides[1]` on line 1 is not an override table. 2.x reads `overrides` as a list of tables, and the migration cannot rewrite the list without dropping that entry.",
+        ),
+        (
+            MigrateText::NoteMergedSwitch {
+                profile: s("relaxed"),
+                at: s("overrides[1]"),
+            },
+            "merged the switch to the 2.x relaxed profile into overrides[1]",
+        ),
+        (
+            MigrateText::NoteRestatedBlocks {
+                at: s("overrides[1]"),
+                blocks: s("overrides[0]"),
+            },
+            "restated in overrides[1] the categories and rules of overrides[0], which also match its files",
+        ),
+        (
+            MigrateText::NoteMovedBlock {
+                at: s("overrides[0]"),
+                after: s("overrides[1]"),
+                blocks: s("overrides[1]"),
+            },
+            "moved overrides[0] after overrides[1], which holds its files and switches them to another 2.x profile; it drops the settings that overrides[1] also sets, which won in 2.x",
+        ),
+        (
+            MigrateText::NoteGuardedRuleEntry {
+                count: 1,
+                at: s("overrides[0]"),
+            },
+            "turned off 1 rule entry in overrides[0] that 2.x ignored for its files",
+        ),
+        (
+            MigrateText::NoteGuardedRuleEntries {
+                count: 2,
+                at: s("overrides[0]"),
+            },
+            "turned off 2 rule entries in overrides[0] that 2.x ignored for its files",
         ),
         (
             MigrateText::NoteAddedGuardBlocks {
@@ -423,6 +460,13 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
                 level: s("error"),
             },
             "set rules.a to \"error\": the 2.x profile default replaces an entry 2.x ignored",
+        ),
+        (
+            MigrateText::NoteSetRuleLevelApplied {
+                at: s("overrides[0].rules.a"),
+                level: s("off"),
+            },
+            "set overrides[0].rules.a to \"off\", the level 2.x applied",
         ),
         (
             MigrateText::NoteAddedRuleEntry {
@@ -488,6 +532,18 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
                 configs: s("slopvac.toml, sub/slopvac.toml"),
             },
             "Findings: the comparison is incomplete for slopvac.toml, sub/slopvac.toml, whose before side is approximate.",
+        ),
+        (
+            MigrateText::ReasonDoesNotLoad { problems: s("p") },
+            "it does not load in 3.0: p",
+        ),
+        (
+            MigrateText::ReasonCategoryUnderSwitch {
+                at: s("overrides[0].categories"),
+                line: s("4"),
+                switch: s("overrides[1]"),
+            },
+            "`overrides[0].categories` on line 4 sets a category that applies above the profile switch in `overrides[1]`, and `--preserve-behavior` cannot keep the 2.x levels there",
         ),
         (MigrateText::OutNote { message: s("m") }, "note: m"),
         (
@@ -636,10 +692,6 @@ fn every_phrase_keeps_its_published_text_and_is_registered() {
         (P::BlocklistUnreadable, "cannot be read"),
         (P::PlaceTopLevel, "the top level"),
         (P::OverrideBlockOne, "1 override block"),
-        (
-            P::CommentSwitchBlocks,
-            "Added by `slopvac migrate --preserve-behavior`: switch these files to the 2.x\n# profile that the block below with the same files selects.",
-        ),
         (
             P::CommentGuardBlocks,
             "Added by `slopvac migrate --preserve-behavior`: 2.x ignored these rule entries\n# for these files.",

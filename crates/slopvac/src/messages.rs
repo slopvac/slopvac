@@ -86,6 +86,14 @@ pub static RETIRED: &[Retired] = &[
         code: "review-same-model",
         note: "A reviewer on the author's model no longer stops a review. See review-model-same.",
     },
+    Retired {
+        code: "migrate-comment-switch-blocks",
+        note: "migrate --preserve-behavior folds each profile switch into the override block that selects the profile, so it writes no switch block.",
+    },
+    Retired {
+        code: "migrate-note-added-switch-blocks",
+        note: "Replaced by migrate-note-merged-switch.",
+    },
 ];
 
 /// The entries of [`ALL`], paired with their catalog names.

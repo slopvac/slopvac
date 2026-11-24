@@ -123,17 +123,64 @@ fn the_report_shows_a_gate_the_migration_drops(
 const UNREPRODUCIBLE: &str = "schema_version = 2\nprofile = \"relaxed\"\n\n[[overrides]]\n\
                               files = [\"docs/*.md\"]\n\n[overrides.thresholds]\nmax_errors = 0\n";
 
-#[test]
-fn a_config_whose_2x_settings_cannot_be_reproduced_makes_the_comparison_incomplete()
--> std::io::Result<()> {
-    let dir = project(UNREPRODUCIBLE, HYPHEN)?;
+/// A relaxed 2.x config whose override switches profile and sets a category level, which
+/// `--preserve-behavior` refuses, so its 2.x settings cannot be reproduced for the before side
+/// either. The block starts on line 4.
+const CATEGORY_UNDER_SWITCH: &str = "schema_version = 2\nprofile = \"relaxed\"\n\n\
+                                     [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n\
+                                     categories = { ai-tells-agentic = \"warning\" }\n";
+
+/// A relaxed 2.x config with a top-level category level and an override that switches
+/// profile, which `--preserve-behavior` refuses. The top-level `categories` table starts on
+/// line 4.
+const TOP_LEVEL_UNDER_SWITCH: &str = "schema_version = 2\nprofile = \"relaxed\"\n\n\
+                                      [categories]\nai-tells-formatting = \"warning\"\n\n\
+                                      [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n";
+
+/// The same with only a `weight` in the top-level category, which 2.x also credits as
+/// authored.
+const TOP_LEVEL_WEIGHT_UNDER_SWITCH: &str = "schema_version = 2\nprofile = \"relaxed\"\n\n\
+                                             [categories]\nai-tells-formatting = { weight = 2.0 }\n\n\
+                                             [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n";
+
+/// The same with only a budget in the top-level category.
+const TOP_LEVEL_BUDGET_UNDER_SWITCH: &str = "schema_version = 2\nprofile = \"relaxed\"\n\n\
+                                             [categories]\nai-tells-formatting = { max_per_100_words = 2.0 }\n\n\
+                                             [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n";
+
+#[rstest]
+#[case::glob_outside_the_grammar(
+    UNREPRODUCIBLE,
+    "could not be reproduced: unsupported pattern \"docs/*.md\""
+)]
+#[case::category_under_a_switch(
+    CATEGORY_UNDER_SWITCH,
+    "could not be reproduced: `overrides[0].categories` on line 4 sets a category that applies above the profile switch in `overrides[0]`"
+)]
+#[case::top_level_level_under_a_switch(
+    TOP_LEVEL_UNDER_SWITCH,
+    "could not be reproduced: `categories` on line 4 sets a category that applies above the profile switch in `overrides[0]`"
+)]
+#[case::top_level_weight_under_a_switch(
+    TOP_LEVEL_WEIGHT_UNDER_SWITCH,
+    "could not be reproduced: `categories` on line 4 sets a category that applies above the profile switch in `overrides[0]`"
+)]
+#[case::top_level_budget_under_a_switch(
+    TOP_LEVEL_BUDGET_UNDER_SWITCH,
+    "could not be reproduced: `categories` on line 4 sets a category that applies above the profile switch in `overrides[0]`"
+)]
+fn a_config_whose_2x_settings_cannot_be_reproduced_makes_the_comparison_incomplete(
+    #[case] config: &str,
+    #[case] reason: &str,
+) -> std::io::Result<()> {
+    let dir = project(config, HYPHEN)?;
     let assert = slopvac().arg("migrate").arg(dir.path()).assert().code(0);
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let notice = stdout
         .lines()
         .find(|l| l.contains("before side for this config is approximate"));
     assert!(
-        notice.is_some_and(|l| l.starts_with("warning: slopvac.toml:4: ")),
+        notice.is_some_and(|l| l.starts_with("warning: slopvac.toml:4: ") && l.contains(reason)),
         "{stdout}"
     );
     assert!(!stdout.contains("same count per rule"), "{stdout}");

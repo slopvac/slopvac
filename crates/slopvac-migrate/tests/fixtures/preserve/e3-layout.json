@@ -1,0 +1,45 @@
+{
+ "_stub": "STUB(slopvac-8l4.16.24): the contract reference (tests/contract/preserve_expansion.py) still writes the old E3, a separate switch block per profile override before every other block. Until it is updated, these layouts are derived by hand from the E3 rule: a profile switch folds into its own block; an earlier block that holds its files stays in place and is restated in it; an earlier block inside its files moves to just after it; a guard with the same files as the last block that matches them, with no later block stating its rules or the severity of their categories, folds into that block; otherwise it stays a block at the end. Each entry is one block of the migrated overrides, in order. Scenarios in refused.json have no layout, because migrate refuses them. The levels these configs give are checked against the measured 2.x engine in tests/preserve_2x.rs.",
+ "layouts": {
+  "block-moved-twice-keeps-a-rule-entry-it-lost": [
+   {"files": ["docs/**"], "profile": "relaxed"},
+   {"files": ["docs/api/**"], "profile": null},
+   {"files": ["docs/api/v1/**"], "profile": null}
+  ],
+  "budget-cleared-after-an-earlier-switch": [
+   {"files": ["docs/**"], "profile": "normal"},
+   {"files": ["docs/api/**"], "profile": "strict"}
+  ],
+  "budget-restored-by-the-reverse-switch": [{"files": ["docs/**"], "profile": "normal"}],
+  "later-block-rule-ignored-after-a-switch-to-relaxed": [
+   {"files": ["docs/**"], "profile": "relaxed"},
+   {"files": ["docs/api/**"], "profile": null}
+  ],
+  "later-block-rule-ignored-by-an-earlier-profile-switch": [
+   {"files": ["docs/**"], "profile": "strict"},
+   {"files": ["docs/api/**"], "profile": null}
+  ],
+  "literal-path-also-matches-its-descendants": [
+   {"files": ["docs/api"], "profile": "relaxed"},
+   {"files": ["docs/api/**"], "profile": "strict"},
+   {"files": ["docs/api", "!docs/api/**"], "profile": null}
+  ],
+  "profile-override": [{"files": ["docs/**"], "profile": "relaxed"}],
+  "profile-override-clears-a-budget-with-none": [{"files": ["docs/**"], "profile": "strict"}],
+  "profile-override-keeps-top-authored-rule": [{"files": ["docs/**"], "profile": "relaxed"}],
+  "profile-override-with-own-category": [{"files": ["docs/**"], "profile": "strict"}],
+  "top-rule-ignored-at-baseline-valid-in-override": [
+   {"files": ["docs/**"], "profile": "strict"},
+   {"files": ["**", "!docs/**"], "profile": null}
+  ],
+  "top-rule-ignored-only-in-a-nested-scope": [
+   {"files": ["docs/**"], "profile": "normal"},
+   {"files": ["docs/api/**"], "profile": "relaxed"}
+  ],
+  "top-rule-valid-at-baseline-ignored-in-override": [{"files": ["docs/**"], "profile": "relaxed"}],
+  "two-profile-overrides": [
+   {"files": ["docs/**"], "profile": "relaxed"},
+   {"files": ["docs/api/**"], "profile": "strict"}
+  ]
+ }
+}

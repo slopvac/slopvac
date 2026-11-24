@@ -497,14 +497,20 @@ migrate-note-deleted-vale text
 migrate-note-dropped-extension-key text
 migrate-note-dropped-ignored text
 migrate-note-dropped-judgement text
+migrate-note-guarded-rule-entries text
+migrate-note-guarded-rule-entry text
+migrate-note-merged-switch text
 migrate-note-moved-allow text
+migrate-note-moved-block text
 migrate-note-moved-blocklist-path text
 migrate-note-moved-default text
 migrate-note-moved-pyproject text
 migrate-note-pos-rewritten text
 migrate-note-renamed-category text
 migrate-note-renamed-dotfile text
+migrate-note-restated-blocks text
 migrate-note-set-rule-level text
+migrate-note-set-rule-level-applied text
 migrate-out-by-rule text
 migrate-out-incomplete text
 migrate-out-kept text
@@ -529,6 +535,8 @@ migrate-place-top-level text
 migrate-reason-blocklist-in-override text
 migrate-reason-blocklist-under-switch text
 migrate-reason-category-gone text
+migrate-reason-category-under-switch text
+migrate-reason-does-not-load text
 migrate-reason-expected-boolean text
 migrate-reason-expected-level text
 migrate-reason-expected-level-or-table text
@@ -536,6 +544,7 @@ migrate-reason-expected-two text
 migrate-reason-guidance-override text
 migrate-reason-no-equivalent text
 migrate-reason-no-equivalent-rewrite text
+migrate-reason-override-not-table text
 migrate-reason-rejected-category text
 migrate-reason-rejected-rule text
 migrate-reason-rule-gone text

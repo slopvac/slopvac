@@ -6,9 +6,10 @@ use std::path::Path;
 
 use rstest::rstest;
 
+use slopvac_config::Code;
 use slopvac_migrate::{
-    Error, Finding, Linter, NullLinter, Options, Phase, RenameTable, apply, command, plan,
-    render_diff, restore, run,
+    Error, Finding, Linter, LoadRefusal, NullLinter, Options, Phase, RenameTable, apply, command,
+    plan, render_diff, restore, run,
 };
 
 const STEERING: &str = "<!-- slopvac:begin -->\nnew\n<!-- slopvac:end -->\n";
@@ -160,6 +161,84 @@ fn two_config_sources_in_one_directory_conflict() {
     write(dir.path(), "slopvac.toml", "profile = \"strict\"\n");
     write(dir.path(), ".slopvac.toml", "profile = \"normal\"\n");
     assert!(matches!(plan_of(dir.path()), Err(Error::Conflict(_))));
+}
+
+#[rstest]
+#[case::plain(false)]
+#[case::preserve_behavior(true)]
+fn a_migrated_config_the_3_0_loader_refuses_stops_the_plan(#[case] preserve_behavior: bool) {
+    let dir = tempfile::tempdir().unwrap();
+    // 2.x read both blocks; 3.0 refuses two override blocks with the same files.
+    write(
+        dir.path(),
+        "slopvac.toml",
+        "[[overrides]]\nfiles = [\"docs/**\"]\nthresholds = { max_errors = 1 }\n\n\
+         [[overrides]]\nfiles = [\"docs/**\"]\nlocale = { default = \"en-GB\" }\n",
+    );
+    let err = plan(
+        dir.path(),
+        &RenameTable::bundled(),
+        Options { preserve_behavior },
+        STEERING,
+    )
+    .unwrap_err();
+    assert_eq!(err.code(), "migrate-output-invalid", "{err}");
+    assert!(err.to_string().contains("config-duplicate-scope"), "{err}");
+}
+
+/// A config whose migrated form the 3.0 loader refuses for its repeated scope. Its comment
+/// and its locale are text that no error may repeat.
+const REPEATED_SCOPE: &str = "# private note 7f3a\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+                              thresholds = { max_errors = 1 }\n\n\
+                              [[overrides]]\nfiles = [\"docs/**\"]\n\
+                              locale = { default = \"en-GB\" }\n";
+
+/// A config whose migrated form the 3.0 loader refuses for a value it does not accept.
+const REJECTED_VALUE: &str = "[locale]\ndefault = \"private-value-7f3a\"\n";
+
+/// Plan a project whose migrated config the 3.0 loader refuses.
+fn refused_plan(root: &Path, config: &str) -> Error {
+    write(root, "slopvac.toml", config);
+    plan(root, &RenameTable::bundled(), Options::default(), STEERING).unwrap_err()
+}
+
+#[test]
+fn a_refused_config_keeps_the_loader_codes_as_a_typed_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let err = refused_plan(dir.path(), REPEATED_SCOPE);
+    let codes: Vec<Code> = std::error::Error::source(&err)
+        .and_then(|s| s.downcast_ref::<LoadRefusal>())
+        .map(|cause| cause.codes().collect())
+        .unwrap_or_default();
+    assert_eq!(codes, [Code::DuplicateScope], "{err:?}");
+}
+
+#[rstest]
+#[case::repeated_scope(REPEATED_SCOPE, &["private note 7f3a", "en-GB"])]
+#[case::rejected_value(REJECTED_VALUE, &["private-value-7f3a"])]
+fn a_refused_config_error_chain_holds_no_config_text_or_absolute_path(
+    #[case] config: &str,
+    #[case] private: &[&str],
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let err = refused_plan(dir.path(), config);
+    assert_eq!(err.code(), "migrate-output-invalid", "{err}");
+    let root = dir.path().canonicalize().unwrap();
+    let mut chain: Vec<String> = Vec::new();
+    let mut next: Option<&dyn std::error::Error> = Some(&err);
+    while let Some(e) = next {
+        chain.push(format!("{e}"));
+        chain.push(format!("{e:?}"));
+        next = e.source();
+    }
+    for text in &chain {
+        for value in private {
+            assert!(!text.contains(value), "{text}");
+        }
+        for path in [dir.path(), root.as_path()] {
+            assert!(!text.contains(&*path.to_string_lossy()), "{text}");
+        }
+    }
 }
 
 #[test]

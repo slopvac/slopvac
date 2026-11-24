@@ -3,6 +3,7 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use rstest::rstest;
 use std::fs;
 
 fn slopvac() -> Command {
@@ -138,6 +139,185 @@ fn restore_rejects_a_manifest_that_escapes_the_project() {
         .assert()
         .code(2)
         .stderr(predicate::str::starts_with("error[migrate-unsafe-path]: "));
+}
+
+#[test]
+fn a_guard_that_repeats_a_block_scope_stops_the_write_and_changes_nothing() {
+    // 2.x ignored the later rule entry under docs/api, where orwell is off. The guard
+    // that turns it off there must follow the later block, so it cannot fold into the
+    // block with its files, and 3.0 refuses the repeated scope.
+    let config = "profile = \"strict\"\n\n[[overrides]]\nfiles = [\"docs/api/**\"]\n\
+                  categories = { orwell = \"off\" }\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+                  rules = { \"orwell.not-un\" = \"warning\" }\n";
+    let dir = project(config);
+    let cache = tempfile::tempdir().expect("tempdir");
+    slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--preserve-behavior")
+        .arg("--write")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[migrate-output-invalid]: ",
+        ))
+        .stderr(predicate::str::contains("config-duplicate-scope"));
+    assert_eq!(
+        fs::read_to_string(dir.path().join(".slopvac.toml")).expect("source kept"),
+        config
+    );
+    assert!(!dir.path().join("slopvac.toml").exists());
+    assert!(!dir.path().join(".slopvac").exists());
+    assert_eq!(fs::read_dir(cache.path()).expect("cache").count(), 0);
+}
+
+#[rstest]
+// The switch to normal leaves the rule at the `off` of the relaxed style, where 2.x
+// applied the block's category level.
+#[case::stuck_off(
+    "profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n\
+     categories = { ai-tells-agentic = \"warning\" }\n"
+)]
+// A rule entry would lose the category's floor.
+#[case::floor(
+    "profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n\
+     categories = { \"ai-tells-agentic\" = { severity = \"warning\", minimum_severity = \"error\" } }\n"
+)]
+// A later block without a profile sets a category level inside the switched files.
+#[case::later_plain_block(
+    "profile = \"strict\"\n\n[[overrides]]\nfiles = [\"docs/api/**\"]\n\
+     categories = { prose-craft = \"warning\" }\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+     profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/manual/**\"]\n\
+     categories = { prose-craft = \"error\" }\n"
+)]
+// An earlier block inside the switched files moves after the switch.
+#[case::moved_block(
+    "profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/api/**\"]\n\
+     categories = { ai-tells-agentic = \"warning\" }\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+     profile = \"normal\"\n"
+)]
+// A category with no level still takes one from the profile in force.
+#[case::category_without_level(
+    "profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n\
+     categories = { ai-tells-agentic = { weight = 2.0 } }\n"
+)]
+// Every file under the switch inherits the top-level floor.
+#[case::top_level_floor(
+    "profile = \"relaxed\"\n\n[categories]\nai-tells-agentic = { minimum_severity = \"error\" }\n\n\
+     [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
+)]
+// The switched block inherits the floor of an earlier block that holds its files.
+#[case::container_floor(
+    "profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+     categories = { ai-tells-agentic = { minimum_severity = \"error\" } }\n\n\
+     [[overrides]]\nfiles = [\"docs/api/**\"]\nprofile = \"normal\"\n"
+)]
+// A top-level category level with any switch: the switch leaves an advisory rule at the
+// `off` of the relaxed style, where 2.x applied the top-level level.
+#[case::top_level_level(
+    "profile = \"relaxed\"\n\n[categories]\nai-tells-formatting = \"warning\"\n\n\
+     [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
+)]
+// An entry with no field still names the category, which 2.x credits as authored.
+#[case::top_level_empty_entry(
+    "profile = \"relaxed\"\n\n[categories]\nai-tells-formatting = {}\n\n\
+     [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
+)]
+// The top-level category is refused before the switch's 2.x glob, which the overlap
+// grammar does not cover, is expanded.
+#[case::top_level_level_with_a_glob_outside_the_grammar(
+    "profile = \"relaxed\"\n\n[categories]\nai-tells-formatting = \"warning\"\n\n\
+     [[overrides]]\nfiles = [\"*.md\"]\nprofile = \"normal\"\n"
+)]
+fn a_category_level_above_a_profile_switch_stops_the_write_and_changes_nothing(
+    #[case] config: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    assert_refused_before_any_write(config)
+}
+
+#[test]
+fn a_stray_scalar_in_an_inline_overrides_array_stops_the_write_and_changes_nothing()
+-> Result<(), Box<dyn std::error::Error>> {
+    // The second entry is not an override block. The rewrite must not drop it and write
+    // the valid block alone.
+    assert_refused_before_any_write(
+        "overrides = [{ files = [\"docs/**\"], categories = { orwell = \"off\" } }, \"stray\"]\n",
+    )
+}
+
+/// Run `migrate --preserve-behavior --write` on a project whose `.slopvac.toml` is
+/// `config`, and check that it stops with `migrate-output-invalid` and exit 2, keeps the
+/// source, and writes no `slopvac.toml`, backup or trusted record.
+fn assert_refused_before_any_write(config: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = project(config);
+    let cache = tempfile::tempdir()?;
+    slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--preserve-behavior")
+        .arg("--write")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[migrate-output-invalid]: ",
+        ));
+    assert_eq!(
+        fs::read_to_string(dir.path().join(".slopvac.toml"))?,
+        config,
+        "{config}"
+    );
+    assert!(!dir.path().join("slopvac.toml").exists(), "{config}");
+    assert!(!dir.path().join(".slopvac").exists(), "{config}");
+    assert_eq!(fs::read_dir(cache.path())?.count(), 0, "{config}");
+    Ok(())
+}
+
+/// A value 2.x accepts for each field of a `[categories.<name>]` table.
+const CATEGORY_FIELD_VALUES: &[(&str, &str)] = &[
+    ("max_per_100_words", "2.0"),
+    ("minimum_severity", "\"error\""),
+    ("severity", "\"warning\""),
+    ("weight", "2.0"),
+];
+
+/// The fields of a 2.x category table, as `tests/fixtures/generate.py` reads them from the
+/// 2.x config model into `vectors.json`.
+fn category_fields_of_2x() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../slopvac-migrate/tests/fixtures/preserve/vectors.json");
+    let vectors: serde_json::Value = serde_json::from_str(&fs::read_to_string(path)?)?;
+    vectors["category_fields"]
+        .as_array()
+        .ok_or("vectors.json has no category_fields list")?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| "a category_fields entry is not a string".into())
+        })
+        .collect()
+}
+
+#[test]
+fn each_2x_category_field_at_the_top_level_with_a_profile_switch_stops_the_write()
+-> Result<(), Box<dyn std::error::Error>> {
+    // 2.x credits a category as authored when a layer writes any of its fields, so each
+    // one, alone at the top level, must stop the write when an override switches profile.
+    let covered: Vec<&str> = CATEGORY_FIELD_VALUES.iter().map(|(f, _)| *f).collect();
+    assert_eq!(
+        category_fields_of_2x()?,
+        covered,
+        "a 2.x category field has no case here"
+    );
+    for (field, value) in CATEGORY_FIELD_VALUES {
+        assert_refused_before_any_write(&format!(
+            "profile = \"relaxed\"\n\n[categories]\nai-tells-formatting = {{ {field} = {value} }}\n\n\
+             [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
+        ))?;
+    }
+    Ok(())
 }
 
 #[test]

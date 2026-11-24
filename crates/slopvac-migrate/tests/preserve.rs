@@ -113,12 +113,37 @@ fn expansions() -> Vec<(String, String, Value)> {
         .collect()
 }
 
+/// The scenarios that `--preserve-behavior` refuses, from `tests/fixtures/preserve/refused.json`.
+fn refused() -> BTreeSet<String> {
+    let text =
+        fs::read_to_string(crate_dir().join("tests/fixtures/preserve/refused.json")).unwrap();
+    let data: Value = serde_json::from_str(&text).unwrap();
+    data["refused"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_owned())
+        .collect()
+}
+
+fn e3_layouts() -> Map<String, Value> {
+    let text =
+        fs::read_to_string(crate_dir().join("tests/fixtures/preserve/e3-layout.json")).unwrap();
+    let data: Value = serde_json::from_str(&text).unwrap();
+    data["layouts"].as_object().unwrap().clone()
+}
+
 #[test]
 fn expansion_matches_the_reference_for_each_scenario() {
+    // STUB(slopvac-8l4.16.24): the reference still writes the old E3, so scenarios with
+    // a profile override are checked by `e3_puts_each_block_where_the_rule_says`.
+    let e3 = e3_layouts();
+    let refused = refused();
     let cases = expansions();
     assert!(cases.len() >= 27);
     let wrong: Vec<String> = cases
         .iter()
+        .filter(|(name, _, _)| !e3.contains_key(name) && !refused.contains(name))
         .filter(|(_, input, expected)| expansion_of(&preserve(input).unwrap().text) != *expected)
         .map(|(name, _, _)| name.clone())
         .collect();
@@ -126,15 +151,105 @@ fn expansion_matches_the_reference_for_each_scenario() {
 }
 
 #[test]
+fn e3_puts_each_block_where_the_rule_says() {
+    let e3 = e3_layouts();
+    let with_profile: BTreeSet<String> = expansions()
+        .into_iter()
+        .filter(|(_, input, _)| {
+            as_json(input)["overrides"]
+                .as_array()
+                .is_some_and(|b| b.iter().any(|b| b.get("profile").is_some()))
+        })
+        .map(|(name, _, _)| name)
+        .collect();
+    let refused = refused();
+    let laid_out: BTreeSet<String> = e3.keys().cloned().collect();
+    assert!(laid_out.is_disjoint(&refused), "{laid_out:?}");
+    assert_eq!(
+        laid_out.union(&refused).cloned().collect::<BTreeSet<_>>(),
+        with_profile
+    );
+    for (name, input, _) in expansions() {
+        if refused.contains(&name) {
+            let code = preserve(&input).err().as_ref().map(Error::code);
+            assert_eq!(code, Some("migrate-output-invalid"), "{name}");
+            continue;
+        }
+        let Some(want) = e3.get(&name) else {
+            continue;
+        };
+        let doc = as_json(&preserve(&input).unwrap().text);
+        let got: Vec<Value> = doc["overrides"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| json!({ "files": b["files"], "profile": b.get("profile") }))
+            .collect();
+        assert_eq!(Value::Array(got), *want, "{name}");
+    }
+}
+
+#[test]
 fn inline_override_blocks_expand_like_array_tables() {
     let text = "profile = \"strict\"\nrules = { \"orwell.not-un\" = \"warning\" }\n\
                 overrides = [\n  { files = [\"docs/**\"], profile = \"normal\" },\n  \
                 { files = [\"docs/api/**\"], profile = \"relaxed\" },\n]\n";
-    let (_, _, expected) = expansions()
+    let (_, tables, _) = expansions()
         .into_iter()
         .find(|(name, _, _)| name == "top-rule-ignored-only-in-a-nested-scope")
         .unwrap();
-    assert_eq!(expansion_of(&preserve(text).unwrap().text), expected);
+    assert_eq!(
+        expansion_of(&preserve(text).unwrap().text),
+        expansion_of(&preserve(&tables).unwrap().text)
+    );
+}
+
+#[test]
+fn an_earlier_block_inside_a_profile_override_moves_after_it_with_its_comments() {
+    let rw = preserve(
+        "profile = \"strict\"\n\n# api docs\n[[overrides]]\nfiles = [\"docs/api/**\"]\n\
+         locale = \"en-GB\"\n\n\
+         [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"relaxed\"\nlocale = \"en-US\"\n",
+    )
+    .unwrap();
+    let api = rw.text.find("# api docs").unwrap();
+    let docs = rw.text.find("files = [\"docs/**\"]").unwrap();
+    assert!(docs < api, "{}", rw.text);
+    let doc = as_json(&rw.text);
+    let blocks = doc["overrides"].as_array().unwrap();
+    // 2.x applied the later block's locale to docs/api too, so the moved block drops its own.
+    assert_eq!(blocks[1]["files"], json!(["docs/api/**"]));
+    assert_eq!(blocks[1].get("locale"), None, "{}", rw.text);
+    assert!(
+        rw.notes
+            .iter()
+            .any(|n| n.starts_with("moved overrides[0] after overrides[1]")),
+        "{:?}",
+        rw.notes
+    );
+}
+
+#[test]
+fn a_block_moved_twice_still_gives_way_to_the_block_that_beat_it() {
+    // 2.x applied all three blocks to docs/api/v1, in order, so the locale of the
+    // second block won there.
+    let rw = preserve(
+        "profile = \"strict\"\n\n[[overrides]]\nfiles = [\"docs/api/v1/**\"]\n\
+         locale = \"en-GB\"\n\n[[overrides]]\nfiles = [\"docs/api/**\"]\n\
+         profile = \"normal\"\nlocale = \"en-US\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+         profile = \"relaxed\"\n",
+    )
+    .unwrap();
+    let doc = as_json(&rw.text);
+    let blocks = doc["overrides"].as_array().unwrap();
+    let block = |files: &str| {
+        blocks
+            .iter()
+            .find(|b| b["files"] == json!([files]))
+            .unwrap_or_else(|| panic!("no block for {files}: {}", rw.text))
+    };
+    assert_eq!(block("docs/api/**").get("locale"), Some(&json!("en-US")));
+    assert_eq!(block("docs/api/v1/**").get("locale"), None, "{}", rw.text);
 }
 
 fn config_validator() -> jsonschema::Validator {
@@ -160,7 +275,11 @@ fn config_validator() -> jsonschema::Validator {
 fn expanded_configs_validate_against_the_config_schema() {
     let validator = config_validator();
     let mut wrong = Vec::new();
+    let refused = refused();
     for (name, input, _) in expansions() {
+        if refused.contains(&name) {
+            continue;
+        }
         let doc = as_json(&preserve(&input).unwrap().text);
         let errors: Vec<String> = validator.iter_errors(&doc).map(|e| e.to_string()).collect();
         if !errors.is_empty() {
