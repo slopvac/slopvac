@@ -118,8 +118,12 @@ struct View<'a> {
     /// The sentences of each code block a tagger read, by the address and length of its text:
     /// the span, and the offset and length of the text inside the block. A block is split and
     /// charged once, however many taggers read it.
-    code_splits: RefCell<HashMap<(usize, usize), Vec<(Range<usize>, usize, usize)>>>,
+    code_splits: RefCell<HashMap<(usize, usize), Vec<CodeSentence>>>,
 }
+
+/// One sentence of a code block: its span, and the offset and length of its text inside the
+/// block.
+type CodeSentence = (Range<usize>, usize, usize);
 
 /// The key of a projection in `View::prepared`.
 fn projection_key(projection: &Projection) -> usize {
