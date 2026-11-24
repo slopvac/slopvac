@@ -390,7 +390,7 @@ fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
         .collect();
     let core_rules: HashSet<&str> = core
         .flat_map(|p| p.rules.categories())
-        .flat_map(|c| c.rules())
+        .flat_map(slopvac_rules::LoadedCategory::rules)
         .map(|r| r.id().local())
         .collect();
     let mut qualified: HashSet<&str> = HashSet::new();
