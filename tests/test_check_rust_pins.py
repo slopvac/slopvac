@@ -26,10 +26,47 @@ def run_check(root: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def write_pins(tmp_path: Path, mise_rust: str) -> Path:
-    (tmp_path / "rust-toolchain.toml").write_text(TOOLCHAIN)
+def write_pins(tmp_path: Path, mise_rust: str, toolchain: str = TOOLCHAIN) -> Path:
+    (tmp_path / "rust-toolchain.toml").write_text(toolchain)
     (tmp_path / "mise.toml").write_text(f"[tools]\nrust = {mise_rust}\n")
     return tmp_path
+
+
+BARE_TOOLCHAIN = '[toolchain]\nchannel = "9.8.7"\n'
+
+
+@pytest.mark.parametrize(
+    ("mise_rust", "toolchain"),
+    [
+        pytest.param('"9.8.7"', BARE_TOOLCHAIN, id="bare-pin-both-sides-default"),
+        pytest.param('{ version = "9.8.7" }', BARE_TOOLCHAIN, id="table-without-options"),
+        pytest.param(
+            '{ version = "9.8.7", profile = "default" }',
+            BARE_TOOLCHAIN,
+            id="explicit-default-profile",
+        ),
+    ],
+)
+def test_omitted_fields_default_on_both_sides(
+    tmp_path: Path, mise_rust: str, toolchain: str
+) -> None:
+    result = run_check(write_pins(tmp_path, mise_rust, toolchain))
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+
+
+@pytest.mark.parametrize(
+    "mise_rust",
+    [
+        pytest.param('"9.8.6"', id="bare-version"),
+        pytest.param('{ version = "9.8.6" }', id="table-version"),
+    ],
+)
+def test_version_mismatch_fails_when_other_fields_default(
+    tmp_path: Path, mise_rust: str
+) -> None:
+    result = run_check(write_pins(tmp_path, mise_rust, BARE_TOOLCHAIN))
+    assert result.returncode == 1
+    assert "differs from rust-toolchain.toml" in result.stderr
 
 
 @pytest.mark.parametrize(
