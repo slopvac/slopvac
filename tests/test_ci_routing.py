@@ -161,9 +161,12 @@ def test_docs_site_class_excludes_unrelated_paths(path):
 TERM = re.compile(r"needs\.changes\.outputs(?:\.(\w+)|\['([\w-]+)'\]) == 'true'")
 
 
-def evaluate(condition: str, true_outputs: set[str]) -> bool:
+def evaluate(
+    condition: str, true_outputs: set[str], event: str = "pull_request"
+) -> bool:
     """Evaluate the `||`/`&&`/`==` subset that test.yml job conditions use."""
     expr = " ".join(condition.split())
+    expr = expr.replace("github.event_name != 'push'", str(event != "push"))
     expr = TERM.sub(lambda m: str((m.group(1) or m.group(2)) in true_outputs), expr)
     expr = expr.replace("||", " or ").replace("&&", " and ")
     assert re.fullmatch(r"(?:True|False|or|and|\(|\)|\s)+", expr), expr
@@ -561,10 +564,11 @@ def test_gate_fails_a_draft(flags, results):
 
 
 # A skipped job reports success to branch protection, so the required checks
-# must run on a draft to fail it.
+# must run on a draft to fail it. Only a push to main skips them: no branch
+# protection applies there, and the queue run already passed the gates.
 @pytest.mark.parametrize("job", ["gate", "lint-gate-compat", "security-gate-compat"])
 def test_required_checks_are_never_skipped(job):
-    assert JOBS[job]["if"] == "always()"
+    assert JOBS[job]["if"] == "always() && github.event_name != 'push'"
 
 
 @pytest.mark.parametrize(
@@ -619,14 +623,31 @@ def test_force_all_is_set_for_the_queue_main_and_routing_edits(
     assert force_all_for(event, routing_changed, tmp_path) == expected
 
 
-@pytest.mark.parametrize("event", ["merge_group", "push"])
 @pytest.mark.parametrize("job", ROUTED_JOBS)
-def test_every_routed_job_runs_on_the_queue_and_main_with_no_class_matched(
-    event, job, tmp_path
-):
-    forced = force_all_for(event, False, tmp_path) == "force_all=true"
+def test_every_routed_job_runs_on_the_queue_with_no_class_matched(job, tmp_path):
+    forced = force_all_for("merge_group", False, tmp_path) == "force_all=true"
     outputs = {"force_all"} if forced else set()
-    assert evaluate(JOBS[job]["if"], outputs) is True
+    assert evaluate(JOBS[job]["if"], outputs, "merge_group") is True
+
+
+# These jobs warm a cache that only main saves, or scan the pushed commits; the
+# merge-group run already tested the same tree, so every other routed job skips on push.
+PUSH_JOBS = {
+    "test",
+    "rust-static",
+    "rust",
+    "rust-msrv",
+    "action-contract",
+    "security",
+    "docs-site",
+}
+
+
+@pytest.mark.parametrize("job", ROUTED_JOBS)
+def test_main_push_runs_only_the_cache_warming_and_scan_jobs(job, tmp_path):
+    forced = force_all_for("push", False, tmp_path) == "force_all=true"
+    outputs = {"force_all"} if forced else set()
+    assert evaluate(JOBS[job]["if"], outputs, "push") is (job in PUSH_JOBS)
 
 
 @pytest.mark.parametrize("event", ["merge_group", "push"])
