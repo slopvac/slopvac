@@ -877,7 +877,7 @@ fn with_tagger(id: &'static str, tagger: &str) -> Spec {
 
 fn core_tagger() -> (String, String) {
     let packs = Packs::core().unwrap();
-    let t = packs.taggers().next().expect("the core pack has taggers");
+    let t = packs.taggers().next().unwrap();
     (t.id.clone(), t.tag.clone())
 }
 
@@ -965,5 +965,11 @@ fn the_directory_source_caps_a_file_at_two_mebibytes(
 
     let read = DirSource::new(dir.path()).manifest_text();
 
-    assert_eq!(read.as_ref().err().and_then(|e| e.code()), code, "{read:?}");
+    assert_eq!(
+        read.as_ref()
+            .err()
+            .and_then(slopvac_packs::SourceError::code),
+        code,
+        "{read:?}"
+    );
 }
