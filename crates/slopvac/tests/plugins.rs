@@ -315,7 +315,7 @@ fn a_malformed_launcher_invocation_exits_2_with_the_usage_line() {
 
 /// A valid launcher call hands back the status of the program it ran.
 #[test]
-fn a_valid_launcher_invocation_relays_the_childs_exit_status() {
+fn a_valid_launcher_invocation_relays_the_exit_status_of_the_program() {
     let sandbox = Sandbox::new();
     sandbox
         .slopvac()
