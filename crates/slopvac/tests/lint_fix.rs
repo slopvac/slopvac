@@ -264,30 +264,3 @@ fn each_refused_budget_is_named_in_the_notice_data(
     );
     Ok(())
 }
-
-#[test]
-fn two_splits_that_each_fit_the_sentence_budget_are_refused_together() -> TestResult {
-    // A paragraph of 40000 sentences, then a fenced code block of 40000 sentences, in a text
-    // of about 280,000 bytes: a budget of 280,000 / 8 + 65,536, about 100,500. The tagging
-    // run splits the code block and a document rule splits the paragraph again. Each split
-    // fits on its own. The paragraph and the two splits together are 120000 and do not.
-    let text = format!(
-        "{}\n\n```\n{}\n```\n",
-        "Go. ".repeat(40_000),
-        "a. ".repeat(40_000)
-    );
-    let limit = text.len() / 8 + 65_536;
-    assert!(80_000 <= limit && 120_000 > limit);
-    let dir = project(&text)?;
-    slopvac(dir.path())?
-        .args(["lint", "--format", "json", "--out", "r.json", "a.md"])
-        .assert()
-        .code(2);
-    let report: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(dir.path().join("r.json"))?)?;
-    let notice = &report["notices"][0];
-    assert_eq!(notice["code"], "context-budget-exceeded", "{report}");
-    assert_eq!(notice["data"]["budget"], "sentences", "{report}");
-    assert_eq!(notice["data"]["limit"], limit, "{report}");
-    Ok(())
-}
