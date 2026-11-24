@@ -229,3 +229,38 @@ fn a_blocklist_with_a_top_level_category_and_a_switch_is_refused_for_the_blockli
     );
     Ok(())
 }
+
+/// A later override that sets the category of a vocabulary rule would replace the rule level
+/// that an earlier layer set, and 2.x kept that rule level.
+#[test]
+fn a_later_category_over_an_earlier_vocabulary_rule_is_refused()
+-> Result<(), Box<dyn std::error::Error>> {
+    let config = format!(
+        "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n\
+         [rules]\n{RULE} = \"error\"\n\n\
+         [[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"suggestion\"\n"
+    );
+    let stderr = refused(&config)?;
+    assert!(
+        stderr.contains("`overrides[0].categories.ste-words` on line 11 sets the category of a word blocklist rule that an earlier layer sets"),
+        "{stderr}"
+    );
+    Ok(())
+}
+
+/// A later override that sets a category with no `severity` gets the legacy severity filled
+/// in, which turns on a vocabulary rule that an earlier layer turned off with its category.
+#[test]
+fn a_later_category_with_no_severity_over_an_off_category_is_refused()
+-> Result<(), Box<dyn std::error::Error>> {
+    let config = "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n\
+                  [categories]\nste-words = \"off\"\n\n\
+                  [[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\n\
+                  ste-words = { minimum_severity = \"error\" }\n";
+    let stderr = refused(config)?;
+    assert!(
+        stderr.contains("`overrides[0].categories.ste-words` on line 11 sets a category that an earlier layer turned off, with no `severity`"),
+        "{stderr}"
+    );
+    Ok(())
+}
