@@ -487,8 +487,15 @@ fn a_plugin_category_that_shadows_a_core_category_is_refused() {
         "{}",
         stderr(&out)
     );
-    // Not asserted: empty stdout. A refused run prints the generic incomplete-run report on
-    // stdout (`notice[<code>]` and `0 documents`), as every refusal does; see the PR comment.
+    // A refused run prints the shared incomplete-run report on stdout, as every refusal does
+    // (`failed()`): the refusal as a notice line (`notice[<code>]: <message>`, the text
+    // report's notice format), then the summary of a run with no documents (score 100.0, which
+    // passes).
+    assert_eq!(
+        stdout(&out),
+        "notice[pack-rule-id-collision]: plugin `acme` is refused: its rule `orwell` has the id of a rule that another pack supplies, and nothing from the plugin loads\n\
+         0 documents, 0 findings (0 errors, 0 warnings, 0 suggestions), score 100.0: PASS\n"
+    );
 }
 
 #[test]
