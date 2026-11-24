@@ -650,6 +650,36 @@ def test_main_push_runs_only_the_cache_warming_and_scan_jobs(job, tmp_path):
     assert evaluate(JOBS[job]["if"], outputs, "push") is (job in PUSH_JOBS)
 
 
+SUITE_COMMAND = re.compile(r"\bpytest\b|\bcargo (?:nextest run|test)\b")
+
+
+def step_runs_on_push(step: dict) -> bool:
+    """Evaluate a step `if` that only tests `github.event_name` against 'push'."""
+    condition = step.get("if")
+    if condition is None:
+        return True
+    expr = " ".join(str(condition).split())
+    expr = expr.replace("github.event_name == 'push'", "True")
+    expr = expr.replace("github.event_name != 'push'", "False")
+    expr = re.sub(r"github\.event_name == '\w+'", "False", expr)
+    expr = expr.replace("||", " or ").replace("&&", " and ")
+    assert re.fullmatch(r"(?:True|False|or|and|\(|\)|\s)+", expr), condition
+    return eval(expr)  # noqa: S307 - the pattern above admits only booleans
+
+
+def test_no_step_runs_a_test_suite_on_a_push_to_main():
+    # A `--no-run` step only compiles test binaries to warm the cache that main saves.
+    offenders = [
+        f"{name}: {step.get('name')}"
+        for name in sorted(PUSH_JOBS)
+        for step in JOBS[name].get("steps", [])
+        if SUITE_COMMAND.search(step.get("run", ""))
+        and "--no-run" not in step["run"]
+        and step_runs_on_push(step)
+    ]
+    assert not offenders
+
+
 @pytest.mark.parametrize("event", ["merge_group", "push"])
 def test_gate_expects_every_suite_to_succeed_on_the_queue_and_main(event, tmp_path):
     forced = force_all_for(event, False, tmp_path) == "force_all=true"

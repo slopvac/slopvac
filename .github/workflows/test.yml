@@ -393,12 +393,22 @@ jobs:
           unshare --user --map-root-user --net true
 
       # RUST_AFFECTED is `--workspace` or a checked list of `-p NAME` pairs; see rust-static.
+      # A push to main builds the test binaries to warm this leg's cache and to catch a
+      # platform build break, but does not run them: the merge-group run already did.
+      - name: Build the tests
+        if: github.event_name == 'push'
+        run: |
+          # shellcheck disable=SC2086
+          cargo nextest run $RUST_AFFECTED --locked --profile ci --no-run
+
       - name: Test
+        if: github.event_name != 'push'
         run: |
           # shellcheck disable=SC2086
           cargo nextest run $RUST_AFFECTED --locked --profile ci --no-tests=pass
 
       - name: Doctests
+        if: github.event_name != 'push'
         run: |
           # shellcheck disable=SC2086
           cargo test $RUST_AFFECTED --doc --locked
@@ -502,40 +512,51 @@ jobs:
           key: pytest
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # A push to main only saves the `pytest` cache for pull requests to restore. The
+      # merge-group run already ran the suite on this tree, so the steps below skip.
       - name: Build the slopvac binary
         run: cargo build --locked -p slopvac
 
       - name: Set up Python
+        if: github.event_name != 'push'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
 
       - name: Cache Vale download
+        if: github.event_name != 'push'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/vale-cache
           key: vale-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_vale.py') }}
       - name: Install Vale
+        if: github.event_name != 'push'
         run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
       - name: Add Vale to PATH
+        if: github.event_name != 'push'
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install cargo-delta
+        if: github.event_name != 'push'
         run: bash scripts/install_cargo_delta.sh
 
       - name: Install minisign
+        if: github.event_name != 'push'
         # The release signing tests run the real binary; the script checks its sha256.
         run: bash scripts/install_minisign.sh
 
       - name: Install package and test dependencies
+        if: github.event_name != 'push'
         # docutils is pinned for the RST sample of the golden suite (tests/golden/v3).
         run: python3 -m pip install --quiet -e "./packages/slopvac-lint[dev]" "docutils==0.23"
 
       - name: Install the hook runners
+        if: github.event_name != 'push'
         # tests/test_pre_commit_hooks.py runs the published hook through both.
         run: python3 -m pip install --quiet pre-commit==4.7.0 prek==0.5.11
 
       - name: Run every discovered pytest suite
+        if: github.event_name != 'push'
         run: python3 -m pytest
 
       # Needs history for the baseline, so this step alone fetches in full. A pull
