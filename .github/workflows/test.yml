@@ -3,6 +3,10 @@ name: CI
 # One always-triggered workflow owns pull-request CI. Individual jobs are skipped
 # with job-level conditions so required checks never disappear because an entire
 # workflow was path-filtered.
+# Pushes to main run only what warms the caches that pull requests and the merge
+# queue restore (rust-cache and the docs-site build save on main only) and the
+# security scan of pushed commits. The commit already passed the full suite in its
+# merge-group run, so every other job and the gates skip on push.
 on:
   # Draft pull requests do no work: the root jobs below skip, and the gate fails
   # so no required check turns green. Marking the PR ready starts the real run.
@@ -141,7 +145,7 @@ jobs:
   # malformed hook manifests even for docs/config-only changes.
   quick-lint:
     name: Quick lint
-    if: github.event.pull_request.draft != true
+    if: github.event_name != 'push' && github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -457,8 +461,11 @@ jobs:
     name: Rust supply chain
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.rust == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.rust == 'true'
+      )
     uses: ./.github/workflows/rust-supply-chain.yml
     permissions:
       contents: read
@@ -557,8 +564,11 @@ jobs:
     name: Live diagram adapter
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs['diagram-adapter'] == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs['diagram-adapter'] == 'true'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -588,8 +598,11 @@ jobs:
     name: slopvac (py${{ matrix.python }})
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.package == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.package == 'true'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -688,9 +701,12 @@ jobs:
     name: CLI contract
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.package == 'true' ||
-      needs.changes.outputs.docs == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.package == 'true' ||
+        needs.changes.outputs.docs == 'true'
+      )
     uses: ./.github/workflows/cli-e2e.yml
     permissions:
       contents: read
@@ -712,8 +728,11 @@ jobs:
     name: Relevant lint suites
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.lint == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.lint == 'true'
+      )
     uses: ./.github/workflows/lint.yml
     permissions:
       contents: read
@@ -731,8 +750,11 @@ jobs:
     name: Markdown audit
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.docs == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.docs == 'true'
+      )
     uses: ./.github/workflows/markdown-audit.yml
     permissions:
       contents: read
@@ -760,8 +782,11 @@ jobs:
     name: Eval ratchet
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.evals == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.evals == 'true'
+      )
     uses: ./.github/workflows/evals-ratchet.yml
     permissions:
       contents: read
@@ -800,7 +825,7 @@ jobs:
       - security
       - evals-ratchet
       - docs-site
-    if: always()
+    if: always() && github.event_name != 'push'
     steps:
       - name: Verify required runs and valid skips
         env:
@@ -916,7 +941,7 @@ jobs:
   lint-gate-compat:
     name: gate
     needs: gate
-    if: always()
+    if: always() && github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions: {}
@@ -929,7 +954,7 @@ jobs:
   security-gate-compat:
     name: security-gate
     needs: gate
-    if: always()
+    if: always() && github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions: {}
