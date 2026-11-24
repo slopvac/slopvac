@@ -516,9 +516,8 @@ impl Project {
         let engine = if let Some(engine) = cached {
             engine
         } else {
-            // The engine owns its rule sets, and a set does not clone: load them again.
             let sets = Catalog::load().map_err(shown)?.shared_sets();
-            let reasons = slopvac_lsp::exception_names(&sets);
+            let reasons = slopvac_lsp::exception_names(sets.iter().map(|set| &**set));
             let built =
                 lint_terms::build_engine(sets, settings, &terms, &self.root).map_err(shown)?;
             let engine = Arc::new(EngineLinter::from_engine(built, reasons));

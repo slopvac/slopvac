@@ -731,7 +731,6 @@ plugins-budget-exceeded text
 plugins-budget-stderr-bytes text
 plugins-budget-stdout-bytes text
 plugins-budget-unsolicited text
-plugins-category-shared error
 plugins-change-in-place text
 plugins-change-installed text
 plugins-change-reinstalled text

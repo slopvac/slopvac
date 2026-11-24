@@ -1107,15 +1107,11 @@ fn lint_items(
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
     for (settings, terms, indexes) in groups.into_values() {
         // Every group's engine shares the rule sets the run loaded once.
-        let engine = match lint_terms::build_engine(
-            rules.shared_sets(),
-            settings,
-            &terms,
-            &request.root,
-        ) {
-            Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
-            Err(err) => return failed(request, run, &err),
-        };
+        let engine =
+            match lint_terms::build_engine(rules.shared_sets(), settings, &terms, &request.root) {
+                Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
+                Err(err) => return failed(request, run, &err),
+            };
         let relatives: Vec<Option<String>> = indexes
             .iter()
             .map(|&i| items[i].config.as_ref().map(|(_, rel)| rel_text(rel)))

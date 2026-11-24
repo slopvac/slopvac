@@ -201,7 +201,7 @@ impl LoadedPack {
             &mut *reader.budget,
         )
         .map_err(|e| rule_problems(&e))?;
-                let mut genres = Vec::new();
+        let mut genres = Vec::new();
         for (path, text) in reader.read_all(&provides.genres)? {
             let spec = GenreSpec::from_yaml(&text)
                 .and_then(|spec| spec.validate().map(|()| spec))

@@ -9,8 +9,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use snapbox::cmd::{Command, cargo_bin};
 use slopvac_plugins::extract::tree_hash;
+use snapbox::cmd::{Command, cargo_bin};
 
 /// A project and a per-user data directory, both private to one test.
 pub(crate) struct World {
@@ -127,7 +127,11 @@ impl World {
     }
 
     /// `slopvac lint --format json <target>` run in `cwd`.
-    pub(crate) fn lint_in(&self, cwd: &Path, target: impl AsRef<std::ffi::OsStr>) -> std::process::Output {
+    pub(crate) fn lint_in(
+        &self,
+        cwd: &Path,
+        target: impl AsRef<std::ffi::OsStr>,
+    ) -> std::process::Output {
         self.command(cwd)
             .args(["lint", "--format", "json"])
             .arg(target)
@@ -137,7 +141,10 @@ impl World {
 
     /// `slopvac <args>` in the project.
     fn run(&self, args: &[&str]) -> std::process::Output {
-        self.command(&self.project()).args(args).output().expect("run")
+        self.command(&self.project())
+            .args(args)
+            .output()
+            .expect("run")
     }
 }
 
@@ -253,7 +260,11 @@ fn a_lock_with_an_invalid_version_is_refused_without_echoing_the_value() {
     let doc = w.write_project(&["acme"], "# Title\n\nText.\n");
     let lock = w.project().join(".slopvac/plugins.lock");
     let text = fs::read_to_string(&lock).expect("lock");
-    fs::write(&lock, text.replace("version = \"1.0.0\"", "version = \"hunter2-SECRET\"")).expect("lock");
+    fs::write(
+        &lock,
+        text.replace("version = \"1.0.0\"", "version = \"hunter2-SECRET\""),
+    )
+    .expect("lock");
 
     let out = w.lint(&doc);
 
@@ -280,7 +291,9 @@ fn a_lock_that_is_a_directory_stops_the_run_with_exit_2() {
 
     assert_eq!(out.status.code(), Some(2));
     assert!(
-        stderr(&out).contains("error[run-plugins-lock-unreadable]: `.slopvac/plugins.lock` is not a regular file."),
+        stderr(&out).contains(
+            "error[run-plugins-lock-unreadable]: `.slopvac/plugins.lock` is not a regular file."
+        ),
         "{}",
         stderr(&out)
     );
@@ -365,7 +378,11 @@ fn a_rule_with_4097_tokens_is_refused_with_its_budget_and_limit() {
         "schema_version": 3, "id": "c", "title": "T", "description": "D", "rules": [rule]
     })
     .to_string();
-    w.install("acme", PROVIDES_C, &[("categories/c.json".to_owned(), text)]);
+    w.install(
+        "acme",
+        PROVIDES_C,
+        &[("categories/c.json".to_owned(), text)],
+    );
     let doc = w.write_project(&["acme"], "# Title\n\nText.\n");
 
     let out = w.lint(&doc);
@@ -383,14 +400,20 @@ fn a_rule_with_4097_tokens_is_refused_with_its_budget_and_limit() {
 fn a_category_of_one_and_a_half_mebibytes_loads() {
     let mut w = World::new();
     let (name, mut text) = category(&["zzqx".to_owned()]);
-    text.insert_str(text.len() - 1, &format!(",\"x-pad\":\"{}\"", "p".repeat(1_536 * 1024)));
+    text.insert_str(
+        text.len() - 1,
+        &format!(",\"x-pad\":\"{}\"", "p".repeat(1_536 * 1024)),
+    );
     w.install("acme", PROVIDES_C, &[(name, text)]);
     let doc = w.write_project(&["acme"], "# Title\n\nThe zzqx is here.\n");
 
     let out = w.lint(&doc);
 
     let report: Value = serde_json::from_slice(&out.stdout).expect("a JSON report");
-    assert!(rule_ids(&report).contains(&"acme:c.r0".to_owned()), "{report}");
+    assert!(
+        rule_ids(&report).contains(&"acme:c.r0".to_owned()),
+        "{report}"
+    );
 }
 
 // Run from a subdirectory, the plugins and the lock come from the config that applies there.
@@ -406,7 +429,10 @@ fn a_run_from_a_subdirectory_loads_the_plugins_of_the_parent_config() {
     let out = w.lint_in(&sub, "d.md");
 
     let report: Value = serde_json::from_slice(&out.stdout).expect("a JSON report");
-    assert!(rule_ids(&report).contains(&"acme:c.r0".to_owned()), "{report}");
+    assert!(
+        rule_ids(&report).contains(&"acme:c.r0".to_owned()),
+        "{report}"
+    );
 }
 
 // A nested config that lists a plugin the run did not load is refused, not linted without it.
@@ -427,7 +453,11 @@ fn a_nested_config_that_lists_more_plugins_is_refused() {
     let out = w.lint_in(&w.project(), "docs/d.md");
 
     assert_eq!(out.status.code(), Some(2));
-    assert!(stderr(&out).contains("error[plugins-nested-config]"), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("error[plugins-nested-config]"),
+        "{}",
+        stderr(&out)
+    );
 }
 
 // Two packs may not share a category id: the engine keys category settings by that id.
@@ -445,7 +475,13 @@ fn a_plugin_category_that_shadows_a_core_category_is_refused() {
     let out = w.lint(&doc);
 
     assert_eq!(out.status.code(), Some(2));
-    assert!(stderr(&out).contains("error[plugins-category-shared]"), "{}", stderr(&out));
+    // Finding 2 (lead ruling): refused at load, naming the plugin and the colliding id.
+    let text = stderr(&out);
+    assert!(
+        text.contains("the plugin `acme` supplies the category `orwell`"),
+        "{text}"
+    );
+    assert!(text.contains("the pack `core`"), "{text}");
 }
 
 // `explain` names every rule that `lint` reports.

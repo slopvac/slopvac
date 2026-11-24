@@ -23,7 +23,11 @@ use crate::lint_messages::RuleSourceError;
 /// The error for a pack that did not load. The code is the pack loader's own, so a budget
 /// refusal is `rules-budget-exceeded` with its `budget` and `limit`, and a plugin the lock
 /// lacks is `plugin-not-locked`.
-fn pack_refusal(code: Option<&'static str>, text: &str, budget: Option<(PackBudget, u64)>) -> CliError {
+fn pack_refusal(
+    code: Option<&'static str>,
+    text: &str,
+    budget: Option<(PackBudget, u64)>,
+) -> CliError {
     let error = match code {
         Some(code) => CliError::escaping(code, text),
         None => RuleSourceError::Unavailable {
@@ -174,10 +178,12 @@ fn refuse_shared_categories(sets: &[RuleSet]) -> Result<(), CliError> {
     for set in sets {
         for category in set.categories() {
             if let Some(first) = seen.insert(category.id().as_str(), set.pack().as_str()) {
-                return Err(RuleSourceError::CategoryShared {
-                    first: first.to_owned(),
-                    second: set.pack().as_str().to_owned(),
-                    category: category.id().as_str().to_owned(),
+                return Err(RuleSourceError::Unavailable {
+                    detail: format!(
+                        "the plugin `{}` supplies the category `{}`, which the pack `{first}` supplies already",
+                        set.pack().as_str(),
+                        category.id().as_str(),
+                    ),
                 }
                 .into());
             }

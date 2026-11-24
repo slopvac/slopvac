@@ -66,20 +66,6 @@ pub enum RuleSourceError {
     #[code("plugins-store-unavailable")]
     #[message("the plugin store has no data directory; set `XDG_DATA_HOME` or `HOME`.")]
     StoreUnavailable,
-    /// Two packs supply a category with the same id. The engine keys category settings and
-    /// scoring by that id, so the second pack would change the first one's category.
-    #[code("plugins-category-shared")]
-    #[message(
-        "the packs `{first}` and `{second}` both supply the category `{category}`; remove one of the plugins."
-    )]
-    CategoryShared {
-        /// The pack that supplies the category first, as a pack id.
-        first: String,
-        /// The pack that supplies it again, as a pack id.
-        second: String,
-        /// The category id.
-        category: String,
-    },
     /// A config below the working directory lists plugins the run did not load.
     #[code("plugins-nested-config")]
     #[message(
