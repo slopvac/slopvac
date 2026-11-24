@@ -119,8 +119,14 @@ fn sync_writes_the_plugin_store_to_the_data_directory_and_not_the_cache() {
         .assert()
         .success();
     let home = sandbox.dir.path().join("home");
-    assert!(home.join("data/slopvac/trees").is_dir(), "no store in the data directory");
-    assert!(!home.join("cache/slopvac").exists(), "the cache directory holds a store");
+    assert!(
+        home.join("data/slopvac/trees").is_dir(),
+        "no store in the data directory"
+    );
+    assert!(
+        !home.join("cache/slopvac").exists(),
+        "the cache directory holds a store"
+    );
 }
 
 #[test]
@@ -238,7 +244,9 @@ const STYLE_CONFIG: &str = "schema_version = 3\n[[plugins]]\nid = \"style\"\n\
 #[test]
 fn sync_in_ci_exits_2_when_a_configured_plugin_is_not_in_the_lock() {
     let sandbox = Sandbox::new();
-    sandbox.write_lock("");
+    // A lock needs at least one entry to be valid, so it locks another plugin that the config
+    // also drops. The `unlocked` line is the one under test.
+    sandbox.write_lock(&SIGNED_UNCACHED.replace("\"style\"", "\"other\""));
     fs::write(sandbox.project().join("slopvac.toml"), STYLE_CONFIG).unwrap();
     sandbox
         .slopvac()
@@ -254,7 +262,11 @@ fn sync_in_ci_exits_2_when_a_configured_plugin_is_not_in_the_lock() {
 fn sync_in_ci_exits_2_when_a_locked_plugin_is_no_longer_configured() {
     let sandbox = Sandbox::new();
     sandbox.write_lock(SIGNED_UNCACHED);
-    fs::write(sandbox.project().join("slopvac.toml"), "schema_version = 3\n").unwrap();
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        "schema_version = 3\n",
+    )
+    .unwrap();
     sandbox
         .slopvac()
         .env("CI", "true")

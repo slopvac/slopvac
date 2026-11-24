@@ -575,7 +575,9 @@ fn sync_in_ci_refuses_a_configured_plugin_that_is_not_locked() {
     let f = Fixture::new();
     f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
     let err = f
-        .run(&["sync"], false, |s| s.locked().configured(&["style", "extra"]))
+        .run(&["sync"], false, |s| {
+            s.locked().configured(&["style", "extra"])
+        })
         .result
         .unwrap_err();
     assert_eq!(err.code(), "lock-mismatch");

@@ -557,7 +557,10 @@ fn config_drift_keeps_a_locked_pack_that_a_configured_pack_requires() {
          source = \"plugins/stale\"\ndigest = \"{D1}\"\n"
     );
     let lock = Lockfile::parse(&text).unwrap();
-    let configured: Vec<PackId> = ["app", "new"].iter().map(|id| id.parse().unwrap()).collect();
+    let configured: Vec<PackId> = ["app", "new"]
+        .iter()
+        .map(|id| id.parse().unwrap())
+        .collect();
     let drift = slopvac_plugins::lock::config_drift(&lock, &configured);
     let ids = |v: &[PackId]| v.iter().map(ToString::to_string).collect::<Vec<_>>();
     assert_eq!(ids(&drift.unlocked), ["new"]);
