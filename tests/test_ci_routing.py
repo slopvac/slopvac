@@ -680,7 +680,7 @@ def steps_of(job: str) -> list[dict]:
     return [step for body in called["jobs"].values() for step in body.get("steps", [])]
 
 
-def step_runs(step: dict, event: str, leg: str | None = None) -> bool:
+def step_runs_on(step: dict, event: str, leg: str | None = None) -> bool:
     return evaluate(step["if"], set(), event, leg) if "if" in step else True
 
 
@@ -692,7 +692,7 @@ def suites(event: str | None = None) -> set[tuple[str, str | None]]:
         for step in steps_of(job)
         if SUITE_COMMAND.search(step.get("run", "")) and "--no-run" not in step["run"]
         for leg in (LEGS if job == "rust" else [None])
-        if event is None or step_runs(step, event, leg)
+        if event is None or step_runs_on(step, event, leg)
     }
 
 
@@ -722,7 +722,7 @@ def test_a_push_to_main_runs_only_the_suites_no_earlier_run_covered():
 )
 def test_a_push_to_main_keeps_the_cache_warming_builds(job, step_name, leg, expected):
     (step,) = [s for s in steps_of(job) if s["name"] == step_name]
-    assert step_runs(step, "push", leg) is expected
+    assert step_runs_on(step, "push", leg) is expected
 
 
 @pytest.mark.parametrize("event", ["merge_group", "push"])
