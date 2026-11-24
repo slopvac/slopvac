@@ -585,12 +585,17 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
 }
 
 /// A vocabulary rule entry in the written config must come from the authored input. It is
-/// allowed in two forms only: at its authored level in the matching layer (the top level with
-/// the top level, an override with the authored override that has the same `files`), or as an
-/// E4 `off` guard for a rule that the input names somewhere. An entry for a rule the input
-/// never names, or at another level than the authored one, would outrank the companion
-/// style and the settings 2.x let win. Returns the number of layers walked, or the first
-/// offending entry.
+/// allowed in two forms only:
+///
+/// - at its authored level in the matching layer: the top level with the top level, an
+///   override with the authored override that has the same `files`;
+/// - as an E4 `off` guard: an `off` entry in an override block that does not author that
+///   rule, for a rule that the input names somewhere. E4 writes guards only into override
+///   blocks, either a block of its own or an authored block it folded the guard into, so the
+///   top level never holds one and an authored layer that names the rule keeps its level.
+///
+/// Anything else would outrank the companion style and the settings 2.x let win. Returns the
+/// number of layers walked, or the first offending entry.
 fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usize, String> {
     let doc = toml::from_str::<toml::Table>(text).unwrap();
     let authored = toml::from_str::<toml::Table>(authored).unwrap_or_default();
@@ -599,24 +604,33 @@ fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usi
     for block in &authored_blocks {
         named.extend(rule_levels(block).into_keys());
     }
-    let mut layers: Vec<(&toml::Table, BTreeMap<String, String>)> =
-        vec![(&doc, rule_levels(&authored))];
+    // Each layer, with the authored levels of its counterpart and whether it can hold a guard.
+    let mut layers: Vec<(&toml::Table, BTreeMap<String, String>, bool)> =
+        vec![(&doc, rule_levels(&authored), false)];
     for block in override_blocks(&doc) {
         let counterpart = authored_blocks
             .iter()
             .position(|a| a.get("files") == block.get("files"))
             .map(|at| authored_blocks.remove(at));
-        layers.push((block, counterpart.map(rule_levels).unwrap_or_default()));
+        layers.push((
+            block,
+            counterpart.map(rule_levels).unwrap_or_default(),
+            true,
+        ));
     }
-    for (layer, own) in &layers {
+    for (layer, own, may_guard) in &layers {
         for (id, level) in rule_levels(layer) {
             if !VOCABULARY_RULES.contains(&id.as_str()) {
                 continue;
             }
             let authored_here = own.get(&id) == Some(&level);
-            let guard = level == "off" && named.contains(&id);
+            let guard =
+                *may_guard && level == "off" && named.contains(&id) && !own.contains_key(&id);
             if !authored_here && !guard {
-                return Err(format!("generated vocabulary entry {id} = {level}\n{text}"));
+                return Err(format!(
+                    "generated vocabulary entry {id} = {level}
+{text}"
+                ));
             }
         }
     }
