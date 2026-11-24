@@ -530,6 +530,10 @@ fn refused_layout(name: &str) -> (String, String) {
 #[case::switch_to_the_same_profile_normal("switch-to-the-same-profile-normal")]
 #[case::switch_to_the_same_profile_strict("switch-to-the-same-profile-strict")]
 #[case::top_profile_differs_from_the_switch("top-profile-differs-from-the-switch")]
+#[case::later_category_over_an_earlier_rule("later-category-over-an-earlier-rule")]
+#[case::later_category_with_no_severity_over_an_off_category(
+    "later-category-with-no-severity-over-an-off-category"
+)]
 fn a_blocklist_layout_the_companion_style_cannot_keep_is_refused(#[case] name: &str) {
     let (config, at) = refused_layout(name);
     let err = preserve(&config).unwrap_err();
@@ -545,7 +549,7 @@ fn every_refusal_vector_has_a_case() {
         fs::read_to_string(crate_dir().join("tests/fixtures/preserve/refused-blocklist.json"))
             .unwrap();
     let doc: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(doc["layouts"].as_object().unwrap().len(), 7);
+    assert_eq!(doc["layouts"].as_object().unwrap().len(), 9);
 }
 
 const VOCABULARY_RULES: [&str; 4] = [
@@ -646,9 +650,6 @@ fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usi
 )]
 #[case::authored_category(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n"
-)]
-#[case::top_rule_with_an_override_that_does_not_author_it(
-    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"warning\"\n"
 )]
 #[case::category_override(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n"

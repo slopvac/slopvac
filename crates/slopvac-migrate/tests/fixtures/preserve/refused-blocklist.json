@@ -1,6 +1,14 @@
 {
  "_doc": "Configs that `migrate --preserve-behavior` refuses with migrate-output-invalid, because the vocabulary companion style cannot keep the 2.x levels for them (docs/contract/profiles.md, section 4, limit). `at` is the key that the refusal names. tests/preserve.rs reads this list.",
  "layouts": {
+  "later-category-over-an-earlier-rule": {
+   "at": "overrides[0].categories.ste-words",
+   "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"suggestion\"\n"
+  },
+  "later-category-with-no-severity-over-an-off-category": {
+   "at": "overrides[0].categories.ste-words",
+   "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = { minimum_severity = \"error\" }\n"
+  },
   "moved-path-with-a-nested-switch": {
    "at": "overrides[1].profile",
    "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"other.toml\"\n\n[[overrides]]\nfiles = [\"docs/api/**\"]\nprofile = \"relaxed\"\n"
