@@ -555,13 +555,21 @@ const VOCABULARY_RULES: [&str; 4] = [
     "ste-words.word-used-in-wrong-part-of-speech",
 ];
 
-fn rule_ids(layer: &toml::Table) -> BTreeSet<String> {
+fn rule_levels(layer: &toml::Table) -> BTreeMap<String, String> {
     layer
         .get("rules")
         .and_then(toml::Value::as_table)
         .map(|r| {
-            r.keys()
-                .map(|k| k.strip_prefix("core:").unwrap_or(k).to_owned())
+            r.iter()
+                .filter_map(|(k, v)| {
+                    let level = v
+                        .as_str()
+                        .or_else(|| v.get("severity").and_then(toml::Value::as_str))?;
+                    Some((
+                        k.strip_prefix("core:").unwrap_or(k).to_owned(),
+                        level.to_owned(),
+                    ))
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -576,28 +584,39 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
         .collect()
 }
 
-/// A vocabulary rule entry that the user did not author must not sit in a layer above the
-/// styles: it would outrank the companion style and the settings 2.x let win. Each written
-/// layer is compared only with the authored layer it came from: the top level with the top
-/// level, and an override with the authored override that has the same `files`. A layer
-/// with no authored counterpart (a guard, moved or switch block) gets no allowance.
-/// Returns the number of layers walked, or the first offending entry.
+/// A vocabulary rule entry in the written config must come from the authored input. It is
+/// allowed in two forms only: at its authored level in the matching layer (the top level with
+/// the top level, an override with the authored override that has the same `files`), or as an
+/// E4 `off` guard for a rule that the input names somewhere. An entry for a rule the input
+/// never names, or at another level than the authored one, would outrank the companion
+/// style and the settings 2.x let win. Returns the number of layers walked, or the first
+/// offending entry.
 fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usize, String> {
     let doc = toml::from_str::<toml::Table>(text).unwrap();
     let authored = toml::from_str::<toml::Table>(authored).unwrap_or_default();
     let mut authored_blocks = override_blocks(&authored);
-    let mut layers: Vec<(&toml::Table, BTreeSet<String>)> = vec![(&doc, rule_ids(&authored))];
+    let mut named: BTreeSet<String> = rule_levels(&authored).into_keys().collect();
+    for block in &authored_blocks {
+        named.extend(rule_levels(block).into_keys());
+    }
+    let mut layers: Vec<(&toml::Table, BTreeMap<String, String>)> =
+        vec![(&doc, rule_levels(&authored))];
     for block in override_blocks(&doc) {
         let counterpart = authored_blocks
             .iter()
             .position(|a| a.get("files") == block.get("files"))
             .map(|at| authored_blocks.remove(at));
-        layers.push((block, counterpart.map(rule_ids).unwrap_or_default()));
+        layers.push((block, counterpart.map(rule_levels).unwrap_or_default()));
     }
-    for (layer, allowed) in &layers {
-        for id in rule_ids(layer) {
-            if VOCABULARY_RULES.contains(&id.as_str()) && !allowed.contains(&id) {
-                return Err(format!("generated vocabulary entry {id}\n{text}"));
+    for (layer, own) in &layers {
+        for (id, level) in rule_levels(layer) {
+            if !VOCABULARY_RULES.contains(&id.as_str()) {
+                continue;
+            }
+            let authored_here = own.get(&id) == Some(&level);
+            let guard = level == "off" && named.contains(&id);
+            if !authored_here && !guard {
+                return Err(format!("generated vocabulary entry {id} = {level}\n{text}"));
             }
         }
     }
