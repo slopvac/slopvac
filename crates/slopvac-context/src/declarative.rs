@@ -11,9 +11,12 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
+use crate::pattern::Unlimited;
 use crate::schema::{Extensions, TAGGER_SCHEMA_VERSION, check_schema_version, is_name, present};
 use crate::structural::{Scope, Settings, StructuralTagger, When};
-use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, TagSink, Tagger};
+use crate::{
+    BlockKind, BlockView, DocumentView, Error, Pattern, PatternBudget, Tag, TagSink, Tagger,
+};
 
 /// The text unit that receives the tag.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -136,6 +139,15 @@ impl TaggerSpec {
 
     /// Check the rules that the schema states and compile the patterns.
     pub fn compile(self) -> Result<DeclarativeTagger, Error> {
+        self.compile_within(&mut Unlimited)
+    }
+
+    /// Like [`TaggerSpec::compile`], and asks `budget` around each pattern, so the compile stops
+    /// at the first pattern that crosses it. A stop is an [`Error`]; the budget holds the reason.
+    pub fn compile_within(
+        self,
+        budget: &mut dyn PatternBudget,
+    ) -> Result<DeclarativeTagger, Error> {
         let id = self.id.clone();
         let fail = |msg: &str| Error::Parse(format!("tagger `{id}`: {msg}"));
         check_schema_version(
@@ -161,13 +173,16 @@ impl TaggerSpec {
             if self.matches.is_some() || self.unless.is_some() || self.unit.is_some() {
                 return Err(fail("`when` excludes `match`, `unless` and `unit`"));
             }
-            let structural = when.compile(&Settings {
-                id: &id,
-                tag: &self.tag,
-                confidence: to_f32(self.confidence),
-                evidence: self.evidence.as_deref(),
-                scope: self.scope.unwrap_or_default(),
-            })?;
+            let structural = when.compile(
+                &Settings {
+                    id: &id,
+                    tag: &self.tag,
+                    confidence: to_f32(self.confidence),
+                    evidence: self.evidence.as_deref(),
+                    scope: self.scope.unwrap_or_default(),
+                },
+                budget,
+            )?;
             return Ok(DeclarativeTagger {
                 spec: self,
                 matching: Vec::new(),
@@ -184,13 +199,13 @@ impl TaggerSpec {
         }
         let matching = entries
             .iter()
-            .map(|m| m.compile(&id))
+            .map(|m| m.compile(&id, &mut *budget))
             .collect::<Result<Vec<_>, _>>()?;
         let unless = self
             .unless
             .iter()
             .flatten()
-            .map(|m| m.compile(&id))
+            .map(|m| m.compile(&id, &mut *budget))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(DeclarativeTagger {
             spec: self,
@@ -202,7 +217,7 @@ impl TaggerSpec {
 }
 
 impl Matcher {
-    fn compile(&self, tagger: &str) -> Result<Pattern, Error> {
+    fn compile(&self, tagger: &str, budget: &mut dyn PatternBudget) -> Result<Pattern, Error> {
         let fail = |msg: &str| Error::Parse(format!("tagger `{tagger}`: {msg}"));
         let source = match (&self.pattern, &self.words) {
             (Some(p), None) if p.is_empty() => return Err(fail("pattern is empty")),
@@ -214,11 +229,7 @@ impl Matcher {
                 .ok_or_else(|| fail("`words` needs at least one distinct, non-empty entry"))?,
             _ => return Err(fail("a matcher takes exactly one of `pattern` and `words`")),
         };
-        if self.case_sensitive {
-            Pattern::new(&source)
-        } else {
-            Pattern::new_caseless(&source)
-        }
+        Pattern::new_charged(&source, !self.case_sensitive, budget)
     }
 }
 

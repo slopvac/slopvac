@@ -26,7 +26,6 @@ slopvac-sanitize.workspace = true
 slopvac-styles.workspace = true
 thiserror.workspace = true
 toml.workspace = true
-tracing.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

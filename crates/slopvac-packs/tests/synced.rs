@@ -17,8 +17,8 @@ use rstest::rstest;
 use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
-    Budget, Limits, LoadedPack, PackError, Packs, Reference, SyncedError, load_synced,
-    load_synced_within,
+    Budget, Limits, LoadedPack, PackError, Packs, Reference, Source, SyncedError, core_source,
+    load_synced, load_synced_within,
 };
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::Lockfile;
@@ -435,21 +435,46 @@ fn a_required_version_the_lock_does_not_provide_is_refused() {
 }
 
 #[test]
-fn a_synced_pack_registers_no_taggers() {
+fn a_synced_pack_registers_its_taggers_after_the_core_ones() {
     let mut w = World::new();
     let mut spec = Spec::new("acme");
     spec.provides = "taggers = [\"taggers/t.yaml\"]".into();
     spec.files.push((
         "taggers/t.yaml",
-        "schema_version: 3\nid: t\ntag: procedure\nmatch:\n  - pattern: 'a'\n".to_owned(),
+        "schema_version: 3\nid: t\ntag: acme-tag\nmatch:\n  - pattern: 'a'\n".to_owned(),
     ));
     w.install(&spec);
 
     let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
 
-    assert_eq!(
-        packs.taggers().count(),
-        Packs::core().unwrap().taggers().count()
+    let ids: Vec<&str> = packs.taggers().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids.len(), Packs::core().unwrap().taggers().count() + 1);
+    assert_eq!(ids.last(), Some(&"t"));
+}
+
+// Policies section 1.9: an authored tagger pattern over 8,192 bytes is refused with the code
+// `tagger-pattern-too-long`, whichever pack supplies it. The text names the length and the cap.
+#[test]
+fn a_synced_tagger_over_the_pattern_cap_is_refused() {
+    let mut w = World::new();
+    let mut spec = Spec::new("acme");
+    spec.provides = "taggers = [\"taggers/t.yaml\"]".into();
+    spec.files.push((
+        "taggers/t.yaml",
+        format!(
+            "schema_version: 3\nid: t\ntag: acme-tag\nmatch:\n  - pattern: '{}'\n",
+            "a".repeat(8_193)
+        ),
+    ));
+    w.install(&spec);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert_eq!(err.code(), Some("tagger-pattern-too-long"), "{err}");
+    assert!(
+        err.to_string()
+            .ends_with("pattern is 8193 bytes, over the 8192-byte limit"),
+        "{err}"
     );
 }
 
@@ -587,7 +612,8 @@ fn the_run_byte_budget_stops_the_load_before_the_next_pack_is_read() {
             e,
             PackError::Budget {
                 budget: PackBudget::RunBytes,
-                limit: 10
+                limit: 10,
+                ..
             }
         ),
         "{e}"
@@ -606,7 +632,8 @@ fn the_pack_byte_budget_names_the_pack() {
             &e,
             PackError::Budget {
                 budget: PackBudget::Bytes,
-                limit: 10
+                limit: 10,
+                ..
             }
         ),
         "{e}"
@@ -626,7 +653,8 @@ fn the_run_rule_budget_is_checked_before_a_pattern_compiles() {
             e,
             PackError::Budget {
                 budget: PackBudget::RunRules,
-                limit: 1
+                limit: 1,
+                ..
             }
         ),
         "{e}"
@@ -644,7 +672,8 @@ fn the_compiled_pattern_budget_stops_the_load_after_a_pack_compiles() {
             e,
             PackError::Budget {
                 budget: PackBudget::RunPatternBytes,
-                limit: 5
+                limit: 5,
+                ..
             }
         ),
         "{e}"
@@ -751,7 +780,8 @@ fn a_pattern_is_charged_its_compiled_size_not_its_source_size() {
             e,
             PackError::Budget {
                 budget: PackBudget::RunPatternBytes,
-                limit: 500
+                limit: 500,
+                ..
             }
         ),
         "{e}"
@@ -770,7 +800,8 @@ fn an_exhausted_pattern_budget_compiles_nothing() {
             e,
             PackError::Budget {
                 budget: PackBudget::RunPatternBytes,
-                limit: 0
+                limit: 0,
+                ..
             }
         ),
         "{e}"
@@ -787,7 +818,11 @@ fn every_budget_refusal_has_one_code_and_names_its_budget(
     #[case] budget: PackBudget,
     #[case] name: &str,
 ) {
-    let error = PackError::Budget { budget, limit: 1 };
+    let error = PackError::Budget {
+        budget,
+        limit: 1,
+        pack: None,
+    };
 
     assert_eq!(error.code(), Some("rules-budget-exceeded"));
     assert_eq!(budget.as_str(), name);
@@ -805,8 +840,16 @@ fn a_budget_refusal_exposes_its_budget_name_and_limit(
     #[case] limit: u64,
     #[case] name: &str,
 ) {
-    let pack = PackError::Budget { budget, limit };
-    let synced = SyncedError::Pack(PackError::Budget { budget, limit });
+    let pack = PackError::Budget {
+        budget,
+        limit,
+        pack: None,
+    };
+    let synced = SyncedError::Pack(PackError::Budget {
+        budget,
+        limit,
+        pack: None,
+    });
 
     for (got, code) in [
         (pack.budget(), pack.code()),
@@ -820,7 +863,7 @@ fn a_budget_refusal_exposes_its_budget_name_and_limit(
 }
 
 #[rstest]
-#[case::pack_error(SyncedError::Pack(PackError::Budget { budget: PackBudget::Files, limit: 1 }), Some("rules-budget-exceeded"))]
+#[case::pack_error(SyncedError::Pack(PackError::Budget { budget: PackBudget::Files, limit: 1, pack: None }), Some("rules-budget-exceeded"))]
 #[case::pack_glob(
     SyncedError::Pack(PackError::GlobTooComplex),
     Some("plugin-glob-too-complex")
@@ -840,4 +883,205 @@ fn a_budget_refusal_exposes_its_budget_name_and_limit(
 #[case::unmet(SyncedError::RequirementUnmet { id: "a".into(), needs: "b".into(), requirement: ">=1".into() }, Some("plugin-requirement-unmet"))]
 fn every_error_reports_its_catalog_code(#[case] error: SyncedError, #[case] code: Option<&str>) {
     assert_eq!(error.code(), code);
+}
+
+/// A pack that supplies one tagger file.
+fn with_tagger(id: &'static str, tagger: &str) -> Spec {
+    let mut spec = Spec::new(id);
+    spec.provides = "taggers = [\"taggers/t.yaml\"]".into();
+    spec.files.push(("taggers/t.yaml", tagger.to_owned()));
+    spec
+}
+
+fn core_tagger() -> (String, String) {
+    let packs = Packs::core().unwrap();
+    let t = packs.taggers().next().unwrap();
+    (t.id.clone(), t.tag.clone())
+}
+
+#[test]
+fn owned_rule_sets_list_the_core_first_then_each_pack_in_load_order() {
+    let mut w = World::new();
+    w.install(&Spec::new("base").rules(&["a"]));
+    w.install(&Spec::new("top").requires("base").rules(&["b", "c"]));
+
+    let sets = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store())
+        .unwrap()
+        .into_rule_sets();
+
+    let got: Vec<(String, usize)> = sets
+        .iter()
+        .map(|s| (s.pack().to_string(), s.rules().count()))
+        .collect();
+    assert_eq!(got[1..], [("base".to_owned(), 1), ("top".to_owned(), 2)]);
+    assert_eq!(got[0].0, "core");
+}
+
+#[test]
+fn a_synced_tagger_that_takes_a_core_tagger_id_is_refused() {
+    let (id, _) = core_tagger();
+    let mut w = World::new();
+    w.install(&with_tagger(
+        "acme",
+        &format!("schema_version: 3\nid: {id}\ntag: acme-tag\nmatch:\n  - pattern: 'a'\n"),
+    ));
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
+}
+
+#[test]
+fn a_synced_tagger_that_emits_a_core_tag_is_refused() {
+    let (_, tag) = core_tagger();
+    let mut w = World::new();
+    w.install(&with_tagger(
+        "acme",
+        &format!("schema_version: 3\nid: acme-t\ntag: {tag}\nmatch:\n  - pattern: 'a'\n"),
+    ));
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
+}
+
+// A tagger pattern counts against the run's compiled-pattern budget (X3), like a rule pattern.
+#[test]
+fn a_tagger_pattern_is_charged_to_the_compiled_pattern_budget() {
+    let w = base_then_unread_top(&with_tagger(
+        "base",
+        "schema_version: 3\nid: acme-t\ntag: acme-tag\nmatch:\n  - pattern: 'a'\n",
+    ));
+
+    let e = run_error(&w, small(|l| l.run_pattern_bytes = 1));
+
+    assert!(
+        matches!(
+            e,
+            PackError::Budget {
+                budget: PackBudget::RunPatternBytes,
+                limit: 1,
+                ..
+            }
+        ),
+        "{e}"
+    );
+}
+
+// Policies section 1.9: the cap of a rule or category file is 2 MiB, so a 1.5 MiB file reads
+// and a file over the cap is refused with `rules-file-too-large`.
+#[rstest]
+#[case::one_and_a_half_mebibytes(1_536 * 1024, None)]
+#[case::at_the_cap(2 * 1024 * 1024, None)]
+#[case::one_byte_over(2 * 1024 * 1024 + 1, Some("rules-file-too-large"))]
+fn the_directory_source_caps_a_file_at_two_mebibytes(
+    #[case] len: usize,
+    #[case] code: Option<&str>,
+) {
+    use slopvac_packs::{DirSource, PackSource};
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("slopvac-plugin.toml"), "x".repeat(len)).unwrap();
+
+    let read = DirSource::new(dir.path()).manifest_text();
+
+    assert_eq!(
+        read.as_ref()
+            .err()
+            .and_then(slopvac_packs::SourceError::code),
+        code,
+        "{read:?}"
+    );
+}
+
+// Rule ids are qualified by plugin (docs/contract/plugins.md, section 2), so two plugins that
+// share a bare rule id are two rules: `base:c.r0` and `top:c.r0`.
+#[test]
+fn two_plugins_that_share_a_bare_rule_id_both_load() {
+    let mut w = World::new();
+    w.install(&Spec::new("base").rules(&["a"]));
+    w.install(&Spec::new("top").requires("base").rules(&["b"]));
+
+    let packs = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store()).unwrap();
+
+    let ids: Vec<String> = packs
+        .rule_sets()
+        .flat_map(|s| s.rules().map(|r| r.id().to_string()))
+        .filter(|id| id.ends_with(":c.r0"))
+        .collect();
+    assert_eq!(ids, ["base:c.r0", "top:c.r0"]);
+}
+
+/// A plugin `acme` whose one rule has the id of the first rule of the core pack, and that id.
+fn colliding_with_core() -> (Spec, String) {
+    let packs = Packs::core().unwrap();
+    let core_rule = packs.rule_sets().next().unwrap().rules().next().unwrap();
+    let local = core_rule.id().local().to_owned();
+    let (category, rule) = local.split_once('.').unwrap();
+    let text = format!(
+        r#"{{"schema_version":3,"id":"{category}","title":"T","description":"D","rules":[{{"id":"{rule}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"a"}},"citation":{{"source":"s"}}}}]}}"#
+    );
+    let mut spec = Spec::new("acme");
+    spec.provides = "categories = [\"categories/c.json\"]".into();
+    spec.files.push(("categories/c.json", text));
+    (spec, local)
+}
+
+#[test]
+fn a_plugin_rule_with_a_core_rule_id_is_refused_with_its_own_code() {
+    let (spec, local) = colliding_with_core();
+    let mut w = World::new();
+    w.install(&spec);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert_eq!(err.code(), Some("pack-rule-id-collision"), "{err}");
+    assert!(err.to_string().contains(&format!("`{local}`")), "{err}");
+}
+
+// The refusal does not depend on where the core sits in the list.
+#[test]
+fn a_plugin_listed_before_the_core_is_still_checked_against_the_core_ids() {
+    let (spec, _) = colliding_with_core();
+    let mut w = World::new();
+    w.install(&spec);
+    let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+    loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
+
+    let err = Packs::new(loaded).unwrap_err();
+
+    assert_eq!(err.code(), Some("pack-rule-id-collision"), "{err}");
+}
+
+// X3: a tagger stops compiling at the first pattern that crosses the run budget. The first
+// pattern compiles to more bytes than the whole file holds, and the second does not compile, so
+// a load that went on would report the second pattern, not the budget.
+#[test]
+fn a_tagger_stops_compiling_at_the_first_pattern_that_crosses_the_budget() {
+    let text = format!(
+        "schema_version: 3\nid: t\ntag: acme-tag\nmatch:\n  - pattern: '{}'\n  - pattern: '('\n",
+        "a".repeat(200)
+    );
+    let w = base_then_unread_top(&with_tagger("base", &text));
+
+    let e = run_error(&w, small(|l| l.run_pattern_bytes = text.len() as u64));
+
+    assert!(
+        matches!(
+            e,
+            PackError::Budget {
+                budget: PackBudget::RunPatternBytes,
+                ..
+            }
+        ),
+        "{e}"
+    );
+}
+
+#[test]
+fn a_budget_refusal_names_the_pack_whose_load_crossed_it() {
+    let w = base_then_unread_top(&Spec::new("base").rules(&["a", "b"]));
+
+    let e = run_error(&w, small(|l| l.run_rules = 1));
+
+    assert_eq!(e.budget_pack(), Some("base"), "{e}");
 }
