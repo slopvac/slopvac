@@ -214,7 +214,11 @@ fn a_blocklist_with_a_top_level_category_and_a_switch_is_refused_for_the_blockli
                   [categories]\nai-tells-formatting = \"warning\"\n\n\
                   [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"strict\"\n";
     let stderr = refused(config)?;
-    assert!(stderr.contains("`overrides[0].profile`"), "{stderr}");
+    // Line 10 of the config: `profile` is the tenth line, after the category block.
+    assert!(
+        stderr.contains("`overrides[0].profile` on line 10"),
+        "{stderr}"
+    );
     assert!(
         stderr.contains("the project sets a word blocklist"),
         "{stderr}"
