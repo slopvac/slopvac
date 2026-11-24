@@ -620,6 +620,12 @@ fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usi
 #[case::category_override(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n"
 )]
+#[case::authored_category_level(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"warning\"\n"
+)]
+#[case::e4_guard_for_an_authored_rule(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n"
+)]
 #[case::override_changes_path(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"o.toml\"\n"
 )]
@@ -637,6 +643,28 @@ fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[cas
 fn the_sweep_fails_when_an_override_carries_the_top_level_rule() {
     let authored = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n";
     let broken = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
+    check_no_generated_vocabulary_entry(broken, authored)
+        .unwrap_or_else(|why| panic!("written config: {why}"));
+}
+
+#[test]
+#[should_panic(
+    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
+)]
+fn the_sweep_fails_when_a_layer_changes_the_authored_level() {
+    let authored = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
+    let broken = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"suggestion\"\n";
+    check_no_generated_vocabulary_entry(broken, authored)
+        .unwrap_or_else(|why| panic!("written config: {why}"));
+}
+
+#[test]
+#[should_panic(
+    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
+)]
+fn the_sweep_fails_when_a_guard_turns_off_a_rule_the_input_does_not_author() {
+    let authored = "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n";
+    let broken = "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
     check_no_generated_vocabulary_entry(broken, authored)
         .unwrap_or_else(|why| panic!("written config: {why}"));
 }
