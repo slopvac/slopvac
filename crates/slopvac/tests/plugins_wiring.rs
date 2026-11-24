@@ -460,7 +460,8 @@ fn a_nested_config_that_lists_more_plugins_is_refused() {
     );
 }
 
-// Two packs may not share a category id: the engine keys category settings by that id.
+// A plugin may not supply a category or rule id that an earlier pack supplies (policies and
+// plugins contract, rule ids): the engine keys category settings by that id.
 #[test]
 fn a_plugin_category_that_shadows_a_core_category_is_refused() {
     let mut w = World::new();
@@ -472,16 +473,36 @@ fn a_plugin_category_that_shadows_a_core_category_is_refused() {
     );
     let doc = w.write_project(&["acme"], "# Title\n\nThe zzqx is here.\n");
 
+    let out = w.run(&[
+        "lint",
+        doc.file_name().and_then(|n| n.to_str()).expect("name"),
+    ]);
+
+    // Finding 2 (lead ruling, contract comment 7118656459): refused at load with its own code.
+    // The core has the category `orwell`, so the shared id is the category id.
+    assert_eq!(out.status.code(), Some(2));
+    let expected = "error[pack-rule-id-collision]: plugin `acme` is refused: its rule `orwell` has the id of a rule that another pack supplies, and nothing from the plugin loads";
+    assert!(
+        stderr(&out).lines().any(|l| l == expected),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(stdout(&out), "");
+}
+
+#[test]
+fn a_plugin_whose_ids_do_not_collide_still_loads() {
+    let mut w = World::new();
+    w.install("acme", PROVIDES_C, &[category(&["zzqx".to_owned()])]);
+    let doc = w.write_project(&["acme"], "# Title\n\nThe zzqx is here.\n");
+
     let out = w.lint(&doc);
 
-    assert_eq!(out.status.code(), Some(2));
-    // Finding 2 (lead ruling): refused at load, naming the plugin and the colliding id.
-    let text = stderr(&out);
+    let report: Value = serde_json::from_slice(&out.stdout).expect("a JSON report");
     assert!(
-        text.contains("the plugin `acme` supplies the category `orwell`"),
-        "{text}"
+        rule_ids(&report).contains(&"acme:c.r0".to_owned()),
+        "{report}"
     );
-    assert!(text.contains("the pack `core`"), "{text}");
 }
 
 // `explain` names every rule that `lint` reports.

@@ -165,31 +165,8 @@ impl PluginSelection {
                 .map_err(|e| synced_refusal(&e))?
                 .into_rule_sets();
         sets.push(crate::lint_terms::casing_rule_set()?);
-        refuse_shared_categories(&sets)?;
         Ok(Catalog::from_sets(sets))
     }
-}
-
-/// Refuse two packs that supply a category with the same id. The engine keys category
-/// settings and scoring by the category id alone, so a plugin's `orwell` would overwrite the
-/// core's and `acme:orwell = off` would switch the core's category off.
-fn refuse_shared_categories(sets: &[RuleSet]) -> Result<(), CliError> {
-    let mut seen: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
-    for set in sets {
-        for category in set.categories() {
-            if let Some(first) = seen.insert(category.id().as_str(), set.pack().as_str()) {
-                return Err(RuleSourceError::Unavailable {
-                    detail: format!(
-                        "the plugin `{}` supplies the category `{}`, which the pack `{first}` supplies already",
-                        set.pack().as_str(),
-                        category.id().as_str(),
-                    ),
-                }
-                .into());
-            }
-        }
-    }
-    Ok(())
 }
 
 /// The lockfile's refusal names where the fault is and never what the file says there.

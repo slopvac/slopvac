@@ -47,6 +47,7 @@ impl PackError {
                 }
                 .code(),
             ),
+            Self::RuleIdCollision { .. } => Some(code_of!(RuleIdCollision { plugin, rule })),
             Self::GlobTooComplex => Some(code_of!(GlobTooComplex {
                 depth,
                 alternatives,
@@ -146,6 +147,20 @@ pub enum PackError {
         )
     )]
     GlobTooComplex,
+    /// A plugin supplies a rule, or a category, whose id an earlier pack supplies already. The
+    /// engine keys category settings and scoring by the local id, so a merge would change the
+    /// earlier pack's metadata. The load refuses the plugin whole.
+    #[error("{}", crate::messages::PackMessage::RuleIdCollision {
+        plugin: slopvac_sanitize::line(.plugin),
+        rule: slopvac_sanitize::line(.rule),
+    })]
+    RuleIdCollision {
+        /// The plugin id.
+        plugin: String,
+        /// The colliding id without the pack part: `<category>.<rule>`, or the category id when
+        /// only the category is shared.
+        rule: String,
+    },
     /// A pack or the run is over a budget (X3). The code is `rules-budget-exceeded`, with
     /// `data.budget` the name of the budget (`plugin-files`, `plugin-bytes`, `plugin-run-bytes`,
     /// `plugin-run-rules` or `plugin-run-pattern-bytes`) and `data.limit` the limit.

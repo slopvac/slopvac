@@ -658,6 +658,7 @@ offline error
 offline-network-needed error
 offline-plugin-missing error
 pack-name-ambiguous error
+pack-rule-id-collision error
 parse-body-span-invalid text
 parse-budget-exceeded text
 parse-document-too-large text

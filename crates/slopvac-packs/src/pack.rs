@@ -326,6 +326,40 @@ fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
     Ok(())
 }
 
+/// Refuse a pack that supplies a rule, or a category, with the local id of one an earlier pack
+/// supplies. Rule ids are qualified by pack, but the engine keys category settings and scoring by
+/// the category id and a bare key reads as the first pack with that rule, so a second pack with
+/// the same local id would overwrite or switch off the first one's. Nothing from the pack loads.
+fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
+    let mut categories: HashSet<&str> = HashSet::new();
+    let mut rules: HashSet<&str> = HashSet::new();
+    for pack in packs {
+        for category in pack.rules.categories() {
+            let collision = category
+                .rules()
+                .iter()
+                .map(|r| r.id().local())
+                .find(|local| rules.contains(local))
+                .or_else(|| {
+                    categories
+                        .contains(category.id().as_str())
+                        .then(|| category.id().as_str())
+                });
+            if let Some(rule) = collision {
+                return Err(PackError::RuleIdCollision {
+                    plugin: pack.manifest.id.to_string(),
+                    rule: rule.to_owned(),
+                });
+            }
+        }
+        for category in pack.rules.categories() {
+            categories.insert(category.id().as_str());
+            rules.extend(category.rules().iter().map(|r| r.id().local()));
+        }
+    }
+    Ok(())
+}
+
 /// The packs a run knows, with their genres and styles by qualified name.
 #[derive(Debug)]
 pub struct Packs {
@@ -356,6 +390,7 @@ impl Packs {
             budget.charge_pack(pack)?;
         }
         check_taggers(&packs)?;
+        check_rule_ids(&packs)?;
         let mut genres = Registry::new();
         let mut styles = Registry::new();
         for pack in &packs {
