@@ -9,6 +9,7 @@ typos = "1.51.1"
 taplo = "0.10.0"                           # TOML formatting; CI lint.yml and the prek taplo hook use this pin
 node = "24.22.3"                           # docs site (site/); Astro needs 22.23.4 or later
 "aqua:jedisct1/minisign" = "0.12"          # release signing tests; keep in step with scripts/install_minisign.sh
+rust = "1.99.1"                            # keep in step with rust-toolchain.toml
 "cargo:cargo-nextest" = "0.9.152"
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 "github:Boshen/cargo-shear" = "1.14.1"
