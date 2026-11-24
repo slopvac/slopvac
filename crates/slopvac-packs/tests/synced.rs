@@ -949,17 +949,21 @@ fn a_tagger_pattern_is_charged_to_the_compiled_pattern_budget() {
     );
 }
 
-// Policies section 1.9: the cap of a rule or category file is 2 MiB, so a 1.5 MiB file loads
+// Policies section 1.9: the cap of a rule or category file is 2 MiB, so a 1.5 MiB file reads
 // and a file over the cap is refused with `rules-file-too-large`.
-#[test]
-fn the_directory_source_reads_a_file_up_to_two_mebibytes() {
-    use slopvac_packs::{DirSource, PackPath, PackSource};
+#[rstest]
+#[case::one_and_a_half_mebibytes(1_536 * 1024, None)]
+#[case::at_the_cap(2 * 1024 * 1024, None)]
+#[case::one_byte_over(2 * 1024 * 1024 + 1, Some("rules-file-too-large"))]
+fn the_directory_source_caps_a_file_at_two_mebibytes(
+    #[case] len: usize,
+    #[case] code: Option<&str>,
+) {
+    use slopvac_packs::{DirSource, PackSource};
     let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join("a.json"), "x".repeat(1_536 * 1024)).unwrap();
-    fs::write(dir.path().join("b.json"), "x".repeat(2 * 1024 * 1024 + 1)).unwrap();
-    let source = DirSource::new(dir.path());
+    fs::write(dir.path().join("slopvac-plugin.toml"), "x".repeat(len)).unwrap();
 
-    assert!(source.read(&PackPath::new("a.json").unwrap()).is_ok());
-    let err = source.read(&PackPath::new("b.json").unwrap()).unwrap_err();
-    assert_eq!(err.code(), Some("rules-file-too-large"), "{err}");
+    let read = DirSource::new(dir.path()).manifest_text();
+
+    assert_eq!(read.as_ref().err().and_then(|e| e.code()), code, "{read:?}");
 }

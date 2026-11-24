@@ -343,7 +343,7 @@ fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
                 .or_else(|| {
                     categories
                         .contains(category.id().as_str())
-                        .then(|| category.id().as_str())
+                        .then_some(category.id().as_str())
                 });
             if let Some(rule) = collision {
                 return Err(PackError::RuleIdCollision {

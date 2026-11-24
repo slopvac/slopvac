@@ -349,7 +349,7 @@ impl Linter for EngineLinter {
         // a link cannot move a fix elsewhere.
         let root = request.fix.then(|| Root::open(&request.root));
         match prepare(request, &mut run) {
-            Ok((rules, items)) => lint_items(request, root.as_ref(), items, rules, run),
+            Ok((rules, items)) => lint_items(request, root.as_ref(), items, &rules, run),
             Err(err) => failed(request, run, &err),
         }
     }
@@ -1096,10 +1096,10 @@ fn lint_items(
     request: &LintRequest,
     root: Option<&std::io::Result<Root>>,
     mut items: Vec<Item>,
-    rules: Catalog,
+    rules: &Catalog,
     mut run: Run,
 ) -> RunOutcome {
-    let groups = match group_by_settings(request, &items, &rules) {
+    let groups = match group_by_settings(request, &items, rules) {
         Ok(groups) => groups,
         Err(err) => return failed(request, run, &err),
     };
