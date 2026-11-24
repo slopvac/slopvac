@@ -673,8 +673,8 @@ pub fn run(matches: &ArgMatches) -> Result<String, AgentsError> {
     let path_of = |id: &str| matches.get_one::<PathBuf>(id).cloned().unwrap_or_default();
     let original = read_input(path_of("original"))?;
     let revised = read_input(path_of("revised"))?;
-    let report = compare_sides(&original, &revised).map_err(|(side, error)| {
-        match (side, error) {
+    let report =
+        compare_sides(&original, &revised).map_err(|(side, error)| match (side, error) {
             (Some(side), AgentsError::Context(source)) if source.budget().is_some() => {
                 let path = match side {
                     Side::Original => path_of("original"),
@@ -683,12 +683,11 @@ pub fn run(matches: &ArgMatches) -> Result<String, AgentsError> {
                 let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
                 AgentsError::InputBudget {
                     shown: slopvac_fs::display_under_root(&path, &cwd),
-                    source,
+                    source: Box::new(source),
                 }
             }
             (_, error) => error,
-        }
-    })?;
+        })?;
     if matches
         .get_one::<String>("format")
         .is_some_and(|f| f == "text")

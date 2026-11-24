@@ -244,7 +244,12 @@ impl View<'_> {
             let ranges = found
                 .iter()
                 .map(|s| {
-                    let offset = s.text.as_ptr().addr().checked_sub(base).ok_or_else(refused)?;
+                    let offset = s
+                        .text
+                        .as_ptr()
+                        .addr()
+                        .checked_sub(base)
+                        .ok_or_else(refused)?;
                     Ok((s.span.clone(), offset, s.text.len()))
                 })
                 .collect::<Result<Vec<CodeSentence>, ContextError>>()?;

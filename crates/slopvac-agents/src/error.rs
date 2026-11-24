@@ -77,9 +77,9 @@ pub enum AgentsError {
     InputBudget {
         /// The input, as shown to the user.
         shown: String,
-        /// The budget refusal.
+        /// The budget refusal. Boxed, so the variant stays small.
         #[source]
-        source: slopvac_context::Error,
+        source: Box<slopvac_context::Error>,
     },
     /// A step failed after earlier files were already written.
     #[error("{}", messages::partial(.source, .changed))]
@@ -260,7 +260,8 @@ impl AgentsError {
     #[must_use]
     pub fn budget(&self) -> Option<(&'static str, usize)> {
         match self {
-            Self::Context(error) | Self::InputBudget { source: error, .. } => error.budget(),
+            Self::Context(error) => error.budget(),
+            Self::InputBudget { source, .. } => source.budget(),
             Self::Partial { source, .. } => source.budget(),
             _ => None,
         }
