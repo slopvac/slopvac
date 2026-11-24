@@ -23,7 +23,7 @@ The root `pyproject.toml` configures pytest to discover `packages/slopvac-lint/t
 
 ## Rust workspace
 
-The 3.0 engine is a Cargo workspace under `crates/`. It sits beside the Python package, which stays the reference implementation. `rust-toolchain.toml` pins the toolchain, and `mise install` adds cargo-nextest. Run these from the repository root:
+The 3.0 engine is a Cargo workspace under `crates/`. It sits beside the Python package, which stays the reference implementation. `rust-toolchain.toml` pins the toolchain, `mise.toml` pins the same version so a global mise `rust` setting does not override it, and `mise install` adds cargo-nextest. Run these from the repository root:
 
 ```sh
 cargo fmt --all --check
