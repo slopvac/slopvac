@@ -395,20 +395,22 @@ jobs:
       # RUST_AFFECTED is `--workspace` or a checked list of `-p NAME` pairs; see rust-static.
       # A push to main builds the test binaries to warm this leg's cache and to catch a
       # platform build break, but does not run them: the merge-group run already did.
+      # macos-arm64 is the exception: only the push matrix has that leg (the queue cannot
+      # always get a hosted arm64 macOS runner), so no earlier run tested Apple Silicon.
       - name: Build the tests
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && matrix.name != 'macos-arm64'
         run: |
           # shellcheck disable=SC2086
           cargo nextest run $RUST_AFFECTED --locked --profile ci --no-run
 
       - name: Test
-        if: github.event_name != 'push'
+        if: github.event_name != 'push' || matrix.name == 'macos-arm64'
         run: |
           # shellcheck disable=SC2086
           cargo nextest run $RUST_AFFECTED --locked --profile ci --no-tests=pass
 
       - name: Doctests
-        if: github.event_name != 'push'
+        if: github.event_name != 'push' || matrix.name == 'macos-arm64'
         run: |
           # shellcheck disable=SC2086
           cargo test $RUST_AFFECTED --doc --locked

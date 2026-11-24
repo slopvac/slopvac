@@ -161,12 +161,21 @@ def test_docs_site_class_excludes_unrelated_paths(path):
 TERM = re.compile(r"needs\.changes\.outputs(?:\.(\w+)|\['([\w-]+)'\]) == 'true'")
 
 
+EVENT = re.compile(r"github\.event_name (==|!=) '(\w+)'")
+LEG = re.compile(r"matrix\.name (==|!=) '([\w-]+)'")
+
+
 def evaluate(
-    condition: str, true_outputs: set[str], event: str = "pull_request"
+    condition: str,
+    true_outputs: set[str],
+    event: str = "pull_request",
+    leg: str | None = None,
 ) -> bool:
-    """Evaluate the `||`/`&&`/`==` subset that test.yml job conditions use."""
+    """Evaluate the `||`/`&&`/`==` subset that test.yml job and step conditions use."""
     expr = " ".join(condition.split())
-    expr = expr.replace("github.event_name != 'push'", str(event != "push"))
+    expr = EVENT.sub(lambda m: str((m[1] == "==") == (event == m[2])), expr)
+    if leg is not None:
+        expr = LEG.sub(lambda m: str((m[1] == "==") == (leg == m[2])), expr)
     expr = TERM.sub(lambda m: str((m.group(1) or m.group(2)) in true_outputs), expr)
     expr = expr.replace("||", " or ").replace("&&", " and ")
     assert re.fullmatch(r"(?:True|False|or|and|\(|\)|\s)+", expr), expr
@@ -509,7 +518,11 @@ def test_gate_accepts_runs_and_skips_matching_the_classification(flags, results)
         ({"evals"}, ok(), "evals-ratchet: got skipped, expected success"),
         ({"docs-site"}, ok(), "docs-site: got skipped, expected success"),
         ({"action"}, ok(), "action-contract: got skipped, expected success"),
-        (set(), ok("action-contract"), "action-contract: got success, expected skipped"),
+        (
+            set(),
+            ok("action-contract"),
+            "action-contract: got success, expected skipped",
+        ),
         ({"diagram-adapter"}, ok(), "diagram-adapter: got skipped, expected success"),
         (
             set(),
@@ -651,33 +664,65 @@ def test_main_push_runs_only_the_cache_warming_and_scan_jobs(job, tmp_path):
 
 
 SUITE_COMMAND = re.compile(r"\bpytest\b|\bcargo (?:nextest run|test)\b")
+LEGS = sorted(
+    set(
+        re.findall(r'"name": "([\w-]+)"', JOBS["rust"]["strategy"]["matrix"]["include"])
+    )
+)
 
 
-def step_runs_on_push(step: dict) -> bool:
-    """Evaluate a step `if` that only tests `github.event_name` against 'push'."""
-    condition = step.get("if")
-    if condition is None:
-        return True
-    expr = " ".join(str(condition).split())
-    expr = expr.replace("github.event_name == 'push'", "True")
-    expr = expr.replace("github.event_name != 'push'", "False")
-    expr = re.sub(r"github\.event_name == '\w+'", "False", expr)
-    expr = expr.replace("||", " or ").replace("&&", " and ")
-    assert re.fullmatch(r"(?:True|False|or|and|\(|\)|\s)+", expr), condition
-    return eval(expr)  # noqa: S307 - the pattern above admits only booleans
+def steps_of(job: str) -> list[dict]:
+    """The job's steps, following a `uses: ./.github/workflows/x.yml` call into its jobs."""
+    uses = JOBS[job].get("uses", "")
+    if not uses:
+        return JOBS[job]["steps"]
+    called = load(Path(uses).name)
+    return [step for body in called["jobs"].values() for step in body.get("steps", [])]
 
 
-def test_no_step_runs_a_test_suite_on_a_push_to_main():
-    # A `--no-run` step only compiles test binaries to warm the cache that main saves.
-    offenders = [
-        f"{name}: {step.get('name')}"
-        for name in sorted(PUSH_JOBS)
-        for step in JOBS[name].get("steps", [])
-        if SUITE_COMMAND.search(step.get("run", ""))
-        and "--no-run" not in step["run"]
-        and step_runs_on_push(step)
-    ]
-    assert not offenders
+def step_runs(step: dict, event: str, leg: str | None = None) -> bool:
+    return evaluate(step["if"], set(), event, leg) if "if" in step else True
+
+
+def suites(event: str | None = None) -> set[tuple[str, str | None]]:
+    """(step name, leg) of each suite step in a push job; with an event, only those that run."""
+    return {
+        (step["name"], leg)
+        for job in sorted(PUSH_JOBS)
+        for step in steps_of(job)
+        if SUITE_COMMAND.search(step.get("run", "")) and "--no-run" not in step["run"]
+        for leg in (LEGS if job == "rust" else [None])
+        if event is None or step_runs(step, event, leg)
+    }
+
+
+@pytest.mark.parametrize("event", ["pull_request", "merge_group"])
+def test_every_suite_step_runs_on_a_pull_request_and_the_queue(event):
+    assert suites()  # the filter must find the suites it protects
+    assert suites(event) == suites()
+
+
+def test_a_push_to_main_runs_only_the_suites_no_earlier_run_covered():
+    # Only the push matrix has macos-arm64, so Apple Silicon is tested on main alone.
+    assert suites("push") == {
+        ("Test", "macos-arm64"),
+        ("Doctests", "macos-arm64"),
+    }
+
+
+@pytest.mark.parametrize(
+    ("job", "step_name", "leg", "expected"),
+    [
+        ("test", "Build the slopvac binary", None, True),
+        ("rust", "Build the tests", "linux-x64", True),
+        ("rust", "Build the tests", "macos-x64", True),
+        ("rust", "Build the tests", "macos-arm64", False),
+        ("docs-site", "Build the site", None, True),
+    ],
+)
+def test_a_push_to_main_keeps_the_cache_warming_builds(job, step_name, leg, expected):
+    (step,) = [s for s in steps_of(job) if s["name"] == step_name]
+    assert step_runs(step, "push", leg) is expected
 
 
 @pytest.mark.parametrize("event", ["merge_group", "push"])
