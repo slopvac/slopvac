@@ -211,7 +211,10 @@ impl NetworkTally {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         listener.set_nonblocking(true).unwrap();
         let port = listener.local_addr().unwrap().port();
-        let (seen, stop) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicBool::new(false)));
+        let (seen, stop) = (
+            Arc::new(AtomicUsize::new(0)),
+            Arc::new(AtomicBool::new(false)),
+        );
         let (count, done) = (Arc::clone(&seen), Arc::clone(&stop));
         std::thread::spawn(move || {
             while !done.load(Ordering::Acquire) {
@@ -233,7 +236,14 @@ impl NetworkTally {
     /// Route every request of `cmd` through this proxy.
     fn route(&self, cmd: &mut Command) {
         let url = format!("http://127.0.0.1:{}", self.port);
-        for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
+        for var in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ] {
             cmd.env(var, &url);
         }
         for var in ["NO_PROXY", "no_proxy"] {
@@ -270,7 +280,9 @@ fn sticky_offline_opens_no_connection_when_a_later_layer_says_false() {
     cmd.args(["plugins", "sync"])
         .assert()
         .code(2)
-        .stderr(predicate::str::starts_with("error[offline-plugin-missing]: "));
+        .stderr(predicate::str::starts_with(
+            "error[offline-plugin-missing]: ",
+        ));
     assert_eq!(tally.requests(), 0, "an offline run opened a connection");
 }
 
@@ -284,15 +296,19 @@ fn an_online_sync_reaches_the_network_tally() {
     let mut cmd = sandbox.slopvac();
     tally.route(&mut cmd);
     cmd.args(["plugins", "sync"]).assert().code(2);
-    assert!(tally.requests() > 0, "the tally saw no connection from an online run");
+    assert!(
+        tally.requests() > 0,
+        "the tally saw no connection from an online run"
+    );
 }
 
-/// A config id that is not a valid plugin id stops the run. The message names the entry and
-/// never the value. The code awaits contract: `config-invalid-value` or `lock-mismatch`.
-#[rstest::rstest]
-#[case::too_long("a".repeat(5000))]
-#[case::bad_characters("Not A Valid Id!".to_owned())]
-fn an_invalid_plugin_id_in_the_config_exits_2_and_names_no_value(#[case] id: String) {
+/// A config id longer than the limit passes the config check but is not a valid plugin id. It
+/// stops the run, and the message names the entry and never the value. (The config check itself
+/// refuses an id with bad characters.) The code awaits contract: `config-invalid-value` or
+/// `lock-mismatch`.
+#[test]
+fn a_too_long_plugin_id_in_the_config_exits_2_and_names_no_value() {
+    let id = "a".repeat(5000);
     let sandbox = Sandbox::new();
     sandbox.write_lock(SIGNED_UNCACHED);
     fs::write(
