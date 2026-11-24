@@ -4,12 +4,14 @@ Published patterns assume ECMA-262 with the ``u`` flag (``docs/contract/policies
 3.9). Python ``re`` is not ECMA-262, so the compile check runs in Node, which uses the same
 regular expression engine as the reference ECMA-262 implementations. Node is pinned in
 ``mise.toml`` and already runs in CI for the docs site and the Markdown check. The test adds no
-dependency. It skips only when ``node`` is not on ``PATH``, as the ``vale`` tests do.
+dependency. It skips only when ``node`` is not on ``PATH`` and the ``CI`` variable is unset, as
+the ``vale`` tests do. In CI a missing ``node`` fails the test.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -75,7 +77,17 @@ def uncompilable(patterns: list[str]) -> list[dict]:
     return json.loads(done.stdout)
 
 
-needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
+needs_node = pytest.mark.skipif(
+    shutil.which("node") is None and not os.environ.get("CI"),
+    reason="node is not on PATH",
+)
+
+
+@pytest.fixture(autouse=True)
+def _node_is_present_in_ci() -> None:
+    """A missing `node` fails in CI, where a skip would prove nothing."""
+    if os.environ.get("CI") and shutil.which("node") is None:
+        pytest.fail("node is required in CI to compile the published patterns in Unicode mode")
 
 
 @needs_node
