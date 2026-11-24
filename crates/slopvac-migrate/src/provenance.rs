@@ -154,11 +154,12 @@ impl KeyLines {
                 }
                 Item::Value(Value::Array(arr)) => {
                     for (i, v) in arr.iter().enumerate() {
+                        // Every element has a line, so a rejected scalar reports its own.
+                        let element = self.child(node, Piece::Index(i));
+                        if let Some(span) = v.span() {
+                            self.set(element, span.start, index);
+                        }
                         if let Some(it) = v.as_inline_table() {
-                            let element = self.child(node, Piece::Index(i));
-                            if let Some(span) = v.span() {
-                                self.set(element, span.start, index);
-                            }
                             self.walk(it, element, index);
                         }
                     }
