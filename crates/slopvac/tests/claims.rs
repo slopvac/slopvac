@@ -279,3 +279,25 @@ fn a_json_report_of_a_text_over_the_sentence_budget_is_a_refusal_notice_with_the
         "{stderr}"
     );
 }
+
+#[test]
+fn a_refusal_of_the_original_names_the_original_file() {
+    let dir = project();
+    // The same 1,200,001 bytes of 4-byte sentences, now in the original: the budget is
+    // 150,000 + 65,536 = 215,536 sentences, and the path is the original's.
+    fs::write(
+        dir.path().join("old.md"),
+        format!("{}\n", "Go. ".repeat(300_000)),
+    )
+    .expect("old");
+    let out = slopvac(dir.path())
+        .args(["claims", "new.md", "--original", "old.md"])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    let report: Value = serde_json::from_slice(&out.stdout).expect("json on stdout");
+    let data = &report["notices"][0]["data"];
+    assert_eq!(data["budget"], "sentences", "{report}");
+    assert_eq!(data["limit"], 215_536, "{report}");
+    assert_eq!(data["path"], "old.md", "{report}");
+}
