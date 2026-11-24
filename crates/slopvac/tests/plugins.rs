@@ -304,8 +304,7 @@ fn an_online_sync_reaches_the_network_tally() {
 
 /// A config id longer than the limit passes the config check but is not a valid plugin id. It
 /// stops the run, and the message names the entry and never the value. (The config check itself
-/// refuses an id with bad characters.) The code awaits contract: `config-invalid-value` or
-/// `lock-mismatch`.
+/// refuses an id with bad characters.) The code is `config-invalid-value`, as contract ruled.
 #[test]
 fn a_too_long_plugin_id_in_the_config_exits_2_and_names_no_value() {
     let id = "a".repeat(5000);
