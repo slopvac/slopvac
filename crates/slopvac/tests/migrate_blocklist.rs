@@ -248,6 +248,29 @@ fn a_later_category_over_an_earlier_vocabulary_rule_is_refused()
     Ok(())
 }
 
+/// A later `off` category is the E4 guard case and migrates, while the same layout with a later
+/// level other than `off` is refused.
+#[test]
+fn a_later_off_category_over_an_earlier_vocabulary_rule_migrates_but_a_later_level_is_refused()
+-> Result<(), Box<dyn std::error::Error>> {
+    let layout = |later: &str| {
+        format!(
+            "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n\
+             [rules]\n{RULE} = \"error\"\n\n\
+             [[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"{later}\"\n"
+        )
+    };
+    let dir = project(&layout("off"));
+    slopvac()
+        .arg("migrate")
+        .arg(dir.path())
+        .args(["--write", "--preserve-behavior"])
+        .assert()
+        .code(0);
+    refused(&layout("suggestion"))?;
+    Ok(())
+}
+
 /// A later override that sets a category with no `severity` gets the legacy severity filled
 /// in, which turns on a vocabulary rule that an earlier layer turned off with its category.
 #[test]

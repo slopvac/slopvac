@@ -156,21 +156,24 @@ fn check_blocklist_layout(
             for (category, dials) in &block.layer.categories {
                 let at = format!("overrides[{i}].categories.{category}");
                 let line = ctx.lines.of(&at).to_string();
-                let reason = if earlier.iter().any(|l| sets_vocabulary_rule(l, category)) {
-                    MigrateText::ReasonBlocklistCategoryOverRule {
-                        at: at.clone(),
-                        line,
-                    }
-                } else if !dials.contains_key("severity")
-                    && earlier.iter().any(|l| turns_off_vocabulary(l, category))
-                {
-                    MigrateText::ReasonBlocklistCategoryOverOff {
-                        at: at.clone(),
-                        line,
-                    }
-                } else {
-                    continue;
-                };
+                // A later `off` is the E4 guard case: it keeps the rule off in the files it covers.
+                let later_off = dials.get("severity").and_then(Scalar::as_str) == Some("off");
+                let reason =
+                    if !later_off && earlier.iter().any(|l| sets_vocabulary_rule(l, category)) {
+                        MigrateText::ReasonBlocklistCategoryOverRule {
+                            at: at.clone(),
+                            line,
+                        }
+                    } else if !dials.contains_key("severity")
+                        && earlier.iter().any(|l| turns_off_vocabulary(l, category))
+                    {
+                        MigrateText::ReasonBlocklistCategoryOverOff {
+                            at: at.clone(),
+                            line,
+                        }
+                    } else {
+                        continue;
+                    };
                 return Err(refuse(at, reason.to_string()));
             }
         }
