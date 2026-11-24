@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgMatches, Command};
 use serde::Serialize;
+use slopvac_messages::Catalog as _;
 
 use crate::error::AgentsError;
 use crate::messages::{AgentsPhrase, AgentsText};
@@ -606,11 +607,52 @@ pub fn render_text(report: &Report) -> String {
     out
 }
 
-/// Run the parsed `claims` command. Reads two local files and nothing else.
+/// Read the file the user named within the document cap, `slopvac_fs::MAX_DOCUMENT_BYTES`.
+/// A file over the cap is refused as `document-too-large`, the code every other document
+/// read uses, with the path shown under the working directory.
+///
+/// The capped reader refuses a final-component symlink, but a linked input has always worked
+/// here. As the sibling readers do (`slopvac-terms` `read.rs`), resolve the link first, then
+/// read the target under the cap. A link to a FIFO or a device then fails as not regular
+/// without blocking. When the path cannot be resolved, the original path is read, so a missing
+/// file keeps its error. Errors name the path the user gave, never the resolved one.
+fn read_input(path: PathBuf) -> Result<String, AgentsError> {
+    let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+    slopvac_fs::read_capped_regular_to_string(
+        &resolved,
+        slopvac_fs::MAX_DOCUMENT_BYTES,
+        slopvac_fs::ReadOptions::new(),
+    )
+    .map_err(|e| match e.input_kind() {
+        Some(slopvac_fs::InputKind::TooLarge) => document_too_large(&path),
+        Some(slopvac_fs::InputKind::NotUtf8) => {
+            AgentsError::io(path, std::io::Error::from(std::io::ErrorKind::InvalidData))
+        }
+        _ => AgentsError::io(path, crate::fsx::read_failure(&e)),
+    })
+}
+
+/// The `document-too-large` refusal for `path`.
+fn document_too_large(path: &std::path::Path) -> AgentsError {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let shown = slopvac_fs::display_under_root(path, &cwd);
+    let message = slopvac_config::document_size_message(shown, slopvac_fs::MAX_DOCUMENT_BYTES);
+    AgentsError::Coded {
+        code: message.code(),
+        message: message.to_string(),
+    }
+}
+
+/// Run the parsed `claims` command. Reads two local files, each up to the document cap,
+/// and nothing else.
+///
+/// # Errors
+/// `document-too-large` when an input is over the cap, an I/O error for another
+/// unreadable file, and the errors of [`compare`].
 pub fn run(matches: &ArgMatches) -> Result<String, AgentsError> {
     let read = |id: &str| -> Result<String, AgentsError> {
         let path = matches.get_one::<PathBuf>(id).cloned().unwrap_or_default();
-        std::fs::read_to_string(&path).map_err(|e| AgentsError::io(path, e))
+        read_input(path)
     };
     let report = compare(&read("original")?, &read("revised")?)?;
     if matches

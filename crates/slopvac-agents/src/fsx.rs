@@ -42,7 +42,7 @@ enum Stage {
 
 /// The I/O cause of a failed confined read, or a plain error when it carries none. Only the
 /// kind and the OS code are kept, so the error chain holds no path.
-fn read_failure(e: &slopvac_fs::Error) -> std::io::Error {
+pub(crate) fn read_failure(e: &slopvac_fs::Error) -> std::io::Error {
     match std::error::Error::source(e).and_then(|s| s.downcast_ref::<std::io::Error>()) {
         Some(io) => io.raw_os_error().map_or_else(
             || std::io::Error::from(io.kind()),

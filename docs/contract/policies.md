@@ -179,6 +179,7 @@ The span crates index text with 32-bit offsets and size their structures from it
 | Document in the language server (`didOpen`, `didChange`), per document | 64 MiB | `document-too-large` | Same as a file. The server drops the document and publishes the notice instead of findings. |
 | Document read for `migrate` | 64 MiB | `document-too-large` | Same as a file. |
 | Changed file read for `--diff` scoping | 64 MiB | `document-too-large` | Uses the same constant as the lint read. |
+| Document read for `claims` (original and revised), per input | 64 MiB | `document-too-large` | Same as a file. |
 | Config file (`slopvac.toml`, each `extends` file, a 2.x config read by `migrate`) | 1 MiB | `config-too-large` | A real config is under 10 KiB. The shipped data files stay under 32 KiB. |
 | Rule or category file in a plugin | 2 MiB | `rules-file-too-large` | The largest shipped rule file is about 130 KiB. 2 MiB leaves more than a tenfold margin. |
 | Authored pattern in a rule, category or tagger file of a plugin | 8,192 bytes | `rules-pattern-too-long` (rules and categories), `tagger-pattern-too-long` (taggers). A tagger pattern over the cap is refused the same way as a rule pattern. | The longest shipped pattern is 5,709 bytes (`ste-procedural.condition-after-command`). 8,192 leaves room for it to grow while a padded or generated list is still refused, and compile cost grows with length (threat model X3). Generated and locale-built patterns keep the 64 KiB compile limit. |

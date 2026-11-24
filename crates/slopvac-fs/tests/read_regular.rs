@@ -8,7 +8,7 @@ use cap_std::ambient_authority;
 use cap_std::fs::Dir;
 use rstest::rstest;
 use slopvac_fs::{
-    InputKind, ReadOptions, read_capped_regular, read_capped_regular_in,
+    InputKind, MAX_DOCUMENT_BYTES, ReadOptions, read_capped_regular, read_capped_regular_in,
     read_capped_regular_in_with, read_capped_regular_to_string, read_capped_regular_to_string_in,
 };
 
@@ -122,6 +122,31 @@ fn a_file_of_exactly_the_cap_is_accepted() {
             .len(),
         11
     );
+}
+
+/// A sparse file of `len` bytes reads as that many NUL bytes, which are valid UTF-8.
+fn sparse_file(dir: &tempfile::TempDir, len: u64) -> std::path::PathBuf {
+    let path = dir.path().join("sparse");
+    std::fs::File::create(&path).unwrap().set_len(len).unwrap();
+    path
+}
+
+#[test]
+fn a_document_of_exactly_the_document_cap_is_read_whole() {
+    let t = tree();
+    let path = sparse_file(&t, MAX_DOCUMENT_BYTES);
+    let text =
+        read_capped_regular_to_string(&path, MAX_DOCUMENT_BYTES, ReadOptions::new()).unwrap();
+    assert_eq!(text.len() as u64, MAX_DOCUMENT_BYTES);
+}
+
+#[test]
+fn a_document_one_byte_over_the_document_cap_is_refused() {
+    let t = tree();
+    let path = sparse_file(&t, MAX_DOCUMENT_BYTES + 1);
+    let err =
+        read_capped_regular_to_string(&path, MAX_DOCUMENT_BYTES, ReadOptions::new()).unwrap_err();
+    assert_eq!(err.input_kind(), Some(InputKind::TooLarge), "{err:?}");
 }
 
 #[test]
