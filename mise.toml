@@ -1,14 +1,16 @@
 [tools]
-ast-grep = "0.51.3"                        # Rust message-registry checks (sgconfig.yml); keep in step with test.yml
+ast-grep = "0.51.3"                  # Rust message-registry checks (sgconfig.yml); keep in step with test.yml
 python = "3.14.8"
 uv = "0.13.4"
 vale = "3.24.0"
 "github:sharkdp/hyperfine" = "2.0.0"
-just = "1.59.0"                            # available via mise registry aqua:casey/just
+just = "1.59.0"                      # available via mise registry aqua:casey/just
 typos = "1.51.1"
-taplo = "0.10.0"                           # TOML formatting; CI lint.yml and the prek taplo hook use this pin
-node = "24.22.3"                           # docs site (site/); Astro needs 22.23.4 or later
-"aqua:jedisct1/minisign" = "0.12"          # release signing tests; keep in step with scripts/install_minisign.sh
+taplo = "0.10.0"                     # TOML formatting; CI lint.yml and the prek taplo hook use this pin
+node = "24.22.3"                     # docs site (site/); Astro needs 22.23.4 or later
+"aqua:jedisct1/minisign" = "0.12"    # release signing tests; keep in step with scripts/install_minisign.sh
+# Keep in step with rust-toolchain.toml (version, components, profile); quick-lint checks both.
+rust = { version = "1.99.1", components = "clippy,rustfmt", profile = "minimal" }
 "cargo:cargo-nextest" = "0.9.152"
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 "github:Boshen/cargo-shear" = "1.14.1"

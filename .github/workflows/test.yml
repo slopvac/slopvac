@@ -172,6 +172,9 @@ jobs:
             echo "ok $f"
           done
 
+      - name: Rust pins agree
+        run: python3 scripts/ci/check_rust_pins.py
+
       # These tests inspect repository-wide documentation, configuration, and the
       # public command surface. Keep them in the small always-on job so those
       # invariants cannot be bypassed without making every docs-only change pay for
