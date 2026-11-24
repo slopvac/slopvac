@@ -407,3 +407,58 @@ fn code_blocks_that_together_pass_the_budget_are_not_checked_when_a_tagger_reads
     );
     Ok(())
 }
+
+#[test]
+fn a_tagger_split_and_a_document_rule_split_that_each_fit_are_refused_together()
+-> Result<(), Box<dyn std::error::Error>> {
+    // A paragraph of 40000 sentences, then a fenced code block of 40000 sentences that a tagger
+    // reads. The text is about 280,000 bytes, so the budget is 280,000 / 8 + 65,536, about
+    // 100,500. The paragraph, the code block and the composite text a document rule reads
+    // (the paragraph again) are 40000 sentences each. The paragraph with either of the others
+    // is 80000 and fits. All three are 120000 and do not.
+    let source = format!(
+        "{}\n\n```\n{}\n```\n",
+        "Go. ".repeat(40_000),
+        "a. ".repeat(40_000)
+    );
+    let limit = source.len() / 8 + 65_536;
+    assert!(80_000 <= limit, "any two of the splits fit");
+    assert!(120_000 > limit, "the three together do not");
+    let result = document_engine()
+        .with_taggers(code_sentence_tagger()?)
+        .lint(&Input::markdown("a.md", &source));
+    assert_eq!(
+        result.map(|d| d.findings.len()),
+        Err(EngineError::SentenceBudget { limit })
+    );
+    Ok(())
+}
+
+/// `count` taggers, each reading the sentences of code blocks and matching none.
+fn code_sentence_taggers(count: usize) -> Result<TagRegistry, Box<dyn std::error::Error>> {
+    let mut registry = TagRegistry::new();
+    for i in 0..count {
+        let yaml = format!(
+            "schema_version: 3\nid: c{i}\ntag: k{i}\nscope: sentence\nwhen:\n  block_kind: code-block\n  sentence: 'zzz'\n"
+        );
+        registry.register(Box::new(TaggerSpec::from_yaml(&yaml)?.compile()?))?;
+    }
+    Ok(registry)
+}
+
+#[test]
+fn two_taggers_that_read_the_same_code_block_charge_its_sentences_once()
+-> Result<(), Box<dyn std::error::Error>> {
+    // One code block of 100000 sentences of 3 bytes: about 300,000 bytes, so a budget of
+    // 300,000 / 8 + 65,536, about 103,000. One read fits. Two reads, if each charged, would
+    // be 200000 and do not.
+    let source = format!("```\n{}\n```\n", "a. ".repeat(100_000));
+    let limit = source.len() / 8 + 65_536;
+    assert!(100_000 <= limit, "one read fits");
+    assert!(200_000 > limit, "two charged reads do not");
+    let result = engine()
+        .with_taggers(code_sentence_taggers(2)?)
+        .lint(&Input::markdown("a.md", &source));
+    assert_eq!(result.map(|d| d.findings.len()), Ok(0));
+    Ok(())
+}

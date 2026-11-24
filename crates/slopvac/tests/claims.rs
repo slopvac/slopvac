@@ -270,6 +270,7 @@ fn a_json_report_of_a_text_over_the_sentence_budget_is_a_refusal_notice_with_the
     assert_eq!(notice["code"], "context-budget-exceeded", "{report}");
     assert_eq!(notice["data"]["budget"], "sentences", "{report}");
     assert_eq!(notice["data"]["limit"], 215_536, "{report}");
+    assert_eq!(notice["data"]["path"], "new.md", "{report}");
     let message = notice["message"].as_str().expect("message");
     assert!(!message.contains("Go."), "{message}");
     let stderr = String::from_utf8_lossy(&out.stderr);

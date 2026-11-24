@@ -1,6 +1,7 @@
 //! The text units a rule reads, cut from a parsed document by the rule's `scope`.
 
-use std::cell::{Cell, OnceCell};
+use std::cell::{Cell, OnceCell, RefCell};
+use std::collections::HashMap;
 use std::ops::Range;
 
 use slopvac_model::SourceIndex;
@@ -316,14 +317,66 @@ pub(crate) fn cell_budget(source_len: usize) -> usize {
     (source_len / BYTES_PER_CELL).saturating_add(CELL_HEADROOM)
 }
 
+/// The sentences a document may still hold, shared by every phase that keeps a split: the
+/// prose blocks, the composite text a document rule reads, and the code blocks a tagger reads.
+pub(crate) struct SentenceBalance {
+    left: Cell<usize>,
+    limit: usize,
+    /// The sentences of each code block a tagger read, by the address and length of its text.
+    /// A block is split and charged once, however many taggers or views read it.
+    code_splits: RefCell<HashMap<(usize, usize), Vec<CodeSentence>>>,
+}
+
+/// One sentence of a code block: its span, and the offset and length of its text inside the
+/// block.
+pub(crate) type CodeSentence = (Range<usize>, usize, usize);
+
+impl SentenceBalance {
+    fn new(limit: usize) -> Self {
+        Self {
+            left: Cell::new(limit),
+            limit,
+            code_splits: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// The sentences the document may still hold. A split may build this many and no more.
+    pub(crate) fn left(&self) -> usize {
+        self.left.get()
+    }
+
+    /// The whole budget the document had.
+    pub(crate) const fn limit(&self) -> usize {
+        self.limit
+    }
+
+    /// The sentences of the code block whose text is at `key`, when a split already built them.
+    pub(crate) fn code_split(&self, key: (usize, usize)) -> Option<Vec<CodeSentence>> {
+        self.code_splits.borrow().get(&key).cloned()
+    }
+
+    /// Keep the sentences a split built for the code block whose text is at `key`.
+    pub(crate) fn keep_code_split(&self, key: (usize, usize), sentences: Vec<CodeSentence>) {
+        self.code_splits.borrow_mut().insert(key, sentences);
+    }
+
+    /// Charge `count` sentences that a split built. `None` when fewer are left, and then
+    /// nothing is charged.
+    pub(crate) fn spend(&self, count: usize) -> Option<()> {
+        let rest = self.left.get().checked_sub(count)?;
+        self.left.set(rest);
+        Some(())
+    }
+}
+
 /// A parsed document with its sentences split.
 pub(crate) struct Prepared<'a> {
     source: &'a str,
     blocks: Vec<ProseBlock<'a>>,
     composite: OnceCell<Result<Composite, EngineError>>,
-    /// The prose sentences the document may still hold, after those of the blocks and of
-    /// the composite text.
-    left: Cell<usize>,
+    /// The sentences the document may still hold, after those of the blocks, of the composite
+    /// text and of the code blocks a tagger read.
+    balance: SentenceBalance,
 }
 
 impl<'a> Prepared<'a> {
@@ -335,8 +388,8 @@ impl<'a> Prepared<'a> {
     /// has more sentences or table cells than its size allows, before the rest are built, and a
     /// text error when a split fails.
     pub(crate) fn new(source: &'a str, doc: &'a Document) -> Result<Self, EngineError> {
-        let limit = sentence_budget(source.len());
-        let mut left = limit;
+        let balance = SentenceBalance::new(sentence_budget(source.len()));
+        let limit = balance.limit();
         let cell_limit = cell_budget(source.len());
         let mut cells_left = cell_limit;
         let mut blocks = Vec::new();
@@ -355,9 +408,11 @@ impl<'a> Prepared<'a> {
                     .ok_or(EngineError::CellBudget { limit: cell_limit })?;
                 cell_sentence(projection.text())?.into_iter().collect()
             } else {
-                let found = split_sentences_within(projection.text(), left)?
+                let found = split_sentences_within(projection.text(), balance.left())?
                     .ok_or(EngineError::SentenceBudget { limit })?;
-                left -= found.len();
+                balance
+                    .spend(found.len())
+                    .ok_or(EngineError::SentenceBudget { limit })?;
                 found
             };
             blocks.push(ProseBlock {
@@ -371,16 +426,14 @@ impl<'a> Prepared<'a> {
             source,
             blocks,
             composite: OnceCell::new(),
-            left: Cell::new(left),
+            balance,
         })
     }
 
-    /// The prose sentences the document may still hold, and the whole budget it had.
-    ///
-    /// A split that is not kept, such as a tagger reading the sentences of a code block, may
-    /// build up to the first number and no more.
-    pub(crate) fn sentences_left(&self) -> (usize, usize) {
-        (self.left.get(), sentence_budget(self.source.len()))
+    /// The sentence balance of the document. Every phase that keeps a split charges it, so the
+    /// phases together stay within the budget.
+    pub(crate) const fn balance(&self) -> &SentenceBalance {
+        &self.balance
     }
 
     /// The blocks with prose, in document order.
@@ -420,10 +473,12 @@ impl<'a> Prepared<'a> {
             .get_or_init(|| {
                 let projection = join(self.blocks.iter().map(|b| b.projection));
                 // The composite is kept, so its sentences are charged to the document.
-                let (left, limit) = self.sentences_left();
-                let sentences = split_sentences_within(projection.text(), left)?
+                let limit = self.balance.limit();
+                let sentences = split_sentences_within(projection.text(), self.balance.left())?
                     .ok_or(EngineError::SentenceBudget { limit })?;
-                self.left.set(left - sentences.len());
+                self.balance
+                    .spend(sentences.len())
+                    .ok_or(EngineError::SentenceBudget { limit })?;
                 Ok(Composite {
                     projection,
                     sentences,

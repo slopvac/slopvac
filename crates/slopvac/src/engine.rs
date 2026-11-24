@@ -153,7 +153,7 @@ impl Run {
         message: String,
         data: serde_json::Map<String, serde_json::Value>,
     ) {
-        let error = CliError::new(code, line(&message));
+        let error = CliError::new(code, line(&message)).with_data(data.clone());
         self.notices.push(Notice {
             code: KebabName::new(code).expect("skip codes are kebab-case"),
             level: NoticeLevel::Warning,
@@ -1515,6 +1515,8 @@ mod skip_tests {
         assert_eq!(data["budget"], budget);
         assert_eq!(data["limit"], limit);
         assert_eq!(data["path"], "docs/a.md");
+        // The error the run returns carries the same detail as the notice.
+        assert_eq!(&run.incomplete[0].data, data);
     }
 
     /// A context failure holds a pattern with a backslash and a newline. The engine error keeps

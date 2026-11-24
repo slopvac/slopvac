@@ -71,6 +71,16 @@ pub enum AgentsError {
     /// A context budget was passed: the text holds more sentences than its size allows.
     #[error(transparent)]
     Context(#[from] slopvac_context::Error),
+    /// An input passed a context budget. `shown` is its path as the user gave it, under the
+    /// working directory, or `<external>/<file name>` outside it.
+    #[error("{source}")]
+    InputBudget {
+        /// The input, as shown to the user.
+        shown: String,
+        /// The budget refusal.
+        #[source]
+        source: slopvac_context::Error,
+    },
     /// A step failed after earlier files were already written.
     #[error("{}", messages::partial(.source, .changed))]
     Partial {
@@ -240,7 +250,7 @@ impl AgentsError {
             Self::Coded { code, .. } | Self::Config { code, .. } => code,
             Self::Partial { source, .. } => source.code(),
             Self::Text(_) => codes::TEXT_FAILED,
-            Self::Context(_) => BUDGET_EXCEEDED,
+            Self::Context(_) | Self::InputBudget { .. } => BUDGET_EXCEEDED,
             Self::Io { .. } => codes::IO,
         }
     }
@@ -250,8 +260,18 @@ impl AgentsError {
     #[must_use]
     pub fn budget(&self) -> Option<(&'static str, usize)> {
         match self {
-            Self::Context(error) => error.budget(),
+            Self::Context(error) | Self::InputBudget { source: error, .. } => error.budget(),
             Self::Partial { source, .. } => source.budget(),
+            _ => None,
+        }
+    }
+
+    /// The input a budget refusal names, as shown to the user.
+    #[must_use]
+    pub fn input_path(&self) -> Option<&str> {
+        match self {
+            Self::InputBudget { shown, .. } => Some(shown),
+            Self::Partial { source, .. } => source.input_path(),
             _ => None,
         }
     }

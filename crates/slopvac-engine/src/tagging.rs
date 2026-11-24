@@ -17,7 +17,7 @@ use slopvac_context::{
 use slopvac_parse::{BlockKind, ByteMapper, Container, Document, Projection};
 use slopvac_text::Sentence;
 
-use crate::prepare::Prepared;
+use crate::prepare::{CodeSentence, Prepared, SentenceBalance};
 
 mod entry;
 
@@ -110,20 +110,10 @@ struct View<'a> {
     prepared: HashMap<usize, &'a [Sentence]>,
     /// Set when a sentence offset did not lie on the text of its block.
     unmapped: Cell<bool>,
-    /// The sentences the document may still hold after the prose, the composite text and the
-    /// code blocks split so far.
-    sentences_left: Cell<usize>,
-    /// The whole sentence budget the document had.
-    sentence_limit: usize,
-    /// The sentences of each code block a tagger read, by the address and length of its text:
-    /// the span, and the offset and length of the text inside the block. A block is split and
-    /// charged once, however many taggers read it.
-    code_splits: RefCell<HashMap<(usize, usize), Vec<CodeSentence>>>,
+    /// The sentences the document may still hold. The prose, the composite text a document
+    /// rule reads and the code blocks split here all charge it.
+    balance: &'a SentenceBalance,
 }
-
-/// One sentence of a code block: its span, and the offset and length of its text inside the
-/// block.
-type CodeSentence = (Range<usize>, usize, usize);
 
 /// The key of a projection in `View::prepared`.
 fn projection_key(projection: &Projection) -> usize {
@@ -209,7 +199,7 @@ impl<'a> View<'a> {
             .enumerate()
             .map(|(i, e)| ((e.span.start, e.span.end), i))
             .collect();
-        let (sentences_left, sentence_limit) = prepared.sentences_left();
+        let balance = prepared.balance();
         let prepared = prepared
             .blocks()
             .iter()
@@ -227,9 +217,7 @@ impl<'a> View<'a> {
             by_text,
             prepared,
             unmapped: Cell::new(false),
-            sentences_left: Cell::new(sentences_left),
-            sentence_limit,
-            code_splits: RefCell::new(HashMap::new()),
+            balance,
         }
     }
 }
@@ -242,29 +230,25 @@ impl View<'_> {
         block: &BlockView<'a>,
     ) -> Result<Vec<SentenceView<'a>>, ContextError> {
         let key = (block.text.as_ptr().addr(), block.text.len());
-        let cached = self.code_splits.borrow().get(&key).cloned();
+        let cached = self.balance.code_split(key);
         let ranges = if let Some(ranges) = cached {
             ranges
         } else {
-            let left = self.sentences_left.get();
-            let found = slopvac_context::split_sentences_within(block, left).ok_or(
-                ContextError::SentenceLimit {
-                    limit: self.sentence_limit,
-                },
-            )?;
-            self.sentences_left.set(left.saturating_sub(found.len()));
+            let refused = || ContextError::SentenceLimit {
+                limit: self.balance.limit(),
+            };
+            let found = slopvac_context::split_sentences_within(block, self.balance.left())
+                .ok_or_else(refused)?;
+            self.balance.spend(found.len()).ok_or_else(refused)?;
             let base = block.text.as_ptr().addr();
-            let ranges: Vec<_> = found
+            let ranges = found
                 .iter()
                 .map(|s| {
-                    (
-                        s.span.clone(),
-                        s.text.as_ptr().addr().saturating_sub(base),
-                        s.text.len(),
-                    )
+                    let offset = s.text.as_ptr().addr().checked_sub(base).ok_or_else(refused)?;
+                    Ok((s.span.clone(), offset, s.text.len()))
                 })
-                .collect();
-            self.code_splits.borrow_mut().insert(key, ranges.clone());
+                .collect::<Result<Vec<CodeSentence>, ContextError>>()?;
+            self.balance.keep_code_split(key, ranges.clone());
             ranges
         };
         Ok(ranges

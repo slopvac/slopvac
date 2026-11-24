@@ -401,8 +401,25 @@ fn idf_table(old: &[Segment], new: &[Segment]) -> Result<HashMap<String, f64>, A
 /// Returns `claims-text-failed` when `slopvac-text` fails to segment or tokenize, for example
 /// when a pattern exhausts PCRE2's match limit.
 pub fn compare(original: &str, revised: &str) -> Result<Report, AgentsError> {
-    let old = segments(original)?;
-    let new = segments(revised)?;
+    compare_sides(original, revised).map_err(|(_, error)| error)
+}
+
+/// The two inputs of a comparison.
+#[derive(Clone, Copy)]
+enum Side {
+    Original,
+    Revised,
+}
+
+/// [`compare`], and with a failure the input whose text was being segmented.
+fn compare_sides(original: &str, revised: &str) -> Result<Report, (Option<Side>, AgentsError)> {
+    let old = segments(original).map_err(|e| (Some(Side::Original), e))?;
+    let new = segments(revised).map_err(|e| (Some(Side::Revised), e))?;
+    align(old, new, revised).map_err(|e| (None, e))
+}
+
+/// Align the segments of the original with those of the revision and list the claims.
+fn align(old: Vec<Segment>, new: Vec<Segment>, revised: &str) -> Result<Report, AgentsError> {
     let idf = idf_table(&old, &new)?;
     let old_v = old
         .iter()
@@ -648,13 +665,30 @@ fn document_too_large(path: &std::path::Path) -> AgentsError {
 ///
 /// # Errors
 /// `document-too-large` when an input is over the cap, an I/O error for another
-/// unreadable file, and the errors of [`compare`].
+/// unreadable file, and the errors of [`compare`]. A text that passes the sentence budget is
+/// refused as [`AgentsError::InputBudget`], which names the input. With the default JSON format
+/// the `slopvac` binary reports such a refusal as the notice envelope of `lint --format json`,
+/// not as this command's report.
 pub fn run(matches: &ArgMatches) -> Result<String, AgentsError> {
-    let read = |id: &str| -> Result<String, AgentsError> {
-        let path = matches.get_one::<PathBuf>(id).cloned().unwrap_or_default();
-        read_input(path)
-    };
-    let report = compare(&read("original")?, &read("revised")?)?;
+    let path_of = |id: &str| matches.get_one::<PathBuf>(id).cloned().unwrap_or_default();
+    let original = read_input(path_of("original"))?;
+    let revised = read_input(path_of("revised"))?;
+    let report = compare_sides(&original, &revised).map_err(|(side, error)| {
+        match (side, error) {
+            (Some(side), AgentsError::Context(source)) if source.budget().is_some() => {
+                let path = match side {
+                    Side::Original => path_of("original"),
+                    Side::Revised => path_of("revised"),
+                };
+                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                AgentsError::InputBudget {
+                    shown: slopvac_fs::display_under_root(&path, &cwd),
+                    source,
+                }
+            }
+            (_, error) => error,
+        }
+    })?;
     if matches
         .get_one::<String>("format")
         .is_some_and(|f| f == "text")

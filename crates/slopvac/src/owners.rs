@@ -62,7 +62,13 @@ fn terms_error(err: &TermsError) -> CliError {
 pub(crate) fn agents_error(err: &AgentsError, root: &Path) -> CliError {
     let error = CliError::new(err.code(), agents_message(err, root));
     match err.budget() {
-        Some((budget, limit)) => error.with_data(crate::engine::budget_data_of(budget, limit)),
+        Some((budget, limit)) => {
+            let mut data = crate::engine::budget_data_of(budget, limit);
+            if let Some(path) = err.input_path() {
+                data.insert("path".into(), path.into());
+            }
+            error.with_data(data)
+        }
         None => error,
     }
 }
@@ -95,6 +101,7 @@ fn agents_message(err: &AgentsError, root: &Path) -> String {
         ),
         AgentsError::Text(e) => format!("text segmentation failed: {e}"),
         AgentsError::Context(e) => e.to_string(),
+        AgentsError::InputBudget { source, .. } => source.to_string(),
         AgentsError::NotUtf8(p) => format!("steering must be UTF-8: {}", path(p)),
         AgentsError::Conflict(p) => format!("file changed during setup; retry: {}", path(p)),
         AgentsError::NotManaged(p) => format!(
