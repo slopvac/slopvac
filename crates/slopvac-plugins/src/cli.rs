@@ -23,8 +23,8 @@ use crate::pyenv::{EnvStore, PythonRuntime};
 use crate::revoke::{RevocationError, RevocationNotice, Revocations};
 use crate::sign::KeyPolicy;
 use crate::sync::{
-    Change, Network, PackState, PackStatus, PythonBuild, PythonState, Store, SyncError, Syncer,
-    status, status_with_python, update_notices,
+    Change, Network, PackState, PackStatus, PythonBuild, PythonState, Store, Syncer, status,
+    status_with_python, update_notices,
 };
 use crate::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
 use crate::update::{LISTING_BUDGET_BYTES, Outcome, Updater, list_candidates};
