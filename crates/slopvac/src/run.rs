@@ -365,7 +365,7 @@ fn plugin_dirs(env: &dyn Env, root: PathBuf) -> Result<slopvac_plugins::Dirs, Cl
 /// is the sentence from the plugins catalog, which names the entry and never a value. The
 /// code is the config's own, `config-invalid-value`, as contract ruled on the pull request.
 fn plugin_config_invalid(message: String) -> CliError {
-    CliError::new("config-invalid-value", message)
+    CliError::new(slopvac_config::Code::InvalidValue.as_str(), message)
 }
 
 /// `slopvac plugins`: build the runner from the environment and the resolved project config,

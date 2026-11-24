@@ -26,9 +26,9 @@ pub(crate) enum SyncMessage {
         digest: String,
         what: String,
     },
-    /// The configured or resolved plugins differ from the lock.
+    /// The resolved plugins differ from the lock.
     #[code("lock-mismatch")]
-    #[message("the lock does not match the configured plugins:\n{diff}")]
+    #[message("the lock does not match the resolved plugins:\n{diff}")]
     LockMismatch { diff: String },
     /// An installed tree changed and offline sync cannot fetch it again.
     #[code("cache-tampered")]
@@ -96,6 +96,11 @@ pub(crate) enum SyncMessage {
 /// Sentences with parameters: failure detail, lock problems and update notices.
 #[derive(Debug, Clone, PartialEq, Eq, Catalog)]
 pub(crate) enum SyncText {
+    /// The configured plugin ids differ from the lock. The failure carries the code
+    /// `lock-mismatch`.
+    #[code("plugins-sync-config-drift")]
+    #[text("the lock does not match the configured plugins:\n{diff}")]
+    ConfigDrift { diff: String },
     /// The lock entry cannot be resolved as written.
     #[code("plugins-sync-source")]
     #[text("plugin `{id}`: {why}")]
@@ -904,6 +909,11 @@ pub(crate) fn lock_mismatch(diff: &LockDiff) -> String {
     SyncMessage::LockMismatch { diff: s(diff) }.to_string()
 }
 
+/// The text of `lock-mismatch` when the config, not the resolver, names the difference.
+pub(crate) fn config_drift(diff: &LockDiff) -> String {
+    SyncText::ConfigDrift { diff: s(diff) }.to_string()
+}
+
 /// What is revoked: the artifact.
 pub(crate) fn revoked_artifact(digest: &impl Display) -> String {
     SyncText::RevokedArtifact { digest: s(digest) }.to_string()
@@ -1523,7 +1533,7 @@ mod tests {
                 SyncMessage::LockMismatch {
                     diff: s("added: x 1.0.0 is not in the lock\n"),
                 },
-                "the lock does not match the configured plugins:\nadded: x 1.0.0 is not in the lock\n",
+                "the lock does not match the resolved plugins:\nadded: x 1.0.0 is not in the lock\n",
             ),
             (
                 SyncMessage::CacheTampered {
@@ -1858,6 +1868,12 @@ mod tests {
             (
                 SyncText::KindInvalid { value: s("X") },
                 "`X` is not a plugin kind (`data` or `code`)",
+            ),
+            (
+                SyncText::ConfigDrift {
+                    diff: s("unlocked: x\n"),
+                },
+                "the lock does not match the configured plugins:\nunlocked: x\n",
             ),
             (
                 SyncText::SourceTooLong { max: 4096 },

@@ -1322,6 +1322,7 @@ plugins-strict-integer-range text
 plugins-strict-nesting text
 plugins-strict-phrase-expecting text
 plugins-strict-phrase-non-finite text
+plugins-sync-config-drift text
 plugins-sync-data-dir text
 plugins-sync-download-file text
 plugins-sync-download-hash text

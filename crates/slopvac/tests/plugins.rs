@@ -389,6 +389,9 @@ fn sync_in_ci_exits_2_when_a_configured_plugin_is_not_in_the_lock() {
         .assert()
         .code(2)
         .stderr(predicate::str::starts_with("error[lock-mismatch]: "))
+        .stderr(predicate::str::contains(
+            "the lock does not match the configured plugins:",
+        ))
         .stderr(predicate::str::contains("unlocked: style"));
 }
 

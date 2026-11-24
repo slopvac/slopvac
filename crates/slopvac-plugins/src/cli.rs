@@ -599,7 +599,7 @@ fn run_sync(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
         let drift = config_drift(&lock, &configured);
         if !drift.is_empty() {
             return Err(RunError::Failed {
-                source: cause::sync(&runner.dirs.project_root, &SyncError::LockMismatch(drift)),
+                source: cause::config_lock_drift(drift),
             });
         }
     }
