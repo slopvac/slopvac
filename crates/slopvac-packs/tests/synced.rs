@@ -441,7 +441,7 @@ fn a_synced_pack_registers_its_taggers_after_the_core_ones() {
     spec.provides = "taggers = [\"taggers/t.yaml\"]".into();
     spec.files.push((
         "taggers/t.yaml",
-        "schema_version: 3\nid: t\ntag: procedure\nmatch:\n  - pattern: 'a'\n".to_owned(),
+        "schema_version: 3\nid: t\ntag: acme-tag\nmatch:\n  - pattern: 'a'\n".to_owned(),
     ));
     w.install(&spec);
 
@@ -462,7 +462,7 @@ fn a_synced_tagger_over_the_pattern_cap_is_refused() {
     spec.files.push((
         "taggers/t.yaml",
         format!(
-            "schema_version: 3\nid: t\ntag: procedure\nmatch:\n  - pattern: '{}'\n",
+            "schema_version: 3\nid: t\ntag: acme-tag\nmatch:\n  - pattern: '{}'\n",
             "a".repeat(8_193)
         ),
     ));
