@@ -9,7 +9,7 @@
     reason = "test code: a panic is a failed test"
 )]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -684,6 +684,28 @@ fn the_sweep_fails_when_a_layer_changes_the_authored_level() {
 fn the_sweep_fails_when_a_guard_turns_off_a_rule_the_input_does_not_author() {
     let authored = "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n";
     let broken = "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
+    check_no_generated_vocabulary_entry(broken, authored)
+        .unwrap_or_else(|why| panic!("written config: {why}"));
+}
+
+#[test]
+#[should_panic(
+    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
+)]
+fn the_sweep_fails_when_an_off_replaces_the_authored_level_of_an_override() {
+    let authored = "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
+    let broken = "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
+    check_no_generated_vocabulary_entry(broken, authored)
+        .unwrap_or_else(|why| panic!("written config: {why}"));
+}
+
+#[test]
+#[should_panic(
+    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
+)]
+fn the_sweep_fails_when_the_top_level_carries_an_off_guard() {
+    let authored = "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
+    let broken = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
     check_no_generated_vocabulary_entry(broken, authored)
         .unwrap_or_else(|why| panic!("written config: {why}"));
 }
