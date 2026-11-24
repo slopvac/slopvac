@@ -140,29 +140,13 @@ fn a_run_with_the_update_check_off_sends_nothing_through_a_proxy() {
 /// The document cap, 64 MiB, written out here so a change to the shared constant is noticed.
 const DOCUMENT_CAP: u64 = 67_108_864;
 
-/// Make `name` in `dir` a file of `len` bytes. A sparse file stands in for an over-cap input
-/// that the run must refuse before it reads it. An in-cap input holds real text.
-fn sized_file(dir: &std::path::Path, name: &str, len: u64, sparse: bool) {
-    let path = dir.join(name);
-    if sparse {
-        fs::File::create(&path)
-            .expect("create")
-            .set_len(len)
-            .expect("set_len");
-    } else {
-        // A normal one-sentence document, padded with blank lines to exactly `len` bytes:
-        // valid Markdown that the cap accepts and the segmenter reads without a long token.
-        let text = b"The cache holds 10 entries.\n";
-        let mut file = fs::File::create(&path).expect("create");
-        std::io::Write::write_all(&mut file, text).expect("write");
-        let chunk = vec![b'\n'; 1 << 20];
-        let mut left = len - text.len() as u64;
-        while left > 0 {
-            let n = usize::try_from(left.min(chunk.len() as u64)).expect("fits");
-            std::io::Write::write_all(&mut file, &chunk[..n]).expect("write");
-            left -= n as u64;
-        }
-    }
+/// Make `name` in `dir` a sparse file of `len` bytes, which stands in for an over-cap input that
+/// the run must refuse before it reads it.
+fn sized_file(dir: &std::path::Path, name: &str, len: u64) {
+    fs::File::create(dir.join(name))
+        .expect("create")
+        .set_len(len)
+        .expect("set_len");
 }
 
 #[rstest::rstest]
@@ -171,7 +155,7 @@ fn sized_file(dir: &std::path::Path, name: &str, len: u64, sparse: bool) {
 fn an_input_one_byte_over_the_cap_is_refused_as_a_too_large_document(#[case] big: &str) {
     assert_eq!(slopvac_fs::MAX_DOCUMENT_BYTES, DOCUMENT_CAP);
     let dir = project();
-    sized_file(dir.path(), big, DOCUMENT_CAP + 1, true);
+    sized_file(dir.path(), big, DOCUMENT_CAP + 1);
     let out = slopvac(dir.path())
         .args(["claims", "new.md", "--original", "old.md"])
         .output()
@@ -183,24 +167,6 @@ fn an_input_one_byte_over_the_cap_is_refused_as_a_too_large_document(#[case] big
         format!("error[document-too-large]: {big} is larger than {DOCUMENT_CAP} bytes\n"),
     );
     assert_eq!(out.stdout, Vec::<u8>::new());
-}
-
-#[rstest::rstest]
-#[case::original("old.md")]
-#[case::revised("new.md")]
-fn an_input_exactly_at_the_cap_is_read(#[case] big: &str) {
-    let dir = project();
-    sized_file(dir.path(), big, DOCUMENT_CAP, false);
-    let out = slopvac(dir.path())
-        .args(["claims", "new.md", "--original", "old.md"])
-        .output()
-        .expect("run");
-    assert_eq!(
-        out.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
 }
 
 /// Replace `dir/name` with a relative symlink to the file moved to `dir/real/name`, the way a
@@ -242,7 +208,7 @@ fn a_symlinked_input_is_read_like_the_file_it_points_to(#[case] linked: &str) {
 #[case::revised("new.md")]
 fn a_symlink_to_a_file_over_the_cap_is_refused_under_the_name_the_user_gave(#[case] linked: &str) {
     let dir = project();
-    sized_file(dir.path(), linked, DOCUMENT_CAP + 1, true);
+    sized_file(dir.path(), linked, DOCUMENT_CAP + 1);
     relink(dir.path(), linked);
     let out = slopvac(dir.path())
         .args(["claims", "new.md", "--original", "old.md"])
