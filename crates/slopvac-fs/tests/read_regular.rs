@@ -144,8 +144,8 @@ fn a_document_of_exactly_the_document_cap_is_read_whole() {
 fn a_document_one_byte_over_the_document_cap_is_refused() {
     let t = tree();
     let path = sparse_file(&t, MAX_DOCUMENT_BYTES + 1);
-    let err = read_capped_regular_to_string(&path, MAX_DOCUMENT_BYTES, ReadOptions::new())
-        .unwrap_err();
+    let err =
+        read_capped_regular_to_string(&path, MAX_DOCUMENT_BYTES, ReadOptions::new()).unwrap_err();
     assert_eq!(err.input_kind(), Some(InputKind::TooLarge), "{err:?}");
 }
 
