@@ -149,8 +149,67 @@ fn check_blocklist_layout(
                 return Err(refuse(at, reason));
             }
         }
+        for (i, block) in config.overrides.iter().enumerate() {
+            let earlier = std::iter::once(&config.layer)
+                .chain(config.overrides[..i].iter().map(|b| &b.layer))
+                .collect::<Vec<_>>();
+            for (category, dials) in &block.layer.categories {
+                let at = format!("overrides[{i}].categories.{category}");
+                let line = ctx.lines.of(&at).to_string();
+                let reason = if earlier.iter().any(|l| sets_vocabulary_rule(l, category)) {
+                    MigrateText::ReasonBlocklistCategoryOverRule {
+                        at: at.clone(),
+                        line,
+                    }
+                } else if !dials.contains_key("severity")
+                    && earlier.iter().any(|l| turns_off_vocabulary(l, category))
+                {
+                    MigrateText::ReasonBlocklistCategoryOverOff {
+                        at: at.clone(),
+                        line,
+                    }
+                } else {
+                    continue;
+                };
+                return Err(refuse(at, reason.to_string()));
+            }
+        }
     }
     Ok(())
+}
+
+/// The rules the vocabulary companion style sets once a word blocklist is configured.
+const VOCABULARY_RULES: [&str; 4] = [
+    "ste-verbs.verb-form-not-listed",
+    "ste-words.verb-or-adjective-form-not-permitted",
+    "ste-words.word-outside-controlled-vocabulary",
+    "ste-words.word-used-in-wrong-part-of-speech",
+];
+
+/// Whether `category` holds a vocabulary rule.
+fn is_vocabulary_category(category: &str) -> bool {
+    VOCABULARY_RULES
+        .iter()
+        .any(|r| r.split_once('.').is_some_and(|(c, _)| c == category))
+}
+
+/// Whether `layer` sets a level for a vocabulary rule of `category`.
+fn sets_vocabulary_rule(layer: &Layer, category: &str) -> bool {
+    layer.rules.keys().any(|qid| {
+        VOCABULARY_RULES.contains(&qid.as_str())
+            && qid.split_once('.').is_some_and(|(c, _)| c == category)
+    })
+}
+
+/// Whether `layer` turns `category` off, and `category` holds a vocabulary rule.
+fn turns_off_vocabulary(layer: &Layer, category: &str) -> bool {
+    is_vocabulary_category(category)
+        && layer
+            .categories
+            .get(category)
+            .and_then(|d| d.get("severity"))
+            .and_then(Scalar::as_str)
+            == Some("off")
 }
 
 /// Read the 2.x settings the expansion uses. Returns `None` after recording an

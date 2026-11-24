@@ -395,6 +395,20 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
             "`overrides[0].vocabulary.path` on line 4 sets a word blocklist, and the top level sets none. `--preserve-behavior` cannot keep the 2.x vocabulary levels for a blocklist that applies to some files only. A follow-up will support these layouts.",
         ),
         (
+            MigrateText::ReasonBlocklistCategoryOverRule {
+                at: s("overrides[0].categories.ste-words"),
+                line: s("11"),
+            },
+            "`overrides[0].categories.ste-words` on line 11 sets the category of a word blocklist rule that an earlier layer sets. `--preserve-behavior` cannot keep the 2.x level of that rule in the files this override covers. A follow-up will support these layouts.",
+        ),
+        (
+            MigrateText::ReasonBlocklistCategoryOverOff {
+                at: s("overrides[0].categories.ste-words"),
+                line: s("11"),
+            },
+            "`overrides[0].categories.ste-words` on line 11 sets a category that an earlier layer turned off, with no `severity`. `--preserve-behavior` cannot keep the 2.x level of the word blocklist rules there, because the migration would fill in the severity and turn them on. A follow-up will support these layouts.",
+        ),
+        (
             MigrateText::ReasonBlocklistUnderSwitch {
                 at: s("overrides[0].profile"),
                 line: s("5"),
