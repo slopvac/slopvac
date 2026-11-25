@@ -622,6 +622,7 @@ pub fn config_sources(files: &[(String, bool)]) -> Vec<ConfigSource> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use slopvac_config::load;
 
     /// No packs behind the loader: these tests cover the settings builder, not packs.
