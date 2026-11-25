@@ -1,7 +1,8 @@
 //! `slopvac migrate --preserve-behavior` keeps the level 2.x gave the word blocklist rule in
 //! every file, or refuses the layout before it writes anything. The expected levels come from
 //! the `blocklist_2x` section of `vectors.json`, which the 2.x generator measures with the
-//! blocklist on. A layout that the migration refuses is named with its reason.
+//! blocklist on. A layout that the migration refuses is named with its reason, and a layout it
+//! migrates is checked by linting each file.
 #![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
@@ -11,6 +12,8 @@ use rstest::rstest;
 use serde_json::Value;
 use snapbox::cmd::{Command, cargo_bin};
 
+const RULE_2X: &str = "ste-words.word-outside-controlled-vocabulary";
+const RULE_3X: &str = "core:ste-words.word-outside-controlled-vocabulary";
 const BLOCKLIST: &str =
     "schema_version = 3\n\n[[entries]]\nword = \"deploy\"\npos = \"noun\"\nreason = \"x\"\n";
 
@@ -31,6 +34,25 @@ fn vectors() -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../slopvac-migrate/tests/fixtures/preserve/vectors.json");
     serde_json::from_str(&fs::read_to_string(path).expect("vectors.json")).expect("json")
+}
+
+/// The severity of the blocklist finding in `file` after the migration, or `off` for none.
+fn level_3x(root: &Path, file: &str) -> String {
+    let out = slopvac()
+        .current_dir(root)
+        .args(["lint", "--format", "json", file])
+        .output()
+        .expect("run");
+    let report: Value = serde_json::from_slice(&out.stdout).expect("json report");
+    report["documents"][0]["findings"]
+        .as_array()
+        .expect("findings")
+        .iter()
+        .find(|f| f["rule_id"] == RULE_3X)
+        .map_or_else(
+            || "off".to_owned(),
+            |f| f["severity"].as_str().expect("severity").to_owned(),
+        )
 }
 
 /// A project for the scenario `name`: its 2.x config and one document per measured file.
@@ -88,4 +110,35 @@ fn a_layout_the_migration_cannot_keep_is_refused_with_its_own_reason_before_writ
         input
     );
     assert!(!root.join(".slopvac").exists(), "a refusal wrote a backup");
+}
+
+/// A layout that the migration keeps lints at the level 2.x measured in each file.
+#[rstest]
+#[case::a_later_category_level_over_an_earlier_off_rule("top-rule-off-then-an-override-category")]
+#[case::a_later_category_with_only_a_budget_over_an_earlier_rule(
+    "top-rule-then-an-override-budget-only"
+)]
+fn a_layout_the_migration_keeps_reports_the_2x_level_in_each_file(#[case] name: &str) {
+    let data = vectors();
+    let blocklist = &data["blocklist_2x"];
+    let scenario = &blocklist["scenarios"][name];
+    let (dir, _) = project(scenario);
+    let root = dir.path();
+
+    let out = migrate(root);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{name}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    for (file, measured) in scenario["files"].as_object().expect("files") {
+        let profile = measured["profile"].as_str().expect("profile");
+        let want = measured["levels"][RULE_2X]
+            .as_str()
+            .or_else(|| blocklist["base"][profile]["levels"][RULE_2X].as_str())
+            .expect("a measured level");
+        assert_eq!(level_3x(root, file), want, "{name}: {file}");
+    }
 }
