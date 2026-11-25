@@ -15,6 +15,7 @@ fn artifact(inline: &'static [&'static str], build: fn() -> Value) -> Artifact {
         description: None,
         imports: &[],
         inline,
+        keep: &[],
         build,
     }
 }
@@ -60,4 +61,34 @@ fn an_inlined_def_is_written_in_place_with_the_reference_siblings_winning() {
 fn inlining_fails_on(#[case] build: fn() -> Value, #[case] expected: fn(&Error) -> bool) {
     let err = generate_from(&[artifact(&["Id"], build)]).unwrap_err();
     assert!(expected(&err), "{err:?}");
+}
+
+fn with_a_spare_def() -> Value {
+    json!({
+        "type": "object",
+        "properties": {"a": {"$ref": "#/$defs/Used"}},
+        "$defs": {"Used": {"type": "string"}, "Spare": {"type": "integer"}},
+    })
+}
+
+#[rstest]
+#[case::dropped_by_default(&[], &["Used"])]
+#[case::kept_when_named(&["Spare"], &["Spare", "Used"])]
+fn a_def_that_nothing_reaches_stays_only_when_the_artifact_keeps_it(
+    #[case] keep: &'static [&'static str],
+    #[case] defs: &[&str],
+) {
+    let artifact = Artifact {
+        keep,
+        ..artifact(&[], with_a_spare_def)
+    };
+    let schema = generated(artifact);
+    let mut names: Vec<&str> = schema["$defs"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, defs);
 }
