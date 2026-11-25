@@ -10,6 +10,8 @@
 
 mod common;
 
+use std::error::Error;
+
 use common::{category, id, ruleset, tokens};
 use serde_json::json;
 use slopvac_context::GenreAssignment;
@@ -274,52 +276,49 @@ fn a_category_level_protects_only_its_own_plugins_rules_from_the_genre(
         ]
     );
 }
+
 /// A genre `internal` that lowers the history rule of `alpha` and of `beta` to a suggestion.
-fn genre_for_two_plugins() -> slopvac_context::GenreRegistry {
+fn genre_for_two_plugins() -> Result<slopvac_context::GenreRegistry, Box<dyn Error>> {
     let yaml = "schema_version: 3\nid: internal\nrules:\n  \
                 \"alpha:docs-discipline.history-internal-reference\": suggestion\n  \
                 \"beta:docs-discipline.history-internal-reference\": suggestion\n";
-    slopvac_context::GenreRegistry::new(
-        vec![slopvac_context::GenreSpec::from_yaml(yaml).unwrap()],
+    Ok(slopvac_context::GenreRegistry::new(
+        vec![slopvac_context::GenreSpec::from_yaml(yaml)?],
         "internal",
-    )
-    .unwrap()
+    )?)
 }
 
 /// A rule set of `plugin` whose category `docs-discipline` flags `refactored` as an error.
-fn plugin_set_of(plugin: &str) -> slopvac_rules::RuleSet {
+fn plugin_set_of(plugin: &str) -> Result<slopvac_rules::RuleSet, Box<dyn Error>> {
     let rules = [tokens(
         "history-internal-reference",
         "refactored",
         &json!({"severity": "error"}),
     )];
-    slopvac_rules::RuleSet::from_sources(
-        &slopvac_model::PackId::new(plugin).unwrap(),
+    Ok(slopvac_rules::RuleSet::from_sources(
+        &slopvac_model::PackId::new(plugin)?,
         vec![category("docs-discipline", &rules)],
         &slopvac_rules::CompileOptions::default(),
-    )
-    .unwrap()
+    )?)
 }
 
 /// Both plugins ship `docs-discipline`, and the genre lowers the history rule of each. A
 /// category level for `alpha:docs-discipline` keeps alpha's rule at that level, and beta's
 /// rule, in a category of the same bare name, still follows the genre.
 #[test]
-fn a_category_level_blocks_the_genre_for_its_own_plugin_only() {
+fn a_category_level_blocks_the_genre_for_its_own_plugin_only() -> Result<(), Box<dyn Error>> {
     let mut settings = settings();
     settings.categories.insert(
-        CategoryName::new("alpha:docs-discipline").unwrap(),
+        CategoryName::new("alpha:docs-discipline")?,
         CategoryDials::default().with_level(Some(Level::On(Severity::Warning))),
     );
     let source = format!("---\ngenre: internal\n---\n{BODY}");
     let doc = Engine::new(
-        vec![plugin_set_of("alpha"), plugin_set_of("beta")],
+        vec![plugin_set_of("alpha")?, plugin_set_of("beta")?],
         settings,
-    )
-    .unwrap()
-    .with_genres(genre_for_two_plugins())
-    .lint(&Input::markdown("a.md", &source).with_declared_genre("internal"))
-    .unwrap();
+    )?
+    .with_genres(genre_for_two_plugins()?)
+    .lint(&Input::markdown("a.md", &source).with_declared_genre("internal"))?;
     let got: Vec<(&str, Severity)> = doc
         .findings
         .iter()
@@ -338,4 +337,5 @@ fn a_category_level_blocks_the_genre_for_its_own_plugin_only() {
             ),
         ]
     );
+    Ok(())
 }
