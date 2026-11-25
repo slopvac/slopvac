@@ -135,7 +135,7 @@ impl Filter {
     fn keeps(&self, category: &LoadedCategory, rule: &LoadedRule) -> bool {
         // `resolved` made each value the plugin and the category id.
         let own = format!("{}:{}", rule.id().pack(), category.id());
-        if !self.categories.is_empty() && !self.categories.iter().any(|c| *c == own) {
+        if !self.categories.is_empty() && !self.categories.contains(&own) {
             return false;
         }
         if self.kind.is_some_and(|k| k != rule.kind()) {
