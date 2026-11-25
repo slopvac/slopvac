@@ -505,6 +505,10 @@ REFUSED_BLOCKLIST_LAYOUTS = {
         f'schema_version = 2\n{_BLOCKLIST}\n[categories]\nste-words = "off"\n\n[[overrides]]\nfiles = ["docs/**"]\n[overrides.categories]\nste-words = {{ minimum_severity = "error" }}\n',
         "overrides[0].categories.ste-words",
     ),
+    "later-category-with-no-severity-over-an-earlier-rule": (
+        f'schema_version = 2\n{_BLOCKLIST}\n[rules]\n"ste-words.word-outside-controlled-vocabulary" = "error"\n\n[[overrides]]\nfiles = ["docs/**"]\n[overrides.categories]\nste-words = {{ max_per_100_words = 2.0 }}\n',
+        "overrides[0].categories.ste-words",
+    ),
     "top-profile-differs-from-the-switch": (
         f'schema_version = 2\nprofile = "relaxed"\n{_BLOCKLIST}\n[[overrides]]\nfiles = ["docs/**"]\nprofile = "normal"\n',
         "overrides[0].profile",

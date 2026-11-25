@@ -79,8 +79,9 @@ fn migrate(root: &Path) -> std::process::Output {
 }
 
 /// 2.x keeps the level of the rule that an earlier layer sets, and a later category level
-/// replaces it in 3.0, or a later category turns on a rule that 2.x left off. Each layout is
-/// refused with its own reason, and nothing is written.
+/// replaces it in 3.0, or a later category turns on a rule that 2.x left off, or a later
+/// category with no `severity` gets the legacy level that outranks the earlier rule. Each
+/// layout is refused with its own reason, and nothing is written.
 #[rstest]
 // `migrate-reason-blocklist-category-over-rule`
 #[case::l1_a_later_category_over_an_earlier_rule(
@@ -91,6 +92,11 @@ fn migrate(root: &Path) -> std::process::Output {
 #[case::l2_a_later_floor_over_an_off_category(
     "top-category-off-then-an-override-floor",
     "sets a category that an earlier layer turned off, with no `severity`"
+)]
+// `migrate-reason-blocklist-category-no-severity-over-rule`
+#[case::l2_a_later_budget_only_category_over_an_earlier_rule(
+    "top-rule-then-an-override-budget-only",
+    "with no `severity`, after an earlier layer set a rule of that category"
 )]
 fn a_layout_the_migration_cannot_keep_is_refused_with_its_own_reason_before_writing(
     #[case] name: &str,
@@ -115,9 +121,6 @@ fn a_layout_the_migration_cannot_keep_is_refused_with_its_own_reason_before_writ
 /// A layout that the migration keeps lints at the level 2.x measured in each file.
 #[rstest]
 #[case::a_later_category_level_over_an_earlier_off_rule("top-rule-off-then-an-override-category")]
-#[case::a_later_category_with_only_a_budget_over_an_earlier_rule(
-    "top-rule-then-an-override-budget-only"
-)]
 fn a_layout_the_migration_keeps_reports_the_2x_level_in_each_file(#[case] name: &str) {
     let data = vectors();
     let blocklist = &data["blocklist_2x"];

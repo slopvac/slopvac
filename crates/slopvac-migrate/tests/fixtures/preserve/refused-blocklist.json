@@ -5,6 +5,10 @@
    "at": "overrides[0].categories.ste-words",
    "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"suggestion\"\n"
   },
+  "later-category-with-no-severity-over-an-earlier-rule": {
+   "at": "overrides[0].categories.ste-words",
+   "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = { max_per_100_words = 2.0 }\n"
+  },
   "later-category-with-no-severity-over-an-off-category": {
    "at": "overrides[0].categories.ste-words",
    "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = { minimum_severity = \"error\" }\n"

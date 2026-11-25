@@ -534,6 +534,9 @@ fn refused_layout(name: &str) -> (String, String) {
 #[case::later_category_with_no_severity_over_an_off_category(
     "later-category-with-no-severity-over-an-off-category"
 )]
+#[case::later_category_with_no_severity_over_an_earlier_rule(
+    "later-category-with-no-severity-over-an-earlier-rule"
+)]
 fn a_blocklist_layout_the_companion_style_cannot_keep_is_refused(#[case] name: &str) {
     let (config, at) = refused_layout(name);
     let err = preserve(&config).unwrap_err();
@@ -549,7 +552,7 @@ fn every_refusal_vector_has_a_case() {
         fs::read_to_string(crate_dir().join("tests/fixtures/preserve/refused-blocklist.json"))
             .unwrap();
     let doc: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(doc["layouts"].as_object().unwrap().len(), 9);
+    assert_eq!(doc["layouts"].as_object().unwrap().len(), 10);
 }
 
 const VOCABULARY_RULES: [&str; 4] = [
