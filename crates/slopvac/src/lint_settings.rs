@@ -327,8 +327,36 @@ fn legacy_name(listed: &str) -> Option<&'static Style> {
 }
 
 /// The built-in style presets, plus the `core:legacy-<profile>` styles.
-struct ShippedStyles {
+pub(crate) struct ShippedStyles {
     styles: StylePresets<BuiltinSource>,
+}
+
+impl ShippedStyles {
+    /// The styles and genres that ship with the binary.
+    pub(crate) fn new() -> Self {
+        Self {
+            styles: StylePresets(BuiltinSource),
+        }
+    }
+}
+
+/// Qualify the bare `categories` and `rules` keys of a shipped layer to the plugin `core`,
+/// which owns every shipped preset. A key written in a config file keeps its own spelling, so
+/// the two never meet: a bare key that two plugins share stays ambiguous for a file and is
+/// `core`'s for a preset.
+fn qualified_to_core(layer: Vec<Setting>) -> Vec<Setting> {
+    layer
+        .into_iter()
+        .map(|mut setting| {
+            if let [head, key, ..] = setting.path.as_mut_slice()
+                && (head == "categories" || head == "rules")
+                && !key.contains(':')
+            {
+                *key = format!("{RESERVED_ID}:{key}");
+            }
+            setting
+        })
+        .collect()
 }
 
 impl Presets for ShippedStyles {
@@ -337,6 +365,7 @@ impl Presets for ShippedStyles {
             Some(style) => Some(style.layer().to_vec()),
             None => self.styles.style(name),
         }
+        .map(qualified_to_core)
     }
 
     fn style_layers(&self, listed: &[String]) -> Vec<Vec<Setting>> {
@@ -357,11 +386,15 @@ impl Presets for ShippedStyles {
         if !run.is_empty() {
             layers.extend(self.styles.style_layers(&run));
         }
-        layers
+        layers.into_iter().map(qualified_to_core).collect()
     }
 
     fn genre_chain(&self, name: &str) -> Vec<Vec<Setting>> {
-        self.styles.genre_chain(name)
+        self.styles
+            .genre_chain(name)
+            .into_iter()
+            .map(qualified_to_core)
+            .collect()
     }
 
     fn pack_config(&self, name: &str) -> Option<PackFile> {
@@ -389,9 +422,7 @@ pub fn resolve(config: &LoadedConfig, rel: &Path) -> Resolved {
     config.resolve(
         rel,
         &Inputs {
-            presets: &ShippedStyles {
-                styles: StylePresets(BuiltinSource),
-            },
+            presets: &ShippedStyles::new(),
             front_matter: &[],
             directives: &[],
             cli: &[],
@@ -588,11 +619,9 @@ pub fn build(
         let name = category.id().as_str();
         let qualified = format!("{plugin}:{name}");
         let reported = CategoryName::of(plugin, category.id());
-        // A bare key names this category when no other plugin ships the same id. A config key
-        // that is still ambiguous here comes from a shipped preset, which `validate` does not
-        // read, and a shipped preset is owned by `core`.
-        let bare_category =
-            rules.categories_named(name).len() == 1 || plugin.as_str() == RESERVED_ID;
+        // A bare key names this category only when no other plugin ships the same id. The
+        // shipped presets are qualified to `core` when they load.
+        let bare_category = rules.categories_named(name).len() == 1;
         let field = |f: &'static str| {
             let mut paths = vec![vec!["categories", qualified.as_str(), f]];
             if bare_category {
@@ -625,7 +654,7 @@ pub fn build(
                 }
             }
             let mut keys = vec![id.as_str()];
-            if rules.rules_named(id.local()).len() == 1 || plugin.as_str() == RESERVED_ID {
+            if rules.rules_named(id.local()).len() == 1 {
                 keys.push(id.local());
             }
             let named = resolved.level_by_any_unfloored(&keys, &categories);
@@ -696,9 +725,9 @@ pub fn config_sources(files: &[(String, bool)]) -> Vec<ConfigSource> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    use crate::rule_catalog::catalog_of;
+    use crate::rule_catalog::{catalog_of, catalog_with_rules};
     use rstest::rstest;
     use slopvac_config::load;
 
@@ -921,6 +950,43 @@ mod tests {
         let weight = |name: &str| s.categories[&CategoryName::new(name).unwrap()].weight;
         assert_eq!(weight("ste-words"), Some(0.8));
         assert_eq!(weight("alpha:ste-words"), None);
+    }
+
+    /// The catalogue of the shipped rules and a plugin `alpha` that ships a rule with the same
+    /// local id as the core rule `ste-practices.latin-abbreviation`, which the `ste` style
+    /// turns off by its bare name.
+    pub(crate) fn core_and_a_plugin_sharing_a_preset_rule() -> Catalog {
+        let mut sets = Catalog::load().expect("the rules load").into_sets();
+        sets.extend(
+            catalog_with_rules(&[("alpha", "ste-practices", "latin-abbreviation")]).into_sets(),
+        );
+        Catalog::from_sets(sets)
+    }
+
+    #[test]
+    fn a_shipped_preset_rule_level_stays_with_core_when_a_plugin_shares_the_rule_id() {
+        let rules = core_and_a_plugin_sharing_a_preset_rule();
+        let s = settings_over(&rules, &format!("{HEAD}styles = [\"ste\"]\n")).unwrap();
+        assert_eq!(
+            level(&s, "core:ste-practices.latin-abbreviation"),
+            Some(Level::Off)
+        );
+        assert_eq!(level(&s, "alpha:ste-practices.latin-abbreviation"), None);
+    }
+
+    #[test]
+    fn an_ambiguous_bare_key_never_reaches_core_when_a_config_file_wrote_it() {
+        // `validate` refuses the key, so the settings builder must not use it either.
+        let rules = core_and_a_plugin_sharing_a_preset_rule();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("slopvac.toml");
+        let text = format!("{HEAD}[rules]\n\"ste-practices.latin-abbreviation\" = \"error\"\n");
+        std::fs::write(&path, text).expect("write config");
+        let loaded = load(&path, &NoPresets).expect("the config loads");
+        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let s = build(&rules, &resolved, Vec::new(), &Overrides::default()).unwrap();
+        assert_eq!(level(&s, "core:ste-practices.latin-abbreviation"), None);
+        assert_eq!(level(&s, "alpha:ste-practices.latin-abbreviation"), None);
     }
 
     /// `a.b` as an unknown rule at `slopvac.toml:4:1` in `layer`.

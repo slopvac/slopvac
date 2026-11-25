@@ -219,11 +219,19 @@ impl Catalog {
 /// has one rule, `hit`.
 #[cfg(test)]
 pub(crate) fn catalog_of(pairs: &[(&str, &str)]) -> Catalog {
-    let set = |plugin: &str, category: &str| {
+    let triples: Vec<(&str, &str, &str)> = pairs.iter().map(|(p, c)| (*p, *c, "hit")).collect();
+    catalog_with_rules(&triples)
+}
+
+/// A catalogue with one category file for each `(plugin, category, rule)` triple. The
+/// category has that one rule.
+#[cfg(test)]
+pub(crate) fn catalog_with_rules(triples: &[(&str, &str, &str)]) -> Catalog {
+    let set = |plugin: &str, category: &str, rule: &str| {
         let file = serde_json::json!({
             "schema_version": 3, "id": category, "title": "t", "description": "d",
             "rules": [{
-                "id": "hit", "name": "n", "message": "Found {match}.",
+                "id": rule, "name": "n", "message": "Found {match}.",
                 "severity": "warning",
                 "match": {"kind": "tokens", "tokens": ["leverage"]},
                 "citation": {"source": "s"}
@@ -236,5 +244,5 @@ pub(crate) fn catalog_of(pairs: &[(&str, &str)]) -> Catalog {
         )
         .expect("the rule set loads")
     };
-    Catalog::from_sets(pairs.iter().map(|(p, c)| set(p, c)).collect())
+    Catalog::from_sets(triples.iter().map(|(p, c, r)| set(p, c, r)).collect())
 }
