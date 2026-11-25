@@ -737,14 +737,17 @@ def discovered_suites() -> list[tuple[str, str, dict]]:
     ]
 
 
-def running_suites(event: str) -> set[tuple[str, str, str, str | None]]:
-    """(workflow, job id, step name, leg) of each suite step that runs for the event."""
-    return {
+def running_suites(event: str) -> list[tuple[str, str, str, str | None]]:
+    """(workflow, job id, step name, leg) of each suite step that runs for the event.
+
+    A list, so a step that appears twice shows up twice.
+    """
+    return [
         (workflow, job_id, step["name"], leg)
         for workflow, job_id, step in discovered_suites()
         for leg in (RUST_LEGS[event] if job_id == "rust" else [None])
         if step_runs_on(step, event, leg)
-    }
+    ]
 
 
 # Every suite a pull request and the queue must run, listed by hand. Deleting a suite
@@ -758,8 +761,9 @@ REQUIRED_SUITES = {
 
 
 def test_the_jobs_that_run_on_push_hold_exactly_the_listed_suites():
-    found = {(w, j, step["name"]) for w, j, step in discovered_suites()}
-    assert found == REQUIRED_SUITES
+    found = [(w, j, step["name"]) for w, j, step in discovered_suites()]
+    assert len(found) == len(REQUIRED_SUITES)
+    assert set(found) == REQUIRED_SUITES
 
 
 @pytest.mark.parametrize("event", ["pull_request", "merge_group"])
@@ -769,15 +773,20 @@ def test_every_suite_step_runs_on_a_pull_request_and_the_queue(event):
         for workflow, job_id, name in REQUIRED_SUITES
         for leg in (RUST_LEGS[event] if job_id == "rust" else [None])
     }
-    assert running_suites(event) == expected
+    running = running_suites(event)
+    assert len(running) == len(expected)
+    assert set(running) == expected
 
 
 def test_a_push_to_main_runs_only_the_suites_no_earlier_run_covered():
     # Only the push matrix has macos-arm64, so Apple Silicon is tested on main alone.
-    assert running_suites("push") == {
+    expected = {
         ("test.yml", "rust", "Test", "macos-arm64"),
         ("test.yml", "rust", "Doctests", "macos-arm64"),
     }
+    running = running_suites("push")
+    assert len(running) == len(expected)
+    assert set(running) == expected
 
 
 @pytest.mark.parametrize(
