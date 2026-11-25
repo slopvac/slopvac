@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use slopvac_model::Span;
-use slopvac_model::{Finding, GenreId, Notice, NoticeLevel};
+use slopvac_model::{CategoryName, Finding, GenreId, Notice, NoticeLevel};
 use slopvac_pos::{Mask, Tagger};
 use slopvac_rules::{LoadedRule, MatchKind, RuleSet, Scope};
 use slopvac_terms::{Blocklist, Pos};
@@ -292,7 +292,7 @@ impl Run<'_> {
                 out.push(self.finding(Candidate {
                     rule_id: sweep.loaded.id(),
                     pack: sweep.set.pack(),
-                    category: sweep.loaded.category().clone(),
+                    category: CategoryName::of(sweep.set.pack(), sweep.loaded.category()),
                     severity: sweep.active.severity,
                     message,
                     span,

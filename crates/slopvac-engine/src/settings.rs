@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use slopvac_context::{GenreAssignment, GenreRegistry, RuleLevel};
 use slopvac_model::{
-    CategoryId, ConfigSource, GenreResult, IdError, NonEmptyString, RuleId, Severity,
+    CategoryName, ConfigSource, GenreResult, IdError, NonEmptyString, RuleId, Severity,
 };
 use slopvac_rules::ApplyMode;
 
@@ -167,8 +167,9 @@ pub struct Settings {
     /// from rule definitions along suggestion, warning, error. A level in `rule_levels` or in
     /// a category is final, and `off` stays off.
     pub severity_shift: i64,
-    /// Dials per category.
-    pub categories: BTreeMap<CategoryId, CategoryDials>,
+    /// Dials per category, keyed as a report names the category: the bare id for a `core`
+    /// category and `<plugin>:<category>` for another plugin's.
+    pub categories: BTreeMap<CategoryName, CategoryDials>,
     /// The gate limits.
     pub thresholds: Thresholds,
     /// Where the settings came from, copied to each document.

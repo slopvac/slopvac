@@ -82,11 +82,11 @@ fn a_category_level_applies_to_its_rules_and_a_rule_level_beats_it() {
 }
 
 trait ParseCategory {
-    fn parse_category(&self) -> slopvac_model::CategoryId;
+    fn parse_category(&self) -> slopvac_model::CategoryName;
 }
 impl ParseCategory for str {
-    fn parse_category(&self) -> slopvac_model::CategoryId {
-        slopvac_model::CategoryId::new(self).unwrap()
+    fn parse_category(&self) -> slopvac_model::CategoryName {
+        slopvac_model::CategoryName::new(self).unwrap()
     }
 }
 

@@ -293,7 +293,7 @@ fn finding_without_span_omits_span_and_end() {
     let f = Finding {
         rule_id: RuleId::new("slop:x").unwrap(),
         pack: PackId::new("slop").unwrap(),
-        category: slopvac_model::CategoryId::new("metrics").unwrap(),
+        category: slopvac_model::CategoryName::new("metrics").unwrap(),
         severity: Severity::Warning,
         message: slopvac_model::NonEmptyString::new("m").unwrap(),
         start: LineCol::new(1, 1).unwrap(),

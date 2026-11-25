@@ -278,7 +278,7 @@ fn the_pack_severity_is_the_shipped_level_and_a_category_level_replaces_it() {
     assert_eq!(shipped.findings[0].severity, Severity::Warning);
     let mut capped = settings();
     capped.categories.insert(
-        slopvac_model::CategoryId::new("diagram").unwrap(),
+        slopvac_model::CategoryName::new("diagram").unwrap(),
         slopvac_engine::CategoryDials::default().with_level(Some(Level::On(Severity::Suggestion))),
     );
     let doc = diagram_engine(capped).lint(&input).unwrap();

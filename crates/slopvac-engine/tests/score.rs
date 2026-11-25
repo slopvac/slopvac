@@ -14,15 +14,15 @@ use std::collections::BTreeMap;
 
 use slopvac_engine::{CategoryInfo, Thresholds, score_document};
 use slopvac_model::{
-    AiSignal, CategoryId, Contexts, Finding, LineCol, NonEmptyString, Notice, NoticeLevel, PackId,
-    RuleId, Severity,
+    AiSignal, CategoryName, Contexts, Finding, LineCol, NonEmptyString, Notice, NoticeLevel,
+    PackId, RuleId, Severity,
 };
 
 fn finding(category: &str, severity: Severity) -> Finding {
     Finding {
         rule_id: RuleId::new(format!("core:{category}.r")).unwrap(),
         pack: PackId::new("core").unwrap(),
-        category: CategoryId::new(category).unwrap(),
+        category: CategoryName::new(category).unwrap(),
         severity,
         message: NonEmptyString::new("m").unwrap(),
         start: LineCol::new(1, 1).unwrap(),
@@ -36,9 +36,9 @@ fn finding(category: &str, severity: Severity) -> Finding {
     }
 }
 
-fn categories(budget: Option<f64>) -> BTreeMap<CategoryId, CategoryInfo> {
+fn categories(budget: Option<f64>) -> BTreeMap<CategoryName, CategoryInfo> {
     BTreeMap::from([(
-        CategoryId::new("a").unwrap(),
+        CategoryName::new("a").unwrap(),
         CategoryInfo {
             weight: 1.0,
             budget,
@@ -140,10 +140,12 @@ fn a_category_with_no_budget_loses_ten_points_per_weighted_finding_per_100_words
 #[test]
 fn a_zero_weight_category_gates_nothing() {
     let mut cats = categories(Some(0.0));
-    cats.get_mut(&CategoryId::new("a").unwrap()).unwrap().weight = 0.0;
+    cats.get_mut(&CategoryName::new("a").unwrap())
+        .unwrap()
+        .weight = 0.0;
     // With no weighted category left, every finding gates again, as in 2.x.
     cats.insert(
-        CategoryId::new("b").unwrap(),
+        CategoryName::new("b").unwrap(),
         CategoryInfo {
             weight: 1.0,
             budget: None,

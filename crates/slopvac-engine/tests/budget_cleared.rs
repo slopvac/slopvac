@@ -17,7 +17,7 @@ mod common;
 use common::{engine_with, settings, tokens};
 use serde_json::json;
 use slopvac_engine::{CategoryDials, Input};
-use slopvac_model::{CategoryId, Document};
+use slopvac_model::{CategoryName, Document};
 
 /// A category whose rule data sets a budget of 0.1 findings per 100 words for `normal`, over
 /// a document of 100 words with one finding: 1.0 per 100 words, over budget.
@@ -30,7 +30,7 @@ fn lint(clear: bool) -> Document {
     let mut s = settings();
     if clear {
         s.categories.insert(
-            CategoryId::new("cat").unwrap(),
+            CategoryName::new("cat").unwrap(),
             CategoryDials::default().with_budget_cleared(true),
         );
     }

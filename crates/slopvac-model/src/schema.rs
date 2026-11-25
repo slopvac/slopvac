@@ -17,6 +17,10 @@ pub(crate) const BASE: &str = "https://slopvac.github.io/slopvac/schemas/v3/";
 /// and context ids.
 pub const SLUG: &str = r"^[a-z][a-z0-9-]*(?![\s\S])";
 
+/// A category as a report names it: `<category>` for the built-in plugin `core`, and
+/// `<plugin>:<category>` for another plugin. A `core:` prefix is not allowed.
+pub(crate) const CATEGORY_NAME: &str = r"^(?!core:)([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\s\S])";
+
 /// Stable kebab-case: lower-case words of letters and digits joined by single hyphens.
 pub(crate) const KEBAB: &str = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\s\S])";
 

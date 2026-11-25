@@ -5,7 +5,7 @@
 //! finding in a skipped block, in text the project allows or under a directive. A finding
 //! carries a fix that writes the canonical spelling.
 
-use slopvac_model::{Edit, Finding, Fix};
+use slopvac_model::{CategoryName, Edit, Finding, Fix};
 use slopvac_rules::{MatchKind, Scope};
 use slopvac_text::TextType;
 
@@ -99,7 +99,7 @@ impl Run<'_> {
                     out.push(self.finding(Candidate {
                         rule_id: loaded.id(),
                         pack: set.pack(),
-                        category: loaded.category().clone(),
+                        category: CategoryName::of(set.pack(), loaded.category()),
                         severity: active.severity,
                         message: format_message(rule.message.as_str(), source, &hit.expected),
                         span,

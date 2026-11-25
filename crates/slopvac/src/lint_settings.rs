@@ -21,7 +21,7 @@ use slopvac_config::{Inputs, PackFile, Presets, UnknownRule, unknown_rules};
 use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Level, Settings};
 use slopvac_model::{
-    CategoryId, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, KebabName,
+    CategoryName, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, KebabName,
     NonEmptyString, Notice, NoticeLevel, RuleId, Severity,
 };
 use slopvac_rules::MatchKind;
@@ -522,12 +522,13 @@ pub fn build(
         .unwrap_or(0);
     let disabled = selected(rules, &cli.disable)?;
     let only = selected(rules, &cli.only_categories)?;
-    for category in rules.categories() {
+    let categories = rules
+        .sets()
+        .iter()
+        .flat_map(|set| set.categories().iter().map(move |c| (set.pack(), c)));
+    for (plugin, category) in categories {
         let name = category.id().as_str();
-        let qualified = format!(
-            "{}:{name}",
-            category.rules().first().map_or("core", |r| r.id().pack())
-        );
+        let qualified = format!("{plugin}:{name}");
         let field = |f: &'static str| {
             vec![
                 vec!["categories", qualified.as_str(), f],
@@ -538,7 +539,7 @@ pub fn build(
         // budget in the rule data.
         let budget = resolved.get_by_any(&field("max_per_100_words"));
         settings.categories.insert(
-            CategoryId::new(name).map_err(|e| internal("category", e))?,
+            CategoryName::of(plugin, category.id()),
             CategoryDials::default()
                 .with_weight(resolved.get_by_any(&field("weight")).and_then(Json::as_f64))
                 .with_max_per_100_words(budget.and_then(Json::as_f64))
@@ -876,7 +877,7 @@ mod tests {
 
     #[test]
     fn a_none_budget_clears_the_budget_and_an_absent_one_keeps_the_rule_data() {
-        let id = CategoryId::new("orwell").unwrap();
+        let id = CategoryName::new("orwell").unwrap();
         let absent = settings(HEAD).unwrap();
         assert!(!absent.categories[&id].budget_cleared);
         let cleared = settings(&format!(

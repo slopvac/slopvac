@@ -15,7 +15,7 @@ use serde_json::json;
 use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Engine, Input, Level, Settings};
 use slopvac_model::{
-    CategoryId, Document, GenreId, GenreResult, GenreSource, NonEmptyString, Severity,
+    CategoryName, Document, GenreId, GenreResult, GenreSource, NonEmptyString, Severity,
 };
 
 const BODY: &str = "We refactored the parser.\n";
@@ -149,7 +149,7 @@ fn an_explicit_category_level_beats_the_genre() {
     for genre in ["consumer", "change-comms"] {
         let mut settings = settings();
         settings.categories.insert(
-            CategoryId::new("docs-discipline").unwrap(),
+            CategoryName::new("docs-discipline").unwrap(),
             CategoryDials::default().with_level(Some(Level::On(Severity::Error))),
         );
         assert_eq!(

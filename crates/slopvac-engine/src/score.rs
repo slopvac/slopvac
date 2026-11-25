@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 
 use slopvac_model::{
-    AiRegister, AiRegisterSummary, AiSignal, CategoryId, CategoryScore, Density, Finding, Gate,
+    AiRegister, AiRegisterSummary, AiSignal, CategoryName, CategoryScore, Density, Finding, Gate,
     Notice, NoticeLevel, Score, Severity,
 };
 
@@ -136,7 +136,7 @@ fn gating_weight(findings: &[&Finding]) -> f64 {
 
 /// A category's score and the weight it carries.
 fn category_result(
-    category: &CategoryId,
+    category: &CategoryName,
     items: &[&Finding],
     words: usize,
     info: CategoryInfo,
@@ -339,11 +339,11 @@ fn ai_summary(findings: &[Finding], words: usize, signal: AiSignal) -> AiRegiste
 pub fn score_document(
     findings: &[Finding],
     words: usize,
-    categories: &BTreeMap<CategoryId, CategoryInfo>,
+    categories: &BTreeMap<CategoryName, CategoryInfo>,
     thresholds: &Thresholds,
     unchecked: &[Notice],
 ) -> Scoring {
-    let mut by_category: BTreeMap<&CategoryId, Vec<&Finding>> =
+    let mut by_category: BTreeMap<&CategoryName, Vec<&Finding>> =
         categories.keys().map(|k| (k, Vec::new())).collect();
     for finding in findings {
         by_category
@@ -361,7 +361,7 @@ pub fn score_document(
             category_result(name, items, words, info)
         })
         .collect();
-    let active: Vec<&CategoryId> = entries
+    let active: Vec<&CategoryName> = entries
         .iter()
         .filter(|(_, w)| *w > 0.0)
         .map(|(c, _)| &c.category)

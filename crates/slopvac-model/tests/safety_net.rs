@@ -22,7 +22,7 @@ use proptest::prelude::*;
 use proptest::sample::Index;
 use serde_json::{Value, json};
 use slopvac_model::{
-    AiRegister, AiRegisterSummary, AiSignal, ApiVersion, CategoryId, CategoryScore,
+    AiRegister, AiRegisterSummary, AiSignal, ApiVersion, CategoryId, CategoryName, CategoryScore,
     CategorySummary, ConfigLayer, ConfigSource, ContextTag, Contexts, Density, Document, Edit,
     Extent, Finding, Fix, Gate, GenreId, GenreResult, GenreSource, KebabName, LineCol,
     NonEmptyString, Notice, NoticeLevel, PackId, Report, RuleId, RuleProvenance, RunSummary,
@@ -354,7 +354,7 @@ fn built_finding(with_extent: bool) -> Finding {
     Finding {
         rule_id: RuleId::new("core:x.y").unwrap(),
         pack: PackId::new("core").unwrap(),
-        category: CategoryId::new("orwell").unwrap(),
+        category: CategoryName::new("orwell").unwrap(),
         severity: Severity::Warning,
         message: NonEmptyString::new("m").unwrap(),
         start: LineCol::new(1, 1).unwrap(),
@@ -412,7 +412,7 @@ fn built_report(p: &Params) -> Report {
             score,
             passed: !failed,
             categories: vec![CategorySummary {
-                category: CategoryId::new("orwell").unwrap(),
+                category: CategoryName::new("orwell").unwrap(),
                 findings: count,
                 errors: 0,
                 warnings: count,
@@ -446,7 +446,7 @@ fn built_report(p: &Params) -> Report {
             paragraphs: 2,
             findings: vec![finding],
             categories: vec![CategoryScore {
-                category: CategoryId::new("orwell").unwrap(),
+                category: CategoryName::new("orwell").unwrap(),
                 findings: count,
                 errors: 0,
                 warnings: count,
@@ -529,4 +529,34 @@ fn scalar_constructors_reject_what_the_schema_rejects() {
         assert!(KebabName::new(bad).is_err(), "kebab {bad:?}");
     }
     assert!(KebabName::new("vale-not-found").is_ok());
+}
+
+#[test]
+fn a_category_name_is_bare_for_core_and_qualified_for_another_plugin() {
+    let category = CategoryId::new("style").unwrap();
+    for (plugin, expected) in [("core", "style"), ("alpha", "alpha:style")] {
+        let name = CategoryName::of(&PackId::new(plugin).unwrap(), &category);
+        assert_eq!(name.as_str(), expected, "plugin {plugin}");
+    }
+    assert_eq!(
+        CategoryName::new("alpha:style").unwrap().plugin(),
+        Some("alpha")
+    );
+    assert_eq!(CategoryName::new("style").unwrap().plugin(), None);
+}
+
+#[test]
+fn a_category_name_refuses_what_its_schema_pattern_refuses() {
+    for bad in [
+        "",
+        "Style",
+        "a:",
+        ":a",
+        "a:b:c",
+        "core:style",
+        "a:Style",
+        "1a",
+    ] {
+        assert!(CategoryName::new(bad).is_err(), "category name {bad:?}");
+    }
 }
