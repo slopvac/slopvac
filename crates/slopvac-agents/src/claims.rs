@@ -415,12 +415,12 @@ enum Side {
 fn compare_sides(original: &str, revised: &str) -> Result<Report, (Option<Side>, AgentsError)> {
     let old = segments(original).map_err(|e| (Some(Side::Original), e))?;
     let new = segments(revised).map_err(|e| (Some(Side::Revised), e))?;
-    align(old, new, revised).map_err(|e| (None, e))
+    align(&old, &new, revised).map_err(|e| (None, e))
 }
 
 /// Align the segments of the original with those of the revision and list the claims.
-fn align(old: Vec<Segment>, new: Vec<Segment>, revised: &str) -> Result<Report, AgentsError> {
-    let idf = idf_table(&old, &new)?;
+fn align(old: &[Segment], new: &[Segment], revised: &str) -> Result<Report, AgentsError> {
+    let idf = idf_table(old, new)?;
     let old_v = old
         .iter()
         .map(|s| vectorize(&s.text, &idf))
