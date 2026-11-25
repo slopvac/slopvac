@@ -39,6 +39,21 @@ pub fn link_shared_defs_keeping(
         Some(Value::Object(defs)) => defs,
         _ => Map::new(),
     };
+    for name in keep {
+        if !defs.contains_key(*name) {
+            return Err(Error::UnknownKeep {
+                file,
+                def: (*name).to_owned(),
+            });
+        }
+        if let Some((owner, _)) = owners.get(*name) {
+            return Err(Error::KeptDefPublished {
+                file,
+                def: (*name).to_owned(),
+                owner,
+            });
+        }
+    }
     for (name, local) in &defs {
         if let Some((owner, published)) = owners.get(name.as_str()) {
             let mut local = local.clone();
@@ -384,6 +399,34 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::AmbiguousOwner { ref def, .. } if def == "Span"));
+    }
+
+    #[test]
+    fn keeping_a_def_the_file_lacks_fails_in_the_linker() {
+        let mut schema = json!({"type": "object", "$defs": {"Used": {"type": "string"}}});
+        let err =
+            link_shared_defs_keeping("x.schema.json", &mut schema, &[], &["Missing"]).unwrap_err();
+        assert!(matches!(err, Error::UnknownKeep { ref def, .. } if def == "Missing"));
+    }
+
+    #[test]
+    fn keeping_a_def_that_an_import_also_publishes_fails_instead_of_dropping_it() {
+        let mut schema = json!({
+            "type": "object",
+            "$defs": {"Span": {"type": "object", "properties": {"start": {"type": "integer"}}}},
+        });
+        let err = link_shared_defs_keeping(
+            "x.schema.json",
+            &mut schema,
+            &[("common.schema.json", &common())],
+            &["Span"],
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::KeptDefPublished { ref def, owner, .. }
+                if def == "Span" && owner == "common.schema.json"),
+            "{err:?}"
+        );
     }
 
     #[test]

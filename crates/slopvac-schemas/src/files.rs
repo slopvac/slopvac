@@ -109,18 +109,6 @@ fn build(
         }
     }
     inline_defs(artifact.file, &mut schema, &inline)?;
-    for name in artifact.keep {
-        if schema
-            .get("$defs")
-            .and_then(|defs| defs.get(*name))
-            .is_none()
-        {
-            return Err(Error::UnknownKeep {
-                file: artifact.file,
-                def: (*name).to_owned(),
-            });
-        }
-    }
     link_shared_defs_keeping(artifact.file, &mut schema, &imports, artifact.keep)?;
     Ok(schema)
 }

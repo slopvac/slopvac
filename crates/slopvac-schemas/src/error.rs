@@ -66,6 +66,16 @@ pub enum Error {
         /// The definition name.
         def: String,
     },
+    /// An artifact keeps a definition that an imported file already publishes.
+    #[error("{file} keeps `$defs/{def}`, which {owner} publishes")]
+    KeptDefPublished {
+        /// The artifact being generated.
+        file: &'static str,
+        /// The definition name.
+        def: String,
+        /// The imported file that publishes it.
+        owner: &'static str,
+    },
     /// A reference points inside a definition that is being inlined.
     #[error("{file} references inside `$defs/{def}`, which is inlined")]
     InlinePointer {
