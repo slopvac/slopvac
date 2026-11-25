@@ -657,11 +657,12 @@ mod tests {
         build(rules, &resolved, Vec::new(), &Overrides::default())
     }
 
-    /// A catalogue of two plugins, `alpha` and `beta`, that each ship a category `style`.
-    fn two_plugins_with_one_category_id() -> Catalog {
-        let set = |plugin: &str| {
-            let category = serde_json::json!({
-                "schema_version": 3, "id": "style", "title": "t", "description": "d",
+    /// A catalogue with one category file for each `(plugin, category)` pair. Each category
+    /// has one rule, `hit`.
+    fn catalog_of(pairs: &[(&str, &str)]) -> Catalog {
+        let set = |plugin: &str, category: &str| {
+            let file = serde_json::json!({
+                "schema_version": 3, "id": category, "title": "t", "description": "d",
                 "rules": [{
                     "id": "hit", "name": "n", "message": "Found {match}.",
                     "severity": "warning",
@@ -671,12 +672,27 @@ mod tests {
             });
             slopvac_rules::RuleSet::from_sources(
                 &slopvac_model::PackId::new(plugin).expect("a plugin id"),
-                vec![(std::path::PathBuf::from("style.json"), category.to_string())],
+                vec![(std::path::PathBuf::from("c.json"), file.to_string())],
                 &slopvac_rules::CompileOptions::default(),
             )
             .expect("the rule set loads")
         };
-        Catalog::from_sets(vec![set("alpha"), set("beta")])
+        Catalog::from_sets(pairs.iter().map(|(p, c)| set(p, c)).collect())
+    }
+
+    /// A catalogue of two plugins, `alpha` and `beta`, that each ship a category `style`.
+    fn two_plugins_with_one_category_id() -> Catalog {
+        catalog_of(&[("alpha", "style"), ("beta", "style")])
+    }
+
+    /// The settings that the command-line `cli` gives over `rules` and an empty config.
+    fn settings_with(rules: &Catalog, cli: &Overrides) -> Result<Settings, CliError> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("slopvac.toml");
+        std::fs::write(&path, HEAD).expect("write config");
+        let loaded = load(&path, &NoPresets).expect("the config loads");
+        let resolved = resolve(&loaded, Path::new("doc.md"));
+        build(rules, &resolved, Vec::new(), cli)
     }
 
     fn level(settings: &Settings, rule: &str) -> Option<Level> {
@@ -764,6 +780,79 @@ mod tests {
             .map(|(name, d)| (name.as_str(), d.weight))
             .collect();
         assert_eq!(dials, [("alpha:style", Some(0.0)), ("beta:style", None)]);
+    }
+
+    #[rstest]
+    #[case::category("[categories.style]\nweight = 0.0\n", "ambiguous-category")]
+    #[case::rule("[rules.\"style.hit\"]\n", "ambiguous-rule")]
+    fn a_bare_config_key_that_two_plugins_share_is_refused(
+        #[case] table: &str,
+        #[case] code: &str,
+    ) {
+        let rules = two_plugins_with_one_category_id();
+        let error = settings_over(&rules, &format!("{HEAD}\n{table}")).unwrap_err();
+        assert_eq!(error.code, code);
+        assert!(error.message.contains("alpha:style"), "{}", error.message);
+        assert!(error.message.contains("beta:style"), "{}", error.message);
+    }
+
+    #[test]
+    fn a_bare_category_key_that_one_plugin_has_applies_to_that_plugin() {
+        let rules = catalog_of(&[("alpha", "style"), ("beta", "tone")]);
+        let config = format!("{HEAD}\n[categories.style]\nweight = 0.0\n");
+        let s = settings_over(&rules, &config).unwrap();
+        let dials: Vec<(&str, Option<f64>)> = s
+            .categories
+            .iter()
+            .map(|(name, d)| (name.as_str(), d.weight))
+            .collect();
+        assert_eq!(dials, [("alpha:style", Some(0.0)), ("beta:tone", None)]);
+    }
+
+    #[rstest]
+    #[case::a_category("alpha:style")]
+    #[case::a_rule("alpha:style.hit")]
+    fn disabling_a_qualified_name_leaves_the_other_plugin_alone(#[case] name: &str) {
+        let rules = two_plugins_with_one_category_id();
+        let cli = Overrides {
+            disable: vec![name.to_owned()],
+            ..Overrides::default()
+        };
+        let s = settings_with(&rules, &cli).unwrap();
+        assert_eq!(level(&s, "alpha:style.hit"), Some(Level::Off));
+        assert_eq!(level(&s, "beta:style.hit"), None);
+    }
+
+    #[test]
+    fn selecting_a_qualified_category_runs_only_that_plugins_category() {
+        let rules = two_plugins_with_one_category_id();
+        let cli = Overrides {
+            only_categories: vec!["alpha:style".to_owned()],
+            ..Overrides::default()
+        };
+        let s = settings_with(&rules, &cli).unwrap();
+        assert_eq!(level(&s, "alpha:style.hit"), None);
+        assert_eq!(level(&s, "beta:style.hit"), Some(Level::Off));
+    }
+
+    #[rstest]
+    #[case::disable("style", true, "ambiguous-category")]
+    #[case::select("style", false, "ambiguous-category")]
+    #[case::disable_rule("style.hit", true, "ambiguous-rule")]
+    fn a_bare_command_line_name_that_two_plugins_share_is_refused(
+        #[case] name: &str,
+        #[case] disable: bool,
+        #[case] code: &str,
+    ) {
+        let rules = two_plugins_with_one_category_id();
+        let mut cli = Overrides::default();
+        let list = if disable {
+            &mut cli.disable
+        } else {
+            &mut cli.only_categories
+        };
+        list.push(name.to_owned());
+        assert_eq!(settings_with(&rules, &cli).unwrap_err().code, code);
     }
 
     /// `a.b` as an unknown rule at `slopvac.toml:4:1` in `layer`.
