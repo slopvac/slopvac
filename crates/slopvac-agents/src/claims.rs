@@ -498,7 +498,7 @@ fn align(old: &[Segment], new: &[Segment], revised: &str) -> Result<Report, Agen
         });
     }
 
-    let dropped = dropped_facts(&old, &old_to_new, revised)?;
+    let dropped = dropped_facts(old, &old_to_new, revised)?;
     summary.dropped = dropped.len();
     Ok(Report {
         schema_version: 1,
