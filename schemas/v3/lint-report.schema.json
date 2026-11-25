@@ -62,6 +62,10 @@
         "none"
       ]
     },
+    "CategoryId": {
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+      "type": "string"
+    },
     "CategoryName": {
       "description": "How a report names a category: the bare id for a category of the built-in plugin `core`, and `<plugin>:<category>` for a category of any other plugin. Two plugins may ship the same bare category id, and the qualified form keeps them apart. A `core:` prefix is refused, so one category has one spelling.",
       "pattern": "^(?!core:)([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\\s\\S])",

@@ -41,17 +41,12 @@
   },
   "additionalProperties": false,
   "$defs": {
-    "CategoryId": {
-      "description": "The bare category id. The entry names its plugin in a separate `plugin` member, so the id is never qualified here.",
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
-    },
     "CategoryOutput": {
       "description": "A category as the listing shows it: the metadata of a category file without its rules and without `schema_version`.",
       "type": "object",
       "properties": {
         "id": {
-          "$ref": "#/$defs/CategoryId"
+          "$ref": "lint-report.schema.json#/$defs/CategoryId"
         },
         "plugin": {
           "description": "The plugin of the category's first rule, or `core` for a category with no rules.",
@@ -193,7 +188,7 @@
         },
         "category": {
           "description": "The category that holds the rule.",
-          "$ref": "#/$defs/CategoryId"
+          "$ref": "lint-report.schema.json#/$defs/CategoryId"
         },
         "plugin": {
           "description": "The plugin that supplies the rule. It is the part of `id` before the colon.",

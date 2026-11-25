@@ -109,7 +109,24 @@ fn build(
         }
     }
     inline_defs(artifact.file, &mut schema, &inline)?;
+    // Linking drops a definition that nothing in the file reaches, so hold these back.
+    let kept: Vec<(String, Value)> = artifact
+        .keep
+        .iter()
+        .filter_map(|name| {
+            let body = schema.get("$defs")?.get(*name)?.clone();
+            Some(((*name).to_owned(), body))
+        })
+        .collect();
     link_shared_defs(artifact.file, &mut schema, &imports)?;
+    if let Some(object) = schema.as_object_mut().filter(|_| !kept.is_empty()) {
+        let defs = object
+            .entry("$defs")
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        if let Some(defs) = defs.as_object_mut() {
+            defs.extend(kept);
+        }
+    }
     Ok(schema)
 }
 
