@@ -115,7 +115,10 @@ fn rule_id_of(rules: &Catalog, key: &str) -> Result<Option<RuleId>, LintOptionEr
 
 /// The category a config or command-line key names. `Ok(None)` when no plugin has the key,
 /// and an error when a bare key is the id of categories in more than one plugin.
-fn category_of(rules: &Catalog, key: &str) -> Result<Option<CategoryName>, LintOptionError> {
+pub(crate) fn category_of(
+    rules: &Catalog,
+    key: &str,
+) -> Result<Option<CategoryName>, LintOptionError> {
     match rules.categories_named(key).as_slice() {
         [] => Ok(None),
         [(plugin, category)] => Ok(Some(CategoryName::of(plugin, category.id()))),

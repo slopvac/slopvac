@@ -932,20 +932,25 @@ fn a_qualified_category_filter_does_not_match_a_category_of_another_plugin() {
 }
 
 #[test]
-fn a_rule_of_another_plugin_has_no_page_link_where_links_render() {
+fn a_rule_of_another_plugin_has_no_url_in_json() {
     let listed = json(&["rules", "--category", "terms:terms", "--format", "json"]);
+    assert_eq!(listed["rules"][0]["id"], CASING, "{listed}");
     assert!(listed["rules"][0].get("url").is_none(), "{listed}");
     let explained = json(&["explain", CASING, "--format", "json"]);
+    assert_eq!(explained["id"], CASING, "{explained}");
     assert!(explained.get("url").is_none(), "{explained}");
-    let markdown: [&[&str]; 2] = [
-        &["rules", "--category", "terms:terms", "--format", "md"],
-        &["explain", CASING, "--format", "md"],
-    ];
-    for args in markdown {
-        assert!(!stdout(args).contains("Page:"), "{args:?}");
-    }
-    assert!(!stdout(&["explain", CASING]).contains("Page:"));
     // A rule of `core` keeps its page.
     let core = json(&["explain", CHAT_LEAKAGE, "--format", "json"]);
     assert!(core["url"].as_str().is_some(), "{core}");
+}
+
+#[rstest::rstest]
+#[case::rules_text(&["rules", "--category", "terms:terms"])]
+#[case::rules_markdown(&["rules", "--category", "terms:terms", "--format", "md"])]
+#[case::explain_text(&["explain", CASING])]
+#[case::explain_markdown(&["explain", CASING, "--format", "md"])]
+fn a_rule_of_another_plugin_has_no_page_link_in_text_and_markdown(#[case] args: &[&str]) {
+    let out = stdout(args);
+    assert!(out.contains(CASING), "the rule is listed: {out}");
+    assert!(!out.contains("Page:"), "{out}");
 }

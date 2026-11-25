@@ -15,6 +15,7 @@ use slopvac_rules::{Example, LoadedCategory, LoadedRule, Match, MatchKind};
 
 use crate::errors::CliError;
 use crate::exit;
+use crate::lint_settings::category_of;
 use crate::rule_catalog::Catalog;
 use crate::severity::{Effective, Severities};
 
@@ -115,16 +116,26 @@ impl Filter {
         })
     }
 
+    /// Resolve each `--category` value against the catalogue, so that one value names one
+    /// category: a qualified value names that plugin's category, a bare value names the one
+    /// category with that id, and a bare value that two plugins share is an error. A value no
+    /// category has stays as written and matches nothing.
+    fn resolved(mut self, set: &Catalog) -> Result<Self, CliError> {
+        for value in &mut self.categories {
+            category_of(set, value)?;
+            if let [(plugin, category)] = set.categories_named(value).as_slice() {
+                *value = format!("{plugin}:{}", category.id());
+            }
+        }
+        Ok(self)
+    }
+
     /// A rule is kept when its category is recommended for the genre. A rule that
     /// names other genres in `applies_to` is dropped too, unless `--include-excluded`.
     fn keeps(&self, category: &LoadedCategory, rule: &LoadedRule) -> bool {
-        // A qualified value names one plugin's category. A bare value names that id in every
-        // plugin.
-        let named = |value: &String| match value.split_once(':') {
-            Some((plugin, id)) => plugin == rule.id().pack() && id == category.id().as_str(),
-            None => value == category.id().as_str(),
-        };
-        if !self.categories.is_empty() && !self.categories.iter().any(named) {
+        // `resolved` made each value the plugin and the category id.
+        let own = format!("{}:{}", rule.id().pack(), category.id());
+        if !self.categories.is_empty() && !self.categories.iter().any(|c| *c == own) {
             return false;
         }
         if self.kind.is_some_and(|k| k != rule.kind()) {
@@ -158,8 +169,8 @@ fn selected<'a>(set: &'a Catalog, filter: &Filter) -> Vec<(&'a LoadedCategory, &
 /// # Errors
 /// A usage error for a bad `--genre`, or a load error.
 pub fn rules(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
-    let filter = Filter::from_matches(m)?;
     let (set, sev) = load(m)?;
+    let filter = Filter::from_matches(m)?.resolved(&set)?;
     let picked = selected(&set, &filter);
     let text = match format_of(m) {
         "json" => rules_json(&set, &picked, &sev),
@@ -576,6 +587,7 @@ fn explain_text(rule: &LoadedRule, sev: &Severities) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rule_catalog::catalog_of;
     use slopvac_model::PackId;
     use slopvac_rules::{CompileOptions, RuleSet};
     use std::path::PathBuf;
@@ -647,5 +659,51 @@ mod tests {
             .map(|c| (c["id"].as_str().unwrap(), c["plugin"].as_str().unwrap()))
             .collect();
         assert_eq!(listed, [("style", "alpha"), ("style", "beta")]);
+    }
+
+    /// A filter with these `--category` values and nothing else.
+    fn category_filter(values: &[&str]) -> Filter {
+        Filter {
+            categories: values.iter().map(|v| (*v).to_owned()).collect(),
+            kind: None,
+            genre: None,
+            include_excluded: false,
+        }
+    }
+
+    fn two_plugins_with_one_category_id() -> Catalog {
+        Catalog::from_sets(vec![
+            empty_category_with_a_rule("alpha"),
+            empty_category_with_a_rule("beta"),
+        ])
+    }
+
+    /// A rule set of `plugin` with one category `style` that has one rule.
+    fn empty_category_with_a_rule(plugin: &str) -> RuleSet {
+        catalog_of(&[(plugin, "style")]).into_sets().remove(0)
+    }
+
+    #[test]
+    fn a_bare_category_value_that_two_plugins_share_is_refused() {
+        let catalog = two_plugins_with_one_category_id();
+        let error = category_filter(&["style"])
+            .resolved(&catalog)
+            .err()
+            .unwrap();
+        assert_eq!(error.code, "ambiguous-category");
+    }
+
+    #[rstest::rstest]
+    #[case::qualified("alpha:style", &["alpha:style.hit"])]
+    #[case::unknown("nothing", &[])]
+    #[case::qualified_unknown("beta:other", &[])]
+    fn a_category_value_selects_one_category(#[case] value: &str, #[case] ids: &[&str]) {
+        let catalog = two_plugins_with_one_category_id();
+        let filter = category_filter(&[value]).resolved(&catalog).unwrap();
+        let picked: Vec<String> = selected(&catalog, &filter)
+            .iter()
+            .map(|(_, r)| r.id().as_str().to_owned())
+            .collect();
+        assert_eq!(picked, ids);
     }
 }
