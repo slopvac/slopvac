@@ -170,12 +170,22 @@ fn selected<'a>(set: &'a Catalog, filter: &Filter) -> Vec<(&'a LoadedCategory, &
 /// A usage error for a bad `--genre`, or a load error.
 pub fn rules(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     let (set, sev) = load(m)?;
-    let filter = Filter::from_matches(m)?.resolved(&set)?;
-    let picked = selected(&set, &filter);
+    rules_in(&set, &sev, m, out)
+}
+
+/// `slopvac rules` over a given catalogue and severities.
+fn rules_in(
+    set: &Catalog,
+    sev: &Severities,
+    m: &ArgMatches,
+    out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
+    let filter = Filter::from_matches(m)?.resolved(set)?;
+    let picked = selected(set, &filter);
     let text = match format_of(m) {
-        "json" => rules_json(&set, &picked, &sev),
-        "md" => rules_md(&picked, &sev),
-        _ => rules_text(&picked, &sev),
+        "json" => rules_json(set, &picked, sev),
+        "md" => rules_md(&picked, sev),
+        _ => rules_text(&picked, sev),
     };
     emit(out, &text)
 }
@@ -661,49 +671,35 @@ mod tests {
         assert_eq!(listed, [("style", "alpha"), ("style", "beta")]);
     }
 
-    /// A filter with these `--category` values and nothing else.
-    fn category_filter(values: &[&str]) -> Filter {
-        Filter {
-            categories: values.iter().map(|v| (*v).to_owned()).collect(),
-            kind: None,
-            genre: None,
-            include_excluded: false,
-        }
-    }
-
-    fn two_plugins_with_one_category_id() -> Catalog {
-        Catalog::from_sets(vec![
-            empty_category_with_a_rule("alpha"),
-            empty_category_with_a_rule("beta"),
-        ])
-    }
-
-    /// A rule set of `plugin` with one category `style` that has one rule.
-    fn empty_category_with_a_rule(plugin: &str) -> RuleSet {
-        catalog_of(&[(plugin, "style")]).into_sets().remove(0)
+    /// Run `slopvac rules` with `args` over two plugins that each ship a category `style`.
+    fn run_rules(args: &[&str]) -> Result<String, CliError> {
+        let catalog = catalog_of(&[("alpha", "style"), ("beta", "style")]);
+        let mut words = vec!["slopvac", "rules"];
+        words.extend_from_slice(args);
+        let matches = crate::cli::command().try_get_matches_from(words).unwrap();
+        let (_, m) = matches.subcommand().unwrap();
+        let mut out = Vec::new();
+        rules_in(&catalog, &Severities::unconfigured(), m, &mut out)?;
+        Ok(String::from_utf8(out).unwrap())
     }
 
     #[test]
-    fn a_bare_category_value_that_two_plugins_share_is_refused() {
-        let catalog = two_plugins_with_one_category_id();
-        let error = category_filter(&["style"])
-            .resolved(&catalog)
-            .err()
-            .unwrap();
+    fn the_rules_command_refuses_a_bare_category_that_two_plugins_share() {
+        let error = run_rules(&["--category", "style"]).unwrap_err();
         assert_eq!(error.code, "ambiguous-category");
     }
 
     #[rstest::rstest]
-    #[case::qualified("alpha:style", &["alpha:style.hit"])]
-    #[case::unknown("nothing", &[])]
-    #[case::qualified_unknown("beta:other", &[])]
-    fn a_category_value_selects_one_category(#[case] value: &str, #[case] ids: &[&str]) {
-        let catalog = two_plugins_with_one_category_id();
-        let filter = category_filter(&[value]).resolved(&catalog).unwrap();
-        let picked: Vec<String> = selected(&catalog, &filter)
-            .iter()
-            .map(|(_, r)| r.id().as_str().to_owned())
-            .collect();
-        assert_eq!(picked, ids);
+    #[case::qualified("alpha:style", 1, "alpha:style.hit")]
+    #[case::unknown("nothing", 0, "")]
+    #[case::qualified_unknown("beta:other", 0, "")]
+    fn the_rules_command_lists_one_category_for_one_value(
+        #[case] value: &str,
+        #[case] count: usize,
+        #[case] id: &str,
+    ) {
+        let text = run_rules(&["--category", value]).unwrap();
+        assert_eq!(text.lines().count(), count + 1, "{text}");
+        assert!(text.contains(id), "{text}");
     }
 }

@@ -171,7 +171,7 @@ impl Severities {
 
     /// Resolve `config` with the shipped styles and genres.
     #[must_use]
-    pub fn from_config(config: &LoadedConfig) -> Self {
+    fn from_config(config: &LoadedConfig) -> Self {
         let inputs = Inputs {
             presets: &ShippedStyles::new(),
             front_matter: &[],
