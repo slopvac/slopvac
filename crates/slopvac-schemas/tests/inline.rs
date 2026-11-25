@@ -92,3 +92,60 @@ fn a_def_that_nothing_reaches_stays_only_when_the_artifact_keeps_it(
     names.sort_unstable();
     assert_eq!(names, defs);
 }
+
+#[test]
+fn keeping_a_def_that_the_build_does_not_generate_fails() {
+    let artifact = Artifact {
+        keep: &["Missing"],
+        ..artifact(&[], with_a_spare_def)
+    };
+    let err = generate_from(&[artifact]).unwrap_err();
+    assert!(
+        matches!(&err, Error::UnknownKeep { def, .. } if def == "Missing"),
+        "{err:?}"
+    );
+}
+
+fn spare_def_with_references() -> Value {
+    json!({
+        "type": "object",
+        "properties": {"a": {"type": "string"}},
+        "$defs": {
+            "Spare": {"properties": {
+                "own": {"$ref": "#/$defs/Helper"},
+                "shared": {"$ref": "#/$defs/Shared"},
+            }},
+            "Helper": {"type": "integer"},
+            "Shared": {"type": "boolean"},
+        },
+    })
+}
+
+fn the_shared_defs() -> Value {
+    json!({"$defs": {"Shared": {"type": "boolean"}}})
+}
+
+#[test]
+fn a_kept_def_is_a_root_so_its_references_resolve_and_qualify() {
+    let owner = Artifact {
+        file: "common.schema.json",
+        ..artifact(&[], the_shared_defs)
+    };
+    let importer = Artifact {
+        imports: &["common.schema.json"],
+        keep: &["Spare"],
+        ..artifact(&[], spare_def_with_references)
+    };
+    let files = generate_from(&[owner, importer]).unwrap();
+    let schema: Value = serde_json::from_str(&files[1].text).unwrap();
+    assert_eq!(
+        schema["$defs"],
+        json!({
+            "Spare": {"properties": {
+                "own": {"$ref": "#/$defs/Helper"},
+                "shared": {"$ref": "common.schema.json#/$defs/Shared"},
+            }},
+            "Helper": {"type": "integer"},
+        })
+    );
+}

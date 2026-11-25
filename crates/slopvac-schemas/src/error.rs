@@ -58,6 +58,14 @@ pub enum Error {
         /// The definition name.
         def: String,
     },
+    /// An artifact asks to keep a definition that it does not generate.
+    #[error("{file} keeps `$defs/{def}`, which it does not generate")]
+    UnknownKeep {
+        /// The artifact being generated.
+        file: &'static str,
+        /// The definition name.
+        def: String,
+    },
     /// A reference points inside a definition that is being inlined.
     #[error("{file} references inside `$defs/{def}`, which is inlined")]
     InlinePointer {

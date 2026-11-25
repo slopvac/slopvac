@@ -9,7 +9,7 @@ use slopvac_model::schema_id;
 use crate::artifacts::{ARTIFACTS, Artifact};
 use crate::canonical::to_canonical_json;
 use crate::error::{Error, Result};
-use crate::link::{inline_defs, link_shared_defs};
+use crate::link::{inline_defs, link_shared_defs_keeping};
 
 /// Where the generated files live, relative to the repository root.
 const SCHEMA_DIR: &str = "schemas/v3";
@@ -109,24 +109,19 @@ fn build(
         }
     }
     inline_defs(artifact.file, &mut schema, &inline)?;
-    // Linking drops a definition that nothing in the file reaches, so hold these back.
-    let kept: Vec<(String, Value)> = artifact
-        .keep
-        .iter()
-        .filter_map(|name| {
-            let body = schema.get("$defs")?.get(*name)?.clone();
-            Some(((*name).to_owned(), body))
-        })
-        .collect();
-    link_shared_defs(artifact.file, &mut schema, &imports)?;
-    if let Some(object) = schema.as_object_mut().filter(|_| !kept.is_empty()) {
-        let defs = object
-            .entry("$defs")
-            .or_insert_with(|| Value::Object(serde_json::Map::new()));
-        if let Some(defs) = defs.as_object_mut() {
-            defs.extend(kept);
+    for name in artifact.keep {
+        if schema
+            .get("$defs")
+            .and_then(|defs| defs.get(*name))
+            .is_none()
+        {
+            return Err(Error::UnknownKeep {
+                file: artifact.file,
+                def: (*name).to_owned(),
+            });
         }
     }
+    link_shared_defs_keeping(artifact.file, &mut schema, &imports, artifact.keep)?;
     Ok(schema)
 }
 
