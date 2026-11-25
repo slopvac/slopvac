@@ -370,6 +370,45 @@ fn rule_links_use_the_docs_base() {
     );
 }
 
+/// The report with its first finding moved to the rule `alpha:style.example`, in the category
+/// `alpha:style` of the plugin `alpha`.
+fn report_with_a_plugin_finding() -> Report {
+    let mut value = serde_json::to_value(report()).unwrap();
+    let first = &mut value["documents"][0]["findings"][0];
+    first["rule_id"] = json!("alpha:style.example");
+    first["pack"] = json!("alpha");
+    first["category"] = json!("alpha:style");
+    first["provenance"]["pack"] = json!("alpha");
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn a_rule_of_another_plugin_has_no_documentation_link() {
+    let options = RenderOptions {
+        docs_base: Some("https://example.test/slopvac/".into()),
+    };
+    let report = report_with_a_plugin_finding();
+    let sarif: Value =
+        serde_json::from_str(&render_with(Format::Sarif, &report, &sources(), &options).unwrap())
+            .unwrap();
+    let rules = sarif["runs"][0]["tool"]["driver"]["rules"]
+        .as_array()
+        .unwrap();
+    assert_eq!(rules[0]["id"], "alpha:style.example");
+    assert!(rules[0].get("helpUri").is_none(), "{}", rules[0]);
+    // The core rules after it keep their pages.
+    assert!(rules[1]["helpUri"].as_str().is_some(), "{}", rules[1]);
+
+    let rd = render_with(Format::Rdjsonl, &report, &sources(), &options).unwrap();
+    let lines: Vec<Value> = rd
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines[0]["code"]["value"], "alpha:style.example");
+    assert!(lines[0]["code"].get("url").is_none(), "{}", lines[0]);
+    assert!(lines[1]["code"]["url"].as_str().is_some(), "{}", lines[1]);
+}
+
 #[test]
 fn default_docs_base_comes_from_docs_site_toml() {
     let path = format!("{}/../../docs/site.toml", env!("CARGO_MANIFEST_DIR"));
