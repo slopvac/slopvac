@@ -1297,12 +1297,21 @@ fn signal_of_rule(loaded: &LoadedRule) -> Option<Signal> {
     }
 }
 
+/// The category of a rule that reports without a category of its own.
+#[expect(
+    clippy::expect_used,
+    reason = "`meta` is a literal that is a valid category id"
+)]
+fn meta_category() -> CategoryId {
+    CategoryId::new("meta").expect("meta is a category id")
+}
+
 /// The category a rule id names, as a report names it: the plugin of the rule id and the
 /// category part of its local id. A local id with no category part reports in `meta`.
 fn category_of(id: &RuleId) -> CategoryName {
     let local = id.local();
     let category = CategoryId::new(local.split_once('.').map_or(local, |(c, _)| c))
-        .unwrap_or_else(|_| CategoryId::new("meta").expect("meta is a category id"));
+        .unwrap_or_else(|_| meta_category());
     PackId::new(id.pack()).map_or_else(
         |_| CategoryName::from(category.clone()),
         |plugin| CategoryName::of(&plugin, &category),

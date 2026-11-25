@@ -527,14 +527,9 @@ fn is_inherited(layer: ConfigLayer) -> bool {
     )
 }
 
-/// Build the engine settings for a file from its resolved config.
-///
-/// `sources` is copied to each report document.
-///
-/// # Errors
-/// `usage` for a `--category` or `--disable` name that the catalogue lacks.
-pub fn build(
-    rules: &Catalog,
+/// The settings of a file before any category or rule is set: profile, genre, thresholds and
+/// the severity shift.
+fn base_settings(
     resolved: &Resolved,
     sources: Vec<ConfigSource>,
     cli: &Overrides,
@@ -561,6 +556,23 @@ pub fn build(
         .get(&["profile", "severity_shift"])
         .and_then(Json::as_i64)
         .unwrap_or(0);
+    Ok(settings)
+}
+
+/// Build the engine settings for a file from its resolved config.
+///
+/// `sources` is copied to each report document.
+///
+/// # Errors
+/// `usage` for a `--category` or `--disable` name that the catalogue lacks, and
+/// `ambiguous-category` or `ambiguous-rule` for a bare name that more than one plugin ships.
+pub fn build(
+    rules: &Catalog,
+    resolved: &Resolved,
+    sources: Vec<ConfigSource>,
+    cli: &Overrides,
+) -> Result<Settings, CliError> {
+    let mut settings = base_settings(resolved, sources, cli)?;
 
     let shift = resolved
         .get(&["profile", "severity_shift"])

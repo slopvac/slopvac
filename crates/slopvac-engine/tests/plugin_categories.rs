@@ -4,9 +4,8 @@
     clippy::expect_used,
     clippy::panic,
     clippy::unwrap_used,
-    reason = "test code: a panic is a failed test"
+    reason = "test helpers sit outside a `#[test]` function, where clippy.toml does not apply"
 )]
-#![allow(missing_docs, reason = "test code: nothing public to document")]
 
 mod common;
 

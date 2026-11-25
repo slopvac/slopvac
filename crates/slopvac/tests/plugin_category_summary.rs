@@ -1,5 +1,8 @@
 //! The run summary keeps two plugins' categories apart when they share a bare category id.
-#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
+#![allow(
+    clippy::expect_used,
+    reason = "test helpers sit outside a `#[test]` function, where clippy.toml does not apply"
+)]
 
 use std::path::PathBuf;
 

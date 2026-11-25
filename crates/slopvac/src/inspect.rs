@@ -248,24 +248,30 @@ fn rule_json(category: &LoadedCategory, rule: &LoadedRule, sev: &Severities) -> 
     value
 }
 
-fn rules_json(
-    set: &Catalog,
-    picked: &[(&LoadedCategory, &LoadedRule)],
-    sev: &Severities,
-) -> String {
-    let categories: Vec<Value> = set
-        .categories()
-        .map(|c| {
+/// The listing entry of every category, each naming the plugin that ships it.
+fn category_entries(set: &Catalog) -> Vec<Value> {
+    set.sets()
+        .iter()
+        .flat_map(|plugin| plugin.categories().iter().map(move |c| (plugin.pack(), c)))
+        .map(|(plugin, c)| {
             json!({
                 "id": c.id().as_str(),
-                "plugin": c.rules().first().map_or("core", |r| r.id().pack()),
+                "plugin": plugin.as_str(),
                 "title": c.title().as_str(),
                 "description": c.description().as_str(),
                 "weight": c.weight(),
                 "recommended_for": c.recommended_for().iter().map(GenreId::as_str).collect::<Vec<_>>(),
             })
         })
-        .collect();
+        .collect()
+}
+
+fn rules_json(
+    set: &Catalog,
+    picked: &[(&LoadedCategory, &LoadedRule)],
+    sev: &Severities,
+) -> String {
+    let categories = category_entries(set);
     let rules: Vec<Value> = picked.iter().map(|(c, r)| rule_json(c, r, sev)).collect();
     // The plugins that own the listed rules, in catalogue order. `plugin` names the first of
     // them; `plugins` and the `plugin` of each entry are the complete answer.
@@ -610,5 +616,33 @@ mod tests {
     #[test]
     fn include_excluded_brings_back_rules_the_genre_excludes() {
         assert_eq!(count(true), 2);
+    }
+
+    /// A rule set of `plugin` with one category `style` that has no rules.
+    fn empty_category_of(plugin: &str) -> RuleSet {
+        let text = r#"{"schema_version":3,"id":"style","title":"T","description":"D","rules":[]}"#;
+        RuleSet::from_sources(
+            &PackId::new(plugin).unwrap(),
+            [(PathBuf::from("style.json"), text.to_owned())],
+            &CompileOptions::default(),
+        )
+        .expect("loads")
+    }
+
+    #[test]
+    fn a_category_with_no_rules_names_the_plugin_that_ships_it() {
+        let catalog =
+            Catalog::from_sets(vec![empty_category_of("alpha"), empty_category_of("beta")]);
+        let listed: Vec<(String, String)> = category_entries(&catalog)
+            .iter()
+            .map(|c| (c["id"].to_string(), c["plugin"].to_string()))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                (r#""style""#.to_owned(), r#""alpha""#.to_owned()),
+                (r#""style""#.to_owned(), r#""beta""#.to_owned())
+            ]
+        );
     }
 }

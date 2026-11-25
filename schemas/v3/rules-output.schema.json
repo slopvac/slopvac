@@ -49,7 +49,7 @@
           "$ref": "lint-report.schema.json#/$defs/CategoryId"
         },
         "plugin": {
-          "description": "The plugin of the category's first rule, or `core` for a category with no rules.",
+          "description": "The plugin that ships the category.",
           "$ref": "common.schema.json#/$defs/PackId"
         },
         "title": {
