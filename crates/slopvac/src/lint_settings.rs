@@ -846,7 +846,7 @@ mod tests {
 
     #[rstest]
     #[case::category("[categories.style]\nweight = 0.0\n", "ambiguous-category")]
-    #[case::rule("[rules.\"style.hit\"]\n", "ambiguous-rule")]
+    #[case::rule("[rules]\n\"style.hit\" = \"off\"\n", "ambiguous-rule")]
     fn a_bare_config_key_that_two_plugins_share_is_refused(
         #[case] table: &str,
         #[case] code: &str,
