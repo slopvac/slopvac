@@ -71,7 +71,7 @@ fn load(m: &ArgMatches) -> Result<(Catalog, Severities), CliError> {
 }
 
 fn url_of(rule: &LoadedRule) -> Option<String> {
-    RenderOptions::default().rule_url(rule.category().as_str(), rule.id().local())
+    RenderOptions::default().rule_page(rule.id(), rule.category().as_str())
 }
 
 fn source_of(rule: &LoadedRule) -> String {

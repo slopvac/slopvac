@@ -90,7 +90,7 @@ pub(crate) fn render(
                     "shortDescription": {"text": f.message},
                     "properties": {"category": f.category, "pack": f.pack.as_str()},
                 });
-                if let Some(url) = options.rule_url(f.category.as_str(), f.rule_id.local()) {
+                if let Some(url) = options.rule_page(&f.rule_id, f.category.as_str()) {
                     rule["helpUri"] = json!(url);
                 }
                 rules.push(rule);
