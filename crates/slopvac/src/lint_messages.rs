@@ -28,6 +28,26 @@ pub enum LintOptionError {
         /// The names of the shipped styles, comma separated.
         shipped: String,
     },
+    /// A bare category name that more than one plugin ships.
+    #[code("ambiguous-category")]
+    #[message(
+        "The category name {name} is ambiguous: {candidates} all match. Write `<plugin>:<category>`."
+    )]
+    AmbiguousCategory {
+        /// The name as written, quoted.
+        name: String,
+        /// The qualified names it could mean, comma separated.
+        candidates: String,
+    },
+    /// A bare rule id that more than one plugin ships.
+    #[code("ambiguous-rule")]
+    #[message("The rule id {name} is ambiguous: {candidates} all match. Write `<plugin>:<rule>`.")]
+    AmbiguousRule {
+        /// The id as written, quoted.
+        name: String,
+        /// The qualified ids it could mean, comma separated.
+        candidates: String,
+    },
 }
 
 impl From<LintOptionError> for crate::errors::CliError {

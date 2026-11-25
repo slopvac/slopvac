@@ -31,6 +31,8 @@ agents-help-setup-remove text
 agents-help-setup-reviewer-model text
 agents-help-setup-root text
 agents-notice-invalid error
+ambiguous-category error
+ambiguous-rule error
 cache-tampered error
 cases-rule-unchecked notice
 claims-dropped-covered text

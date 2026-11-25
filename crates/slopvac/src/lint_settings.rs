@@ -96,14 +96,38 @@ fn legacy_style(name: &str) -> &'static Style {
     styles.get(name).unwrap_or_else(|| &styles["legacy-normal"])
 }
 
-fn rule_id_of(rules: &Catalog, key: &str) -> Option<RuleId> {
-    rules.rule_named(key).map(|r| r.id().clone())
+/// The rule a config or command-line key names. `Ok(None)` when no rule has the key, and an
+/// error when a bare key is the local id of rules in more than one plugin.
+fn rule_id_of(rules: &Catalog, key: &str) -> Result<Option<RuleId>, LintOptionError> {
+    match rules.rules_named(key).as_slice() {
+        [] => Ok(None),
+        [rule] => Ok(Some(rule.id().clone())),
+        many => Err(LintOptionError::AmbiguousRule {
+            name: format!("{key:?}"),
+            candidates: many
+                .iter()
+                .map(|r| r.id().as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        }),
+    }
 }
 
-fn category_of(rules: &Catalog, key: &str) -> Option<String> {
-    rules
-        .category_named(key)
-        .map(|c| c.id().as_str().to_owned())
+/// The category a config or command-line key names. `Ok(None)` when no plugin has the key,
+/// and an error when a bare key is the id of categories in more than one plugin.
+fn category_of(rules: &Catalog, key: &str) -> Result<Option<CategoryName>, LintOptionError> {
+    match rules.categories_named(key).as_slice() {
+        [] => Ok(None),
+        [(plugin, category)] => Ok(Some(CategoryName::of(plugin, category.id()))),
+        many => Err(LintOptionError::AmbiguousCategory {
+            name: format!("{key:?}"),
+            candidates: many
+                .iter()
+                .map(|(plugin, c)| format!("{plugin}:{}", c.id()))
+                .collect::<Vec<_>>()
+                .join(", "),
+        }),
+    }
 }
 
 /// Check the names a config uses against the catalogue. A key may be bare (`orwell.x`,
@@ -119,24 +143,37 @@ fn check_names(
     unknown: &mut Vec<UnknownRule>,
 ) -> Result<(), Box<Located>> {
     for setting in settings {
-        if let [head, key, ..] = setting.path.as_slice()
-            && head == "categories"
-            && category_of(rules, key).is_none()
-        {
-            return Err(Box::new(Located {
-                error: CliError::escaping(
-                    "config-unknown-category",
-                    &format!(
-                        "{}: unknown category {key:?}; use a category from `slopvac rules`",
-                        describe(&redacted(&setting.source, root))
-                    ),
-                ),
+        let located = |error| {
+            Box::new(Located {
+                error,
                 source: Some(setting.source.clone()),
-            }));
+            })
+        };
+        match setting.path.as_slice() {
+            [head, key, ..] if head == "categories" => match category_of(rules, key) {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    return Err(located(CliError::escaping(
+                        "config-unknown-category",
+                        &format!(
+                            "{}: unknown category {key:?}; use a category from `slopvac rules`",
+                            describe(&redacted(&setting.source, root))
+                        ),
+                    )));
+                }
+                Err(ambiguous) => return Err(located(ambiguous.into())),
+            },
+            // An unknown rule is a notice, so only an ambiguous one stops the run.
+            [head, key, ..] if head == "rules" => {
+                if let Err(ambiguous) = rule_id_of(rules, key) {
+                    return Err(located(ambiguous.into()));
+                }
+            }
+            _ => {}
         }
     }
     unknown.extend(unknown_rules(settings, |key| {
-        rule_id_of(rules, key).is_some()
+        matches!(rule_id_of(rules, key), Ok(Some(_)))
     }));
     Ok(())
 }
@@ -453,14 +490,23 @@ fn internal(what: &str, err: impl std::fmt::Display) -> CliError {
     CliError::new("settings-invalid", format!("{what}: {err}"))
 }
 
-/// The ids a `--category` or `--disable` name selects: a category, or a rule in either form.
-fn selected(rules: &Catalog, names: &[String]) -> Result<Vec<String>, CliError> {
+/// What a `--category` or `--disable` name selects, with the plugin resolved.
+enum Selected {
+    /// A category, by the name a report gives it.
+    Category(CategoryName),
+    /// A rule.
+    Rule(RuleId),
+}
+
+/// What a `--category` or `--disable` name selects: a category, or a rule in either form.
+/// A qualified name keeps its plugin, and a bare name that two plugins share is an error.
+fn selected(rules: &Catalog, names: &[String]) -> Result<Vec<Selected>, CliError> {
     let mut out = Vec::new();
     for name in names {
-        if let Some(category) = category_of(rules, name) {
-            out.push(category);
-        } else if let Some(id) = rule_id_of(rules, name) {
-            out.push(id.as_str().to_owned());
+        if let Some(category) = category_of(rules, name)? {
+            out.push(Selected::Category(category));
+        } else if let Some(id) = rule_id_of(rules, name)? {
+            out.push(Selected::Rule(id));
         } else {
             return Err(CliError::new(
                 "usage",
@@ -529,17 +575,21 @@ pub fn build(
     for (plugin, category) in categories {
         let name = category.id().as_str();
         let qualified = format!("{plugin}:{name}");
+        let reported = CategoryName::of(plugin, category.id());
+        // A bare key names this category only when no other plugin ships the same id.
+        let bare_category = rules.categories_named(name).len() == 1;
         let field = |f: &'static str| {
-            vec![
-                vec!["categories", qualified.as_str(), f],
-                vec!["categories", name, f],
-            ]
+            let mut paths = vec![vec!["categories", qualified.as_str(), f]];
+            if bare_category {
+                paths.push(vec!["categories", name, f]);
+            }
+            paths
         };
         // `"none"` clears the budget; it is stored as null and must not fall back to the
         // budget in the rule data.
         let budget = resolved.get_by_any(&field("max_per_100_words"));
         settings.categories.insert(
-            CategoryName::of(plugin, category.id()),
+            reported.clone(),
             CategoryDials::default()
                 .with_weight(resolved.get_by_any(&field("weight")).and_then(Json::as_f64))
                 .with_max_per_100_words(budget.and_then(Json::as_f64))
@@ -552,12 +602,18 @@ pub fn build(
             let id = rule.id();
             // A judgement rule has no finding to grade: a category entry never sets its
             // level, only a `rules` entry does (docs/contract/profiles.md).
-            let categories: Vec<&str> = if rule.kind() == MatchKind::Judgement {
-                Vec::new()
-            } else {
-                vec![qualified.as_str(), name]
-            };
-            let named = resolved.level_by_any_unfloored(&[id.as_str(), id.local()], &categories);
+            let mut categories: Vec<&str> = Vec::new();
+            if rule.kind() != MatchKind::Judgement {
+                categories.push(qualified.as_str());
+                if bare_category {
+                    categories.push(name);
+                }
+            }
+            let mut keys = vec![id.as_str()];
+            if rules.rules_named(id.local()).len() == 1 {
+                keys.push(id.local());
+            }
+            let named = resolved.level_by_any_unfloored(&keys, &categories);
             // `severity_shift` moves levels that come from rule definitions, styles and the
             // genre chain. A level that the config sets is final. A category floor holds
             // after the shift.
@@ -580,7 +636,12 @@ pub fn build(
             if let Some(level) = level {
                 settings.rule_levels.insert(id.clone(), level);
             }
-            let hit = |list: &[String]| list.iter().any(|n| n == name || n.as_str() == id.as_str());
+            let hit = |list: &[Selected]| {
+                list.iter().any(|n| match n {
+                    Selected::Category(c) => *c == reported,
+                    Selected::Rule(r) => r == id,
+                })
+            };
             if hit(&disabled) || (!only.is_empty() && !hit(&only)) {
                 settings.rule_levels.insert(id.clone(), Level::Off);
             }

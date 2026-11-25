@@ -185,29 +185,32 @@ impl Catalog {
         self.sets.iter().find_map(|s| s.get(id))
     }
 
-    /// The category a config or command-line key names, bare or qualified. A qualified key
-    /// names a category of that pack only: `terms:orwell` is not core's `orwell`.
+    /// The categories a config or command-line key names, with the plugin of each. A
+    /// qualified key names a category of that plugin only: `terms:orwell` is not core's
+    /// `orwell`. A bare key names every category with that id, so two plugins that ship the
+    /// same id make it ambiguous.
     #[must_use]
-    pub fn category_named(&self, key: &str) -> Option<&LoadedCategory> {
-        match key.split_once(':') {
-            Some((pack, name)) => self
-                .sets
-                .iter()
-                .find(|s| s.pack().as_str() == pack)?
-                .categories()
-                .iter()
-                .find(|c| c.id().as_str() == name),
-            None => self.categories().find(|c| c.id().as_str() == key),
-        }
+    pub fn categories_named(&self, key: &str) -> Vec<(&PackId, &LoadedCategory)> {
+        let (plugin, name) = match key.split_once(':') {
+            Some((plugin, name)) => (Some(plugin), name),
+            None => (None, key),
+        };
+        self.sets
+            .iter()
+            .filter(|s| plugin.is_none_or(|p| s.pack().as_str() == p))
+            .flat_map(|s| s.categories().iter().map(move |c| (s.pack(), c)))
+            .filter(|(_, c)| c.id().as_str() == name)
+            .collect()
     }
 
-    /// The rule a config or command-line key names, bare or qualified. A bare key reads as
-    /// the first pack that has such a rule.
+    /// The rules a config or command-line key names. A qualified key names one rule. A bare
+    /// key names every rule with that local id, so two plugins that ship the same id make it
+    /// ambiguous.
     #[must_use]
-    pub fn rule_named(&self, key: &str) -> Option<&LoadedRule> {
+    pub fn rules_named(&self, key: &str) -> Vec<&LoadedRule> {
         if key.contains(':') {
-            return self.rules().find(|r| r.id().as_str() == key);
+            return self.rules().filter(|r| r.id().as_str() == key).collect();
         }
-        self.rules().find(|r| r.id().local() == key)
+        self.rules().filter(|r| r.id().local() == key).collect()
     }
 }
