@@ -1089,6 +1089,55 @@
     },
     "input": "[vocabulary]\npath = \"deploy.toml\"\n[categories]\n\"ste-words\" = \"off\"\n[[overrides]]\nfiles = [\"docs/**\"]\ncategories = { \"ste-words\" = { \"minimum_severity\" = \"error\" } }\n"
    },
+   "top-rule-off-then-an-override-category": {
+    "files": {
+     "b.md": {
+      "dials": {},
+      "levels": {
+       "ste-words.word-outside-controlled-vocabulary": "off"
+      },
+      "profile": "normal"
+     },
+     "docs/a.md": {
+      "dials": {},
+      "levels": {
+       "ste-words.obligation-word-substitution": "warning",
+       "ste-words.verb-or-adjective-form-not-permitted": "warning",
+       "ste-words.word-outside-controlled-vocabulary": "off",
+       "ste-words.word-used-in-wrong-part-of-speech": "warning"
+      },
+      "profile": "normal"
+     }
+    },
+    "input": "[vocabulary]\npath = \"deploy.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n[[overrides]]\nfiles = [\"docs/**\"]\ncategories = { \"ste-words\" = \"warning\" }\n"
+   },
+   "top-rule-then-an-override-budget-only": {
+    "files": {
+     "b.md": {
+      "dials": {},
+      "levels": {
+       "ste-words.word-outside-controlled-vocabulary": "error"
+      },
+      "profile": "normal"
+     },
+     "docs/a.md": {
+      "dials": {
+       "ste-words": {
+        "budget": 2.0,
+        "weight": 0.8
+       }
+      },
+      "levels": {
+       "ste-words.obligation-word-substitution": "warning",
+       "ste-words.verb-or-adjective-form-not-permitted": "warning",
+       "ste-words.word-outside-controlled-vocabulary": "error",
+       "ste-words.word-used-in-wrong-part-of-speech": "warning"
+      },
+      "profile": "normal"
+     }
+    },
+    "input": "[vocabulary]\npath = \"deploy.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n[[overrides]]\nfiles = [\"docs/**\"]\ncategories = { \"ste-words\" = { \"max_per_100_words\" = 2.0 } }\n"
+   },
    "top-rule-then-an-override-category": {
     "files": {
      "b.md": {
@@ -1113,6 +1162,36 @@
      }
     },
     "input": "[vocabulary]\npath = \"deploy.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n[[overrides]]\nfiles = [\"docs/**\"]\ncategories = { \"ste-words\" = \"suggestion\" }\n"
+   },
+   "top-rule-then-an-override-category-off": {
+    "files": {
+     "b.md": {
+      "dials": {},
+      "levels": {
+       "ste-words.word-outside-controlled-vocabulary": "error"
+      },
+      "profile": "normal"
+     },
+     "docs/a.md": {
+      "dials": {
+       "ste-words": "off"
+      },
+      "levels": {
+       "ste-words.approved-word-substitution": "off",
+       "ste-words.inconsistent-term-for-same-thing": "off",
+       "ste-words.noun-used-as-verb": "off",
+       "ste-words.obligation-word-substitution": "off",
+       "ste-words.slang-or-jargon-term": "off",
+       "ste-words.spelling": "off",
+       "ste-words.verb-or-adjective-form-not-permitted": "off",
+       "ste-words.verb-used-as-noun": "off",
+       "ste-words.word-outside-controlled-vocabulary": "off",
+       "ste-words.word-used-in-wrong-part-of-speech": "off"
+      },
+      "profile": "normal"
+     }
+    },
+    "input": "[vocabulary]\npath = \"deploy.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n[[overrides]]\nfiles = [\"docs/**\"]\ncategories = { \"ste-words\" = \"off\" }\n"
    }
   }
  },

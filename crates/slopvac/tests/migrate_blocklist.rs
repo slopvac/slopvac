@@ -18,6 +18,7 @@ use serde_json::Value;
 use snapbox::cmd::{Command, cargo_bin};
 
 const VOCABULARY: &str = "core:ste-words.word-outside-controlled-vocabulary";
+const VOCABULARY_2X: &str = "ste-words.word-outside-controlled-vocabulary";
 const RULE: &str = "\"ste-words.word-outside-controlled-vocabulary\"";
 const DEPLOY: &str =
     "schema_version = 3\n\n[[entries]]\nword = \"deploy\"\npos = \"noun\"\nreason = \"x\"\n";
@@ -248,27 +249,40 @@ fn a_later_category_over_an_earlier_vocabulary_rule_is_refused()
     Ok(())
 }
 
-/// A later `off` category is the E4 guard case and migrates, while the same layout with a later
-/// level other than `off` is refused.
-#[test]
-fn a_later_off_category_over_an_earlier_vocabulary_rule_migrates_but_a_later_level_is_refused()
--> Result<(), Box<dyn std::error::Error>> {
-    let layout = |later: &str| {
-        format!(
-            "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n\
-             [rules]\n{RULE} = \"error\"\n\n\
-             [[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"{later}\"\n"
-        )
+/// The 2.x config of a `blocklist_2x` scenario and the findings 2.x measured for it: `docs/a.md`
+/// stands for the file inside `docs` and `b.md` for the one outside.
+fn measured_2x(name: &str) -> (String, [Vec<(String, String)>; 2]) {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../slopvac-migrate/tests/fixtures/preserve/vectors.json");
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(path).expect("vectors.json")).expect("json");
+    let blocklist = &data["blocklist_2x"];
+    let scenario = &blocklist["scenarios"][name];
+    let found = |file: &str| {
+        let measured = &scenario["files"][file];
+        let profile = measured["profile"].as_str().expect("profile");
+        let level = measured["levels"][VOCABULARY_2X]
+            .as_str()
+            .or_else(|| blocklist["base"][profile]["levels"][VOCABULARY_2X].as_str())
+            .expect("a measured level");
+        if level == "off" {
+            Vec::new()
+        } else {
+            expected(&[(level, "deploy")])
+        }
     };
-    let dir = project(&layout("off"));
-    slopvac()
-        .arg("migrate")
-        .arg(dir.path())
-        .args(["--write", "--preserve-behavior"])
-        .assert()
-        .code(0);
-    refused(&layout("suggestion"))?;
-    Ok(())
+    (
+        scenario["input"].as_str().expect("input").to_owned(),
+        [found("docs/a.md"), found("b.md")],
+    )
+}
+
+/// A later `off` category is the E4 guard case: the rule keeps its level outside the override
+/// and is off inside it, as in 2.x.
+#[test]
+fn a_later_off_category_over_an_earlier_vocabulary_rule_migrates_at_the_2x_level() {
+    let (config, levels) = measured_2x("top-rule-then-an-override-category-off");
+    assert_eq!(migrated(&config), levels, "{config}");
 }
 
 /// A later override that sets a category with no `severity` gets the legacy severity filled

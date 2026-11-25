@@ -288,6 +288,37 @@ BLOCKLIST_SCENARIOS = {
         },
         ["docs/a.md", "b.md"],
     ),
+    # E4: an override that turns the category off holds against the top-level rule.
+    "top-rule-then-an-override-category-off": (
+        {
+            "rules": {_VOCABULARY_RULE: "error"},
+            "overrides": [{"files": ["docs/**"], "categories": {"ste-words": "off"}}],
+        },
+        ["docs/a.md", "b.md"],
+    ),
+    # A rule that the top level turned off stays off when a later category sets a level.
+    "top-rule-off-then-an-override-category": (
+        {
+            "rules": {_VOCABULARY_RULE: "off"},
+            "overrides": [
+                {"files": ["docs/**"], "categories": {"ste-words": "warning"}}
+            ],
+        },
+        ["docs/a.md", "b.md"],
+    ),
+    # A later category that sets only a budget gives the active rule no new level.
+    "top-rule-then-an-override-budget-only": (
+        {
+            "rules": {_VOCABULARY_RULE: "error"},
+            "overrides": [
+                {
+                    "files": ["docs/**"],
+                    "categories": {"ste-words": {"max_per_100_words": 2.0}},
+                }
+            ],
+        },
+        ["docs/a.md", "b.md"],
+    ),
 }
 
 def _load_converter():
