@@ -10,8 +10,8 @@ use std::path::Path;
 use slopvac_fs::display_under_root;
 use slopvac_messages::{Catalog, Entry, render};
 
-use crate::messages::cli::Reported;
 use crate::lock::LockDiff;
+use crate::messages::cli::Reported;
 use crate::messages::sync::{cache_tampered, config_drift, update_busy};
 use crate::revoke::RevocationError;
 use crate::sync::SyncError;
