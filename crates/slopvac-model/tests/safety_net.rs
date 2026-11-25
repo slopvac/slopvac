@@ -17,7 +17,7 @@ mod common;
 
 use std::num::NonZeroUsize;
 
-use common::{corpus, instances, load, patch_layer, published_lint_report};
+use common::{corpus, instances, load, patch_layer, published_lint_report, schemas};
 use proptest::prelude::*;
 use proptest::sample::Index;
 use serde_json::{Value, json};
@@ -531,32 +531,61 @@ fn scalar_constructors_reject_what_the_schema_rejects() {
     assert!(KebabName::new("vale-not-found").is_ok());
 }
 
-#[test]
-fn a_category_name_is_bare_for_core_and_qualified_for_another_plugin() {
+#[rstest::rstest]
+#[case::core_is_bare("core", "style")]
+#[case::another_plugin_is_qualified("alpha", "alpha:style")]
+fn a_category_name_is_bare_for_core_and_qualified_for_another_plugin(
+    #[case] plugin: &str,
+    #[case] expected: &str,
+) {
     let category = CategoryId::new("style").unwrap();
-    for (plugin, expected) in [("core", "style"), ("alpha", "alpha:style")] {
-        let name = CategoryName::of(&PackId::new(plugin).unwrap(), &category);
-        assert_eq!(name.as_str(), expected, "plugin {plugin}");
-    }
-    assert_eq!(
-        CategoryName::new("alpha:style").unwrap().plugin(),
-        Some("alpha")
-    );
-    assert_eq!(CategoryName::new("style").unwrap().plugin(), None);
+    let name = CategoryName::of(&PackId::new(plugin).unwrap(), &category);
+    assert_eq!(name.as_str(), expected);
 }
 
-#[test]
-fn a_category_name_refuses_what_its_schema_pattern_refuses() {
-    for bad in [
-        "",
-        "Style",
-        "a:",
-        ":a",
-        "a:b:c",
-        "core:style",
-        "a:Style",
-        "1a",
-    ] {
-        assert!(CategoryName::new(bad).is_err(), "category name {bad:?}");
-    }
+#[rstest::rstest]
+#[case::bare("style", None)]
+#[case::qualified("alpha:style", Some("alpha"))]
+fn a_category_name_reports_its_plugin(#[case] name: &str, #[case] plugin: Option<&str>) {
+    assert_eq!(CategoryName::new(name).unwrap().plugin(), plugin);
+}
+
+/// A validator for the published `CategoryName` definition.
+fn published_category_name() -> jsonschema::Validator {
+    let report: Value = load(&schemas().join("lint-report.schema.json"));
+    let schema = report["$defs"]["CategoryName"].clone();
+    jsonschema::options().build(&schema).unwrap()
+}
+
+/// The type, its `Deserialize` and the published schema judge a name the same way.
+#[rstest::rstest]
+#[case::bare("style", true)]
+#[case::hyphenated("ai-residue", true)]
+#[case::qualified("acme:style", true)]
+#[case::empty("", false)]
+#[case::uppercase_category("Style", false)]
+#[case::uppercase_plugin("Acme:style", false)]
+#[case::uppercase_qualified_category("acme:Style", false)]
+#[case::core_prefix("core:style", false)]
+#[case::empty_category("acme:", false)]
+#[case::empty_plugin(":style", false)]
+#[case::two_colons("a:b:c", false)]
+#[case::leading_digit("1a", false)]
+#[case::trailing_newline("style\n", false)]
+#[case::qualified_trailing_newline("acme:style\n", false)]
+fn a_category_name_is_accepted_or_refused_alike_by_the_type_and_the_schema(
+    #[case] name: &str,
+    #[case] accepted: bool,
+) {
+    assert_eq!(CategoryName::new(name).is_ok(), accepted, "new");
+    assert_eq!(
+        serde_json::from_value::<CategoryName>(json!(name)).is_ok(),
+        accepted,
+        "deserialize"
+    );
+    assert_eq!(
+        published_category_name().is_valid(&json!(name)),
+        accepted,
+        "schema"
+    );
 }

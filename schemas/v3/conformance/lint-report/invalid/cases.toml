@@ -50,3 +50,6 @@
 "finding-category-trailing-newline.json" = "/documents/0/findings/0/category"
 "genre-id-trailing-newline.json" = "/documents/0/genre/id"
 "genre-signal-trailing-newline.json" = "/documents/0/genre/reasons/0/signal"
+"finding-category-core-qualified.json" = "/documents/0/findings/0/category"
+"finding-category-uppercase.json" = "/documents/0/findings/0/category"
+"finding-category-qualified-trailing-newline.json" = "/documents/0/findings/0/category"
