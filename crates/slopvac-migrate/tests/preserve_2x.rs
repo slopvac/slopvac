@@ -17,22 +17,11 @@ use slopvac_migrate::{Options, RenameTable, migrate_config};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 /// A failure inside one scenario: the scenario name, with the typed cause kept as the source.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("scenario {name}: {source}")]
 struct ScenarioError {
     name: String,
     source: Box<dyn std::error::Error>,
-}
-
-impl std::fmt::Display for ScenarioError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "scenario {}: {}", self.name, self.source)
-    }
-}
-
-impl std::error::Error for ScenarioError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(self.source.as_ref())
-    }
 }
 
 fn in_scenario(name: &str, source: impl std::error::Error + 'static) -> ScenarioError {
