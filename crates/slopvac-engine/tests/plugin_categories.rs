@@ -1,14 +1,8 @@
 //! Two plugins may share a bare category id. The engine scores each plugin's category on
 //! its own weight and budget, and the report names it `<plugin>:<category>`.
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unwrap_used,
-    reason = "test helpers sit outside a `#[test]` function, where clippy.toml does not apply"
-)]
-
 mod common;
 
+use std::error::Error;
 use std::path::PathBuf;
 
 use common::{engine, settings, tokens};
@@ -19,37 +13,42 @@ use slopvac_rules::{CompileOptions, RuleSet};
 
 /// A rule set of plugin `plugin` with one category `style`: weight, a budget for `normal`, and
 /// one tokens rule `hit` for `token` at `severity`.
-fn plugin_set(plugin: &str, weight: f64, budget: f64, token: &str, severity: &str) -> RuleSet {
+fn plugin_set(
+    plugin: &str,
+    weight: f64,
+    budget: f64,
+    token: &str,
+    severity: &str,
+) -> Result<RuleSet, Box<dyn Error>> {
     let category = json!({
         "schema_version": 3, "id": "style", "title": "t", "description": "d",
         "weight": weight,
         "max_per_100_words": {"normal": budget},
         "rules": [tokens("hit", token, &json!({"severity": severity}))],
     });
-    RuleSet::from_sources(
-        &PackId::new(plugin).unwrap(),
+    Ok(RuleSet::from_sources(
+        &PackId::new(plugin)?,
         vec![(PathBuf::from("style.json"), category.to_string())],
         &CompileOptions::default(),
-    )
-    .unwrap_or_else(|e| panic!("{e}"))
+    )?)
 }
 
 /// A document of exactly 100 words that hits each plugin's rule once.
-fn lint_both() -> Document {
+fn lint_both() -> Result<Document, Box<dyn Error>> {
     // alpha: weight 1, budget 2.0, one warning.
     // beta: weight 3, budget 0.5, one error.
     let sets = vec![
-        plugin_set("alpha", 1.0, 2.0, "leverage", "warning"),
-        plugin_set("beta", 3.0, 0.5, "synergy", "error"),
+        plugin_set("alpha", 1.0, 2.0, "leverage", "warning")?,
+        plugin_set("beta", 3.0, 0.5, "synergy", "error")?,
     ];
-    let engine = Engine::new(sets, settings()).unwrap();
+    let engine = Engine::new(sets, settings())?;
     let text = format!("leverage synergy {}\n", "word ".repeat(98));
-    engine.lint(&Input::markdown("doc.md", &text)).unwrap()
+    Ok(engine.lint(&Input::markdown("doc.md", &text))?)
 }
 
 #[test]
-fn two_plugins_with_one_bare_category_id_score_as_two_categories() {
-    let doc = lint_both();
+fn two_plugins_with_one_bare_category_id_score_as_two_categories() -> Result<(), Box<dyn Error>> {
+    let doc = lint_both()?;
     let names: Vec<&str> = doc.categories.iter().map(|c| c.category.as_str()).collect();
     assert_eq!(names, ["alpha:style", "beta:style"]);
 
@@ -72,11 +71,13 @@ fn two_plugins_with_one_bare_category_id_score_as_two_categories() {
         doc.gate.reasons(),
         ["beta:style at 1.00 severity-weighted findings per 100 words, budget 0.5"]
     );
+    Ok(())
 }
 
 #[test]
-fn a_finding_names_its_category_by_plugin_unless_the_plugin_is_core() {
-    let doc = lint_both();
+fn a_finding_names_its_category_by_plugin_unless_the_plugin_is_core() -> Result<(), Box<dyn Error>>
+{
+    let doc = lint_both()?;
     let by_rule: Vec<(&str, &str)> = doc
         .findings
         .iter()
@@ -93,7 +94,8 @@ fn a_finding_names_its_category_by_plugin_unless_the_plugin_is_core() {
     // The same rule in the `core` plugin keeps the bare category id.
     let core = engine(&[tokens("hit", "leverage", &json!({}))]);
     let text = format!("leverage {}\n", "word ".repeat(99));
-    let doc = core.lint(&Input::markdown("doc.md", &text)).unwrap();
+    let doc = core.lint(&Input::markdown("doc.md", &text))?;
     assert_eq!(doc.findings[0].category.as_str(), "cat");
     assert_eq!(doc.categories[0].category.as_str(), "cat");
+    Ok(())
 }

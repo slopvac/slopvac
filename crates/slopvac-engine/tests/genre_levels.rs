@@ -274,3 +274,68 @@ fn a_category_level_protects_only_its_own_plugins_rules_from_the_genre(
         ]
     );
 }
+/// A genre `internal` that lowers the history rule of `alpha` and of `beta` to a suggestion.
+fn genre_for_two_plugins() -> slopvac_context::GenreRegistry {
+    let yaml = "schema_version: 3\nid: internal\nrules:\n  \
+                \"alpha:docs-discipline.history-internal-reference\": suggestion\n  \
+                \"beta:docs-discipline.history-internal-reference\": suggestion\n";
+    slopvac_context::GenreRegistry::new(
+        vec![slopvac_context::GenreSpec::from_yaml(yaml).unwrap()],
+        "internal",
+    )
+    .unwrap()
+}
+
+/// A rule set of `plugin` whose category `docs-discipline` flags `refactored` as an error.
+fn plugin_set_of(plugin: &str) -> slopvac_rules::RuleSet {
+    let rules = [tokens(
+        "history-internal-reference",
+        "refactored",
+        &json!({"severity": "error"}),
+    )];
+    slopvac_rules::RuleSet::from_sources(
+        &slopvac_model::PackId::new(plugin).unwrap(),
+        vec![category("docs-discipline", &rules)],
+        &slopvac_rules::CompileOptions::default(),
+    )
+    .unwrap()
+}
+
+/// Both plugins ship `docs-discipline`, and the genre lowers the history rule of each. A
+/// category level for `alpha:docs-discipline` keeps alpha's rule at that level, and beta's
+/// rule, in a category of the same bare name, still follows the genre.
+#[test]
+fn a_category_level_blocks_the_genre_for_its_own_plugin_only() {
+    let mut settings = settings();
+    settings.categories.insert(
+        CategoryName::new("alpha:docs-discipline").unwrap(),
+        CategoryDials::default().with_level(Some(Level::On(Severity::Warning))),
+    );
+    let source = format!("---\ngenre: internal\n---\n{BODY}");
+    let doc = Engine::new(
+        vec![plugin_set_of("alpha"), plugin_set_of("beta")],
+        settings,
+    )
+    .unwrap()
+    .with_genres(genre_for_two_plugins())
+    .lint(&Input::markdown("a.md", &source).with_declared_genre("internal"))
+    .unwrap();
+    let got: Vec<(&str, Severity)> = doc
+        .findings
+        .iter()
+        .map(|f| (f.rule_id.as_str(), f.severity))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            (
+                "alpha:docs-discipline.history-internal-reference",
+                Severity::Warning
+            ),
+            (
+                "beta:docs-discipline.history-internal-reference",
+                Severity::Suggestion
+            ),
+        ]
+    );
+}

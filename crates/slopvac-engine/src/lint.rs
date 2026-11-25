@@ -594,6 +594,20 @@ impl Engine {
         self
     }
 
+    /// Replace the genres that choose each document's levels. A test seam: the engine loads
+    /// only the built-in genres, and they name rules of `core`, so a test that needs a genre
+    /// for the rules of another plugin supplies it here. It takes effect when the settings
+    /// assign genres to documents.
+    #[cfg(feature = "test-counters")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_genres(mut self, genres: GenreRegistry) -> Self {
+        if self.genres.is_some() {
+            self.genres = Some(genres);
+        }
+        self
+    }
+
     /// Replace how RST files are read: the interpreter, the project roots it must stay
     /// out of, and the limits. The default reads `SLOPVAC_RST_CONVERTER`.
     #[must_use]

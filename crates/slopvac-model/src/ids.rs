@@ -103,6 +103,7 @@ impl fmt::Display for PackId {
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
+#[non_exhaustive]
 #[serde(try_from = "String", into = "String")]
 #[schemars(with = "String", extend("pattern" = schema::CATEGORY_NAME))]
 pub struct CategoryName(String);
