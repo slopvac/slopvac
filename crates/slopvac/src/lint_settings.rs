@@ -642,14 +642,40 @@ mod tests {
 
     /// The settings that `config` (the text of a `slopvac.toml`) gives to a file.
     fn settings(config: &str) -> Result<Settings, CliError> {
-        let rules = Catalog::load().expect("the rules load");
+        settings_over(&Catalog::load().expect("the rules load"), config)
+    }
+
+    /// The settings that `config` gives to a file, over the catalogue `rules`.
+    fn settings_over(rules: &Catalog, config: &str) -> Result<Settings, CliError> {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, config).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
-        validate(&loaded, &rules)?;
+        validate(&loaded, rules)?;
         let resolved = resolve(&loaded, Path::new("doc.md"));
-        build(&rules, &resolved, Vec::new(), &Overrides::default())
+        build(rules, &resolved, Vec::new(), &Overrides::default())
+    }
+
+    /// A catalogue of two plugins, `alpha` and `beta`, that each ship a category `style`.
+    fn two_plugins_with_one_category_id() -> Catalog {
+        let set = |plugin: &str| {
+            let category = serde_json::json!({
+                "schema_version": 3, "id": "style", "title": "t", "description": "d",
+                "rules": [{
+                    "id": "hit", "name": "n", "message": "Found {match}.",
+                    "severity": "warning",
+                    "match": {"kind": "tokens", "tokens": ["leverage"]},
+                    "citation": {"source": "s"}
+                }],
+            });
+            slopvac_rules::RuleSet::from_sources(
+                &slopvac_model::PackId::new(plugin).expect("a plugin id"),
+                vec![(std::path::PathBuf::from("style.json"), category.to_string())],
+                &slopvac_rules::CompileOptions::default(),
+            )
+            .expect("the rule set loads")
+        };
+        Catalog::from_sets(vec![set("alpha"), set("beta")])
     }
 
     fn level(settings: &Settings, rule: &str) -> Option<Level> {
@@ -724,6 +750,19 @@ mod tests {
             level(&s, "core:orwell.unsupported-evaluative"),
             Some(Level::Off)
         );
+    }
+
+    #[test]
+    fn a_config_entry_for_one_plugins_category_leaves_the_other_plugins_category_alone() {
+        let rules = two_plugins_with_one_category_id();
+        let config = format!("{HEAD}\n[categories.\"alpha:style\"]\nweight = 0.0\n");
+        let s = settings_over(&rules, &config).unwrap();
+        let dials: Vec<(&str, Option<f64>)> = s
+            .categories
+            .iter()
+            .map(|(name, d)| (name.as_str(), d.weight))
+            .collect();
+        assert_eq!(dials, [("alpha:style", Some(0.0)), ("beta:style", None)]);
     }
 
     /// `a.b` as an unknown rule at `slopvac.toml:4:1` in `layer`.
