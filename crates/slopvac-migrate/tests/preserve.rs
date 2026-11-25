@@ -559,24 +559,30 @@ const VOCABULARY_RULES: [&str; 4] = [
     "ste-words.word-used-in-wrong-part-of-speech",
 ];
 
-fn rule_levels(layer: &toml::Table) -> BTreeMap<String, String> {
-    layer
-        .get("rules")
-        .and_then(toml::Value::as_table)
-        .map(|r| {
-            r.iter()
-                .filter_map(|(k, v)| {
-                    let level = v
-                        .as_str()
-                        .or_else(|| v.get("severity").and_then(toml::Value::as_str))?;
-                    Some((
-                        k.strip_prefix("core:").unwrap_or(k).to_owned(),
-                        level.to_owned(),
-                    ))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+/// The rule levels of one layer, keyed without the `core:` prefix. Each entry is checked
+/// before it is normalized: it needs a string level (a bare string or a `severity` string),
+/// and the bare and `core:` spellings of one rule must not disagree.
+fn rule_levels(layer: &toml::Table) -> Result<BTreeMap<String, String>, String> {
+    let mut levels = BTreeMap::new();
+    let Some(rules) = layer.get("rules").and_then(toml::Value::as_table) else {
+        return Ok(levels);
+    };
+    for (key, value) in rules {
+        let level = value
+            .as_str()
+            .or_else(|| value.get("severity").and_then(toml::Value::as_str))
+            .ok_or_else(|| format!("rule entry {key} has no string level: {value}"))?;
+        let id = key.strip_prefix("core:").unwrap_or(key);
+        match levels.insert(id.to_owned(), level.to_owned()) {
+            Some(earlier) if earlier != level => {
+                return Err(format!(
+                    "rule entry {id} conflicts: {earlier} and {level} under its bare and core: spellings"
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(levels)
 }
 
 fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
@@ -588,8 +594,9 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
         .collect()
 }
 
-/// A vocabulary rule entry in the written config must come from the authored input. It is
-/// allowed in two forms only:
+/// The vocabulary rule entries of a config must match the authored input in both directions.
+///
+/// Every written entry is allowed in two forms only:
 ///
 /// - at its authored level in the matching layer: the top level with the top level, an
 ///   override with the authored override that has the same `files`;
@@ -598,47 +605,67 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
 ///   blocks, either a block of its own or an authored block it folded the guard into, so the
 ///   top level never holds one and an authored layer that names the rule keeps its level.
 ///
-/// Anything else would outrank the companion style and the settings 2.x let win. Returns the
-/// number of layers walked, or the first offending entry.
-fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usize, String> {
-    let doc = toml::from_str::<toml::Table>(text).unwrap();
+/// Anything else would outrank the companion style and the settings 2.x let win. In the other
+/// direction, every vocabulary rule the input authors in a layer must still be there at its
+/// authored level, so a dropped or changed entry fails too. Extra override blocks that hold
+/// only guards are allowed. Returns the number of layers walked, or the first offence.
+fn check_vocabulary_entries(text: &str, authored: &str) -> Result<usize, String> {
+    let doc = toml::from_str::<toml::Table>(text)
+        .map_err(|e| format!("the written config does not parse: {e}\n{text}"))?;
     let authored = toml::from_str::<toml::Table>(authored).unwrap_or_default();
     let mut authored_blocks = override_blocks(&authored);
-    let mut named: BTreeSet<String> = rule_levels(&authored).into_keys().collect();
+    let authored_top = vocabulary_levels(&authored)?;
+    let mut named: BTreeSet<String> = authored_top.keys().cloned().collect();
     for block in &authored_blocks {
-        named.extend(rule_levels(block).into_keys());
+        named.extend(vocabulary_levels(block)?.into_keys());
     }
     // Each layer, with the authored levels of its counterpart and whether it can hold a guard.
     let mut layers: Vec<(&toml::Table, BTreeMap<String, String>, bool)> =
-        vec![(&doc, rule_levels(&authored), false)];
+        vec![(&doc, authored_top, false)];
     for block in override_blocks(&doc) {
         let counterpart = authored_blocks
             .iter()
             .position(|a| a.get("files") == block.get("files"))
             .map(|at| authored_blocks.remove(at));
-        layers.push((
-            block,
-            counterpart.map(rule_levels).unwrap_or_default(),
-            true,
-        ));
+        let own = match counterpart {
+            Some(c) => vocabulary_levels(c)?,
+            None => BTreeMap::new(),
+        };
+        layers.push((block, own, true));
     }
     for (layer, own, may_guard) in &layers {
-        for (id, level) in rule_levels(layer) {
-            if !VOCABULARY_RULES.contains(&id.as_str()) {
-                continue;
-            }
-            let authored_here = own.get(&id) == Some(&level);
-            let guard =
-                *may_guard && level == "off" && named.contains(&id) && !own.contains_key(&id);
+        let written = vocabulary_levels(layer)?;
+        for (id, level) in &written {
+            let authored_here = own.get(id) == Some(level);
+            let guard = *may_guard && level == "off" && named.contains(id) && !own.contains_key(id);
             if !authored_here && !guard {
+                return Err(format!("generated vocabulary entry {id} = {level}\n{text}"));
+            }
+        }
+        for (id, level) in own {
+            if written.get(id) != Some(level) {
                 return Err(format!(
-                    "generated vocabulary entry {id} = {level}
-{text}"
+                    "authored vocabulary rule {id} = {level} is missing from its layer\n{text}"
                 ));
             }
         }
     }
+    // An authored override that the output no longer has loses its rules with it.
+    for block in &authored_blocks {
+        if let Some((id, level)) = vocabulary_levels(block)?.into_iter().next() {
+            return Err(format!(
+                "authored vocabulary rule {id} = {level} is missing: its override block is gone\n{text}"
+            ));
+        }
+    }
     Ok(layers.len())
+}
+
+/// The vocabulary rules among the rule levels of one layer.
+fn vocabulary_levels(layer: &toml::Table) -> Result<BTreeMap<String, String>, String> {
+    let mut levels = rule_levels(layer)?;
+    levels.retain(|id, _| VOCABULARY_RULES.contains(&id.as_str()));
+    Ok(levels)
 }
 
 #[rstest]
@@ -665,64 +692,76 @@ fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usi
 )]
 fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[case] config: &str) {
     let rw = preserve(config).unwrap();
-    let walked = check_no_generated_vocabulary_entry(&rw.text, config)
+    let walked = check_vocabulary_entries(&rw.text, config)
         .unwrap_or_else(|why| panic!("written config: {why}"));
     assert!(walked >= 1, "the check walked no layer\n{}", rw.text);
 }
 
-#[test]
-#[should_panic(
-    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
+#[rstest]
+#[case::an_override_carries_the_top_level_rule(
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n",
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
+    "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
 )]
-fn the_sweep_fails_when_an_override_carries_the_top_level_rule() {
-    let authored = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n";
-    let broken = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
-    check_no_generated_vocabulary_entry(broken, authored)
-        .unwrap_or_else(|why| panic!("written config: {why}"));
-}
-
-#[test]
-#[should_panic(
-    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
+#[case::a_layer_changes_the_authored_level(
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"suggestion\"\n",
+    "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
 )]
-fn the_sweep_fails_when_a_layer_changes_the_authored_level() {
-    let authored = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
-    let broken = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"suggestion\"\n";
-    check_no_generated_vocabulary_entry(broken, authored)
-        .unwrap_or_else(|why| panic!("written config: {why}"));
-}
-
-#[test]
-#[should_panic(
-    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
+#[case::a_guard_turns_off_a_rule_the_input_does_not_author(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n",
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n",
+    "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
 )]
-fn the_sweep_fails_when_a_guard_turns_off_a_rule_the_input_does_not_author() {
-    let authored = "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n";
-    let broken = "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
-    check_no_generated_vocabulary_entry(broken, authored)
-        .unwrap_or_else(|why| panic!("written config: {why}"));
-}
-
-#[test]
-#[should_panic(
-    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
+#[case::an_off_replaces_the_authored_level_of_an_override(
+    "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
+    "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n",
+    "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
 )]
-fn the_sweep_fails_when_an_off_replaces_the_authored_level_of_an_override() {
-    let authored = "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
-    let broken = "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
-    check_no_generated_vocabulary_entry(broken, authored)
-        .unwrap_or_else(|why| panic!("written config: {why}"));
-}
-
-#[test]
-#[should_panic(
-    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
+#[case::the_top_level_carries_an_off_guard(
+    "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
+    "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
 )]
-fn the_sweep_fails_when_the_top_level_carries_an_off_guard() {
-    let authored = "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
-    let broken = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
-    check_no_generated_vocabulary_entry(broken, authored)
-        .unwrap_or_else(|why| panic!("written config: {why}"));
+#[case::an_authored_top_level_rule_is_dropped(
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
+    "schema_version = 2\n",
+    "authored vocabulary rule ste-words.word-outside-controlled-vocabulary"
+)]
+#[case::an_authored_rule_is_dropped_from_its_override(
+    "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
+    "schema_version = 2\n\n[[overrides]]\nfiles = [\"docs/**\"]\n",
+    "authored vocabulary rule ste-words.word-outside-controlled-vocabulary"
+)]
+#[case::an_authored_override_is_dropped_with_its_rule(
+    "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
+    "schema_version = 2\n",
+    "authored vocabulary rule ste-words.word-outside-controlled-vocabulary"
+)]
+#[case::the_output_is_empty(
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
+    "",
+    "authored vocabulary rule ste-words.word-outside-controlled-vocabulary"
+)]
+#[case::an_entry_has_no_string_level(
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = { other = 1 }\n",
+    "has no string level"
+)]
+#[case::the_bare_and_core_spellings_conflict(
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\"core:ste-words.word-outside-controlled-vocabulary\" = \"suggestion\"\n",
+    "conflicts"
+)]
+fn the_sweep_rejects_a_written_config_that_departs_from_the_authored_input(
+    #[case] authored: &str,
+    #[case] written: &str,
+    #[case] reason: &str,
+) {
+    let outcome = check_vocabulary_entries(written, authored);
+    assert!(outcome.is_err(), "the sweep accepted\n{written}");
+    let err = outcome.unwrap_err();
+    assert!(err.contains(reason), "{err}");
 }
 
 #[rstest]
