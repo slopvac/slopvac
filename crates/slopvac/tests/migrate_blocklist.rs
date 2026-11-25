@@ -249,11 +249,12 @@ fn a_later_category_over_an_earlier_vocabulary_rule_is_refused()
     Ok(())
 }
 
+/// The findings of the file inside `docs` and the one outside it, as `(severity, word)`.
+type Findings = [Vec<(String, String)>; 2];
+
 /// The 2.x config of a `blocklist_2x` scenario and the findings 2.x measured for it: `docs/a.md`
 /// stands for the file inside `docs` and `b.md` for the one outside.
-fn measured_2x(
-    name: &str,
-) -> Result<(String, [Vec<(String, String)>; 2]), Box<dyn std::error::Error>> {
+fn measured_2x(name: &str) -> Result<(String, Findings), Box<dyn std::error::Error>> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../slopvac-migrate/tests/fixtures/preserve/vectors.json");
     let data: Value = serde_json::from_str(&fs::read_to_string(path)?)?;
