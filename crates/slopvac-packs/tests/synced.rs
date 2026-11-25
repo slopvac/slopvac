@@ -17,8 +17,8 @@ use rstest::rstest;
 use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
-    ArtifactFault, Budget, Limits, LoadedPack, PackError, Packs, Reference, Source, SyncedError,
-    core_source, load_synced, load_synced_within,
+    ArtifactFault, Budget, Limits, LoadedPack, PackError, Packs, Reference, Source, SourceError,
+    SyncedError, core_source, load_synced, load_synced_within,
 };
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::Lockfile;
@@ -963,6 +963,8 @@ fn a_synced_tagger_that_emits_a_core_tag_is_refused() {
 #[case::tag_a_declarative_tagger_emits("acme-t", "procedure", true)]
 #[case::id_of_a_declarative_tagger_used_as_a_tag("acme-t", "procedure-heading", false)]
 #[case::fresh_id_and_tag("acme-t", "acme-tag", false)]
+#[case::tag_of_a_declarative_tagger_used_as_an_id("procedure", "acme-tag", false)]
+#[case::id_of_a_declarative_tagger("procedure-heading", "acme-tag", true)]
 fn a_plugin_tagger_is_checked_against_built_in_ids_and_tags_separately(
     #[case] id: &str,
     #[case] tag: &str,
@@ -1036,19 +1038,9 @@ fn the_directory_source_caps_a_file_at_two_mebibytes(
     );
 }
 
-// Policies section 1.9: a style file is capped at 1 MiB, applied where the file is read, so a
-// file over the cap is refused with `style-too-large` before its bytes are decoded as UTF-8. A
-// rule or category file has the 2 MiB cap, so a 1.5 MiB style is over its own cap only.
-#[rstest]
-#[case::at_the_cap(MIB, true, None)]
-#[case::one_byte_over(MIB + 1, true, Some("style-too-large"))]
-#[case::one_and_a_half_mebibytes(MIB * 3 / 2, true, Some("style-too-large"))]
-#[case::not_utf8_one_byte_over(MIB + 1, false, Some("style-too-large"))]
-fn a_plugin_style_is_capped_at_one_mebibyte(
-    #[case] len: usize,
-    #[case] utf8: bool,
-    #[case] code: Option<&str>,
-) {
+/// A plugin `acme` whose one style file `styles/s.toml` is `len` bytes: valid UTF-8 text, or
+/// bytes that are not UTF-8.
+fn plugin_with_style_of(len: usize, utf8: bool) -> World {
     let header = "schema_version = 3\ndescription = \"d\"\n";
     let mut spec = Spec::new("acme");
     spec.provides = "styles = [\"styles/s.toml\"]".into();
@@ -1062,15 +1054,40 @@ fn a_plugin_style_is_capped_at_one_mebibyte(
     }
     let mut w = World::new();
     w.install(&spec);
+    w
+}
+
+// Policies section 1.9: a style file is capped at 1 MiB, and a file of exactly the cap loads.
+#[test]
+fn a_plugin_style_of_exactly_one_mebibyte_loads() {
+    let w = plugin_with_style_of(MIB, true);
 
     let loaded = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store());
 
-    assert_eq!(
-        loaded.as_ref().err().and_then(SyncedError::code),
-        code,
-        "{:?}",
-        loaded.err()
-    );
+    assert!(loaded.is_ok(), "{:?}", loaded.err());
+}
+
+// A file over the cap is refused with `style-too-large` where it is read, before its bytes are
+// decoded as UTF-8, so a file that is not UTF-8 gets the size refusal, not a decode error. A
+// rule or category file has the 2 MiB cap, so a 1.5 MiB style is over its own cap only.
+#[rstest]
+#[case::one_byte_over(MIB + 1, true)]
+#[case::one_and_a_half_mebibytes(MIB * 3 / 2, true)]
+#[case::not_utf8_one_byte_over(MIB + 1, false)]
+fn a_plugin_style_over_one_mebibyte_is_refused_as_too_large(
+    #[case] len: usize,
+    #[case] utf8: bool,
+) {
+    let w = plugin_with_style_of(len, utf8);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    let SyncedError::Pack(PackError::Source(SourceError::StyleTooLarge { style, cap })) = &err
+    else {
+        panic!("{err:?}");
+    };
+    assert_eq!((style.as_str(), *cap), ("s", 1_048_576));
+    assert_eq!(err.code(), Some("style-too-large"));
 }
 
 #[test]
@@ -1089,6 +1106,26 @@ fn a_one_and_a_half_mebibyte_category_still_loads() {
     let loaded = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store());
 
     assert!(loaded.is_ok(), "{:?}", loaded.err());
+}
+
+// The 2 MiB cap applies before the bytes are decoded, so a category over the cap that is not
+// valid UTF-8 gets the size refusal and not a decode error.
+#[test]
+fn an_oversized_category_that_is_not_utf8_is_refused_as_too_large() {
+    let mut spec = Spec::new("acme");
+    spec.provides = "categories = [\"categories/c.json\"]".into();
+    spec.raw_files
+        .push(("categories/c.json", vec![0xff; 2 * MIB + 1]));
+    let mut w = World::new();
+    w.install(&spec);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    let SyncedError::Pack(PackError::Source(SourceError::TooLarge { cap })) = &err else {
+        panic!("{err:?}");
+    };
+    assert_eq!(*cap, 2_097_152);
+    assert_eq!(err.code(), Some("rules-file-too-large"));
 }
 
 // Rule ids are qualified by plugin (docs/contract/plugins.md, section 2), so two plugins that
@@ -1174,6 +1211,56 @@ fn a_category_only_collision_is_refused_with_the_category_code_and_text() {
         format!(
             "plugin `acme` is refused: its category `{category}` has the id of a category that another plugin supplies, and nothing from the plugin loads"
         )
+    );
+}
+
+// One plugin trips both guards: its first category shares only an id with a core category, and
+// its second category holds a rule with the id of a core rule. The plugin is refused and nothing
+// from it loads. Which of the two codes the refusal carries is not asserted: the order of the
+// two checks is settled by slopvac-8l4.3.77.
+#[test]
+fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_whole() {
+    let core = Packs::core().unwrap();
+    let locals: Vec<String> = core
+        .rule_sets()
+        .flat_map(|s| s.rules().map(|r| r.id().local().to_owned()))
+        .collect();
+    let (shared_rule_category, shared_rule) = locals[0].split_once('.').unwrap();
+    let (category_only, _) = locals
+        .iter()
+        .map(|l| l.split_once('.').unwrap())
+        .find(|(c, _)| *c != shared_rule_category)
+        .unwrap();
+    let category = |id: &str, rule: &str| {
+        format!(
+            r#"{{"schema_version":3,"id":"{id}","title":"T","description":"D","rules":[{{"id":"{rule}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"a"}},"citation":{{"source":"s"}}}}]}}"#
+        )
+    };
+    let mut spec = Spec::new("acme");
+    spec.provides = "categories = [\"categories/a.json\", \"categories/b.json\"]".into();
+    spec.files.push((
+        "categories/a.json",
+        category(category_only, "zz-fresh-rule"),
+    ));
+    spec.files.push((
+        "categories/b.json",
+        category(shared_rule_category, shared_rule),
+    ));
+    let mut w = World::new();
+    w.install(&spec);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert!(
+        matches!(
+            err.code(),
+            Some("plugin-rule-id-collision" | "plugin-category-id-collision")
+        ),
+        "{err}"
+    );
+    assert!(
+        err.to_string().contains("nothing from the plugin loads"),
+        "{err}"
     );
 }
 
@@ -1268,7 +1355,8 @@ fn a_budget_refusal_names_the_plugin_whose_load_crossed_it() {
 fn a_three_mebibyte_config_from_an_embedded_source_loads() {
     use slopvac_packs::EmbeddedSource;
     let config: &'static str = Box::leak(format!("# {}\n", "x".repeat(3 * MIB)).into_boxed_str());
-    let files: &'static [(&'static str, &'static str)] = Box::leak(Box::new([("c/big.toml", config)]));
+    let files: &'static [(&'static str, &'static str)] =
+        Box::leak(Box::new([("c/big.toml", config)]));
     let tables: &'static [&'static [(&'static str, &'static str)]] = Box::leak(Box::new([files]));
     let manifest = "schema_version = 3\nid = \"acme\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n\n[provides]\nconfigs = [\"c/big.toml\"]\n";
 
