@@ -22,7 +22,7 @@ use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Level, Settings};
 use slopvac_model::{
     CategoryName, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, KebabName,
-    NonEmptyString, Notice, NoticeLevel, RuleId, Severity,
+    NonEmptyString, Notice, NoticeLevel, RESERVED_ID, RuleId, Severity,
 };
 use slopvac_rules::MatchKind;
 use slopvac_styles::{BuiltinSource, Style, StylePresets};
@@ -588,8 +588,11 @@ pub fn build(
         let name = category.id().as_str();
         let qualified = format!("{plugin}:{name}");
         let reported = CategoryName::of(plugin, category.id());
-        // A bare key names this category only when no other plugin ships the same id.
-        let bare_category = rules.categories_named(name).len() == 1;
+        // A bare key names this category when no other plugin ships the same id. A config key
+        // that is still ambiguous here comes from a shipped preset, which `validate` does not
+        // read, and a shipped preset is owned by `core`.
+        let bare_category =
+            rules.categories_named(name).len() == 1 || plugin.as_str() == RESERVED_ID;
         let field = |f: &'static str| {
             let mut paths = vec![vec!["categories", qualified.as_str(), f]];
             if bare_category {
@@ -622,7 +625,7 @@ pub fn build(
                 }
             }
             let mut keys = vec![id.as_str()];
-            if rules.rules_named(id.local()).len() == 1 {
+            if rules.rules_named(id.local()).len() == 1 || plugin.as_str() == RESERVED_ID {
                 keys.push(id.local());
             }
             let named = resolved.level_by_any_unfloored(&keys, &categories);
@@ -927,6 +930,19 @@ mod tests {
         };
         list.push(name.to_owned());
         assert_eq!(settings_with(&rules, &cli).unwrap_err().code, code);
+    }
+
+    #[test]
+    fn a_shipped_preset_dial_stays_with_core_when_a_plugin_shares_the_category_id() {
+        // The shipped `ste` style gives `ste-words` a weight of 0.8 by its bare name.
+        let mut sets = Catalog::load().expect("the rules load").into_sets();
+        sets.extend(catalog_of(&[("alpha", "ste-words")]).into_sets());
+        let rules = Catalog::from_sets(sets);
+        let config = format!("{HEAD}styles = [\"ste\"]\n");
+        let s = settings_over(&rules, &config).unwrap();
+        let weight = |name: &str| s.categories[&CategoryName::new(name).unwrap()].weight;
+        assert_eq!(weight("ste-words"), Some(0.8));
+        assert_eq!(weight("alpha:ste-words"), None);
     }
 
     /// `a.b` as an unknown rule at `slopvac.toml:4:1` in `layer`.
