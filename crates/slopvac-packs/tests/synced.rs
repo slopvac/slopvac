@@ -435,7 +435,7 @@ fn a_required_version_the_lock_does_not_provide_is_refused() {
 }
 
 #[test]
-fn a_synced_pack_registers_its_taggers_after_the_core_ones() {
+fn a_synced_plugin_registers_its_taggers_after_the_core_ones() {
     let mut w = World::new();
     let mut spec = Spec::new("acme");
     spec.provides = "taggers = [\"taggers/t.yaml\"]".into();
@@ -821,7 +821,7 @@ fn every_budget_refusal_has_one_code_and_names_its_budget(
     let error = PackError::Budget {
         budget,
         limit: 1,
-        pack: None,
+        plugin: None,
     };
 
     assert_eq!(error.code(), Some("rules-budget-exceeded"));
@@ -843,12 +843,12 @@ fn a_budget_refusal_exposes_its_budget_name_and_limit(
     let pack = PackError::Budget {
         budget,
         limit,
-        pack: None,
+        plugin: None,
     };
     let synced = SyncedError::Pack(PackError::Budget {
         budget,
         limit,
-        pack: None,
+        plugin: None,
     });
 
     for (got, code) in [
@@ -863,7 +863,7 @@ fn a_budget_refusal_exposes_its_budget_name_and_limit(
 }
 
 #[rstest]
-#[case::pack_error(SyncedError::Pack(PackError::Budget { budget: PackBudget::Files, limit: 1, pack: None }), Some("rules-budget-exceeded"))]
+#[case::pack_error(SyncedError::Pack(PackError::Budget { budget: PackBudget::Files, limit: 1, plugin: None }), Some("rules-budget-exceeded"))]
 #[case::pack_glob(
     SyncedError::Pack(PackError::GlobTooComplex),
     Some("plugin-glob-too-complex")
@@ -900,7 +900,7 @@ fn core_tagger() -> (String, String) {
 }
 
 #[test]
-fn owned_rule_sets_list_the_core_first_then_each_pack_in_load_order() {
+fn owned_rule_sets_list_the_core_first_then_each_plugin_in_load_order() {
     let mut w = World::new();
     w.install(&Spec::new("base").rules(&["a"]));
     w.install(&Spec::new("top").requires("base").rules(&["b", "c"]));
@@ -938,6 +938,32 @@ fn a_synced_tagger_that_emits_a_core_tag_is_refused() {
     w.install(&with_tagger(
         "acme",
         &format!("schema_version: 3\nid: acme-t\ntag: {tag}\nmatch:\n  - pattern: 'a'\n"),
+    ));
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
+}
+
+#[test]
+fn a_synced_tagger_that_takes_a_built_in_tagger_id_is_refused() {
+    let mut w = World::new();
+    w.install(&with_tagger(
+        "acme",
+        "schema_version: 3\nid: requirement\ntag: acme-tag\nmatch:\n  - pattern: 'a'\n",
+    ));
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
+}
+
+#[test]
+fn a_synced_tagger_that_emits_a_built_in_tag_is_refused() {
+    let mut w = World::new();
+    w.install(&with_tagger(
+        "acme",
+        "schema_version: 3\nid: acme-t\ntag: requirement\nmatch:\n  - pattern: 'a'\n",
     ));
 
     let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
@@ -993,6 +1019,41 @@ fn the_directory_source_caps_a_file_at_two_mebibytes(
     );
 }
 
+// Policies section 1.9: a style file is capped at 1 MiB, a rule or category file at 2 MiB. A
+// 1.5 MiB file padded with whitespace or comments is under the second cap and over the first.
+#[test]
+fn a_one_and_a_half_mebibyte_style_is_refused_with_the_too_large_code() {
+    let mut style = String::from("schema_version = 3\ndescription = \"d\"\n");
+    style.push_str(&"# padding\n".repeat(1_536 * 1024 / 10));
+    let mut spec = Spec::new("acme");
+    spec.provides = "styles = [\"styles/s.toml\"]".into();
+    spec.files.push(("styles/s.toml", style));
+    let mut w = World::new();
+    w.install(&spec);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert_eq!(err.code(), Some("rules-file-too-large"), "{err}");
+}
+
+#[test]
+fn a_one_and_a_half_mebibyte_category_still_loads() {
+    let mut spec = Spec::new("acme").rules(&["a"]);
+    let (_, text) = spec.files.pop().unwrap();
+    let padded = text.replacen(
+        r#""rules":["#,
+        &format!("{}\"rules\":[", " ".repeat(1_536 * 1024)),
+        1,
+    );
+    spec.files.push(("categories/c.json", padded));
+    let mut w = World::new();
+    w.install(&spec);
+
+    let loaded = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store());
+
+    assert!(loaded.is_ok(), "{:?}", loaded.err());
+}
+
 // Rule ids are qualified by plugin (docs/contract/plugins.md, section 2), so two plugins that
 // share a bare rule id are two rules: `base:c.r0` and `top:c.r0`.
 #[test]
@@ -1034,8 +1095,61 @@ fn a_plugin_rule_with_a_core_rule_id_is_refused_with_its_own_code() {
 
     let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
 
-    assert_eq!(err.code(), Some("pack-rule-id-collision"), "{err}");
+    assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
     assert!(err.to_string().contains(&format!("`{local}`")), "{err}");
+}
+
+// The refusal does not depend on where the core sits in the list.
+/// A plugin `acme` whose category has the id of a core category and whose one rule has a fresh
+/// id, and that category id.
+fn colliding_category_with_a_fresh_rule() -> (Spec, String) {
+    let packs = Packs::core().unwrap();
+    let core_rule = packs.rule_sets().next().unwrap().rules().next().unwrap();
+    let category = core_rule.id().local().split_once('.').unwrap().0.to_owned();
+    let text = format!(
+        r#"{{"schema_version":3,"id":"{category}","title":"T","description":"D","rules":[{{"id":"zz-fresh-rule","name":"N","message":"m","match":{{"kind":"pattern","pattern":"a"}},"citation":{{"source":"s"}}}}]}}"#
+    );
+    let mut spec = Spec::new("acme");
+    spec.provides = "categories = [\"categories/c.json\"]".into();
+    spec.files.push(("categories/c.json", text));
+    (spec, category)
+}
+
+#[test]
+fn a_plugin_category_with_a_core_category_id_and_a_fresh_rule_id_is_refused() {
+    let (spec, _) = colliding_category_with_a_fresh_rule();
+    let mut w = World::new();
+    w.install(&spec);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
+}
+
+// Only the category is shared, so the text names a category and never a rule.
+#[test]
+fn a_category_only_collision_names_the_category_not_a_rule() {
+    let (spec, category) = colliding_category_with_a_fresh_rule();
+    let mut w = World::new();
+    w.install(&spec);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    let text = err.to_string();
+    assert!(text.contains(&format!("category `{category}`")), "{text}");
+    assert!(!text.contains("its rule"), "{text}");
+}
+
+#[test]
+fn the_same_qualified_rule_id_supplied_twice_is_refused() {
+    let mut w = World::new();
+    w.install(&Spec::new("acme").rules(&["a"]));
+    let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+    loaded.extend(load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap());
+
+    let err = Packs::new(loaded).unwrap_err();
+
+    assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
 }
 
 // The refusal does not depend on where the core sits in the list.
@@ -1049,7 +1163,7 @@ fn a_plugin_listed_before_the_core_is_still_checked_against_the_core_ids() {
 
     let err = Packs::new(loaded).unwrap_err();
 
-    assert_eq!(err.code(), Some("pack-rule-id-collision"), "{err}");
+    assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
 }
 
 // X3: a tagger stops compiling at the first pattern that crosses the run budget. The first
@@ -1077,11 +1191,36 @@ fn a_tagger_stops_compiling_at_the_first_pattern_that_crosses_the_budget() {
     );
 }
 
+// X3: one rule may list at most 4,096 tokens (`rule-entries`). A rule with 4,097 is refused through
+// the loader, and the refusal names the plugin whose load crossed it.
 #[test]
-fn a_budget_refusal_names_the_pack_whose_load_crossed_it() {
+fn a_rule_with_4097_tokens_is_refused_with_the_rule_entries_budget() {
+    let tokens: Vec<String> = (0..4097).map(|i| format!("\"t{i}\"")).collect();
+    let text = format!(
+        r#"{{"schema_version":3,"id":"c","title":"T","description":"D","rules":[{{"id":"r","name":"N","message":"m","match":{{"kind":"tokens","tokens":[{}]}},"citation":{{"source":"s"}}}}]}}"#,
+        tokens.join(",")
+    );
+    let mut spec = Spec::new("acme");
+    spec.provides = "categories = [\"categories/c.json\"]".into();
+    spec.files.push(("categories/c.json", text));
+    let mut w = World::new();
+    w.install(&spec);
+
+    let err = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert_eq!(err.code(), Some("rules-budget-exceeded"), "{err}");
+    assert_eq!(err.budget(), Some((PackBudget::RuleEntries, 4096)), "{err}");
+    let SyncedError::Pack(plugin) = &err else {
+        panic!("{err}");
+    };
+    assert_eq!(plugin.budget_plugin(), Some("acme"), "{err}");
+}
+
+#[test]
+fn a_budget_refusal_names_the_plugin_whose_load_crossed_it() {
     let w = base_then_unread_top(&Spec::new("base").rules(&["a", "b"]));
 
     let e = run_error(&w, small(|l| l.run_rules = 1));
 
-    assert_eq!(e.budget_pack(), Some("base"), "{e}");
+    assert_eq!(e.budget_plugin(), Some("base"), "{e}");
 }

@@ -45,7 +45,7 @@ fn embedded_and_on_disk_copies_load_the_same_rule_ids() {
 }
 
 #[test]
-fn owned_rule_sets_keep_load_order_and_the_rules_of_each_pack() {
+fn owned_rule_sets_keep_load_order_and_the_rules_of_each_plugin() {
     let packs = Packs::core().unwrap();
     let expected: Vec<(String, usize)> = packs
         .rule_sets()
@@ -157,7 +157,7 @@ fn write_pack(provides: &str) -> tempfile::TempDir {
 }
 
 #[test]
-fn a_non_core_pack_loads_its_taggers() {
+fn a_non_core_plugin_loads_its_taggers() {
     let dir = write_pack("taggers = [\"taggers/t.yaml\"]");
     let pack = LoadedPack::load(&DirSource::new(dir.path()), Source::Pack).unwrap();
     let ids: Vec<&str> = pack.taggers().iter().map(|t| t.id.as_str()).collect();

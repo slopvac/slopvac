@@ -16,7 +16,7 @@ impl From<slopvac_rules::BudgetHit> for PackError {
         Self::Budget {
             budget: hit.budget,
             limit: hit.limit,
-            pack: None,
+            plugin: None,
         }
     }
 }
@@ -32,29 +32,29 @@ impl PackError {
         }
     }
 
-    /// The id of the pack whose load crossed the budget, when the refusal names one. A caller
+    /// The id of the plugin whose load crossed the budget, when the refusal names one. A caller
     /// shows it as the `data.path` of a `rules-budget-exceeded` report, in its own path form.
     /// `None` for any other error, and for a budget crossed before the manifest was read.
     #[must_use]
-    pub fn budget_pack(&self) -> Option<&str> {
+    pub fn budget_plugin(&self) -> Option<&str> {
         match self {
-            Self::Budget { pack, .. } => pack.as_deref(),
+            Self::Budget { plugin, .. } => plugin.as_deref(),
             _ => None,
         }
     }
 
-    /// Name `pack` in a budget refusal that does not name one yet.
+    /// Name `plugin` in a budget refusal that does not name one yet.
     #[must_use]
-    pub(crate) fn in_pack(self, pack: &slopvac_model::PackId) -> Self {
+    pub(crate) fn in_plugin(self, plugin: &slopvac_model::PackId) -> Self {
         match self {
             Self::Budget {
                 budget,
                 limit,
-                pack: None,
+                plugin: None,
             } => Self::Budget {
                 budget,
                 limit,
-                pack: Some(pack.to_string()),
+                plugin: Some(plugin.to_string()),
             },
             other => other,
         }
@@ -76,7 +76,7 @@ impl PackError {
                 }
                 .code(),
             ),
-            Self::RuleIdCollision { .. } => Some(code_of!(RuleIdCollision { plugin, rule })),
+            Self::RuleIdCollision { .. } => Some(code_of!(RuleIdCollision { plugin, kind, rule })),
             Self::GlobTooComplex => Some(code_of!(GlobTooComplex {
                 depth,
                 alternatives,
@@ -129,11 +129,10 @@ pub enum PackError {
     },
     /// A tagger pattern is over the pattern cap (policies, section 1.9). The code and the text
     /// are those of the context crate's own refusal, which holds only the two sizes.
-    #[error(
-        "`{}` does not load: {}",
-        slopvac_sanitize::line(.path),
-        slopvac_context::Error::PatternTooLong { len: *.len, max: *.max }
-    )]
+    #[error("{}", crate::messages::PackMessage::FileNotLoaded {
+        path: slopvac_sanitize::line(.path),
+        reason: slopvac_context::Error::PatternTooLong { len: *.len, max: *.max }.to_string(),
+    })]
     TaggerPatternTooLong {
         /// The pack-relative path.
         path: String,
@@ -176,17 +175,20 @@ pub enum PackError {
         )
     )]
     GlobTooComplex,
-    /// A plugin supplies a rule, or a category, whose id an earlier pack supplies already. The
+    /// A plugin supplies a rule, or a category, whose id an earlier plugin supplies already. The
     /// engine keys category settings and scoring by the local id, so a merge would change the
-    /// earlier pack's metadata. The load refuses the plugin whole.
+    /// earlier plugin's metadata. The load refuses the plugin whole.
     #[error("{}", crate::messages::PackMessage::RuleIdCollision {
         plugin: slopvac_sanitize::line(.plugin),
+        kind: (if *.category_only { "category" } else { "rule" }).to_owned(),
         rule: slopvac_sanitize::line(.rule),
     })]
     RuleIdCollision {
         /// The plugin id.
         plugin: String,
-        /// The colliding id without the pack part: `<category>.<rule>`, or the category id when
+        /// True when only the category id is shared, so the text names a category.
+        category_only: bool,
+        /// The colliding id without the plugin part: `<category>.<rule>`, or the category id when
         /// only the category is shared.
         rule: String,
     },
@@ -199,8 +201,8 @@ pub enum PackError {
         budget: slopvac_rules::PackBudget,
         /// Its limit, in the unit of the budget.
         limit: u64,
-        /// The id of the pack whose load crossed it, when known.
-        pack: Option<String>,
+        /// The id of the plugin whose load crossed it, when known.
+        plugin: Option<String>,
     },
     /// An artifact name is not valid.
     #[error(transparent)]

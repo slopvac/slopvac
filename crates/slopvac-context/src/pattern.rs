@@ -81,8 +81,9 @@ impl Pattern {
         caseless: bool,
         budget: &mut dyn PatternBudget,
     ) -> Result<Self, Error> {
-        let stopped =
-            |_: BudgetStop| Error::Parse("a pattern budget stopped the compile".to_owned());
+        let stopped = |_: BudgetStop| {
+            Error::Parse(crate::messages::ContextMessage::PatternBudgetStopped.to_string())
+        };
         budget.reserve(source.len()).map_err(stopped)?;
         let pattern = Self::build(source, caseless)?;
         budget

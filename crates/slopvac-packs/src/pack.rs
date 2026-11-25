@@ -17,7 +17,7 @@ use crate::genre_layer::{GenreFile, display_path, settings};
 use crate::name::is_local;
 use crate::{
     ArtifactFault, Manifest, PackError, PackPath, PackSource, Provenance, Provides, QualifiedName,
-    Reference, Registry, RegistryError, RuleFault, RuleProblem, Source,
+    Reference, Registry, RegistryError, RuleFault, RuleProblem, Source, SourceError,
 };
 
 /// One pack with its files read and checked.
@@ -72,11 +72,23 @@ struct Reader<'a> {
 
 impl Reader<'_> {
     fn read_all(&mut self, paths: &[PackPath]) -> Result<Vec<(PackPath, String)>, PackError> {
+        self.read_capped(paths, slopvac_rules::MAX_RULE_FILE_BYTES)
+    }
+
+    /// Like `read_all`, and refuses a file over `cap` bytes, the per-file cap of its kind.
+    fn read_capped(
+        &mut self,
+        paths: &[PackPath],
+        cap: u64,
+    ) -> Result<Vec<(PackPath, String)>, PackError> {
         paths
             .iter()
             .map(|p| {
                 let text = self.source.read(p)?;
                 let len = text.len() as u64;
+                if len > cap {
+                    return Err(SourceError::TooLarge { cap }.into());
+                }
                 self.bytes = self.bytes.saturating_add(len);
                 if self.bytes > self.budget.limits().pack_bytes {
                     return Err(refusal(PackBudget::Bytes, self.budget.limits().pack_bytes));
@@ -126,7 +138,7 @@ fn syntax(path: &PackPath, text: &str, error: &slopvac_config::tree::ParseError)
 
 fn rule_problems(errors: &slopvac_rules::LoadErrors) -> PackError {
     use slopvac_rules::LoadErrorKind as K;
-    // A budget the loader refused, per pack or per run, outranks the problems found before it
+    // A budget the loader refused, per plugin or per run, outranks the problems found before it
     // and keeps its code and data (`rules-budget-exceeded`, `data.budget`, `data.limit`).
     let crossed = errors.errors().iter().find_map(|e| match &e.kind {
         K::BudgetExceeded { budget, limit, .. } => Some(refusal(*budget, *limit)),
@@ -154,7 +166,7 @@ impl LoadedPack {
     /// Read the pack in `source` and check its rules, genres and styles.
     ///
     /// `origin` says who supplies the pack. The core pack takes the binary's version, whatever
-    /// its manifest says. Every pack's declarative taggers load, each pattern charged to the
+    /// its manifest says. Every plugin's declarative taggers load, each pattern charged to the
     /// run's compiled-pattern budget and capped at 8,192 bytes as written.
     ///
     /// # Errors
@@ -197,7 +209,7 @@ impl LoadedPack {
         }
         let id = manifest.id.clone();
         Self::load_files(source, origin, budget, manifest, manifest_bytes)
-            .map_err(|e| e.in_pack(&id))
+            .map_err(|e| e.in_plugin(&id))
     }
 
     /// Read and check the files the manifest lists, once the manifest is in and charged.
@@ -274,7 +286,7 @@ impl LoadedPack {
             tagger_paths.push(path);
         }
         let pattern_bytes = reader.budget.pattern_used().saturating_sub(patterns_before);
-        let styles = reader.read_all(&provides.styles)?;
+        let styles = reader.read_capped(&provides.styles, slopvac_styles::MAX_STYLE_BYTES)?;
         let configs = reader.read_all(&provides.configs)?;
         let bytes = reader.bytes;
         Ok(Self {
@@ -312,7 +324,7 @@ impl LoadedPack {
         &self.rules
     }
 
-    /// The pack's declarative taggers, in registration order.
+    /// The plugin's declarative taggers, in registration order.
     #[must_use]
     pub fn taggers(&self) -> &[TaggerSpec] {
         &self.taggers
@@ -350,9 +362,22 @@ fn stem(path: &PackPath) -> &str {
     file.rsplit_once('.').map_or(file, |(stem, _)| stem)
 }
 
-/// Refuse a tagger that takes the id of an earlier pack's tagger, or emits a context tag that a
-/// core tagger emits. A synced pack may add tags and taggers, never stand in for the core's:
-/// the core rules read those tags, so a pack that set `procedure` could turn them on or off.
+/// The ids of the engine's built-in taggers, read from the registry that runs them.
+fn built_in_tagger_ids() -> &'static [String] {
+    static IDS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    IDS.get_or_init(|| {
+        #[expect(
+            clippy::expect_used,
+            reason = "the built-in registry is bundled data that the context crate's tests load"
+        )]
+        let registry = slopvac_context::builtin_registry().expect("the built-in taggers load");
+        registry.ids().into_iter().map(str::to_owned).collect()
+    })
+}
+
+/// Refuse a tagger that takes the id of an earlier plugin's tagger, or emits a context tag that a
+/// core tagger emits. A synced plugin may add tags and taggers, never stand in for the core's:
+/// the core rules read those tags, so a plugin that set `procedure` could turn them on or off.
 fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
     // The core's taggers first, wherever the core sits in the list.
     let core_taggers = || {
@@ -361,8 +386,12 @@ fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
             .filter(|p| p.origin == Source::Core)
             .flat_map(|p| p.taggers.iter())
     };
-    let core_tags: HashSet<&str> = core_taggers().map(|t| t.tag.as_str()).collect();
+    let built_in = built_in_tagger_ids();
+    let mut core_tags: HashSet<&str> = core_taggers().map(|t| t.tag.as_str()).collect();
+    // A built-in sentence tagger emits the context tag of its own id, so its id reserves the tag.
+    core_tags.extend(built_in.iter().map(String::as_str));
     let mut ids: HashSet<&str> = core_taggers().map(|t| t.id.as_str()).collect();
+    ids.extend(built_in.iter().map(String::as_str));
     for pack in packs.iter().filter(|p| p.origin != Source::Core) {
         for (path, spec) in pack.tagger_paths.iter().zip(&pack.taggers) {
             if core_tags.contains(spec.tag.as_str()) || !ids.insert(spec.id.as_str()) {
@@ -374,10 +403,10 @@ fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
 }
 
 /// Refuse a plugin that supplies a rule, or a category, with the local id of one the core pack
-/// supplies, and any rule whose qualified id another pack supplies. Rule ids are qualified by
+/// supplies, and any rule whose qualified id another plugin supplies. Rule ids are qualified by
 /// plugin (`<plugin>:<category>.<rule>`, docs/contract/plugins.md, section 2), so two plugins may
 /// share a bare id. The core is different: the engine keys category settings and scoring by the
-/// category id, and a bare key reads as the first pack with that rule, so a plugin with a core id
+/// category id, and a bare key reads as the first plugin with that rule, so a plugin with a core id
 /// would overwrite or switch off the core's. Nothing from the plugin loads.
 fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
     // The core's ids first, wherever the core sits in the list, so no plugin escapes the check
@@ -397,23 +426,27 @@ fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
     for pack in packs {
         let is_core = pack.origin == Source::Core;
         for category in pack.rules.categories() {
-            let core_clash = category
+            let core_rule_clash = category
                 .rules()
                 .iter()
                 .map(|r| r.id().local())
-                .find(|local| !is_core && core_rules.contains(local))
-                .or_else(|| {
-                    (!is_core && core_categories.contains(category.id().as_str()))
-                        .then_some(category.id().as_str())
-                });
+                .find(|local| !is_core && core_rules.contains(local));
+            let core_category_clash = (!is_core
+                && core_categories.contains(category.id().as_str()))
+            .then_some(category.id().as_str());
             let same_id = category
                 .rules()
                 .iter()
                 .find(|r| !qualified.insert(r.id().as_str()))
                 .map(|r| r.id().local());
-            if let Some(rule) = core_clash.or(same_id) {
+            let clash = core_rule_clash
+                .map(|rule| (rule, false))
+                .or(core_category_clash.map(|category| (category, true)))
+                .or(same_id.map(|rule| (rule, false)));
+            if let Some((rule, category_only)) = clash {
                 return Err(PackError::RuleIdCollision {
                     plugin: pack.manifest.id.to_string(),
+                    category_only,
                     rule: rule.to_owned(),
                 });
             }
@@ -451,7 +484,7 @@ impl Packs {
         for pack in &packs {
             budget
                 .charge_pack(pack)
-                .map_err(|e| e.in_pack(&pack.manifest.id))?;
+                .map_err(|e| e.in_plugin(&pack.manifest.id))?;
         }
         check_taggers(&packs)?;
         check_rule_ids(&packs)?;
@@ -492,12 +525,12 @@ impl Packs {
         &self.loaded
     }
 
-    /// Every pack's rule set, in load order.
+    /// Every plugin's rule set, in load order.
     pub fn rule_sets(&self) -> impl Iterator<Item = &RuleSet> {
         self.loaded.iter().map(LoadedPack::rules)
     }
 
-    /// Every pack's rule set, in load order, handed over. A rule set does not clone, so a caller
+    /// Every plugin's rule set, in load order, handed over. A rule set does not clone, so a caller
     /// that builds several engines loads the packs again for each.
     #[must_use]
     pub fn into_rule_sets(self) -> Vec<RuleSet> {

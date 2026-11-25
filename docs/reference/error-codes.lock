@@ -203,6 +203,7 @@ context-genre-unknown text
 context-glob-invalid text
 context-glob-set-invalid text
 context-match-failed text
+context-pattern-budget-stopped text
 context-pattern-invalid text
 context-read-failed text
 context-signal-glob-invalid text
@@ -658,7 +659,6 @@ offline error
 offline-network-needed error
 offline-plugin-missing error
 pack-name-ambiguous error
-pack-rule-id-collision error
 parse-body-span-invalid text
 parse-budget-exceeded text
 parse-document-too-large text
@@ -669,6 +669,7 @@ plugin-api-unsupported error
 plugin-declaration-mismatch error
 plugin-exited error
 plugin-file-link error
+plugin-file-not-loaded text
 plugin-glob-too-complex error
 plugin-hash-mismatch error
 plugin-manifest-mismatch error
@@ -680,6 +681,7 @@ plugin-protocol-violation error
 plugin-requirement-unmet error
 plugin-requires-cycle error
 plugin-revoked error
+plugin-rule-id-collision error
 plugin-spawn-failed error
 plugin-store-unreadable error
 plugin-tampered error
