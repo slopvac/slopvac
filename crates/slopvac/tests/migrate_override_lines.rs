@@ -1,5 +1,5 @@
 //! A stray scalar in a multiline `overrides` array is refused at its own line, in both
-//! migration modes.
+//! migration modes, and nothing is written.
 #![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use rstest::rstest;
@@ -10,9 +10,11 @@ const CONFIG: &str =
     "schema_version = 2\noverrides = [\n  { files = [\"docs/**\"] },\n  \"stray\",\n]\n";
 
 #[rstest]
-#[case::plain(&[])]
-#[case::preserve(&["--preserve-behavior"])]
-fn a_stray_scalar_in_a_multiline_override_array_is_reported_at_its_own_line(#[case] mode: &[&str]) {
+#[case::plain(&["--write"])]
+#[case::preserve(&["--write", "--preserve-behavior"])]
+fn a_stray_scalar_in_a_multiline_override_array_is_refused_at_its_own_line_and_nothing_is_written(
+    #[case] mode: &[&str],
+) {
     let dir = tempfile::tempdir().expect("temp dir");
     std::fs::write(dir.path().join("slopvac.toml"), CONFIG).expect("config");
     let assert = Command::new(cargo_bin!("slopvac"))
@@ -24,8 +26,17 @@ fn a_stray_scalar_in_a_multiline_override_array_is_reported_at_its_own_line(#[ca
         .assert()
         .code(2);
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(stderr.contains("error[migrate-output-invalid]"), "{stderr}");
     assert!(
         stderr.contains("`overrides[1]` on line 4 is not"),
         "{stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("slopvac.toml")).expect("config"),
+        CONFIG
+    );
+    assert!(
+        !dir.path().join(".slopvac").exists(),
+        "a refusal wrote a backup"
     );
 }
