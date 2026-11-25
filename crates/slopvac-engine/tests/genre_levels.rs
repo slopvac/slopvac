@@ -212,3 +212,65 @@ fn the_severity_shift_does_not_move_an_explicit_rule_level() {
         [Severity::Warning]
     );
 }
+
+/// A rule set of the plugin `alpha` whose category `docs-discipline` flags `parser` as an error.
+fn alpha_set() -> slopvac_rules::RuleSet {
+    let rules = [tokens(
+        "history-internal-reference",
+        "parser",
+        &json!({"severity": "error"}),
+    )];
+    slopvac_rules::RuleSet::from_sources(
+        &slopvac_model::PackId::new("alpha").unwrap(),
+        vec![category("docs-discipline", &rules)],
+        &slopvac_rules::CompileOptions::default(),
+    )
+    .unwrap()
+}
+
+/// `core` and `alpha` both ship a category `docs-discipline`. The genre `internal` lowers the
+/// history rule of `core` only, so a category level protects the rules of its own plugin and
+/// no others.
+#[rstest::rstest]
+#[case::alpha_dial("alpha:docs-discipline", Severity::Suggestion, Severity::Warning)]
+#[case::core_dial("docs-discipline", Severity::Warning, Severity::Error)]
+fn a_category_level_protects_only_its_own_plugins_rules_from_the_genre(
+    #[case] dial: &str,
+    #[case] core_severity: Severity,
+    #[case] alpha_severity: Severity,
+) {
+    let mut settings = settings();
+    settings.categories.insert(
+        CategoryName::new(dial).unwrap(),
+        CategoryDials::default().with_level(Some(Level::On(Severity::Warning))),
+    );
+    let rules = [tokens(
+        "history-internal-reference",
+        "refactored",
+        &json!({"severity": "error"}),
+    )];
+    let core = ruleset(vec![category("docs-discipline", &rules)]);
+    let source = format!("---\ngenre: internal\n---\n{BODY}");
+    let doc = Engine::new(vec![core, alpha_set()], settings)
+        .unwrap()
+        .lint(&Input::markdown("a.md", &source).with_declared_genre("internal"))
+        .unwrap();
+    let got: Vec<(&str, Severity)> = doc
+        .findings
+        .iter()
+        .map(|f| (f.rule_id.as_str(), f.severity))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            (
+                "core:docs-discipline.history-internal-reference",
+                core_severity
+            ),
+            (
+                "alpha:docs-discipline.history-internal-reference",
+                alpha_severity
+            ),
+        ]
+    );
+}
