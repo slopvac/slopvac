@@ -362,7 +362,9 @@ pub fn run(matches: &ArgMatches, runner: &Runner<'_>, out: &mut dyn Write) -> Re
         // pins a key, not a fingerprint.
         // STUB(slopvac-8l4.9.63): the authoring commands.
         Some((name, _)) => Err(RunError::NotWired {
-            command: format!("plugins {name}"),
+            command: render(&CliText::CommandPath {
+                name: name.to_owned(),
+            }),
         }),
         None => write(out, command().render_help().to_string().as_bytes()).map(|()| 0),
     }

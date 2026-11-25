@@ -270,6 +270,10 @@ pub(crate) enum CliText {
     #[code("plugins-untrusted")]
     #[text("removed the trust recorded for `{id}`")]
     Untrusted { id: String },
+    /// The path of a `plugins` subcommand after `slopvac`, for the not-available refusal.
+    #[code("plugins-command-path")]
+    #[text("plugins {name}")]
+    CommandPath { name: String },
 }
 
 /// Why a `slopvac plugins` command stopped. Each one exits 2.
