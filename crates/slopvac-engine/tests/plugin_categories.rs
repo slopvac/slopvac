@@ -6,7 +6,7 @@
     clippy::unwrap_used,
     reason = "test code: a panic is a failed test"
 )]
-#![allow(missing_docs)]
+#![allow(missing_docs, reason = "test code: nothing public to document")]
 
 mod common;
 
