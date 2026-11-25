@@ -533,6 +533,7 @@ migrate-parse-failed text
 migrate-path-reason text
 migrate-path-too-large text
 migrate-place-top-level text
+migrate-reason-blocklist-category-no-severity-over-rule text
 migrate-reason-blocklist-category-over-off text
 migrate-reason-blocklist-category-over-rule text
 migrate-reason-blocklist-in-override text

@@ -179,6 +179,13 @@ fn check_blocklist_layout(
                         at: at.clone(),
                         line,
                     }
+                } else if !dials.contains_key("severity")
+                    && earlier.iter().any(|l| sets_vocabulary_entry(l, category))
+                {
+                    MigrateText::ReasonBlocklistCategoryNoSeverityOverRule {
+                        at: at.clone(),
+                        line,
+                    }
                 } else {
                     continue;
                 };
@@ -212,6 +219,17 @@ fn sets_active_vocabulary_rule(layer: &Layer, category: &str) -> bool {
             && VOCABULARY_RULES.contains(&qid.as_str())
             && qid.split_once('.').is_some_and(|(c, _)| c == category)
     })
+}
+
+/// Whether `layer` sets a rule of the vocabulary `category`, at any level, or sets the category
+/// itself.
+fn sets_vocabulary_entry(layer: &Layer, category: &str) -> bool {
+    is_vocabulary_category(category)
+        && (layer.categories.contains_key(category)
+            || layer.rules.keys().any(|qid| {
+                VOCABULARY_RULES.contains(&qid.as_str())
+                    && qid.split_once('.').is_some_and(|(c, _)| c == category)
+            }))
 }
 
 /// Whether `layer` turns `category` off, and `category` holds a vocabulary rule.
