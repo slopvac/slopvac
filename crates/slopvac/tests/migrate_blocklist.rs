@@ -242,7 +242,7 @@ fn a_later_category_over_an_earlier_vocabulary_rule_is_refused()
     );
     let stderr = refused(&config)?;
     assert!(
-        stderr.contains("`overrides[0].categories.ste-words` on line 11 sets the category of a word blocklist rule that an earlier layer sets"),
+        stderr.contains("`overrides[0].categories.ste-words` on line 11 sets the level of a category that holds a word blocklist rule. In 3.0 a later category level overrides a rule-specific level that an earlier layer set"),
         "{stderr}"
     );
     Ok(())

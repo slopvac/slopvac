@@ -411,7 +411,7 @@ pub(crate) enum MigrateText {
     /// Why a migrated config is refused: a later category replaces a vocabulary rule level.
     #[code("migrate-reason-blocklist-category-over-rule")]
     #[text(
-        "`{at}` on line {line} sets the category of a word blocklist rule that an earlier layer sets. `--preserve-behavior` cannot keep the 2.x level of that rule in the files this override covers. A follow-up will support these layouts."
+        "`{at}` on line {line} sets the level of a category that holds a word blocklist rule. In 3.0 a later category level overrides a rule-specific level that an earlier layer set, and 2.x kept the rule level. `--preserve-behavior` cannot keep the 2.x level of that rule in the files this override covers. A follow-up will support these layouts."
     )]
     ReasonBlocklistCategoryOverRule { at: String, line: String },
     /// Why a migrated config is refused: a later category turns an off vocabulary rule on.

@@ -399,7 +399,7 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
                 at: s("overrides[0].categories.ste-words"),
                 line: s("11"),
             },
-            "`overrides[0].categories.ste-words` on line 11 sets the category of a word blocklist rule that an earlier layer sets. `--preserve-behavior` cannot keep the 2.x level of that rule in the files this override covers. A follow-up will support these layouts.",
+            "`overrides[0].categories.ste-words` on line 11 sets the level of a category that holds a word blocklist rule. In 3.0 a later category level overrides a rule-specific level that an earlier layer set, and 2.x kept the rule level. `--preserve-behavior` cannot keep the 2.x level of that rule in the files this override covers. A follow-up will support these layouts.",
         ),
         (
             MigrateText::ReasonBlocklistCategoryOverOff {
