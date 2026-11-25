@@ -251,38 +251,41 @@ fn a_later_category_over_an_earlier_vocabulary_rule_is_refused()
 
 /// The 2.x config of a `blocklist_2x` scenario and the findings 2.x measured for it: `docs/a.md`
 /// stands for the file inside `docs` and `b.md` for the one outside.
-fn measured_2x(name: &str) -> (String, [Vec<(String, String)>; 2]) {
+fn measured_2x(
+    name: &str,
+) -> Result<(String, [Vec<(String, String)>; 2]), Box<dyn std::error::Error>> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../slopvac-migrate/tests/fixtures/preserve/vectors.json");
-    let data: Value =
-        serde_json::from_str(&fs::read_to_string(path).expect("vectors.json")).expect("json");
+    let data: Value = serde_json::from_str(&fs::read_to_string(path)?)?;
     let blocklist = &data["blocklist_2x"];
     let scenario = &blocklist["scenarios"][name];
-    let found = |file: &str| {
+    let found = |file: &str| -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
         let measured = &scenario["files"][file];
-        let profile = measured["profile"].as_str().expect("profile");
+        let profile = measured["profile"].as_str().ok_or("no profile")?;
         let level = measured["levels"][VOCABULARY_2X]
             .as_str()
             .or_else(|| blocklist["base"][profile]["levels"][VOCABULARY_2X].as_str())
-            .expect("a measured level");
-        if level == "off" {
+            .ok_or("no measured level")?;
+        Ok(if level == "off" {
             Vec::new()
         } else {
             expected(&[(level, "deploy")])
-        }
+        })
     };
-    (
-        scenario["input"].as_str().expect("input").to_owned(),
-        [found("docs/a.md"), found("b.md")],
-    )
+    Ok((
+        scenario["input"].as_str().ok_or("no input")?.to_owned(),
+        [found("docs/a.md")?, found("b.md")?],
+    ))
 }
 
 /// A later `off` category is the E4 guard case: the rule keeps its level outside the override
 /// and is off inside it, as in 2.x.
 #[test]
-fn a_later_off_category_over_an_earlier_vocabulary_rule_migrates_at_the_2x_level() {
-    let (config, levels) = measured_2x("top-rule-then-an-override-category-off");
+fn a_later_off_category_over_an_earlier_vocabulary_rule_migrates_at_the_2x_level()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (config, levels) = measured_2x("top-rule-then-an-override-category-off")?;
     assert_eq!(migrated(&config), levels, "{config}");
+    Ok(())
 }
 
 /// A later override that sets a category with no `severity` gets the legacy severity filled
