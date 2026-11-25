@@ -57,7 +57,10 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The caller's event applies here: a push to main skips the test, because the
+      # merge-group run already ran it on this tree, and still builds the site.
       - name: Test the generator
+        if: github.event_name != 'push'
         run: uv run --extra dev pytest tests/docs
       # The pages go outside the checkout. The linter skips ignored paths, and
       # build/ is ignored.

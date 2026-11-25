@@ -20,6 +20,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.workflow_expr import evaluate as evaluate_expr
+
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 # BaseLoader keeps every scalar a string, so `on` stays a key and not a boolean.
@@ -161,13 +163,29 @@ def test_docs_site_class_excludes_unrelated_paths(path):
 TERM = re.compile(r"needs\.changes\.outputs(?:\.(\w+)|\['([\w-]+)'\]) == 'true'")
 
 
-def evaluate(condition: str, true_outputs: set[str]) -> bool:
-    """Evaluate the `||`/`&&`/`==` subset that test.yml job conditions use."""
-    expr = " ".join(condition.split())
-    expr = TERM.sub(lambda m: str((m.group(1) or m.group(2)) in true_outputs), expr)
-    expr = expr.replace("||", " or ").replace("&&", " and ")
-    assert re.fullmatch(r"(?:True|False|or|and|\(|\)|\s)+", expr), expr
-    return eval(expr, {"__builtins__": {}})
+def evaluate(
+    condition: str,
+    true_outputs: set[str],
+    event: str = "pull_request",
+    leg: str | None = None,
+) -> bool:
+    """Evaluate a test.yml job or step `if` with the shared Actions evaluator.
+
+    `needs.changes.outputs.X == 'true'` terms become literal comparisons from
+    `true_outputs`; `github.event_name` and `matrix.name` read `event` and `leg`.
+    """
+    expr = TERM.sub(
+        lambda m: (
+            "'true' == 'true'"
+            if (m.group(1) or m.group(2)) in true_outputs
+            else "'false' == 'true'"
+        ),
+        " ".join(condition.split()),
+    )
+    context = {"github.event_name": event}
+    if leg is not None:
+        context["matrix.name"] = leg
+    return evaluate_expr(expr, context)
 
 
 @pytest.mark.parametrize(
@@ -506,7 +524,11 @@ def test_gate_accepts_runs_and_skips_matching_the_classification(flags, results)
         ({"evals"}, ok(), "evals-ratchet: got skipped, expected success"),
         ({"docs-site"}, ok(), "docs-site: got skipped, expected success"),
         ({"action"}, ok(), "action-contract: got skipped, expected success"),
-        (set(), ok("action-contract"), "action-contract: got success, expected skipped"),
+        (
+            set(),
+            ok("action-contract"),
+            "action-contract: got success, expected skipped",
+        ),
         ({"diagram-adapter"}, ok(), "diagram-adapter: got skipped, expected success"),
         (
             set(),
@@ -561,10 +583,11 @@ def test_gate_fails_a_draft(flags, results):
 
 
 # A skipped job reports success to branch protection, so the required checks
-# must run on a draft to fail it.
+# must run on a draft to fail it. Only a push to main skips them: no branch
+# protection applies there, and the queue run already passed the gates.
 @pytest.mark.parametrize("job", ["gate", "lint-gate-compat", "security-gate-compat"])
 def test_required_checks_are_never_skipped(job):
-    assert JOBS[job]["if"] == "always()"
+    assert JOBS[job]["if"] == "always() && github.event_name != 'push'"
 
 
 @pytest.mark.parametrize(
@@ -619,14 +642,202 @@ def test_force_all_is_set_for_the_queue_main_and_routing_edits(
     assert force_all_for(event, routing_changed, tmp_path) == expected
 
 
-@pytest.mark.parametrize("event", ["merge_group", "push"])
 @pytest.mark.parametrize("job", ROUTED_JOBS)
-def test_every_routed_job_runs_on_the_queue_and_main_with_no_class_matched(
-    event, job, tmp_path
-):
-    forced = force_all_for(event, False, tmp_path) == "force_all=true"
+def test_every_routed_job_runs_on_the_queue_with_no_class_matched(job, tmp_path):
+    forced = force_all_for("merge_group", False, tmp_path) == "force_all=true"
     outputs = {"force_all"} if forced else set()
-    assert evaluate(JOBS[job]["if"], outputs) is True
+    assert evaluate(JOBS[job]["if"], outputs, "merge_group") is True
+
+
+# These jobs warm a cache that only main saves, or scan the pushed commits; the
+# merge-group run already tested the same tree, so every other routed job skips on push.
+PUSH_JOBS = {
+    "test",
+    "rust-static",
+    "rust",
+    "rust-msrv",
+    "action-contract",
+    "security",
+    "docs-site",
+}
+
+
+@pytest.mark.parametrize("job", ROUTED_JOBS)
+def test_main_push_runs_only_the_cache_warming_and_scan_jobs(job, tmp_path):
+    forced = force_all_for("push", False, tmp_path) == "force_all=true"
+    outputs = {"force_all"} if forced else set()
+    assert evaluate(JOBS[job]["if"], outputs, "push") is (job in PUSH_JOBS)
+
+
+SUITE_COMMAND = re.compile(r"\bpytest\b|\bcargo (?:nextest run|test)\b")
+
+
+def matrix_legs(job: str) -> dict[str, list[str]]:
+    """The leg names of each event's `include` list, in the order the expression gives them."""
+    include = JOBS[job]["strategy"]["matrix"]["include"]
+    lists = [
+        json.loads(text) for text in re.findall(r"'(\[.*?\])'", include, re.DOTALL)
+    ]
+    assert len(lists) == 3, include
+    return {
+        event: [leg["name"] for leg in legs]
+        for event, legs in zip(["pull_request", "merge_group", "push"], lists)
+    }
+
+
+RUST_LEGS = matrix_legs("rust")
+PUSH_LEGS = RUST_LEGS["push"]
+
+
+def test_the_rust_matrix_has_the_legs_each_event_is_meant_to_test():
+    # Listed by hand: a dropped leg must fail here, not silently shrink the matrix.
+    assert RUST_LEGS == {
+        "pull_request": ["linux-x64"],
+        "merge_group": [
+            "linux-x64",
+            "linux-arm64",
+            "linux-x64-musl",
+            "linux-arm64-musl",
+            "macos-x64",
+        ],
+        "push": [
+            "linux-x64",
+            "linux-arm64",
+            "linux-x64-musl",
+            "linux-arm64-musl",
+            "macos-arm64",
+            "macos-x64",
+        ],
+    }
+
+
+def steps_of(job: str) -> list[tuple[str, str, dict]]:
+    """(workflow, job id, step) for the job, following a `uses: ./.github/workflows/x.yml` call."""
+    uses = JOBS[job].get("uses", "")
+    if not uses:
+        return [("test.yml", job, step) for step in JOBS[job]["steps"]]
+    name = Path(uses).name
+    return [
+        (name, job_id, step)
+        for job_id, body in load(name)["jobs"].items()
+        for step in body.get("steps", [])
+    ]
+
+
+def step_runs_on(step: dict, event: str, leg: str | None = None) -> bool:
+    return evaluate(step["if"], set(), event, leg) if "if" in step else True
+
+
+def discovered_suites() -> list[tuple[str, str, dict]]:
+    return [
+        (workflow, job_id, step)
+        for job in sorted(PUSH_JOBS)
+        for workflow, job_id, step in steps_of(job)
+        if SUITE_COMMAND.search(step.get("run", "")) and "--no-run" not in step["run"]
+    ]
+
+
+def running_suites(event: str) -> list[tuple[str, str, str, str | None]]:
+    """(workflow, job id, step name, leg) of each suite step that runs for the event.
+
+    A list, so a step that appears twice shows up twice.
+    """
+    return [
+        (workflow, job_id, step["name"], leg)
+        for workflow, job_id, step in discovered_suites()
+        for leg in (RUST_LEGS[event] if job_id == "rust" else [None])
+        if step_runs_on(step, event, leg)
+    ]
+
+
+# Every suite a pull request and the queue must run, listed by hand. Deleting a suite
+# step, or adding one that is not listed here, fails the inventory test.
+REQUIRED_SUITES = {
+    ("test.yml", "test", "Run every discovered pytest suite"),
+    ("test.yml", "rust", "Test"),
+    ("test.yml", "rust", "Doctests"),
+    ("docs-site.yml", "build", "Test the generator"),
+}
+
+
+def test_the_jobs_that_run_on_push_hold_exactly_the_listed_suites():
+    found = [(w, j, step["name"]) for w, j, step in discovered_suites()]
+    assert len(found) == len(REQUIRED_SUITES)
+    assert set(found) == REQUIRED_SUITES
+
+
+@pytest.mark.parametrize("event", ["pull_request", "merge_group"])
+def test_every_suite_step_runs_on_a_pull_request_and_the_queue(event):
+    expected = {
+        (workflow, job_id, name, leg)
+        for workflow, job_id, name in REQUIRED_SUITES
+        for leg in (RUST_LEGS[event] if job_id == "rust" else [None])
+    }
+    running = running_suites(event)
+    assert len(running) == len(expected)
+    assert set(running) == expected
+
+
+def test_a_push_to_main_runs_only_the_suites_no_earlier_run_covered():
+    # Only the push matrix has macos-arm64, so Apple Silicon is tested on main alone.
+    expected = {
+        ("test.yml", "rust", "Test", "macos-arm64"),
+        ("test.yml", "rust", "Doctests", "macos-arm64"),
+    }
+    running = running_suites("push")
+    assert len(running) == len(expected)
+    assert set(running) == expected
+
+
+@pytest.mark.parametrize(
+    ("condition", "leg", "runs"),
+    [
+        (
+            "github.event_name != 'push' || matrix.name == 'macos-arm64'",
+            "macos-arm64",
+            True,
+        ),
+        (
+            "github.event_name != 'push' || matrix.name == 'macos-arm64'",
+            "linux-x64",
+            False,
+        ),
+        # Actions compares strings case-insensitively, so this spelling still matches.
+        (
+            "github.event_name != 'push' || matrix.name == 'Linux-X64'",
+            "linux-x64",
+            True,
+        ),
+        (
+            "github.event_name != 'push' || matrix.name == 'MACOS-ARM64'",
+            "macos-arm64",
+            True,
+        ),
+    ],
+)
+def test_a_step_condition_matches_a_leg_name_in_any_case(condition, leg, runs):
+    assert step_runs_on({"if": condition}, "push", leg) is runs
+
+
+def warm_up_step(job: str, name: str) -> dict:
+    (step,) = [step for _, _, step in steps_of(job) if step["name"] == name]
+    return step
+
+
+@pytest.mark.parametrize("leg", PUSH_LEGS)
+def test_a_push_to_main_compiles_the_rust_tests_on_every_leg_that_does_not_run_them(
+    leg,
+):
+    step = warm_up_step("rust", "Build the tests")
+    assert step_runs_on(step, "push", leg) is (leg != "macos-arm64")
+
+
+@pytest.mark.parametrize(
+    ("job", "step_name"),
+    [("test", "Build the slopvac binary"), ("docs-site", "Build the site")],
+)
+def test_a_push_to_main_keeps_the_other_cache_warming_builds(job, step_name):
+    assert step_runs_on(warm_up_step(job, step_name), "push") is True
 
 
 @pytest.mark.parametrize("event", ["merge_group", "push"])

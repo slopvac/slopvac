@@ -589,10 +589,17 @@ def test_root_jobs_skip_a_draft(workflow, job, context):
     assert not runs(load(workflow)["jobs"][job]["if"], context)
 
 
+# quick-lint skips on a push to main: the queue run already linted that commit.
+SKIPS_ON_PUSH = {("test.yml", "quick-lint")}
+
+
 @pytest.mark.parametrize("context", NOT_DRAFT, ids=NOT_DRAFT_IDS)
 @pytest.mark.parametrize(("workflow", "job"), ROOT_JOBS)
 def test_root_jobs_run_for_everything_but_a_draft(workflow, job, context):
-    assert runs(load(workflow)["jobs"][job]["if"], context)
+    expected = (
+        context["event_name"] != "push" if (workflow, job) in SKIPS_ON_PUSH else True
+    )
+    assert runs(load(workflow)["jobs"][job]["if"], context) is expected
 
 
 GATE_DRAFT = load("test.yml")["jobs"]["gate"]["steps"][0]["env"]["DRAFT"]

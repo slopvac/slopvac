@@ -23,6 +23,13 @@ from tests.workflow_expr import evaluate, run_jobs
         ("(a == 'x' || b == 'y') && c == 'z'", {"a": "x"}, False),
         ("(a == 'x' || b == 'y') && c == 'z'", {"b": "y", "c": "z"}, True),
         ("a == 'it''s'", {"a": "it's"}, True),
+        ("true", {}, True),
+        ("false", {}, False),
+        ("null", {}, False),
+        ("!null", {}, True),
+        ("null == null", {}, True),
+        ("a == 'x' || true", {"a": "y"}, True),
+        ("a == 'x' && false", {"a": "x"}, False),
     ],
 )
 def test_expressions(condition, context, expected):

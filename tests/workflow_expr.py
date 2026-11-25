@@ -1,7 +1,7 @@
 """A small evaluator for GitHub Actions ``if:`` expressions and job routing.
 
 It covers the subset the repository's workflows use: ``!``, ``==``, ``!=``, ``&&``,
-``||``, parentheses, string literals, dotted context lookups and the status
+``||``, parentheses, string literals, the ``true``, ``false`` and ``null`` literals, dotted context lookups and the status
 functions. Tests use it to run the real conditions from the workflow files.
 """
 
@@ -17,6 +17,7 @@ _TOKEN = re.compile(
     r"|(?P<call>[A-Za-z]+)\(\)"
     r"|(?P<name>[A-Za-z_][\w.-]*))"
 )
+_LITERALS: dict[str, object] = {"true": True, "false": False, "null": None}
 _STATUS = re.compile(r"\b(?:always|cancelled|success|failure)\(\)")
 
 
@@ -134,6 +135,8 @@ class _Parser:
                 raise ValueError(f"unknown function {value}()")
             return self.status == value
         if kind == "name":
+            if value in _LITERALS:
+                return _LITERALS[value]
             return self.context.get(value)
         raise ValueError(f"unexpected {value!r}")
 

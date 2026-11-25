@@ -3,6 +3,10 @@ name: CI
 # One always-triggered workflow owns pull-request CI. Individual jobs are skipped
 # with job-level conditions so required checks never disappear because an entire
 # workflow was path-filtered.
+# Pushes to main run only what warms the caches that pull requests and the merge
+# queue restore (rust-cache and the docs-site build save on main only) and the
+# security scan of pushed commits. The commit already passed the full suite in its
+# merge-group run, so every other job and the gates skip on push.
 on:
   # Draft pull requests do no work: the root jobs below skip, and the gate fails
   # so no required check turns green. Marking the PR ready starts the real run.
@@ -141,7 +145,7 @@ jobs:
   # malformed hook manifests even for docs/config-only changes.
   quick-lint:
     name: Quick lint
-    if: github.event.pull_request.draft != true
+    if: github.event_name != 'push' && github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -392,12 +396,24 @@ jobs:
           unshare --user --map-root-user --net true
 
       # RUST_AFFECTED is `--workspace` or a checked list of `-p NAME` pairs; see rust-static.
+      # A push to main builds the test binaries to warm this leg's cache and to catch a
+      # platform build break, but does not run them: the merge-group run already did.
+      # macos-arm64 is the exception: only the push matrix has that leg (the queue cannot
+      # always get a hosted arm64 macOS runner), so no earlier run tested Apple Silicon.
+      - name: Build the tests
+        if: github.event_name == 'push' && matrix.name != 'macos-arm64'
+        run: |
+          # shellcheck disable=SC2086
+          cargo nextest run $RUST_AFFECTED --locked --profile ci --no-run
+
       - name: Test
+        if: github.event_name != 'push' || matrix.name == 'macos-arm64'
         run: |
           # shellcheck disable=SC2086
           cargo nextest run $RUST_AFFECTED --locked --profile ci --no-tests=pass
 
       - name: Doctests
+        if: github.event_name != 'push' || matrix.name == 'macos-arm64'
         run: |
           # shellcheck disable=SC2086
           cargo test $RUST_AFFECTED --doc --locked
@@ -460,8 +476,11 @@ jobs:
     name: Rust supply chain
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.rust == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.rust == 'true'
+      )
     uses: ./.github/workflows/rust-supply-chain.yml
     permissions:
       contents: read
@@ -498,40 +517,51 @@ jobs:
           key: pytest
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # A push to main only saves the `pytest` cache for pull requests to restore. The
+      # merge-group run already ran the suite on this tree, so the steps below skip.
       - name: Build the slopvac binary
         run: cargo build --locked -p slopvac
 
       - name: Set up Python
+        if: github.event_name != 'push'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
 
       - name: Cache Vale download
+        if: github.event_name != 'push'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/vale-cache
           key: vale-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_vale.py') }}
       - name: Install Vale
+        if: github.event_name != 'push'
         run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
       - name: Add Vale to PATH
+        if: github.event_name != 'push'
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install cargo-delta
+        if: github.event_name != 'push'
         run: bash scripts/install_cargo_delta.sh
 
       - name: Install minisign
+        if: github.event_name != 'push'
         # The release signing tests run the real binary; the script checks its sha256.
         run: bash scripts/install_minisign.sh
 
       - name: Install package and test dependencies
+        if: github.event_name != 'push'
         # docutils is pinned for the RST sample of the golden suite (tests/golden/v3).
         run: python3 -m pip install --quiet -e "./packages/slopvac-lint[dev]" "docutils==0.23"
 
       - name: Install the hook runners
+        if: github.event_name != 'push'
         # tests/test_pre_commit_hooks.py runs the published hook through both.
         run: python3 -m pip install --quiet pre-commit==4.7.0 prek==0.5.11
 
       - name: Run every discovered pytest suite
+        if: github.event_name != 'push'
         run: python3 -m pytest
 
       # Needs history for the baseline, so this step alone fetches in full. A pull
@@ -560,8 +590,11 @@ jobs:
     name: Live diagram adapter
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs['diagram-adapter'] == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs['diagram-adapter'] == 'true'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -591,8 +624,11 @@ jobs:
     name: slopvac (py${{ matrix.python }})
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.package == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.package == 'true'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -691,9 +727,12 @@ jobs:
     name: CLI contract
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.package == 'true' ||
-      needs.changes.outputs.docs == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.package == 'true' ||
+        needs.changes.outputs.docs == 'true'
+      )
     uses: ./.github/workflows/cli-e2e.yml
     permissions:
       contents: read
@@ -715,8 +754,11 @@ jobs:
     name: Relevant lint suites
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.lint == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.lint == 'true'
+      )
     uses: ./.github/workflows/lint.yml
     permissions:
       contents: read
@@ -734,8 +776,11 @@ jobs:
     name: Markdown audit
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.docs == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.docs == 'true'
+      )
     uses: ./.github/workflows/markdown-audit.yml
     permissions:
       contents: read
@@ -763,8 +808,11 @@ jobs:
     name: Eval ratchet
     needs: changes
     if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs.evals == 'true'
+      github.event_name != 'push' &&
+      (
+        needs.changes.outputs.force_all == 'true' ||
+        needs.changes.outputs.evals == 'true'
+      )
     uses: ./.github/workflows/evals-ratchet.yml
     permissions:
       contents: read
@@ -803,7 +851,7 @@ jobs:
       - security
       - evals-ratchet
       - docs-site
-    if: always()
+    if: always() && github.event_name != 'push'
     steps:
       - name: Verify required runs and valid skips
         env:
@@ -919,7 +967,7 @@ jobs:
   lint-gate-compat:
     name: gate
     needs: gate
-    if: always()
+    if: always() && github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions: {}
@@ -932,7 +980,7 @@ jobs:
   security-gate-compat:
     name: security-gate
     needs: gate
-    if: always()
+    if: always() && github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions: {}
