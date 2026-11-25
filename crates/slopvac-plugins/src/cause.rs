@@ -10,12 +10,20 @@ use std::path::Path;
 use slopvac_fs::display_under_root;
 use slopvac_messages::{Catalog, Entry, render};
 
+use crate::lock::LockDiff;
 use crate::messages::cli::Reported;
-use crate::messages::sync::{cache_tampered, update_busy};
+use crate::messages::sync::{cache_tampered, config_drift, update_busy};
 use crate::revoke::RevocationError;
 use crate::sync::SyncError;
 use crate::trust::TrustError;
 use crate::update::UpdateError;
+
+/// The CI refusal when the configured plugin ids and the lock disagree. It keeps the
+/// `lock-mismatch` code and says that the config was compared, not the resolver output.
+pub(crate) fn config_lock_drift(drift: LockDiff) -> Reported {
+    let text = config_drift(&drift);
+    Reported::new(SyncError::LockMismatch(drift).code(), text)
+}
 
 /// The one sentence that stands in for withheld detail. It is private, so the only way to render
 /// it is [`withheld`], which always puts the code of the failure beside it.

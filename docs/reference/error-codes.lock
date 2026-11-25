@@ -735,6 +735,9 @@ plugins-change-in-place text
 plugins-change-installed text
 plugins-change-reinstalled text
 plugins-change-unchanged text
+plugins-command-path text
+plugins-config-id-invalid text
+plugins-config-range-invalid text
 plugins-detail-withheld text
 plugins-extract-changed text
 plugins-extract-collision text
@@ -989,11 +992,14 @@ plugins-lock-api-range text
 plugins-lock-build-metadata text
 plugins-lock-canonical-too-large text
 plugins-lock-comparator-invalid text
+plugins-lock-diagnostic-at text
+plugins-lock-diagnostic-whole text
 plugins-lock-diff-added text
 plugins-lock-diff-changed text
 plugins-lock-diff-digest text
 plugins-lock-diff-removed text
 plugins-lock-diff-source text
+plugins-lock-diff-unlocked text
 plugins-lock-diff-version text
 plugins-lock-digest-invalid text
 plugins-lock-error text
@@ -1317,6 +1323,7 @@ plugins-strict-integer-range text
 plugins-strict-nesting text
 plugins-strict-phrase-expecting text
 plugins-strict-phrase-non-finite text
+plugins-sync-config-drift text
 plugins-sync-data-dir text
 plugins-sync-download-file text
 plugins-sync-download-hash text

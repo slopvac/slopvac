@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use semver::Version;
@@ -55,6 +55,9 @@ pub struct LockDiff {
     pub added: Vec<ResolvedPack>,
     /// Locked but not resolved.
     pub removed: Vec<PackId>,
+    /// Configured but not locked. Only [`config_drift`] fills it: the id is all that is known
+    /// before the pack is resolved.
+    pub unlocked: Vec<PackId>,
     /// In both, with a different version, source or digest.
     pub changed: Vec<Change>,
 }
@@ -63,7 +66,10 @@ impl LockDiff {
     /// True when the resolved set is exactly the lock.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.added.is_empty() && self.removed.is_empty() && self.changed.is_empty()
+        self.added.is_empty()
+            && self.removed.is_empty()
+            && self.unlocked.is_empty()
+            && self.changed.is_empty()
     }
 }
 
@@ -75,6 +81,9 @@ impl fmt::Display for LockDiff {
         }
         for id in &self.removed {
             writeln!(f, "{}", messages::diff_removed(id))?;
+        }
+        for id in &self.unlocked {
+            writeln!(f, "{}", messages::diff_unlocked(id))?;
         }
         for change in &self.changed {
             write!(f, "{}", messages::diff_changed(&change.id))?;
@@ -129,4 +138,36 @@ pub fn diff(lock: &Lockfile, resolved: &[ResolvedPack]) -> LockDiff {
         .map(|l| l.id.clone())
         .collect();
     out
+}
+
+/// The drift that needs no resolver: a configured pack with no lock entry, and a locked pack
+/// that no configured pack needs any more (directly or through `requires`). It checks ids
+/// only; versions, sources and digests need the resolved set and [`diff()`].
+#[must_use]
+pub fn config_drift(lock: &Lockfile, configured: &[PackId]) -> LockDiff {
+    let mut needed: BTreeSet<&PackId> = BTreeSet::new();
+    let mut pending: Vec<&PackId> = configured.iter().collect();
+    while let Some(id) = pending.pop() {
+        if needed.insert(id)
+            && let Some(locked) = lock.get(id)
+        {
+            pending.extend(locked.requires.iter());
+        }
+    }
+    LockDiff {
+        unlocked: configured
+            .iter()
+            .filter(|id| lock.get(id).is_none())
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        removed: lock
+            .packs()
+            .iter()
+            .filter(|l| !needed.contains(&l.id))
+            .map(|l| l.id.clone())
+            .collect(),
+        ..LockDiff::default()
+    }
 }

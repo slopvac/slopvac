@@ -7,7 +7,6 @@ use std::sync::{Mutex, PoisonError};
 use slopvac_messages::{Arg, Catalog, Entry, Kind, Param, ParamKind, Value};
 use slopvac_update::messages::UpdateMessage;
 
-use crate::lock::LockError;
 use crate::oci::OciError;
 
 /// Help text of the group, its subcommands and their arguments, and the lines the commands
@@ -44,7 +43,9 @@ pub(crate) enum CliText {
     HelpUpdate,
     /// Help for `plugins trust`.
     #[code("plugins-help-trust")]
-    #[text("Record trust for the content hash of a code plugin.")]
+    #[text(
+        "Record trust for the content hash of a code plugin. This build cannot load plugin files yet, so it refuses."
+    )]
     HelpTrust,
     /// Help for `plugins untrust`.
     #[code("plugins-help-untrust")]
@@ -231,6 +232,22 @@ pub(crate) enum CliText {
     #[code("plugins-outdated-failed")]
     #[text("{id}: cannot check for newer versions: {reason}")]
     OutdatedFailed { id: String, reason: String },
+    /// A plugin id in the config that is not a valid id. It names the entry, never the value.
+    #[code("plugins-config-id-invalid")]
+    #[text("the plugin entry {position} in the config has an id that is not a valid plugin id")]
+    ConfigIdInvalid { position: usize },
+    /// A version range in the config that does not parse. It names the plugin, never the value.
+    #[code("plugins-config-range-invalid")]
+    #[text("the version range of plugin `{id}` in the config is not a valid range")]
+    ConfigRangeInvalid { id: String },
+    /// A lock file that does not parse, with no location.
+    #[code("plugins-lock-diagnostic-whole")]
+    #[text("not a valid lockfile")]
+    LockDiagnosticWhole,
+    /// Where a lock file is wrong. The segments are known keys or indexes.
+    #[code("plugins-lock-diagnostic-at")]
+    #[text("invalid value at {pointer}")]
+    LockDiagnosticAt { pointer: String },
     /// Trust was recorded for a code plugin.
     #[code("plugins-trusted")]
     #[text("trusted `{id}` with content hash {hash}")]
@@ -253,6 +270,10 @@ pub(crate) enum CliText {
     #[code("plugins-untrusted")]
     #[text("removed the trust recorded for `{id}`")]
     Untrusted { id: String },
+    /// The path of a `plugins` subcommand after `slopvac`, for the not-available refusal.
+    #[code("plugins-command-path")]
+    #[text("plugins {name}")]
+    CommandPath { name: String },
 }
 
 /// Why a `slopvac plugins` command stopped. Each one exits 2.
@@ -264,9 +285,9 @@ pub(crate) enum CliText {
 pub enum RunError {
     /// The subcommand exists in the command tree but has no implementation in this build.
     #[code("command-not-wired")]
-    #[message("`slopvac plugins {command}` is not available in this build yet.")]
+    #[message("`slopvac {command}` is not available in this build yet.")]
     NotWired {
-        /// The subcommand, as the user typed it.
+        /// The command after `slopvac`, as the user typed it, such as `plugins search`.
         command: String,
     },
     /// The lock file could not be read.
@@ -285,9 +306,9 @@ pub enum RunError {
     LockInvalid {
         /// The sentence of the failure.
         detail: String,
-        /// The parse failure.
+        /// The same sentence as a cause: the location only, never the text of the lock.
         #[source]
-        source: LockError,
+        source: Redacted,
     },
     /// A sync, update, revocation or trust store operation failed. The code and the message are
     /// those of the failure, with every path shown under the project root.
@@ -307,8 +328,8 @@ pub enum RunError {
         #[source]
         source: Box<OciError>,
     },
-    /// The trust store failed. The cause is redacted text: the store's own error names the
-    /// absolute path of the file.
+    /// The trust store failed, or the group could not be set up. The cause is redacted text: the
+    /// store's own error names the absolute path of the file.
     #[code("plugins-store-failed")]
     #[message("{detail}")]
     Store {

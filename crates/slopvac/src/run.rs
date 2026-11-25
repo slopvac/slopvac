@@ -320,20 +320,123 @@ fn dispatch(
         Some(("review", m)) => owners::review(m, globals.offline, out),
         Some(("claims", m)) => owners::claims(m, out),
         Some(("man", m)) => man(m, out),
+        Some(("plugins", m)) => plugins(m, globals.offline, env, out),
         Some(("doctor", m)) => doctor(matches, m, env, out),
         Some(("cli-reference", _)) => write_stdout(
             out,
             generate::markdown_reference(&cli::command()).as_bytes(),
         ),
-        Some((name, _)) => Err(CliError::new(
-            "command-not-wired",
-            format!("`slopvac {name}` is not available in this build yet."),
-        )),
+        Some((name, _)) => Err(not_wired(name)),
         None => {
             let mut cmd = cli::command();
             write_stdout(out, cmd.render_help().to_string().as_bytes())
         }
     }
+}
+
+/// The refusal of a command that is in the tree but not available yet. The plugins catalog
+/// declares the code and the text once.
+fn not_wired(command: &str) -> CliError {
+    let err = slopvac_plugins::RunError::NotWired {
+        command: command.to_owned(),
+    };
+    CliError::new(err.code(), err.to_string())
+}
+
+/// A failure to set up `slopvac plugins` before any subcommand runs, as the plugins catalog
+/// words it. The detail names a variable or a directory role and never a value.
+fn plugins_setup_failed(detail: &str) -> CliError {
+    let err = slopvac_plugins::RunError::setup_failed(detail);
+    CliError::new(err.code(), err.to_string())
+}
+
+/// The directories of `slopvac plugins`: the plugin store is the per-user data directory and
+/// the trust store sits in the state directory (doctor.md, "Directories").
+fn plugin_dirs(env: &dyn Env, root: PathBuf) -> Result<slopvac_plugins::Dirs, CliError> {
+    let lookup = |name: &str| env.var(name).ok_or(std::env::VarError::NotPresent);
+    let store = slopvac_fs::data_dir_with(&lookup, &std::env::home_dir)
+        .map_err(|e| plugins_setup_failed(&e.to_string()))?;
+    let state = slopvac_fs::state_dir_with(&lookup, &std::env::home_dir)
+        .map_err(|e| plugins_setup_failed(&e.to_string()))?;
+    Ok(slopvac_plugins::Dirs::new(root, store, state))
+}
+
+/// A `[[plugins]]` entry that the config accepts but the plugins group cannot use. The message
+/// is the sentence from the plugins catalog, which names the entry and never a value. The
+/// code is the config's own, `config-invalid-value`, as contract ruled on the pull request.
+fn plugin_config_invalid(message: String) -> CliError {
+    CliError::new(slopvac_config::Code::InvalidValue.as_str(), message)
+}
+
+/// `slopvac plugins`: build the runner from the environment and the resolved project config,
+/// then run the subcommand the library selects.
+fn plugins(
+    m: &ArgMatches,
+    offline: bool,
+    env: &dyn Env,
+    out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
+    use slopvac_plugins::{Runner, oci, revoke, sign, sync};
+    let cwd = std::env::current_dir().map_err(|e| plugins_setup_failed(&e.kind().to_string()))?;
+    let presets = slopvac_styles::StylePresets(slopvac_styles::BuiltinSource);
+    let config = slopvac_config::Discovery::new(&presets)
+        .nearest(&cwd)
+        .map_err(|e| crate::engine::config_error(&e, &cwd))?;
+    let root = config
+        .as_ref()
+        .map_or_else(|| cwd.clone(), |c| c.root.clone());
+    // The preflight reads the nearest file only, so an `[network] offline` in an extended file
+    // reaches this command through the resolved config. The resolver keeps offline sticky across
+    // every layer (policies.md, 1.3; config.md, "Layer order"): a later `false` never wins.
+    let config_offline = config
+        .as_ref()
+        .map(|c| crate::lint_settings::resolve(c, std::path::Path::new(".")).is_offline());
+    let offline = offline::resolve(offline, env, config_offline);
+    let dirs = plugin_dirs(env, root.clone())?;
+    let dirs_state = dirs.state_dir.clone();
+    let (mut ranges, mut configured) = (std::collections::BTreeMap::new(), Vec::new());
+    if let Some(serde_json::Value::Array(entries)) =
+        config.as_ref().and_then(|c| c.project_value(&["plugins"]))
+    {
+        for (index, entry) in entries.iter().enumerate() {
+            let Some(id) = entry.get("id").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            // An id that is not a valid plugin id stops the run, and so does an invalid range:
+            // dropping either would let the drift check and `outdated` ignore the entry.
+            let pack = slopvac_plugins::config_id(index + 1, id).map_err(plugin_config_invalid)?;
+            configured.push(id.to_owned());
+            let Some(text) = entry.get("version").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let range = slopvac_plugins::config_range(id, text).map_err(plugin_config_invalid)?;
+            ranges.insert(pack, range);
+        }
+    }
+    let now = sign::utc_time(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX)),
+    );
+    let policy = sign::KeyPolicy::compiled().map_err(|e| plugins_setup_failed(&e.to_string()))?;
+    let source = oci::Reference::parse(revoke::DEFAULT_SOURCE)
+        .map_err(|e| plugins_setup_failed(&e.to_string()))?;
+    let revocations = revoke::Revocations::with_compiled_root(&dirs_state, source, &now)
+        .map_err(|e| CliError::new(e.code(), e.to_string()))?;
+    let client = oci::Client::new(&root);
+    let network = if offline {
+        sync::Network::Offline
+    } else {
+        sync::Network::Online(&client)
+    };
+    // CI runs `sync` from the lock only (policies.md, 1.4).
+    let ci = env.var("CI").is_some();
+    let runner = Runner::new(dirs, network, &policy, &revocations, now)
+        .with_ranges(ranges)
+        .with_configured(configured)
+        .with_core_version(env!("CARGO_PKG_VERSION"))
+        .with_locked(ci);
+    slopvac_plugins::run(m, &runner, out).map_err(|e| CliError::new(e.code(), e.to_string()))
 }
 
 /// `slopvac doctor`: print the report, and exit 2 when something needs attention.
@@ -382,10 +485,7 @@ fn reject_unwired_lint_flags(m: &ArgMatches) -> Result<(), CliError> {
         let given = m.try_contains_id(name).unwrap_or(false)
             && m.value_source(name) == Some(clap::parser::ValueSource::CommandLine);
         if given {
-            return Err(CliError::new(
-                "command-not-wired",
-                format!("`slopvac lint --{name}` is not available in this build yet."),
-            ));
+            return Err(not_wired(&format!("lint --{name}")));
         }
     }
     Ok(())
@@ -830,5 +930,34 @@ mod tests {
             Some(ColorChoice::Always)
         );
         assert_eq!(scan_color_flag(&a(&["s", "x"])), None);
+    }
+}
+
+#[cfg(test)]
+mod plugin_dir_tests {
+    use super::*;
+    use crate::env::MapEnv;
+
+    #[test]
+    fn the_plugin_store_is_in_the_data_directory_and_not_in_the_cache() {
+        let env = MapEnv::new(
+            &[
+                ("XDG_DATA_HOME", "/xdg/data"),
+                ("XDG_CACHE_HOME", "/xdg/cache"),
+                ("XDG_STATE_HOME", "/xdg/state"),
+            ],
+            false,
+        );
+        let dirs = plugin_dirs(&env, PathBuf::from("/project")).unwrap();
+        assert!(
+            dirs.cache_dir.starts_with("/xdg/data"),
+            "{:?}",
+            dirs.cache_dir
+        );
+        assert!(
+            dirs.state_dir.starts_with("/xdg/state"),
+            "{:?}",
+            dirs.state_dir
+        );
     }
 }

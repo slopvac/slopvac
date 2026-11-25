@@ -432,45 +432,10 @@ fn pack_state(state: &PackState) -> &'static str {
     }
 }
 
-/// Keys a lockfile may hold. A pointer segment outside this set came from the file, so it is
-/// shown as `*`.
-const LOCK_KEYS: [&str; 12] = [
-    "schema_version",
-    "plugins",
-    "id",
-    "kind",
-    "version",
-    "slopvac_api",
-    "source",
-    "digest",
-    "signature",
-    "key_id",
-    "not_before",
-    "requires",
-];
-
 /// Where a lockfile is wrong, with nothing the file said. The parser's own message can echo the
-/// rejected value, so it is dropped (CWE-209). Only the location survives, and only the segments
-/// that are known keys or array indexes.
+/// rejected value, so it is dropped (CWE-209). The plugins library keeps only the location.
 fn lock_diagnostic(e: &LockError) -> String {
-    if e.pointer.is_empty() {
-        return "not a valid lockfile".to_owned();
-    }
-    let shown: Vec<&str> = e
-        .pointer
-        .split('/')
-        .skip(1)
-        .map(|seg| {
-            if LOCK_KEYS.contains(&seg)
-                || (!seg.is_empty() && seg.len() <= 6 && seg.bytes().all(|b| b.is_ascii_digit()))
-            {
-                seg
-            } else {
-                "*"
-            }
-        })
-        .collect();
-    format!("invalid value at /{}", shown.join("/"))
+    e.diagnostic()
 }
 
 fn packs_report(project_root: &Path, cwd: &Path, store_root: Option<&Path>) -> Packs {

@@ -155,7 +155,9 @@ impl Fixture {
         if let Some(python) = setup.python {
             runner = runner.with_python(python);
         }
-        runner = runner.with_executables(setup.executables);
+        runner = runner
+            .with_executables(setup.executables)
+            .with_locked(setup.locked);
         let words = std::iter::once("plugins").chain(args.iter().copied());
         let matches = command().try_get_matches_from(words).unwrap();
         run(&matches, &runner, out)
@@ -171,9 +173,15 @@ struct Setup<'a> {
     executables: BTreeMap<PackId, std::collections::HashSet<String>>,
     envs: Option<&'a EnvStore>,
     python: Option<PythonBuild<'a>>,
+    locked: bool,
 }
 
 impl<'a> Setup<'a> {
+    fn locked(mut self) -> Self {
+        self.locked = true;
+        self
+    }
+
     fn envs(mut self, envs: &'a EnvStore) -> Self {
         self.envs = Some(envs);
         self
@@ -516,6 +524,89 @@ fn sync_keeps_its_verification_a_revoked_digest_stops_it_with_the_cause() {
     assert!(err.to_string().contains("revocation list"), "{err}");
 }
 
+// ---- lock errors and CI ----------------------------------------------------------------
+
+#[test]
+fn a_lock_that_does_not_parse_reports_where_and_never_what_it_said() {
+    let f = Fixture::new();
+    // A rejected value that a message could echo, under a key that is not a lock key.
+    f.write_lock(&[
+        "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"plugins/style\"\ndigest = \"SECRET-VALUE\"\n"
+            .to_owned(),
+    ]);
+    let err = f.run(&["status"], false, |s| s).result.unwrap_err();
+    assert_eq!(err.code(), "plugins-lock-invalid");
+    assert_eq!(err.to_string(), "invalid value at /plugins/0/digest");
+}
+
+#[test]
+fn a_lock_that_does_not_parse_carries_none_of_its_text_in_the_error_chain() {
+    let f = Fixture::new();
+    f.write_lock(&[
+        "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"plugins/style\"\ndigest = \"SECRET-VALUE\"\n"
+            .to_owned(),
+    ]);
+    let err = f.run(&["status"], false, |s| s).result.unwrap_err();
+    let mut chain = vec![err.to_string()];
+    let mut next = std::error::Error::source(&err);
+    while let Some(cause) = next {
+        chain.push(cause.to_string());
+        next = cause.source();
+    }
+    assert!(chain.len() > 1, "the error keeps a cause: {chain:?}");
+    assert!(
+        chain.iter().all(|link| !link.contains("SECRET-VALUE")),
+        "{chain:?}"
+    );
+}
+
+#[test]
+fn sync_in_ci_without_a_lock_fails_and_outside_ci_passes() {
+    let f = Fixture::new();
+    assert_eq!(f.run(&["sync"], false, |s| s).result.unwrap(), 0);
+    let err = f.run(&["sync"], false, Setup::locked).result.unwrap_err();
+    assert_eq!(err.code(), "plugins-lock-unreadable");
+}
+
+#[test]
+fn sync_in_ci_refuses_a_configured_plugin_that_is_not_locked() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
+    let err = f
+        .run(&["sync"], false, |s| {
+            s.locked().configured(&["style", "extra"])
+        })
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "lock-mismatch");
+    assert!(
+        err.to_string()
+            .contains("unlocked: extra is configured but not in the lock"),
+        "{err}"
+    );
+}
+
+#[test]
+fn sync_in_ci_refuses_a_locked_plugin_that_is_no_longer_configured() {
+    let f = Fixture::new();
+    f.write_lock(&[
+        oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH),
+        oci_entry("old", "data", "1.0.0", "r.example", HASH),
+    ]);
+    let err = f
+        .run(&["sync"], false, |s| s.locked().configured(&["style"]))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "lock-mismatch");
+    assert!(
+        err.to_string()
+            .contains("removed: old is locked but was not resolved"),
+        "{err}"
+    );
+}
+
 // ---- outdated and update ------------------------------------------------------------
 
 #[test]
@@ -536,6 +627,28 @@ fn outdated_lists_a_newer_version_from_the_registry() {
         "{}",
         ran.out
     );
+}
+
+#[test]
+fn outdated_names_the_failure_by_its_code_and_never_echoes_the_registry() {
+    let f = Fixture::new();
+    // Nothing listens on this port, so the listing fails at connect.
+    f.write_lock(&[oci_entry(
+        "style",
+        "data",
+        "1.2.0",
+        "127.0.0.1:1",
+        OTHER_HASH,
+    )]);
+    let ran = f.run(&["outdated"], true, |s| s.range("style", "^1.2"));
+    assert_eq!(ran.result.unwrap(), 2);
+    assert!(
+        ran.out
+            .starts_with("style: cannot check for newer versions: "),
+        "{}",
+        ran.out
+    );
+    assert!(!ran.out.contains("127.0.0.1"), "{}", ran.out);
 }
 
 #[test]

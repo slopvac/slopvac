@@ -96,6 +96,11 @@ pub(crate) enum SyncMessage {
 /// Sentences with parameters: failure detail, lock problems and update notices.
 #[derive(Debug, Clone, PartialEq, Eq, Catalog)]
 pub(crate) enum SyncText {
+    /// The configured plugin ids differ from the lock. The failure carries the code
+    /// `lock-mismatch`.
+    #[code("plugins-sync-config-drift")]
+    #[text("the lock does not match the configured plugins:\n{diff}")]
+    ConfigDrift { diff: String },
     /// The lock entry cannot be resolved as written.
     #[code("plugins-sync-source")]
     #[text("plugin `{id}`: {why}")]
@@ -451,6 +456,10 @@ pub(crate) enum SyncText {
     #[code("plugins-lock-diff-removed")]
     #[text("removed: {id} is locked but was not resolved")]
     DiffRemoved { id: String },
+    /// A configured pack has no entry in the lock.
+    #[code("plugins-lock-diff-unlocked")]
+    #[text("unlocked: {id} is configured but not in the lock")]
+    DiffUnlocked { id: String },
     /// The start of a changed pack.
     #[code("plugins-lock-diff-changed")]
     #[text("changed: {id}")]
@@ -900,6 +909,11 @@ pub(crate) fn lock_mismatch(diff: &LockDiff) -> String {
     SyncMessage::LockMismatch { diff: s(diff) }.to_string()
 }
 
+/// The text of `lock-mismatch` when the config, not the resolver, names the difference.
+pub(crate) fn config_drift(diff: &LockDiff) -> String {
+    SyncText::ConfigDrift { diff: s(diff) }.to_string()
+}
+
 /// What is revoked: the artifact.
 pub(crate) fn revoked_artifact(digest: &impl Display) -> String {
     SyncText::RevokedArtifact { digest: s(digest) }.to_string()
@@ -1309,6 +1323,11 @@ pub(crate) fn diff_added(id: &impl Display, version: &impl Display) -> String {
 /// The diff line for a locked pack that was not resolved.
 pub(crate) fn diff_removed(id: &impl Display) -> String {
     SyncText::DiffRemoved { id: s(id) }.to_string()
+}
+
+/// The diff line for a configured pack that is not locked.
+pub(crate) fn diff_unlocked(id: &impl Display) -> String {
+    SyncText::DiffUnlocked { id: s(id) }.to_string()
 }
 
 /// The start of the diff line for a changed pack.
@@ -1851,6 +1870,12 @@ mod tests {
                 "`X` is not a plugin kind (`data` or `code`)",
             ),
             (
+                SyncText::ConfigDrift {
+                    diff: s("unlocked: x\n"),
+                },
+                "the lock does not match the configured plugins:\nunlocked: x\n",
+            ),
+            (
                 SyncText::SourceTooLong { max: 4096 },
                 "a source is longer than 4096 bytes",
             ),
@@ -1901,6 +1926,10 @@ mod tests {
             (
                 SyncText::DiffRemoved { id: s("a") },
                 "removed: a is locked but was not resolved",
+            ),
+            (
+                SyncText::DiffUnlocked { id: s("a") },
+                "unlocked: a is configured but not in the lock",
             ),
             (SyncText::DiffChanged { id: s("a") }, "changed: a"),
             (

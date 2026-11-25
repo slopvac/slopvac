@@ -14,7 +14,8 @@ use slopvac_update::messages::UpdateMessage;
 use crate::PluginSpec;
 use crate::cause::{self, withheld};
 use crate::lock::{
-    LockedPack, Lockfile, MAX_LOCK_BYTES, PackId, PackKind, VersionReq, outdated as lock_outdated,
+    LockedPack, Lockfile, MAX_LOCK_BYTES, PackId, PackKind, VersionReq, config_drift,
+    outdated as lock_outdated,
 };
 use crate::messages::cli::{CliText, Redacted, RunError};
 use crate::oci::Digest;
@@ -28,14 +29,32 @@ use crate::sync::{
 use crate::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
 use crate::update::{LISTING_BUDGET_BYTES, Outcome, Updater, list_candidates};
 
-/// Where `slopvac plugins` reads and writes. The caller resolves the directories: the cache
-/// and state directories belong to the user, never to the project.
+/// Parse the id of the plugin entry at `position` (counted from 1) in the config.
+///
+/// # Errors
+/// The sentence that names the entry and never the value, when the id is not a valid plugin id.
+pub fn config_id(position: usize, text: &str) -> Result<PackId, String> {
+    text.parse()
+        .map_err(|_| render(&CliText::ConfigIdInvalid { position }))
+}
+
+/// Parse the version range that the config sets for plugin `id`.
+///
+/// # Errors
+/// The sentence that names the plugin and never the value, when the range is not valid.
+pub fn config_range(id: &str, text: &str) -> Result<VersionReq, String> {
+    crate::lock::parse_version_req(text)
+        .map_err(|_| render(&CliText::ConfigRangeInvalid { id: line(id) }))
+}
+
+/// Where `slopvac plugins` reads and writes. The caller resolves the directories: the plugin
+/// store and the state directory belong to the user, never to the project.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Dirs {
     /// The project root, which holds `.slopvac/plugins.lock`.
     pub project_root: PathBuf,
-    /// The per-user directory that holds installed plugin trees.
+    /// The plugin store: the per-user data directory that holds installed plugin trees.
     pub cache_dir: PathBuf,
     /// The per-user directory that holds the trust store.
     pub state_dir: PathBuf,
@@ -86,6 +105,7 @@ pub struct Runner<'a> {
     python: Option<PythonBuild<'a>>,
     envs: Option<&'a EnvStore>,
     executables: BTreeMap<PackId, HashSet<String>>,
+    locked: bool,
 }
 
 impl<'a> Runner<'a> {
@@ -113,6 +133,7 @@ impl<'a> Runner<'a> {
             python: None,
             envs: None,
             executables: BTreeMap::new(),
+            locked: false,
         }
     }
 
@@ -171,6 +192,14 @@ impl<'a> Runner<'a> {
     #[must_use]
     pub fn with_executables(mut self, executables: BTreeMap<PackId, HashSet<String>>) -> Self {
         self.executables = executables;
+        self
+    }
+
+    /// Run `sync` as CI does: from the lock only. A missing lock file is a failure, because an
+    /// empty lock would let the run pass with nothing installed (policies.md, section 1.4).
+    #[must_use]
+    pub fn with_locked(mut self, locked: bool) -> Self {
+        self.locked = locked;
         self
     }
 
@@ -276,6 +305,18 @@ pub fn command() -> Command {
 }
 
 impl RunError {
+    /// A failure to set up the group before a subcommand runs, such as a directory that cannot
+    /// be resolved. `detail` is one sentence that names a variable or a role and never a value
+    /// or a path. It reports `plugins-store-failed`.
+    #[must_use]
+    pub fn setup_failed(detail: impl Into<String>) -> Self {
+        let detail = line(&detail.into());
+        Self::Store {
+            source: Redacted::new(detail.clone()),
+            detail,
+        }
+    }
+
     /// The code that the failure reports: the code of its cause when it has one. It is the
     /// same code that a lookup through [`Catalog`] gives.
     #[must_use]
@@ -321,7 +362,9 @@ pub fn run(matches: &ArgMatches, runner: &Runner<'_>, out: &mut dyn Write) -> Re
         // pins a key, not a fingerprint.
         // STUB(slopvac-8l4.9.63): the authoring commands.
         Some((name, _)) => Err(RunError::NotWired {
-            command: name.to_owned(),
+            command: render(&CliText::CommandPath {
+                name: name.to_owned(),
+            }),
         }),
         None => write(out, command().render_help().to_string().as_bytes()).map(|()| 0),
     }
@@ -351,15 +394,21 @@ fn notices(out: &mut dyn Write, list: &[RevocationNotice]) -> Result<(), RunErro
     Ok(())
 }
 
-fn read_lock(runner: &Runner<'_>) -> Result<Lockfile, RunError> {
+fn read_lock(runner: &Runner<'_>, required: bool) -> Result<Lockfile, RunError> {
     let path = runner.dirs.project_root.join(".slopvac/plugins.lock");
-    let invalid = |source: crate::lock::LockError| RunError::LockInvalid {
-        detail: source.to_string(),
-        source,
+    let invalid = |source: crate::lock::LockError| {
+        let detail = source.diagnostic();
+        RunError::LockInvalid {
+            // The parser's own error can echo the rejected value, so the cause keeps only the
+            // location.
+            source: Redacted::new(detail.clone()),
+            detail,
+        }
     };
+
     match read_capped_regular_to_string(&path, MAX_LOCK_BYTES as u64, ReadOptions::default()) {
         Ok(text) => Lockfile::parse(&text).map_err(invalid),
-        Err(e) if e.input_kind() == Some(InputKind::NotFound) => {
+        Err(e) if !required && e.input_kind() == Some(InputKind::NotFound) => {
             Lockfile::new(Vec::new()).map_err(invalid)
         }
         Err(source) => Err(RunError::LockUnreadable {
@@ -465,7 +514,7 @@ fn join(parts: &[CliText]) -> String {
 }
 
 fn run_status(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
-    let lock = read_lock(runner)?;
+    let lock = read_lock(runner, false)?;
     let statuses = statuses(runner, &lock)?;
     let current = runner
         .revocations
@@ -508,7 +557,7 @@ fn run_status(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> 
 }
 
 fn run_list(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
-    let lock = read_lock(runner)?;
+    let lock = read_lock(runner, false)?;
     say(
         out,
         &CliText::ListCore {
@@ -538,7 +587,24 @@ fn run_list(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
 }
 
 fn run_sync(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
-    let lock = read_lock(runner)?;
+    let lock = read_lock(runner, runner.locked)?;
+    if runner.locked {
+        // CI runs from the lock, so a lock that the config has outgrown is a failure
+        // (policies.md, 1.4). Only ids are checked here: versions, sources and digests need
+        // the resolver.
+        let configured: Vec<PackId> = runner
+            .configured
+            .iter()
+            .filter(|id| id.as_str() != "core")
+            .filter_map(|id| id.parse().ok())
+            .collect();
+        let drift = config_drift(&lock, &configured);
+        if !drift.is_empty() {
+            return Err(RunError::Failed {
+                source: cause::config_lock_drift(drift),
+            });
+        }
+    }
     let store = Store::new(&runner.dirs.cache_dir);
     let mut syncer = Syncer::new(
         &store,
@@ -582,7 +648,7 @@ fn run_outdated(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError
             },
         });
     };
-    let lock = read_lock(runner)?;
+    let lock = read_lock(runner, false)?;
     let listed = list_candidates(
         client,
         &lock,
@@ -598,7 +664,7 @@ fn run_outdated(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError
             out,
             &CliText::OutdatedFailed {
                 id: line(id.as_str()),
-                reason: line(&e.to_string()),
+                reason: cause::sync(&runner.dirs.project_root, e).to_string(),
             },
         )?;
     }
@@ -661,7 +727,7 @@ fn locked_kind(lock: &Lockfile, id: &str) -> Option<PackKind> {
 }
 
 fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, RunError> {
-    let lock = read_lock(runner)?;
+    let lock = read_lock(runner, false)?;
     match locked_kind(&lock, id) {
         None => return Err(RunError::UnknownPlugin { id: line(id) }),
         Some(PackKind::Data) => return Err(RunError::NotCode { id: line(id) }),
@@ -711,7 +777,7 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
 }
 
 fn run_untrust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, RunError> {
-    let lock = read_lock(runner)?;
+    let lock = read_lock(runner, false)?;
     if locked_kind(&lock, id) == Some(PackKind::Data) {
         return Err(RunError::NotCode { id: line(id) });
     }

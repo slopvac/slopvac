@@ -25,9 +25,9 @@ Commands:
   prime        Print guidance for agents, one topic at a time
   review       Plan or run the review of a revision
   claims       List the claims a revision changed, added or dropped
+  plugins      Manage data plugins and code plugins: sync, trust, update.
   completions  Print a shell completion script.
   man          Write man pages.
-  plugins      Manage data plugins and code plugins: sync, trust, update.
   onboard      Print the agent onboarding text.
   reference    Generate or check the rules reference.
   help         Print this message or the help of the given subcommand(s)
