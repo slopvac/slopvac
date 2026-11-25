@@ -666,6 +666,7 @@ parse-error error
 parse-mdx-syntax text
 parse-segments-disordered text
 plugin-api-unsupported error
+plugin-category-id-collision error
 plugin-declaration-mismatch error
 plugin-exited error
 plugin-file-link error

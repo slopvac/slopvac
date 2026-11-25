@@ -333,6 +333,10 @@ impl Tagger for DeclarativeTagger {
         &self.spec.id
     }
 
+    fn emitted_tags(&self) -> Vec<&str> {
+        vec![&self.spec.tag]
+    }
+
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
         let mut sink = TagSink::unbounded();
         self.tag_into(doc, &mut sink)?;

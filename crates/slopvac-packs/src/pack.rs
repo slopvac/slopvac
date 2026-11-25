@@ -70,25 +70,48 @@ struct Reader<'a> {
     bytes: u64,
 }
 
+/// The per-file cap that a kind of plugin file has when it is read.
+#[derive(Clone, Copy)]
+enum FileCap {
+    /// No cap of its own: the source and the byte budgets bound the file.
+    None,
+    /// A rule or category file: 2 MiB, refused with `rules-file-too-large`.
+    Rules,
+    /// A style file: 1 MiB, refused with `style-too-large`.
+    Style,
+}
+
 impl Reader<'_> {
     fn read_all(&mut self, paths: &[PackPath]) -> Result<Vec<(PackPath, String)>, PackError> {
-        self.read_capped(paths, slopvac_rules::MAX_RULE_FILE_BYTES)
+        self.read_files(paths, FileCap::None)
     }
 
-    /// Like `read_all`, and refuses a file over `cap` bytes, the per-file cap of its kind.
-    fn read_capped(
+    /// Read `paths` and refuse a file over the cap of its kind, before it is decoded.
+    fn read_files(
         &mut self,
         paths: &[PackPath],
-        cap: u64,
+        cap: FileCap,
     ) -> Result<Vec<(PackPath, String)>, PackError> {
         paths
             .iter()
             .map(|p| {
-                let text = self.source.read(p)?;
+                let text = match cap {
+                    FileCap::None => self.source.read(p)?,
+                    FileCap::Rules => self
+                        .source
+                        .read_capped(p, slopvac_rules::MAX_RULE_FILE_BYTES)?,
+                    FileCap::Style => self
+                        .source
+                        .read_capped(p, slopvac_styles::MAX_STYLE_BYTES)
+                        .map_err(|e| match e {
+                            SourceError::TooLarge { cap } => SourceError::StyleTooLarge {
+                                style: stem(p).to_owned(),
+                                cap,
+                            },
+                            other => other,
+                        })?,
+                };
                 let len = text.len() as u64;
-                if len > cap {
-                    return Err(SourceError::TooLarge { cap }.into());
-                }
                 self.bytes = self.bytes.saturating_add(len);
                 if self.bytes > self.budget.limits().pack_bytes {
                     return Err(refusal(PackBudget::Bytes, self.budget.limits().pack_bytes));
@@ -234,7 +257,7 @@ impl LoadedPack {
             budget,
             bytes: manifest_bytes,
         };
-        let categories = reader.read_all(&provides.categories)?;
+        let categories = reader.read_files(&provides.categories, FileCap::Rules)?;
         // Count the rules before compiling any: a file that does not parse counts as none here
         // and fails in `from_sources` with its own location.
         for (path, text) in &categories {
@@ -286,7 +309,7 @@ impl LoadedPack {
             tagger_paths.push(path);
         }
         let pattern_bytes = reader.budget.pattern_used().saturating_sub(patterns_before);
-        let styles = reader.read_capped(&provides.styles, slopvac_styles::MAX_STYLE_BYTES)?;
+        let styles = reader.read_files(&provides.styles, FileCap::Style)?;
         let configs = reader.read_all(&provides.configs)?;
         let bytes = reader.bytes;
         Ok(Self {
@@ -362,16 +385,29 @@ fn stem(path: &PackPath) -> &str {
     file.rsplit_once('.').map_or(file, |(stem, _)| stem)
 }
 
-/// The ids of the engine's built-in taggers, read from the registry that runs them.
-fn built_in_tagger_ids() -> &'static [String] {
-    static IDS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
-    IDS.get_or_init(|| {
+/// The ids and the emitted tags of the engine's built-in taggers, read from the registry that
+/// runs them. The two are separate names: a tagger may emit a tag that is not its id.
+struct BuiltIn {
+    ids: Vec<String>,
+    tags: Vec<String>,
+}
+
+fn built_in_taggers() -> &'static BuiltIn {
+    static BUILT_IN: std::sync::OnceLock<BuiltIn> = std::sync::OnceLock::new();
+    BUILT_IN.get_or_init(|| {
         #[expect(
             clippy::expect_used,
             reason = "the built-in registry is bundled data that the context crate's tests load"
         )]
         let registry = slopvac_context::builtin_registry().expect("the built-in taggers load");
-        registry.ids().into_iter().map(str::to_owned).collect()
+        BuiltIn {
+            ids: registry.ids().into_iter().map(str::to_owned).collect(),
+            tags: registry
+                .emitted_tags()
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+        }
     })
 }
 
@@ -386,12 +422,11 @@ fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
             .filter(|p| p.origin == Source::Core)
             .flat_map(|p| p.taggers.iter())
     };
-    let built_in = built_in_tagger_ids();
+    let built_in = built_in_taggers();
     let mut core_tags: HashSet<&str> = core_taggers().map(|t| t.tag.as_str()).collect();
-    // A built-in sentence tagger emits the context tag of its own id, so its id reserves the tag.
-    core_tags.extend(built_in.iter().map(String::as_str));
+    core_tags.extend(built_in.tags.iter().map(String::as_str));
     let mut ids: HashSet<&str> = core_taggers().map(|t| t.id.as_str()).collect();
-    ids.extend(built_in.iter().map(String::as_str));
+    ids.extend(built_in.ids.iter().map(String::as_str));
     for pack in packs.iter().filter(|p| p.origin != Source::Core) {
         for (path, spec) in pack.tagger_paths.iter().zip(&pack.taggers) {
             if core_tags.contains(spec.tag.as_str()) || !ids.insert(spec.id.as_str()) {
@@ -439,14 +474,22 @@ fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
                 .iter()
                 .find(|r| !qualified.insert(r.id().as_str()))
                 .map(|r| r.id().local());
-            let clash = core_rule_clash
-                .map(|rule| (rule, false))
-                .or(core_category_clash.map(|category| (category, true)))
-                .or(same_id.map(|rule| (rule, false)));
-            if let Some((rule, category_only)) = clash {
+            let plugin = pack.manifest.id.to_string();
+            if let Some(rule) = core_rule_clash {
                 return Err(PackError::RuleIdCollision {
-                    plugin: pack.manifest.id.to_string(),
-                    category_only,
+                    plugin,
+                    rule: rule.to_owned(),
+                });
+            }
+            if let Some(category) = core_category_clash {
+                return Err(PackError::CategoryIdCollision {
+                    plugin,
+                    category: category.to_owned(),
+                });
+            }
+            if let Some(rule) = same_id {
+                return Err(PackError::RuleIdCollision {
+                    plugin,
                     rule: rule.to_owned(),
                 });
             }

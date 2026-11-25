@@ -24,6 +24,12 @@ pub struct Tag {
 pub trait Tagger: Send + Sync {
     /// Stable tagger id.
     fn id(&self) -> &str;
+    /// The tag kinds this tagger can emit. A tagger id and a tag kind are separate names: a
+    /// tagger may emit a kind that is not its id. The default is none, for a tagger that is not
+    /// part of a registry whose tags are reserved.
+    fn emitted_tags(&self) -> Vec<&str> {
+        Vec::new()
+    }
     /// Tags for one document.
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error>;
     /// Tags for one document, pushed into `sink`, which charges its ceiling before each tag
@@ -128,6 +134,12 @@ impl TagRegistry {
     #[must_use]
     pub fn ids(&self) -> Vec<&str> {
         self.taggers.iter().map(|t| t.id()).collect()
+    }
+
+    /// The tag kinds that the registered taggers can emit, in tagger order, with repeats.
+    #[must_use]
+    pub fn emitted_tags(&self) -> Vec<&str> {
+        self.taggers.iter().flat_map(|t| t.emitted_tags()).collect()
     }
 
     /// Run every tagger and index the result. The first tagger error stops the run.
