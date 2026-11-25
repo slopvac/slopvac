@@ -906,3 +906,46 @@ fn explain_finds_the_term_casing_rule() {
     let text = stdout(&["explain", TERM_CASING]);
     assert!(text.starts_with(TERM_CASING), "{text}");
 }
+
+const CASING: &str = "terms:terms.casing";
+
+fn rule_ids(args: &[&str]) -> Vec<String> {
+    json(args)["rules"]
+        .as_array()
+        .expect("rules")
+        .iter()
+        .map(|r| r["id"].as_str().expect("id").to_owned())
+        .collect()
+}
+
+#[test]
+fn a_qualified_category_filter_lists_the_rules_of_that_plugin() {
+    let ids = rule_ids(&["rules", "--category", "terms:terms", "--format", "json"]);
+    assert_eq!(ids, [CASING]);
+}
+
+#[test]
+fn a_qualified_category_filter_does_not_match_a_category_of_another_plugin() {
+    // `terms` is a category of the plugin `terms`, not of `core`.
+    let ids = rule_ids(&["rules", "--category", "core:terms", "--format", "json"]);
+    assert!(ids.is_empty(), "{ids:?}");
+}
+
+#[test]
+fn a_rule_of_another_plugin_has_no_page_link_where_links_render() {
+    let listed = json(&["rules", "--category", "terms:terms", "--format", "json"]);
+    assert!(listed["rules"][0].get("url").is_none(), "{listed}");
+    let explained = json(&["explain", CASING, "--format", "json"]);
+    assert!(explained.get("url").is_none(), "{explained}");
+    let markdown: [&[&str]; 2] = [
+        &["rules", "--category", "terms:terms", "--format", "md"],
+        &["explain", CASING, "--format", "md"],
+    ];
+    for args in markdown {
+        assert!(!stdout(args).contains("Page:"), "{args:?}");
+    }
+    assert!(!stdout(&["explain", CASING]).contains("Page:"));
+    // A rule of `core` keeps its page.
+    let core = json(&["explain", CHAT_LEAKAGE, "--format", "json"]);
+    assert!(core["url"].as_str().is_some(), "{core}");
+}

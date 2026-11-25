@@ -66,8 +66,9 @@ fn clean(text: &str) -> String {
 }
 
 fn load(m: &ArgMatches) -> Result<(Catalog, Severities), CliError> {
-    let severities = Severities::load(m)?;
-    Ok((Catalog::load()?, severities))
+    let catalog = Catalog::load()?;
+    let severities = Severities::load(m)?.for_catalog(&catalog);
+    Ok((catalog, severities))
 }
 
 fn url_of(rule: &LoadedRule) -> Option<String> {
@@ -117,9 +118,13 @@ impl Filter {
     /// A rule is kept when its category is recommended for the genre. A rule that
     /// names other genres in `applies_to` is dropped too, unless `--include-excluded`.
     fn keeps(&self, category: &LoadedCategory, rule: &LoadedRule) -> bool {
-        if !self.categories.is_empty()
-            && !self.categories.iter().any(|c| c == category.id().as_str())
-        {
+        // A qualified value names one plugin's category. A bare value names that id in every
+        // plugin.
+        let named = |value: &String| match value.split_once(':') {
+            Some((plugin, id)) => plugin == rule.id().pack() && id == category.id().as_str(),
+            None => value == category.id().as_str(),
+        };
+        if !self.categories.is_empty() && !self.categories.iter().any(named) {
             return false;
         }
         if self.kind.is_some_and(|k| k != rule.kind()) {
@@ -481,7 +486,7 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
     };
     let category = set
         .categories()
-        .find(|c| c.id() == rule.category())
+        .find(|c| c.rules().iter().any(|r| r.id() == rule.id()))
         .expect("a rule has a category");
     let text = match format_of(m) {
         "json" => {
@@ -633,16 +638,14 @@ mod tests {
     fn a_category_with_no_rules_names_the_plugin_that_ships_it() {
         let catalog =
             Catalog::from_sets(vec![empty_category_of("alpha"), empty_category_of("beta")]);
-        let listed: Vec<(String, String)> = category_entries(&catalog)
+        let emitted = rules_json(&catalog, &[], &Severities::unconfigured());
+        let json: Value = serde_json::from_str(&emitted).unwrap();
+        let listed: Vec<(&str, &str)> = json["categories"]
+            .as_array()
+            .unwrap()
             .iter()
-            .map(|c| (c["id"].to_string(), c["plugin"].to_string()))
+            .map(|c| (c["id"].as_str().unwrap(), c["plugin"].as_str().unwrap()))
             .collect();
-        assert_eq!(
-            listed,
-            [
-                (r#""style""#.to_owned(), r#""alpha""#.to_owned()),
-                (r#""style""#.to_owned(), r#""beta""#.to_owned())
-            ]
-        );
+        assert_eq!(listed, [("style", "alpha"), ("style", "beta")]);
     }
 }

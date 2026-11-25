@@ -698,6 +698,7 @@ pub fn config_sources(files: &[(String, bool)]) -> Vec<ConfigSource> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rule_catalog::catalog_of;
     use rstest::rstest;
     use slopvac_config::load;
 
@@ -732,29 +733,6 @@ mod tests {
         validate(&loaded, rules)?;
         let resolved = resolve(&loaded, Path::new("doc.md"));
         build(rules, &resolved, Vec::new(), &Overrides::default())
-    }
-
-    /// A catalogue with one category file for each `(plugin, category)` pair. Each category
-    /// has one rule, `hit`.
-    fn catalog_of(pairs: &[(&str, &str)]) -> Catalog {
-        let set = |plugin: &str, category: &str| {
-            let file = serde_json::json!({
-                "schema_version": 3, "id": category, "title": "t", "description": "d",
-                "rules": [{
-                    "id": "hit", "name": "n", "message": "Found {match}.",
-                    "severity": "warning",
-                    "match": {"kind": "tokens", "tokens": ["leverage"]},
-                    "citation": {"source": "s"}
-                }],
-            });
-            slopvac_rules::RuleSet::from_sources(
-                &slopvac_model::PackId::new(plugin).expect("a plugin id"),
-                vec![(std::path::PathBuf::from("c.json"), file.to_string())],
-                &slopvac_rules::CompileOptions::default(),
-            )
-            .expect("the rule set loads")
-        };
-        Catalog::from_sets(pairs.iter().map(|(p, c)| set(p, c)).collect())
     }
 
     /// A catalogue of two plugins, `alpha` and `beta`, that each ship a category `style`.
