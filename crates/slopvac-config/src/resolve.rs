@@ -298,6 +298,43 @@ impl Resolved {
         Json::Object(root)
     }
 
+    /// As [`Resolved::explain`], with each contribution filed under the key that `respell`
+    /// gives it, so that contributions a caller knows to be spellings of one key merge into one
+    /// entry. The merged history runs in the order the layers apply, and the entry shows the
+    /// spelling of the contribution that won.
+    #[must_use]
+    pub fn explain_respelled(
+        &self,
+        respell: impl Fn(&[String], &Contribution) -> Vec<String>,
+    ) -> Vec<Explained> {
+        let mut grouped: BTreeMap<Vec<String>, Vec<Contribution>> = BTreeMap::new();
+        for (path, history) in &self.entries {
+            for contribution in history {
+                grouped
+                    .entry(respell(path, contribution))
+                    .or_default()
+                    .push(contribution.clone());
+            }
+        }
+        grouped
+            .into_iter()
+            .filter_map(|(path, mut history)| {
+                history.sort_by_key(|c| c.scope);
+                let win = Self::winner(&path, &history)?;
+                Some(Explained {
+                    path: display_path(&path),
+                    value: win.value.clone(),
+                    source: win.source.clone(),
+                    overridden: history
+                        .iter()
+                        .filter(|c| !std::ptr::eq(*c, win))
+                        .cloned()
+                        .collect(),
+                })
+            })
+            .collect()
+    }
+
     /// Each key with its final value, where it came from, and the values it replaced.
     #[must_use]
     pub fn explain(&self) -> Vec<Explained> {

@@ -1386,6 +1386,30 @@ fn explain_project() -> tempfile::TempDir {
 }
 
 #[test]
+fn explain_config_shows_a_user_override_of_a_preset_rule_as_replacing_the_preset_value() {
+    // The `ste` style turns this rule off by its bare name, and the project turns it on.
+    let config = "schema_version = 3\nstyles = [\"ste\"]\n\n[rules]\n\"ste-practices.latin-abbreviation\" = \"error\"\n";
+    let (dir, _) = project("a.md", SLOPPY, Some(config));
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "--explain-config", "a.md"])
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    let entries: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.contains("ste-practices.latin-abbreviation"))
+        .collect();
+    assert_eq!(
+        entries,
+        ["rules.\"ste-practices.latin-abbreviation\" = \"error\"  [project slopvac.toml:5:1]"],
+        "{stdout}"
+    );
+    assert!(stdout.contains("    replaced \"off\"  [style"), "{stdout}");
+}
+
+#[test]
 fn explain_config_prints_each_value_with_its_source_and_what_it_replaced_and_lints_nothing() {
     let dir = explain_project();
     let out = slopvac()

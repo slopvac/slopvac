@@ -419,6 +419,26 @@ pub fn genre_assignments(config: &LoadedConfig) -> Vec<GenreAssignment> {
         .collect()
 }
 
+/// Each key of `resolved` with its final value and the values it replaced, for
+/// `--explain-config`. A shipped preset's bare `categories` and `rules` keys load as
+/// `core:<key>` (see `qualified_to_core`). They are listed under the bare spelling that the
+/// preset's author wrote, so a bare key in a config file replaces them in the listing as it
+/// does in the run.
+#[must_use]
+pub fn explain(resolved: &Resolved) -> Vec<slopvac_config::Explained> {
+    resolved.explain_respelled(|path, contribution| {
+        let mut path = path.to_vec();
+        if let [head, key, ..] = path.as_mut_slice()
+            && (head == "categories" || head == "rules")
+            && is_inherited(contribution.source.layer)
+            && let Some(bare) = key.strip_prefix(&format!("{RESERVED_ID}:"))
+        {
+            *key = bare.to_owned();
+        }
+        path
+    })
+}
+
 /// The merged settings of the file at `rel`.
 #[must_use]
 pub fn resolve(config: &LoadedConfig, rel: &Path) -> Resolved {

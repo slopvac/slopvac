@@ -370,7 +370,7 @@ impl Linter for EngineLinter {
                 Some((config, rel)) => (config.as_ref(), rel.clone()),
                 None => (&none, PathBuf::from(&item.shown)),
             };
-            let mut explained = lint_settings::resolve(config, &rel).explain();
+            let mut explained = lint_settings::explain(&lint_settings::resolve(config, &rel));
             for entry in &mut explained {
                 redact_urls(&mut entry.value);
                 for replaced in &mut entry.overridden {
