@@ -112,10 +112,28 @@ fn has_blocklist(t: &dyn TableLike) -> bool {
         .is_some_and(|v| v.contains_key("path"))
 }
 
-/// Refuse the layouts where the companion style cannot keep the 2.x vocabulary levels: a
-/// blocklist that only an override sets, and a blocklist together with any profile switch. A
-/// switch block restates the category levels of the target profile, and those outrank the
-/// companion style's rule levels.
+/// Refuse the layouts where the companion style cannot keep the 2.x vocabulary levels. Five
+/// layouts are refused, each with its own reason:
+///
+/// - the blocklist is set only in an override (`ReasonBlocklistInOverride`);
+/// - the blocklist comes with any profile switch (`ReasonBlocklistUnderSwitch`). A switch block
+///   restates the category levels of the target profile, and those outrank the companion
+///   style's rule levels;
+/// - L1: a later category sets a level other than `off` after an earlier layer set an active
+///   vocabulary rule of that category (`ReasonBlocklistCategoryOverRule`);
+/// - L2: a later category sets no `severity` after an earlier layer turned that category off
+///   (`ReasonBlocklistCategoryOverOff`);
+/// - widened L2: a later category sets no `severity` after an earlier layer set a rule of that
+///   category (`ReasonBlocklistCategoryNoSeverityOverRule`).
+///
+/// When a later category with no `severity` follows both an earlier `off` category and an
+/// earlier rule, L2 wins, because it names the more specific cause.
+///
+/// The category checks treat every earlier override as one that can merge with the later one.
+/// 2.x merges only the overrides whose `files` match a file, so a disjoint pair, such as one
+/// override for `a.md` and a later one for `b.md`, is refused too. That over-refusal fails
+/// closed, and telling disjoint scopes apart would need glob overlap analysis, so the check
+/// keeps it.
 fn check_blocklist_layout(
     original: &DocumentMut,
     config: &Config2,

@@ -537,6 +537,9 @@ fn refused_layout(name: &str) -> (String, String) {
 #[case::later_category_with_no_severity_over_an_earlier_rule(
     "later-category-with-no-severity-over-an-earlier-rule"
 )]
+#[case::later_budget_only_category_in_a_disjoint_override(
+    "later-budget-only-category-in-a-disjoint-override"
+)]
 fn a_blocklist_layout_the_companion_style_cannot_keep_is_refused(#[case] name: &str) {
     let (config, at) = refused_layout(name);
     let err = preserve(&config).unwrap_err();
@@ -552,7 +555,7 @@ fn every_refusal_vector_has_a_case() {
         fs::read_to_string(crate_dir().join("tests/fixtures/preserve/refused-blocklist.json"))
             .unwrap();
     let doc: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(doc["layouts"].as_object().unwrap().len(), 10);
+    assert_eq!(doc["layouts"].as_object().unwrap().len(), 11);
 }
 
 const VOCABULARY_RULES: [&str; 4] = [
@@ -606,11 +609,10 @@ struct Layer<'a> {
     category: Option<String>,
 }
 
-/// What the sweep walked and found: the number of layers and the E4 `off` guards, each as the
-/// `files` of its override block and the rule it turns off.
+/// What the sweep found: the E4 `off` guards, each as the `files` of its override block and the
+/// rule it turns off.
 #[derive(Debug)]
 struct Walk {
-    layers: usize,
     guards: BTreeSet<(Vec<String>, String)>,
 }
 
@@ -732,10 +734,7 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> 
             "the written config has no vocabulary content, but the authored input has some\n{text}"
         ));
     }
-    Ok(Walk {
-        layers: layers.len(),
-        guards,
-    })
+    Ok(Walk { guards })
 }
 
 /// The level of the `ste-words` category in one layer, as a bare string or a `severity`, under
@@ -811,32 +810,40 @@ fn vocabulary_levels(layer: &toml::Table) -> Result<BTreeMap<String, String>, St
 }
 
 #[rstest]
-#[case::normal("schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n")]
-#[case::strict("schema_version = 2\nprofile = \"strict\"\n[vocabulary]\npath = \"d.toml\"\n")]
-#[case::relaxed("schema_version = 2\nprofile = \"relaxed\"\n[vocabulary]\npath = \"d.toml\"\n")]
+#[case::normal("schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n", &[])]
+#[case::strict("schema_version = 2\nprofile = \"strict\"\n[vocabulary]\npath = \"d.toml\"\n", &[])]
+#[case::relaxed("schema_version = 2\nprofile = \"relaxed\"\n[vocabulary]\npath = \"d.toml\"\n", &[])]
 #[case::authored_rule(
-    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n"
-)]
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n", &[])]
 #[case::authored_category(
-    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n"
-)]
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n", &[])]
 #[case::category_override(
-    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n"
-)]
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n", &[])]
 #[case::authored_category_level(
-    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"warning\"\n"
-)]
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"warning\"\n", &[])]
 #[case::e4_guard_for_an_authored_rule(
-    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n"
-)]
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n", &[(&["docs/**"], VOCABULARY_RULE)])]
 #[case::override_changes_path(
-    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"o.toml\"\n"
-)]
-fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[case] config: &str) {
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"o.toml\"\n", &[])]
+fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(
+    #[case] config: &str,
+    #[case] expected_guards: &[(&[&str], &str)],
+) {
     let rw = preserve(config).unwrap();
     let walk = check_vocabulary_entries(&rw.text, config)
         .unwrap_or_else(|why| panic!("written config: {why}"));
-    assert!(walk.layers >= 1, "the check walked no layer\n{}", rw.text);
+    // Each case names the E4 guards that its authored input calls for, so a guard that goes
+    // missing, or one that nothing authored asks for, fails here.
+    let expected: BTreeSet<(Vec<String>, String)> = expected_guards
+        .iter()
+        .map(|(files, rule)| {
+            (
+                files.iter().map(|f| (*f).to_owned()).collect(),
+                (*rule).to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(walk.guards, expected, "{}", rw.text);
 }
 
 #[rstest]
@@ -878,7 +885,7 @@ fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[cas
 #[case::an_authored_override_is_dropped_with_its_rule(
     "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
     "schema_version = 2\n",
-    "authored vocabulary rule ste-words.word-outside-controlled-vocabulary"
+    "authored vocabulary rule ste-words.word-outside-controlled-vocabulary = error is missing: its override block is gone"
 )]
 #[case::the_output_is_empty(
     "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
@@ -892,32 +899,32 @@ fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[cas
 )]
 #[case::a_category_only_override_is_dropped(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n",
-    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[categories]\nste-words = \"off\"\n",
+    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[terms]\nblocklists = [\"d.toml\"]\n[categories]\nste-words = \"off\"\n",
     "authored override [\"docs/**\"] is missing"
 )]
 #[case::an_override_keeps_its_files_but_drops_its_category(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n",
-    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n",
+    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[terms]\nblocklists = [\"d.toml\"]\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n",
     "authored category ste-words = error is missing from its layer"
 )]
 #[case::an_override_keeps_its_files_but_changes_its_category_level(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n",
-    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"warning\"\n",
+    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[terms]\nblocklists = [\"d.toml\"]\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"warning\"\n",
     "authored category ste-words = error is missing from its layer"
 )]
 #[case::an_override_spells_its_category_twice_with_two_levels(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n",
-    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n\"core:ste-words\" = \"warning\"\n",
+    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[terms]\nblocklists = [\"d.toml\"]\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n\"core:ste-words\" = \"warning\"\n",
     "category ste-words conflicts"
 )]
 #[case::the_top_level_category_changes_its_level(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"warning\"\n",
-    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[categories]\nste-words = \"error\"\n",
+    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[terms]\nblocklists = [\"d.toml\"]\n[categories]\nste-words = \"error\"\n",
     "authored category ste-words = warning is missing from its layer (the top level)"
 )]
 #[case::the_authored_override_spells_its_category_twice_with_two_levels(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n\"core:ste-words\" = \"warning\"\n",
-    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n",
+    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[terms]\nblocklists = [\"d.toml\"]\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n",
     "category ste-words conflicts"
 )]
 #[case::an_entry_has_no_string_level(
