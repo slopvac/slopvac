@@ -509,6 +509,12 @@ REFUSED_BLOCKLIST_LAYOUTS = {
         f'schema_version = 2\n{_BLOCKLIST}\n[rules]\n"ste-words.word-outside-controlled-vocabulary" = "error"\n\n[[overrides]]\nfiles = ["docs/**"]\n[overrides.categories]\nste-words = {{ max_per_100_words = 2.0 }}\n',
         "overrides[0].categories.ste-words",
     ),
+    # 2.x merges only the overrides whose `files` match a file, so these two scopes never meet.
+    # The check does not tell disjoint scopes apart and refuses the layout, which fails closed.
+    "later-budget-only-category-in-a-disjoint-override": (
+        f'schema_version = 2\n{_BLOCKLIST}\n[[overrides]]\nfiles = ["a.md"]\n[overrides.rules]\n"ste-words.word-outside-controlled-vocabulary" = "warning"\n\n[[overrides]]\nfiles = ["b.md"]\n[overrides.categories]\nste-words = {{ max_per_100_words = 2.0 }}\n',
+        "overrides[1].categories.ste-words",
+    ),
     "top-profile-differs-from-the-switch": (
         f'schema_version = 2\nprofile = "relaxed"\n{_BLOCKLIST}\n[[overrides]]\nfiles = ["docs/**"]\nprofile = "normal"\n',
         "overrides[0].profile",

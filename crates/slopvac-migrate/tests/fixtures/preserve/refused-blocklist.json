@@ -1,6 +1,10 @@
 {
  "_doc": "Configs that `migrate --preserve-behavior` refuses with migrate-output-invalid, because the vocabulary companion style cannot keep the 2.x levels for them (docs/contract/profiles.md, section 4, limit). `at` is the key that the refusal names. tests/preserve.rs reads this list.",
  "layouts": {
+  "later-budget-only-category-in-a-disjoint-override": {
+   "at": "overrides[1].categories.ste-words",
+   "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[[overrides]]\nfiles = [\"a.md\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"warning\"\n\n[[overrides]]\nfiles = [\"b.md\"]\n[overrides.categories]\nste-words = { max_per_100_words = 2.0 }\n"
+  },
   "later-category-over-an-earlier-rule": {
    "at": "overrides[0].categories.ste-words",
    "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"suggestion\"\n"
