@@ -103,9 +103,10 @@ pub struct GroupedKey {
     /// The layer order decides first. A caller that reads the same key by [`Resolved::level_by_any`]
     /// ranks its spellings by their order in that slice.
     pub rank: usize,
-    /// The spelling to show instead when `shown` is also the displayed path of another entry. A
-    /// caller sets it for a contribution whose `shown` drops a qualifier, so that two entries
-    /// never print under one path with different values.
+    /// A spelling to try when `shown` is also the displayed path of another entry. It is a
+    /// candidate, tried before the entry's `group` path and the numbered spellings of it, and
+    /// it is skipped when another entry already prints it. A caller sets it for a contribution
+    /// whose `shown` drops a qualifier, so that no two entries print under one path.
     pub fallback: Option<Vec<String>>,
 }
 
@@ -121,7 +122,9 @@ impl GroupedKey {
         }
     }
 
-    /// The same filing, shown as `fallback` when `shown` is another entry's path.
+    /// The same filing, with a fallback spelling for when `shown` is another entry's path. The
+    /// fallback is a candidate, not a promise: the entry takes the first free path among the
+    /// fallback, its own `group` path, and the `group` path with `#2`, `#3`, and so on.
     #[must_use]
     pub fn with_fallback(mut self, fallback: Vec<String>) -> Self {
         self.fallback = Some(fallback);
