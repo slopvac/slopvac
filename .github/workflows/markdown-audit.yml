@@ -54,7 +54,7 @@ jobs:
           sys.path.insert(0, "scripts")
           sys.path.insert(0, "scripts/ci")
           from workflow_escape import escape_workflow_data as escape
-          from markdown_audit_reports import document_set_problems, excluded_by_config, gate_problems
+          from markdown_audit_reports import configured_problems, document_set_problems, gate_problems
 
           root = Path.cwd()
           binary = os.environ["SLOPVAC_BIN"]
@@ -163,12 +163,15 @@ jobs:
           )
           if bad:
               raise SystemExit("\n".join(bad))
-          # The configured report must hold every document that the root config selects.
-          dropped = excluded_by_config(files, tomllib.loads(Path("slopvac.toml").read_text()).get("exclude", []))
-          bad = document_set_problems(
-              "configured",
+          # The all-files report must hold every tracked document: it is the coverage guarantee.
+          bad = document_set_problems("all-files", [relative(d) for d in reports["all-files"]["documents"]], expected_paths)
+          if bad:
+              raise SystemExit("\n".join(bad))
+          # Coverage comes from the all-files scan. The configured report may be a subset.
+          bad = configured_problems(
               [relative(d) for d in reports["configured"]["documents"]],
-              {canonical[p] for p in files if p not in dropped},
+              set(scanned),
+              len(authored_files),
           )
           if bad:
               raise SystemExit("\n".join(bad))

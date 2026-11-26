@@ -12,8 +12,6 @@ fail). It is a problem only where `allow_false` is off, as in the authored scan.
 
 from __future__ import annotations
 
-import subprocess
-
 
 def gate_problems(name: str, report: object, *, allow_false: bool) -> list[str]:
     """Return one message per document of `report` whose gate verdict is unusable.
@@ -54,16 +52,19 @@ def document_set_problems(name: str, reported: list[str], expected: set[str]) ->
     return problems
 
 
-def excluded_by_config(files: list[str], patterns: list[str]) -> set[str]:
-    """Return the tracked `files` that the config's `exclude` patterns select out.
+def configured_problems(reported: list[str], all_files: set[str], authored_count: int) -> list[str]:
+    """Return one message per fault of the configured report.
 
-    The engine reads `exclude` as gitignore patterns, so git applies them here: no second
-    glob matcher, and no list of the excluded files in the workflow.
+    The CLI's own exclusion rules pick the configured files, and this audit does not repeat
+    them. It checks only what must hold whatever the config selects: every document is one
+    the all-files scan also holds, none repeats, and the report is not empty when authored
+    documents exist. The messages hold counts only.
     """
-    if not patterns:
-        return set()
-    command = ["git", "ls-files", "-z", "--cached", "--ignored"]
-    for pattern in patterns:
-        command += ["--exclude", pattern]
-    out = subprocess.run(command, capture_output=True, check=True, text=True).stdout
-    return {path for path in out.split("\0") if path} & set(files)
+    problems = []
+    if extra := set(reported) - all_files:
+        problems.append(f"configured: the report holds {len(extra)} document(s) the all-files report lacks")
+    if duplicates := len(reported) - len(set(reported)):
+        problems.append(f"configured: the report holds {duplicates} duplicate document(s)")
+    if not reported and authored_count:
+        problems.append("configured: the report is empty but authored documents exist")
+    return problems

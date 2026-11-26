@@ -190,21 +190,48 @@ def test_an_empty_authored_report_fails_the_audit_step(tmp_path) -> None:
 
 _CONFIGURED_FAULTS = {
     "empty": 'report["documents"] = []',
-    "one-omitted": 'del report["documents"][0]',
     "one-extra": 'report["documents"].append(dict(report["documents"][0], path="extra.md"))',
+    "duplicate": 'report["documents"].append(dict(report["documents"][0]))',
 }
 
 
 @pytest.mark.parametrize("fault", list(_CONFIGURED_FAULTS))
-def test_a_partial_configured_report_fails_the_audit_step(tmp_path, fault) -> None:
+def test_a_bad_configured_report_fails_the_audit_step(tmp_path, fault) -> None:
     done = run_audit(tmp_path, {"configured": _CONFIGURED_FAULTS[fault]})
     assert done.returncode != 0
     assert "configured: the report " in done.stderr
     _no_workflow_command(done.stderr)
 
 
-@pytest.mark.parametrize("fault", ["empty", "one-omitted"])
+def test_a_proper_subset_is_a_valid_configured_report(tmp_path) -> None:
+    # The config's exclusions are the CLI's business, so a smaller report is not a fault.
+    done = run_audit(tmp_path, {"configured": 'del report["documents"][0]'})
+    assert done.returncode == 0, done.stderr
+
+
+@pytest.mark.parametrize(
+    ("configured", "all_files", "authored_count", "problems"),
+    [
+        pytest.param(["a.md"], ["a.md", "b.md"], 2, 0, id="proper-subset"),
+        pytest.param(["a.md", "b.md"], ["a.md", "b.md"], 2, 0, id="same-set"),
+        pytest.param([], ["a.md"], 0, 0, id="empty-with-no-authored"),
+        pytest.param([], ["a.md"], 1, 1, id="empty-with-authored"),
+        pytest.param(["a.md", "x.md"], ["a.md"], 1, 1, id="extra"),
+        pytest.param(["a.md", "a.md"], ["a.md"], 1, 1, id="duplicate"),
+    ],
+)
+def test_configured_coverage(configured, all_files, authored_count, problems) -> None:
+    found = audit.configured_problems(configured, set(all_files), authored_count)
+    assert len(found) == problems
+    for message in found:
+        assert ".md" not in message
+
+
+_ALL_FILES_FAULTS = {"empty": 'report["documents"] = []', "one-omitted": 'del report["documents"][0]'}
+
+
+@pytest.mark.parametrize("fault", list(_ALL_FILES_FAULTS))
 def test_a_partial_all_files_report_fails_the_audit_step(tmp_path, fault) -> None:
-    done = run_audit(tmp_path, {"all-files": _CONFIGURED_FAULTS[fault]})
+    done = run_audit(tmp_path, {"all-files": _ALL_FILES_FAULTS[fault]})
     assert done.returncode != 0
-    assert "Audit incomplete" in done.stderr
+    assert "all-files: the report " in done.stderr
