@@ -9,15 +9,18 @@ use std::collections::HashSet;
 
 use semver::Version;
 use slopvac_model::{ApiVersion, PackId};
-use slopvac_plugins::extract::{ExtractError, Limits as ExtractLimits, tree_hash};
+use slopvac_plugins::extract::{ExtractError, Limits as ExtractLimits, tree_hash_capturing_files};
 use slopvac_plugins::lock::{LockedPack, Lockfile, PackId as LockPackId, PackKind as LockKind};
 use slopvac_plugins::sign::RESERVED_ID;
 use slopvac_plugins::sync::{Store, SyncError};
 
 use crate::messages::PackMessage;
 use crate::{
-    Budget, DirSource, Limits, LoadedPack, PackError, PackKind, Packs, Source, to_lock_id,
+    Budget, Limits, MemorySource, LoadedPack, PackError, PackKind, Packs, Source, to_lock_id,
 };
+
+/// Most bytes of one plugin tree a load keeps in memory.
+const PLUGIN_TREE_CAP: u64 = 32 << 20;
 
 /// Why the synced plugins did not load. Every text comes from the message catalog.
 #[derive(Debug, thiserror::Error)]
@@ -275,8 +278,10 @@ pub fn load_synced_within(
                 });
             }
         };
-        match tree_hash(&tree.dir) {
-            Ok(hash) if hash == tree.hash => {}
+        // One pass hashes the tree and keeps its files, so the pack below is read from the
+        // bytes the hash covers and no file is opened a second time.
+        let files = match tree_hash_capturing_files(&tree.dir, PLUGIN_TREE_CAP) {
+            Ok((hash, files)) if hash == tree.hash => files,
             Err(ExtractError::Io { what, source }) => {
                 return Err(SyncedError::StoreUnreadable {
                     id,
@@ -287,13 +292,12 @@ pub fn load_synced_within(
                 });
             }
             _ => return Err(SyncedError::Tampered { id }),
-        }
-        let dir = tree.dir;
+        };
         let origin = match locked.kind {
             LockKind::Data => Source::Pack,
             LockKind::Code => Source::Plugin,
         };
-        let pack = LoadedPack::load_within(&DirSource::new(dir), origin, budget)?;
+        let pack = LoadedPack::load_within(&MemorySource::new(files), origin, budget)?;
         check_manifest(&locked, &pack)?;
         check_requirements(&pack, &loaded)?;
         loaded.push(pack);

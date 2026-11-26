@@ -188,6 +188,57 @@ impl DirSource {
     }
 }
 
+/// A pack held in memory: the files of a tree exactly as one hash pass read them, so a pack
+/// loaded from it never opens a file a second time.
+#[derive(Debug, Clone)]
+pub struct MemorySource {
+    files: std::collections::BTreeMap<String, Vec<u8>>,
+}
+
+impl MemorySource {
+    /// A source over `files`, keyed by pack-relative path with `/` separators.
+    #[must_use]
+    pub fn new(files: std::collections::BTreeMap<String, Vec<u8>>) -> Self {
+        Self { files }
+    }
+
+    fn text(&self, path: &str, cap: u64) -> Result<String, SourceError> {
+        let bytes = self.files.get(path).ok_or_else(|| SourceError::Missing {
+            path: path.to_owned(),
+        })?;
+        if bytes.len() as u64 > cap {
+            return Err(SourceError::TooLarge { cap });
+        }
+        String::from_utf8(bytes.clone()).map_err(|_| {
+            let e = std::io::Error::new(std::io::ErrorKind::InvalidData, "not UTF-8");
+            SourceError::Read(slopvac_fs::Error::read(&e))
+        })
+    }
+}
+
+impl PackSource for MemorySource {
+    fn manifest_text(&self) -> Result<String, SourceError> {
+        self.text(MANIFEST_FILE, MAX_FILE_BYTES)
+    }
+
+    fn read(&self, path: &PackPath) -> Result<String, SourceError> {
+        self.text(path.as_str(), MAX_FILE_BYTES)
+    }
+
+    fn read_capped(&self, path: &PackPath, cap: u64) -> Result<String, SourceError> {
+        self.text(path.as_str(), cap.min(MAX_FILE_BYTES))
+    }
+
+    fn files(&self) -> Result<Vec<String>, SourceError> {
+        Ok(self
+            .files
+            .keys()
+            .filter(|p| p.as_str() != MANIFEST_FILE)
+            .cloned()
+            .collect())
+    }
+}
+
 impl PackSource for DirSource {
     fn manifest_text(&self) -> Result<String, SourceError> {
         self.read_file(MANIFEST_FILE, MAX_FILE_BYTES)
@@ -247,4 +298,57 @@ fn walk(
         }
     }
     Ok(())
+}
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
+mod tests {
+    use super::*;
+
+    fn source() -> MemorySource {
+        MemorySource::new(
+            [
+                (MANIFEST_FILE, &b"id = \"x\"\n"[..]),
+                ("rules/a.yml", b"rule\n"),
+                ("bin/tool", &[0xff, 0xfe]),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v.to_vec()))
+            .collect(),
+        )
+    }
+
+    #[test]
+    fn a_memory_source_serves_the_bytes_it_was_given() {
+        let s = source();
+        let path = PackPath::parse("rules/a.yml").unwrap();
+        assert_eq!(s.read(&path).unwrap(), "rule\n");
+        assert_eq!(s.manifest_text().unwrap(), "id = \"x\"\n");
+    }
+
+    #[test]
+    fn a_memory_source_lists_every_file_but_the_manifest() {
+        assert_eq!(source().files().unwrap(), ["bin/tool", "rules/a.yml"]);
+    }
+
+    #[test]
+    fn a_memory_source_reports_a_missing_file_and_one_over_the_cap() {
+        let s = source();
+        let absent = PackPath::parse("rules/b.yml").unwrap();
+        assert!(matches!(s.read(&absent), Err(SourceError::Missing { .. })));
+        let present = PackPath::parse("rules/a.yml").unwrap();
+        assert!(matches!(
+            s.read_capped(&present, 2),
+            Err(SourceError::TooLarge { cap: 2 })
+        ));
+    }
+
+    #[test]
+    fn a_memory_source_refuses_a_file_that_is_not_text() {
+        let path = PackPath::parse("bin/tool").unwrap();
+        assert!(matches!(source().read(&path), Err(SourceError::Read(_))));
+    }
 }
