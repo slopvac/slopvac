@@ -131,7 +131,7 @@ Detail and tool choice: [`testing-rust.md`](testing-rust.md).
   - `prek run --all-files`, which covers the manifest and spelling hooks but not clippy, nextest or doctests.
 
   Source: [CONTRIBUTING, Rust workspace](../CONTRIBUTING.md#rust-workspace) and [Rust checks](../CONTRIBUTING.md#rust-checks).
-- Lint documentation with the prose gate: `uvx --from ./packages/slopvac-lint slopvac <files>`. Exit 2 is incomplete, not clean. Source: [CONTRIBUTING, Prose checks](../CONTRIBUTING.md#prose-checks).
+- Lint documentation with the prose gate: `cargo run -p slopvac -- lint <files>`, which builds the 3.x binary from the checkout. Exit 1 is a failed gate and exit 2 is incomplete, not clean. Source: [CONTRIBUTING, Prose checks](../CONTRIBUTING.md#prose-checks).
 - Verify each documentation claim against the code. Source: [`AGENTS.md`](../AGENTS.md).
 - CI credentials that write (pushes, releases, packages, settings) come from a GitHub App installation token minted with only the permissions they need. Never use a personal access token. Use `GITHUB_TOKEN` only for reads, except where an approved departure says otherwise. `id-token: write` asks for an OIDC token and is not a repository write, so this rule does not cover it. A repository test, `tests/test_workflow_write_permissions.py`, fails on any other `GITHUB_TOKEN` write. Why: an installation token is short-lived and scoped to named permissions, and a personal token outlives the job and carries its owner's reach. Sources: the maintainer rule on tokens, and the release app in [`release.yml`](../.github/workflows/release.yml) and [`release-provenance.yml`](../.github/workflows/release-provenance.yml).
 

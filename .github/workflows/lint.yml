@@ -374,31 +374,36 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The gate step below runs the linter through uvx, which the runner image does not
-      # carry. Without this the step exits 127 on `uvx: command not found`, after vale has
-      # already installed and the styles have built.
-      - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      # The gate runs the 3.x binary built from this checkout. No release exists to pin
+      # before 3.0.0, so the checkout is the version. It needs neither Vale nor uv.
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          enable-cache: true
-      - name: Cache Vale download
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/vale-cache
-          key: vale-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_vale.py') }}
-      - name: Install vale
-        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
-      - name: Add vale to PATH
-        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          key: prose
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build the slopvac binary
+        run: cargo build --locked -p slopvac
+      # `packages/slopvac-lint/docs` is passed as a directory, not as a list of files. The
+      # specimen files inside it are excluded in `slopvac.toml`, so a new doc is gated the
+      # moment it is added instead of being silently unchecked.
+      #
+      # The step fails on exit 1 (a gate failed) and on exit 2 (the run was incomplete or
+      # the invocation was invalid, for example a config that is not on schema 3). Exit 2
+      # is never a pass. The step prints the real exit code and re-raises it.
       - name: Gate this repo's own docs
+        env:
+          SLOPVAC_NO_UPDATE_CHECK: "1"
+          SLOPVAC_OFFLINE: "1"
         run: |
-          set -euo pipefail
-          # `docs/` is passed as a directory, not as a list of files. The two
-          # specimen files inside it are excluded in `slopvac.toml`, so a new doc
-          # is gated the moment it is added instead of being silently unchecked.
-          uvx --from ./packages/slopvac-lint slopvac lint \
+          set -uo pipefail
+          status=0
+          target/debug/slopvac lint \
             README.md packages/slopvac-lint/README.md \
-            packages/slopvac-lint/docs
+            packages/slopvac-lint/docs || status=$?
+          echo "slopvac exited $status"
+          exit "$status"
       # Findings for reviewdog. The gate above keeps deciding pass or fail; this step
       # only records what it found, so a status above 1 is left to the gate. Comments
       # are posted by .github/workflows/reviewdog.yml, never from this read-only job.
@@ -406,12 +411,14 @@ jobs:
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          SLOPVAC_NO_UPDATE_CHECK: "1"
+          SLOPVAC_OFFLINE: "1"
         run: |
           set -euo pipefail
           mkdir -p reviewdog-out
           printf '%s\n' "$PR_NUMBER" > reviewdog-out/pr-number
           status=0
-          uvx --from ./packages/slopvac-lint slopvac lint \
+          target/debug/slopvac lint \
             README.md packages/slopvac-lint/README.md \
             packages/slopvac-lint/docs \
             --format sarif --out reviewdog-out/findings.sarif || status=$?

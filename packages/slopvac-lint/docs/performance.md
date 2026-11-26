@@ -6,8 +6,8 @@ Install the Python profiling group. Install `uv` and Git. Install `tar` and
 `env`. The toolkit also needs Hyperfine 2.x. The `just` recipes are optional.
 The profiling group contains six profilers.
 Mise can install `just` and Hyperfine 2.0.0. You can also use the host package
-manager. The profiler group is not installed by the default sync. You do not
-need mise or just to run the Python driver. Runtime commands do not download
+manager. The profiler group is not installed by the default sync. The Python driver
+runs without mise or just. Runtime commands do not download
 tools from GitHub.
 
 ```sh
