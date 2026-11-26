@@ -4,8 +4,6 @@
 //! pattern is built from `slopvac_sanitize::unsafe_ranges`. This test ties the two, so a
 //! change to either side that lets them diverge fails here. It reads the generated schema,
 //! and `slopvac-schemas check` (the `schemas-check` CI step) keeps the committed file equal to it.
-#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
-#![allow(missing_docs, reason = "an integration test crate has no public API")]
 
 use std::collections::BTreeSet;
 
@@ -16,6 +14,10 @@ use slopvac_schemas::generate;
 
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper: a failure to build the validator is a failed test"
+)]
 fn validator() -> Validator {
     let generated = generate().unwrap();
     let file = generated
@@ -31,6 +33,10 @@ fn validator() -> Validator {
 }
 
 /// Low bound, high bound and one middle code point of every unsafe range.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper: every table entry is a scalar value, or the test fails"
+)]
 fn samples() -> BTreeSet<char> {
     let mut points = BTreeSet::new();
     for &(low, high) in slopvac_sanitize::unsafe_ranges() {
@@ -42,12 +48,14 @@ fn samples() -> BTreeSet<char> {
 }
 
 /// One source per branch of the pattern, with `c` where that branch reads freely.
-fn shapes(c: char) -> [String; 4] {
+fn shapes(c: char) -> [String; 6] {
     [
         format!("pkg/a{c}b"),
         format!("https://h/a{c}b"),
         format!("oci://h{c}x/p"),
+        format!("https://h{c}x/p"),
         format!("git+https://h/r{c}@{COMMIT}"),
+        format!("git+https://h{c}x/r@{COMMIT}"),
     ]
 }
 

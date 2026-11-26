@@ -54,7 +54,15 @@ def _samples() -> list[int]:
 
 
 # One source shape per branch of the pattern: a relative path, and a URL path and authority.
-_SHAPES = ["pkg/a{c}b", "https://h/a{c}b", "oci://h{c}x/p", "git+https://h/r{c}@" + "0" * 40]
+_SHAPES = [
+    "pkg/a{c}b",
+    "https://h/a{c}b",
+    "https://h{c}x/p",
+    "oci://h/a{c}b",
+    "oci://h{c}x/p",
+    "git+https://h/r{c}@" + "0" * 40,
+    "git+https://h{c}x/r@" + "0" * 40,
+]
 
 
 def test_the_sweep_has_the_expected_ranges() -> None:
