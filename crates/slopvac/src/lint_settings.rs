@@ -773,6 +773,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::rule_catalog::{catalog_of, catalog_with_rules};
     use rstest::rstest;
+    use serde_json::json;
     use slopvac_config::load;
 
     /// No packs behind the loader: these tests cover the settings builder, not packs.
@@ -841,14 +842,79 @@ pub(crate) mod tests {
         );
     }
 
+    // Both spellings in one layer: the qualified key wins the tie, as it does for `lint`
+    // (`a_qualified_and_a_bare_key_in_one_layer_resolve_the_same_in_either_order`), so the one
+    // entry shows the qualified spelling and its value. The bare value is the replaced one.
     #[test]
     fn explain_merges_the_bare_and_qualified_spellings_of_one_category() {
         let rules = catalog_of(&[("core", "style"), ("alpha", "tone")]);
         let config = format!("{HEAD}\n[categories]\n\"core:style\" = \"off\"\nstyle = \"error\"\n");
         assert_eq!(
             explained_paths(&rules, &config),
-            ["categories.style.severity"]
+            ["categories.\"core:style\".severity"]
         );
+    }
+
+    /// `explain` over the shipped catalogue for `config`, with the shipped presets.
+    fn explained_with_presets(config: &str) -> Vec<slopvac_config::Explained> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("slopvac.toml");
+        std::fs::write(&path, config).expect("write config");
+        let loaded = load(&path, &ShippedStyles::new()).expect("the config loads");
+        let resolved = resolve(&loaded, Path::new("doc.md"));
+        explain(&resolved, &Catalog::load().expect("the rules load"))
+    }
+
+    // `explain` and `lint` read one value for a key that one layer spells both ways, in either
+    // order, for a category and for a rule.
+    #[rstest]
+    #[case::category_qualified_first(
+        "[categories]\n\"core:orwell\" = \"off\"\norwell = \"error\"\n",
+        "categories.\"core:orwell\".severity",
+        "core:orwell.unsupported-evaluative"
+    )]
+    #[case::category_bare_first(
+        "[categories]\norwell = \"error\"\n\"core:orwell\" = \"off\"\n",
+        "categories.\"core:orwell\".severity",
+        "core:orwell.unsupported-evaluative"
+    )]
+    #[case::rule_qualified_first(
+        "[rules]\n\"core:prose-inflation.slop-lexicon\" = \"off\"\n\"prose-inflation.slop-lexicon\" = \"error\"\n",
+        "rules.\"core:prose-inflation.slop-lexicon\"",
+        "core:prose-inflation.slop-lexicon"
+    )]
+    #[case::rule_bare_first(
+        "[rules]\n\"prose-inflation.slop-lexicon\" = \"error\"\n\"core:prose-inflation.slop-lexicon\" = \"off\"\n",
+        "rules.\"core:prose-inflation.slop-lexicon\"",
+        "core:prose-inflation.slop-lexicon"
+    )]
+    fn explain_reports_the_value_that_lint_uses_for_a_key_spelled_both_ways(
+        #[case] entries: &str,
+        #[case] shown: &str,
+        #[case] rule: &str,
+    ) {
+        let config = format!("{HEAD}\n{entries}");
+        let explained = explained_with_presets(&config);
+        let entry = explained
+            .iter()
+            .find(|e| e.path == shown)
+            .unwrap_or_else(|| panic!("no entry {shown}: {explained:?}"));
+        let s = settings(&config).unwrap();
+        assert_eq!(level(&s, rule), Some(Level::Off));
+        assert_eq!(entry.value, json!("off"));
+    }
+
+    // A preset key keeps the spelling its author wrote, whether or not it names a catalogue
+    // entry. `ste-vocabulary` names no category.
+    #[test]
+    fn a_preset_key_keeps_its_own_spelling_when_it_names_no_catalogue_entry() {
+        let explained = explained_with_presets(&format!("{HEAD}styles = [\"ste\"]\n"));
+        let paths: Vec<&str> = explained
+            .iter()
+            .map(|e| e.path.as_str())
+            .filter(|p| p.contains("ste-vocabulary"))
+            .collect();
+        assert_eq!(paths, ["categories.ste-vocabulary.severity"]);
     }
 
     /// The settings that the command-line `cli` gives over `rules` and an empty config.
