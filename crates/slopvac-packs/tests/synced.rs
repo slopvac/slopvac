@@ -1148,6 +1148,11 @@ fn two_plugins_that_share_a_bare_rule_id_both_load() {
 
 /// A plugin `acme` whose one rule has the id of the first rule of the core pack, and that id.
 fn colliding_with_core() -> (Spec, String) {
+    colliding_with_core_as("acme")
+}
+
+/// As [`colliding_with_core`], for the plugin `id`.
+fn colliding_with_core_as(id: &'static str) -> (Spec, String) {
     let packs = Packs::core().unwrap();
     let core_rule = packs.rule_sets().next().unwrap().rules().next().unwrap();
     let local = core_rule.id().local().to_owned();
@@ -1155,7 +1160,7 @@ fn colliding_with_core() -> (Spec, String) {
     let text = format!(
         r#"{{"schema_version":3,"id":"{category}","title":"T","description":"D","rules":[{{"id":"{rule}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"a"}},"citation":{{"source":"s"}}}}]}}"#
     );
-    let mut spec = Spec::new("acme");
+    let mut spec = Spec::new(id);
     spec.provides = "categories = [\"categories/c.json\"]".into();
     spec.files.push(("categories/c.json", text));
     (spec, local)
@@ -1276,6 +1281,83 @@ fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_for_the_rule_
         "{err:?}"
     );
     assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
+}
+
+// A repeated plugin listed before a different plugin that clashes with the core: the core clash
+// is checked first, so the refusal names the clashing plugin and its rule. Both refusals carry
+// one code, so the plugin and the rule tell them apart.
+#[test]
+fn a_core_clash_is_reported_before_a_repeated_plugin_listed_ahead_of_it() {
+    let mut w = World::new();
+    w.install(&Spec::new("acme").rules(&["a"]));
+    let (clash, local) = colliding_with_core_as("other");
+    w.install(&clash);
+    let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+    loaded.extend(load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap());
+    loaded.extend(load_synced(&ids(&["other"]), &w.lock(), &w.store()).unwrap());
+    loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
+
+    let err = Packs::new(loaded).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            PackError::RuleIdCollision { plugin, rule } if plugin == "other" && *rule == local
+        ),
+        "{err:?}"
+    );
+}
+
+// Two categories of one plugin both clash with the core. The refusal names the lowest of the
+// two rule ids, whichever category the plugin lists first.
+#[rstest]
+#[case::first_listed_is_lowest(true)]
+#[case::first_listed_is_highest(false)]
+fn two_core_clashes_in_one_plugin_name_the_lowest_rule_in_either_order(#[case] lowest_first: bool) {
+    let core = Packs::core().unwrap();
+    let locals: Vec<String> = core
+        .rule_sets()
+        .flat_map(|s| s.rules().map(|r| r.id().local().to_owned()))
+        .collect();
+    let first = locals[0].clone();
+    let second = locals
+        .iter()
+        .find(|l| l.split_once('.').unwrap().0 != first.split_once('.').unwrap().0)
+        .unwrap()
+        .clone();
+    let (low, high) = if first < second {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    let category = |local: &str| {
+        let (id, rule) = local.split_once('.').unwrap();
+        format!(
+            r#"{{"schema_version":3,"id":"{id}","title":"T","description":"D","rules":[{{"id":"{rule}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"a"}},"citation":{{"source":"s"}}}}]}}"#
+        )
+    };
+    let (a, b) = if lowest_first {
+        (&low, &high)
+    } else {
+        (&high, &low)
+    };
+    let mut spec = Spec::new("acme");
+    spec.provides = "categories = [\"categories/a.json\", \"categories/b.json\"]".into();
+    spec.files.push(("categories/a.json", category(a)));
+    spec.files.push(("categories/b.json", category(b)));
+    let mut w = World::new();
+    w.install(&spec);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            SyncedError::Pack(PackError::RuleIdCollision { plugin, rule })
+                if plugin == "acme" && *rule == low
+        ),
+        "{err:?}"
+    );
 }
 
 #[test]
