@@ -448,11 +448,10 @@ pub(crate) fn explain(resolved: &Resolved, catalog: &Catalog) -> Vec<slopvac_con
                 group[1] = identity;
             }
         }
-        GroupedKey {
-            group,
-            shown,
-            rank,
-            fallback,
+        let key = GroupedKey::new(group, shown, rank);
+        match fallback {
+            Some(fallback) => key.with_fallback(fallback),
+            None => key,
         }
     })
 }

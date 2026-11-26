@@ -23,24 +23,10 @@ fn a_fallback_that_another_entry_already_shows_never_prints_two_entries_under_on
         Setting::bare(ConfigLayer::Project, &["k", "three"], json!(3)),
     ]]);
     let identify = |p: &[String], _: &slopvac_config::Contribution| match p[1].as_str() {
-        "one" => GroupedKey {
-            group: path(&["k", "one"]),
-            shown: path(&["k", "a"]),
-            rank: 0,
-            fallback: None,
-        },
-        "two" => GroupedKey {
-            group: path(&["k", "two"]),
-            shown: path(&["k", "a"]),
-            rank: 0,
-            fallback: Some(path(&["k", "b"])),
-        },
-        _ => GroupedKey {
-            group: path(&["k", "three"]),
-            shown: path(&["k", "b"]),
-            rank: 0,
-            fallback: None,
-        },
+        "one" => GroupedKey::new(path(&["k", "one"]), path(&["k", "a"]), 0),
+        "two" => GroupedKey::new(path(&["k", "two"]), path(&["k", "a"]), 0)
+            .with_fallback(path(&["k", "b"])),
+        _ => GroupedKey::new(path(&["k", "three"]), path(&["k", "b"]), 0),
     };
 
     let first = resolved.explain_grouped(identify);
