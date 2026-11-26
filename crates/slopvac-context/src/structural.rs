@@ -9,7 +9,10 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
+use schemars::JsonSchema;
 use serde::Deserialize;
+use slopvac_model::x_extensions;
+use slopvac_rules::Pcre2Pattern;
 
 use crate::schema::{Extensions, present};
 use crate::{
@@ -17,8 +20,9 @@ use crate::{
 };
 
 /// How far a matching condition spreads its tag.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
 pub enum Scope {
     /// The matching sentence.
     #[default]
@@ -31,40 +35,64 @@ pub enum Scope {
     Document,
 }
 
-/// Conditions of a structural tagger. All given conditions must hold.
-#[derive(Debug, Clone, Default, Deserialize)]
+/// Structural conditions. All given conditions must hold. Path and front_matter are document
+/// conditions; heading_path, admonition_title and block_kind are block conditions; sentence is
+/// a sentence condition. Patterns are PCRE2 and case-insensitive. Blocks of kind code-block are
+/// skipped unless block_kind names them.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[schemars(
+    transform = x_extensions,
+    extend("anyOf" = [
+        {"required": ["heading_path"]},
+        {"required": ["admonition_title"]},
+        {"required": ["front_matter"]},
+        {"required": ["path"]},
+        {"required": ["sentence"]},
+        {"required": ["block_kind"]}
+    ])
+)]
 pub struct When {
-    /// Any enclosing heading text matches.
+    /// Matches when the text of any enclosing heading matches.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(with = "Option<Pcre2Pattern>")]
     pub heading_path: Option<String>,
-    /// The enclosing admonition title matches.
+    /// Matches the title of the enclosing admonition.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(with = "Option<Pcre2Pattern>")]
     pub admonition_title: Option<String>,
     /// Front matter key and a pattern for its value.
     #[serde(default, deserialize_with = "present")]
     pub front_matter: Option<FrontMatterCondition>,
-    /// The file path matches.
+    /// Matches the file path, with forward slashes.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(with = "Option<Pcre2Pattern>")]
     pub path: Option<String>,
-    /// The sentence matches.
+    /// Matches the text of a sentence.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(with = "Option<Pcre2Pattern>")]
     pub sentence: Option<String>,
-    /// The block has this kind. Code blocks are skipped unless named here.
+    /// The block has this kind.
     #[serde(default, deserialize_with = "present")]
     pub block_kind: Option<BlockKind>,
     #[serde(flatten)]
+    #[schemars(skip)]
     _extensions: Extensions,
 }
 
-/// Front matter condition.
-#[derive(Debug, Clone, Deserialize)]
+/// A front matter key, and optionally a pattern its value must match. Without `matches` the key
+/// only has to exist.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[schemars(transform = x_extensions)]
 pub struct FrontMatterCondition {
     /// Key name.
+    #[schemars(extend("minLength" = 1))]
     pub key: String,
     /// Pattern for the value; absent means the key only has to exist.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(with = "Option<Pcre2Pattern>")]
     pub matches: Option<String>,
     #[serde(flatten)]
+    #[schemars(skip)]
     _extensions: Extensions,
 }
 

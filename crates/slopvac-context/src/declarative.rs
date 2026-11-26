@@ -9,7 +9,10 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use schemars::JsonSchema;
 use serde::Deserialize;
+use slopvac_model::{ContextTag, NonEmptyString, SLUG, SchemaVersion, x_extensions};
+use slopvac_rules::{Pcre2Pattern, UniqueVec};
 
 use crate::pattern::Unlimited;
 use crate::schema::{Extensions, TAGGER_SCHEMA_VERSION, check_schema_version, is_name, present};
@@ -19,8 +22,9 @@ use crate::{
 };
 
 /// The text unit that receives the tag.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
 pub enum Unit {
     /// One sentence of any block except a code block.
     #[default]
@@ -59,39 +63,74 @@ impl Unit {
     }
 }
 
-/// One condition on a text unit: a PCRE2 pattern, or a list of words and phrases.
-#[derive(Debug, Clone, Deserialize)]
+/// One condition on a text unit: a PCRE2 pattern, or a list of words and phrases. Matching is
+/// case-insensitive unless `case_sensitive` is true.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[schemars(
+    transform = x_extensions,
+    extend("oneOf" = [
+        {"required": ["pattern"], "not": {"required": ["words"]}},
+        {"required": ["words"], "not": {"required": ["pattern"]}}
+    ])
+)]
 pub struct Matcher {
     /// PCRE2 pattern. Exactly one of `pattern` and `words` is set.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(extend("minLength" = 1))]
     pub pattern: Option<String>,
     /// Words and phrases, matched as whole words.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(with = "Option<UniqueVec<NonEmptyString, 1>>")]
     pub words: Option<Vec<String>>,
     /// Match case. Matching ignores case when false.
     #[serde(default)]
     pub case_sensitive: bool,
     #[serde(flatten)]
+    #[schemars(skip)]
     _extensions: Extensions,
 }
 
 /// A declarative tagger as written in a pack file.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// A tagger has either `match` entries, which read the text of one unit, or a `when` object,
+/// which reads document structure. The schema states the exclusions that `compile` checks.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[schemars(
+    transform = x_extensions,
+    extend(
+        "anyOf" = [{"required": ["match"]}, {"required": ["when"]}],
+        "dependentRequired" = {"scope": ["when"]},
+        "dependentSchemas" = {
+            "when": {"not": {"anyOf": [
+                {"required": ["match"]},
+                {"required": ["unless"]},
+                {"required": ["unit"]},
+            ]}}
+        }
+    )
+)]
 pub struct TaggerSpec {
     /// Must be 3.
+    #[schemars(with = "SchemaVersion")]
     pub schema_version: u32,
     /// Tagger id, `^[a-z][a-z0-9-]*$`.
+    #[schemars(extend("pattern" = SLUG))]
     pub id: String,
     /// What the tagger does, for people.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(extend("minLength" = 1))]
     pub description: Option<String>,
     /// The context tag the tagger sets.
+    #[schemars(with = "ContextTag")]
     pub tag: String,
-    /// The unit that receives the tag. Not with `when`.
+    /// The text unit that receives the tag. The span of a tag is the whole unit. Not with
+    /// `when`.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(extend("default" = "sentence"))]
     pub unit: Option<Unit>,
     /// The tagger fires when at least one entry matches the unit. Not with `when`.
     #[serde(default, rename = "match", deserialize_with = "present")]
+    #[schemars(extend("minItems" = 1))]
     pub matches: Option<Vec<Matcher>>,
     /// The tagger stays silent for a unit where any of these entries matches. Not with `when`.
     #[serde(default, deserialize_with = "present")]
@@ -99,16 +138,23 @@ pub struct TaggerSpec {
     /// Structural conditions, instead of `match`.
     #[serde(default, deserialize_with = "present")]
     pub when: Option<When>,
-    /// With `when`: how far the tag spreads. Defaults to a sentence.
+    /// With `when`: how far the tag spreads. `sentence` tags each matching sentence,
+    /// `paragraph` the matching block, `section` the enclosing heading section (up to the next
+    /// heading of the same or a shallower level) and `document` the whole document. Allowed
+    /// only with `when`.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(extend("default" = "sentence"))]
     pub scope: Option<Scope>,
     /// Confidence in 0..=1.
     #[serde(default = "one")]
+    #[schemars(extend("minimum" = 0, "maximum" = 1, "default" = 1))]
     pub confidence: f64,
     /// Short text that explains the tag in reports.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(extend("minLength" = 1))]
     pub evidence: Option<String>,
     #[serde(flatten)]
+    #[schemars(skip)]
     _extensions: Extensions,
 }
 

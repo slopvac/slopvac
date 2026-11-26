@@ -14,6 +14,7 @@ schemars = { workspace = true }
 serde_json = { workspace = true }
 similar = { workspace = true }
 slopvac = { workspace = true }
+slopvac-context = { workspace = true }
 slopvac-model = { workspace = true }
 slopvac-packs = { workspace = true }
 slopvac-rules = { workspace = true }

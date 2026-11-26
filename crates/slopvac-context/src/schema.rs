@@ -63,7 +63,8 @@ pub(crate) fn check_schema_version(what: &str, v: u32, expected: u32) -> Result<
     }
 }
 
-/// `^[a-z][a-z0-9-]*$`: genre ids, tagger ids and `ContextTag`.
+/// `^[a-z][a-z0-9-]*$`: genre ids, tagger ids and `ContextTag`. The schemas state the same
+/// rule as `slopvac_model::SLUG`.
 pub(crate) fn is_name(s: &str) -> bool {
     let mut chars = s.chars();
     chars.next().is_some_and(|c| c.is_ascii_lowercase())

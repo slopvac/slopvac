@@ -16,6 +16,7 @@ work-counters = []
 clap = { workspace = true }
 globset = { workspace = true }
 ignore = { workspace = true }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde-saphyr = { workspace = true }
 slopvac-config = { workspace = true }
