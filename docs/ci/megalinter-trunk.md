@@ -6,7 +6,7 @@ Both integrations pin version 3.0.0, the first release with the `slopvac lint` c
 
 ## Windows
 
-Slopvac 3.0 has no native Windows build. On Windows, run MegaLinter and Trunk inside WSL, where both integrations use the Linux build. The Trunk definition lists `supported_platforms: [linux, macos]` ([definitions](https://docs.trunk.io/code-quality/overview/getting-started/configuration/lint/definitions)), so Trunk on native Windows skips the linter. Native Windows support is planned for a 3.x release.
+Slopvac 3.0 has no native Windows build. On Windows, run MegaLinter and Trunk inside WSL, where both integrations use the Linux build. The Trunk definition lists `supported_platforms: [linux, macos]` ([definitions](https://docs.trunk.io/code-quality/overview/getting-started/configuration/lint/definitions)), so Trunk on native Windows skips the linter. The project intends to add native Windows support in a 3.x release.
 
 ## Exit codes
 

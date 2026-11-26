@@ -52,7 +52,7 @@ A search reads one or more indexes. Each has a name, which results show as `list
 
 The default index uses the plugin statement format of [threat-model.md](threat-model.md), section 5.1. Its statement holds the id `plugin-index`, the namespace `slopvac` and the version `1.0.<run_number>`, where `<run_number>` is the run number of the workflow that publishes it, so the version grows with each publication. It carries the artifact type of an index, not of a plugin. One content layer holds the canonical index document of section 1.
 
-- The reader verifies the artifact with `sign::verify` against the plugins key compiled into the binary (plugins.md, section 10). Nothing else supplies a key for it: no pin, no config value and no flag.
+- The reader verifies the artifact with `sign::verify` against the plugins key compiled into the binary (plugins.md, section 10). The compiled-in key is the only key source: a pin, a config value and a flag supply none.
 - A verifier that expects an index refuses an artifact of a plugin type, and a verifier that expects a plugin refuses an artifact of the index type. A plugin with the id `plugin-index` therefore cannot pass as the index.
 - A binary without a usable plugins key, or one whose plugins key the revocation list names, verifies no default index. The default index fails with `index-signature-invalid` and the search uses its cache (section 9). Policy for the key is the one of plugins.md, section 10.
 - Statement version and `notBefore` give the rollback floor of section 8.
@@ -124,7 +124,7 @@ Adding an index grants nothing. An entry in an index, in any index, is a claim.
 
 - An index adds no key to the key policy, pins no key and relaxes no verification. The publisher key of an entry is for display (section 4). A pinned key wins over every index, and the compiled keys win for `slopvac` on any registry.
 - A pin binds to a pair of registry host and namespace (plugins.md, section 8). It does not depend on which index listed the plugin, so a second index cannot rebind a namespace.
-- Listing a plugin in a search result installs nothing and writes no config. A plugin enters a project only through `[[plugins]]` and `plugins sync`, and a code plugin needs `plugins trust`.
+- Listing a plugin in a search result installs nothing and leaves every configuration file unchanged. A plugin enters a project only through `[[plugins]]` and `plugins sync`, and a code plugin needs `plugins trust`.
 - An extra index that lists the namespace `slopvac` gets no first-party standing. Only an artifact that verifies against the compiled plugins key is first-party (plugins.md, section 9).
 
 ## 11. Conformance
