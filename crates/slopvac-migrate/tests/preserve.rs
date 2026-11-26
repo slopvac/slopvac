@@ -597,6 +597,15 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
         .collect()
 }
 
+/// One written layer, with the authored vocabulary levels and category level of its counterpart
+/// and whether it can hold an E4 guard.
+struct Layer<'a> {
+    written: &'a toml::Table,
+    own: BTreeMap<String, String>,
+    may_guard: bool,
+    category: Option<String>,
+}
+
 /// What the sweep walked and found: the number of layers and the E4 `off` guards, each as the
 /// `files` of its override block and the rule it turns off.
 #[derive(Debug)]
@@ -634,12 +643,12 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> 
     }
     let mut guards = BTreeSet::new();
     // Each layer, with the authored levels of its counterpart and whether it can hold a guard.
-    let mut layers: Vec<(&toml::Table, BTreeMap<String, String>, bool, Option<String>)> = vec![(
-        &doc,
-        authored_top,
-        false,
-        vocabulary_category_level(&authored),
-    )];
+    let mut layers = vec![Layer {
+        written: &doc,
+        own: authored_top,
+        may_guard: false,
+        category: vocabulary_category_level(&authored),
+    }];
     for block in override_blocks(&doc) {
         let counterpart = authored_blocks
             .iter()
@@ -650,9 +659,20 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> 
             None => BTreeMap::new(),
         };
         let category = counterpart.and_then(vocabulary_category_level);
-        layers.push((block, own, true, category));
+        layers.push(Layer {
+            written: block,
+            own,
+            may_guard: true,
+            category,
+        });
     }
-    for (layer, own, may_guard, category) in &layers {
+    for Layer {
+        written: layer,
+        own,
+        may_guard,
+        category,
+    } in &layers
+    {
         let written = vocabulary_levels(layer)?;
         for (id, level) in &written {
             let authored_here = own.get(id) == Some(level);
