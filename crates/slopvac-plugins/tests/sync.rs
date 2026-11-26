@@ -1557,6 +1557,58 @@ mod python {
         );
     }
 
+    /// A store that rewrites the manifest of the in-place plugin right after the pass that
+    /// accepted the tree, with a manifest that asks for another Python.
+    fn rewriting_store(t: &Setup) -> slopvac_plugins::sync::Store {
+        let dir = t.env.project.path().join("packs/py");
+        let swapped = PLUGIN_MANIFEST.replace("python = \"3.12\"", "python = \"3.11\"");
+        t.env
+            .store()
+            .with_read_observer(std::sync::Arc::new(move |path: &Path| {
+                if path == dir {
+                    fs::write(path.join("slopvac-plugin.toml"), &swapped).unwrap();
+                }
+            }))
+    }
+
+    #[test]
+    fn sync_selects_the_runtime_from_the_manifest_bytes_that_were_accepted() {
+        let t = Setup::python(&PLUGIN_FILES);
+        let store = rewriting_store(&t);
+        let revs = t.env.revocations(NOW);
+        let pol = KeyPolicy::default();
+
+        let report = Syncer::new(&store, Network::Offline, &pol, t.env.project.path(), &revs)
+            .with_python(t.build())
+            .sync(&t.lock)
+            .unwrap();
+
+        // The accepted manifest asks for 3.12 and the tree hashed to `t.hash`.
+        assert_eq!(
+            report.packs[0].python_env,
+            Some(EnvStore::key(&t.hash, "3.12"))
+        );
+    }
+
+    #[test]
+    fn status_checks_the_environment_of_the_manifest_bytes_that_were_accepted() {
+        let t = Setup::python(&PLUGIN_FILES);
+        t.sync(Network::Offline, true).unwrap();
+        let store = rewriting_store(&t);
+
+        let states: Vec<PythonState> =
+            status_with_python(&store, &t.envs, t.env.project.path(), &t.lock)
+                .unwrap()
+                .into_iter()
+                .map(|p| p.python)
+                .collect();
+
+        assert_eq!(
+            states,
+            [PythonState::Verified(EnvStore::key(&t.hash, "3.12"))]
+        );
+    }
+
     fn python_states(t: &Setup) -> Vec<PythonState> {
         status_with_python(&t.env.store(), &t.envs, t.env.project.path(), &t.lock)
             .unwrap()

@@ -921,6 +921,8 @@ impl<'a> Syncer<'a> {
             if hash.as_str() != pack.digest.as_str() {
                 return Err(mismatch(hash.as_str()));
             }
+            #[cfg(feature = "test-support")]
+            self.store.observe(&path);
             return Ok(Acquired::InPlace(path));
         }
         let locked = Self::locked_digest(pack)?;
@@ -1074,7 +1076,10 @@ fn status_in(
             let state = match pack.source.kind() {
                 SourceKind::Path(rel) if project_root.join(rel).is_dir() => {
                     let dir = project_root.join(rel);
-                    match tree_hash(&dir) {
+                    let accepted = tree_hash(&dir);
+                    #[cfg(feature = "test-support")]
+                    store.observe(&dir);
+                    match accepted {
                         Ok(hash) if hash.as_str() == pack.digest.as_str() => {
                             PackState::InPlace(dir)
                         }
