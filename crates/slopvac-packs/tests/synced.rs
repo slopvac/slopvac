@@ -248,7 +248,8 @@ fn targz_of_dir(root: &Path) -> Vec<u8> {
         header.set_mode(0o644);
         tar.append_data(&mut header, &rel, bytes.as_slice()).unwrap();
     }
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    // Stored, not compressed: the fixtures hold huge repeated files that the ratio limit refuses.
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
     gz.write_all(&tar.into_inner().unwrap()).unwrap();
     gz.finish().unwrap()
 }
