@@ -658,6 +658,63 @@ fn base_settings(
     Ok(settings)
 }
 
+/// The config keys that name one category: its qualified key, and the bare key when no other
+/// plugin ships the same id.
+struct CategoryKey<'a> {
+    qualified: &'a str,
+    bare: Option<&'a str>,
+}
+
+/// The level that the config gives one rule, and whether a config `rules` entry named it.
+///
+/// Only a `rules` entry from a config layer counts as naming the rule: a category entry, a
+/// preset, a style and the genre chain turn rules on without naming them.
+fn rule_level(
+    rules: &Catalog,
+    resolved: &Resolved,
+    rule: &slopvac_rules::LoadedRule,
+    category: &CategoryKey<'_>,
+    shift: i64,
+    floor: Option<&str>,
+) -> (Option<Level>, bool) {
+    let id = rule.id();
+    // A judgement rule has no finding to grade: a category entry never sets its level, only
+    // a `rules` entry does (docs/contract/profiles.md).
+    let mut categories: Vec<(&str, &str)> = Vec::new();
+    if rule.kind() != MatchKind::Judgement {
+        categories.push((category.qualified, category.qualified));
+        if let Some(bare) = category.bare {
+            categories.push((bare, bare));
+        }
+    }
+    let categories = by_rank(categories);
+    let mut keys = vec![(id.as_str(), id.as_str())];
+    if rules.rules_named(id.local()).len() == 1 {
+        keys.push((id.local(), id.local()));
+    }
+    let keys = by_rank(keys);
+    let Some(named) = resolved.level_by_any_unfloored(&keys, &categories) else {
+        // No layer names the rule: the engine shifts its genre or definition level.
+        return (None, false);
+    };
+    let by_config = named.from == LevelFrom::Rule && !is_inherited(named.source.layer);
+    // `severity_shift` moves levels that come from rule definitions, styles and the genre
+    // chain. A level that the config sets is final. A category floor holds after the shift.
+    let level = engine_level(named.level).map(|l| {
+        let l = if is_inherited(named.source.layer) {
+            shifted(l, shift)
+        } else {
+            l
+        };
+        if named.from == LevelFrom::Category {
+            floored(l, floor)
+        } else {
+            l
+        }
+    });
+    (level, by_config && level.is_some())
+}
+
 /// Build the engine settings for a file from its resolved config.
 ///
 /// `sources` is copied to each report document.
@@ -715,46 +772,17 @@ pub fn build(
             .and_then(Json::as_str);
         for rule in category.rules() {
             let id = rule.id();
-            // A judgement rule has no finding to grade: a category entry never sets its
-            // level, only a `rules` entry does (docs/contract/profiles.md).
-            let mut categories: Vec<(&str, &str)> = Vec::new();
-            if rule.kind() != MatchKind::Judgement {
-                categories.push((qualified.as_str(), qualified.as_str()));
-                if bare_category {
-                    categories.push((name, name));
-                }
-            }
-            let categories = by_rank(categories);
-            let mut keys = vec![(id.as_str(), id.as_str())];
-            if rules.rules_named(id.local()).len() == 1 {
-                keys.push((id.local(), id.local()));
-            }
-            let keys = by_rank(keys);
-            let named = resolved.level_by_any_unfloored(&keys, &categories);
-            // `severity_shift` moves levels that come from rule definitions, styles and the
-            // genre chain. A level that the config sets is final. A category floor holds
-            // after the shift.
-            // Only a `rules` entry from a config layer counts as naming the rule: a category
-            // entry, a preset, a style and the genre chain turn rules on without naming them.
-            let named_by_config = named
-                .as_ref()
-                .is_some_and(|n| n.from == LevelFrom::Rule && !is_inherited(n.source.layer));
-            let level = match named {
-                Some(named) => engine_level(named.level).map(|l| {
-                    let l = if is_inherited(named.source.layer) {
-                        shifted(l, shift)
-                    } else {
-                        l
-                    };
-                    if named.from == LevelFrom::Category {
-                        floored(l, floor)
-                    } else {
-                        l
-                    }
-                }),
-                // No layer names the rule: the engine shifts its genre or definition level.
-                None => None,
-            };
+            let (level, named_by_config) = rule_level(
+                rules,
+                resolved,
+                rule,
+                &CategoryKey {
+                    qualified: &qualified,
+                    bare: bare_category.then_some(name),
+                },
+                shift,
+                floor,
+            );
             if let Some(level) = level {
                 settings.rule_levels.insert(id.clone(), level);
             }
@@ -767,7 +795,9 @@ pub fn build(
             if hit(&disabled) || (!only.is_empty() && !hit(&only)) {
                 settings.rule_levels.insert(id.clone(), Level::Off);
             }
-            let named_by_only = only.iter().any(|n| n.as_str() == id.as_str());
+            let named_by_only = only
+                .iter()
+                .any(|n| matches!(n, Selected::Rule(r) if r == id));
             let on = settings
                 .rule_levels
                 .get(id)
@@ -1429,11 +1459,11 @@ pub(crate) mod tests {
             only_categories: vec![rule.clone()],
             ..Overrides::default()
         };
-        assert_eq!(named(HEAD, &only), [rule.clone()]);
+        assert_eq!(named(HEAD, &only), std::slice::from_ref(&rule));
         let disabled = Overrides {
             disable: vec![rule],
             ..Overrides::default()
         };
-        assert!(named(HEAD, &disabled).is_empty());
+        assert_eq!(named(HEAD, &disabled), Vec::<String>::new());
     }
 }
