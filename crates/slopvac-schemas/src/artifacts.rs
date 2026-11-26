@@ -66,6 +66,22 @@ pub const ARTIFACTS: &[Artifact] = &[
         build: category,
     },
     Artifact {
+        file: "tagger.schema.json",
+        title: "slopvac v3 declarative tagger",
+        description: Some(
+            "A context tagger written as data. It marks text units with a context tag that \
+             rules can gate on (rule contexts only and skip). It runs without code and is \
+             deterministic. A tag carries a span, a confidence and evidence, like the tags a \
+             code tagger returns over the plugin protocol. Semantics are specified in \
+             docs/contract/plugins.md. A tagger has either `match` entries, which read the text \
+             of one unit, or a `when` object, which reads document structure.",
+        ),
+        imports: &["common.schema.json", "rule.schema.json"],
+        inline: &[],
+        keep: &[],
+        build: tagger,
+    },
+    Artifact {
         file: "lint-report.schema.json",
         title: "slopvac v3 lint report",
         description: None,
@@ -232,6 +248,13 @@ fn plugin_id_pattern() -> String {
 fn rule() -> Value {
     schema_generator()
         .into_root_schema_for::<RuleFile>()
+        .to_value()
+}
+
+/// A declarative tagger file, which the reader accepts as input.
+fn tagger() -> Value {
+    schema_generator()
+        .into_root_schema_for::<slopvac_context::TaggerSpec>()
         .to_value()
 }
 

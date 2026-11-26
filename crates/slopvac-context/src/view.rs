@@ -12,9 +12,10 @@ use slopvac_config::tree::Value;
 
 use crate::Error;
 
-/// Block kinds a tagger can see.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+/// The block has this kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
 pub enum BlockKind {
     /// A heading.
     Heading,

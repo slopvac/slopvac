@@ -1,81 +1,156 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://slopvac.github.io/slopvac/schemas/v3/tagger.schema.json",
-  "title": "slopvac v3 declarative tagger",
-  "description": "A context tagger written as data. It marks text units with a context tag that rules can gate on (rule contexts only and skip). It runs without code and is deterministic. A tag carries a span, a confidence and evidence, like the tags a code tagger returns over the plugin protocol. Semantics are specified in docs/contract/plugins.md. Owner: slopvac-8l4.2.4. A tagger has either `match` entries, which read the text of one unit, or a `when` object, which reads document structure.",
-  "type": "object",
-  "properties": {
-    "schema_version": {
-      "$ref": "common.schema.json#/$defs/SchemaVersion"
-    },
-    "id": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
-    },
-    "description": {
-      "type": "string",
-      "minLength": 1
-    },
-    "tag": {
-      "description": "The context tag the tagger sets.",
-      "$ref": "common.schema.json#/$defs/ContextTag"
-    },
-    "unit": {
-      "description": "The text unit that receives the tag. The span of a tag is the whole unit.",
-      "enum": [
-        "sentence",
-        "paragraph",
-        "heading",
-        "list-item",
-        "table-cell"
+  "$defs": {
+    "FrontMatterCondition": {
+      "additionalProperties": false,
+      "description": "A front matter key, and optionally a pattern its value must match. Without `matches` the key only has to exist.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "key": {
+          "description": "Key name.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "matches": {
+          "$ref": "rule.schema.json#/$defs/Pcre2Pattern",
+          "description": "Pattern for the value; absent means the key only has to exist."
+        }
+      },
+      "required": [
+        "key"
       ],
-      "default": "sentence"
+      "type": "object"
     },
-    "match": {
-      "description": "The tagger fires when at least one entry matches the unit.",
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/Matcher"
-      }
-    },
-    "unless": {
-      "description": "The tagger stays silent for a unit where any of these entries matches.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/Matcher"
-      }
-    },
-    "when": {
-      "$ref": "#/$defs/When"
-    },
-    "scope": {
-      "description": "With `when`: how far the tag spreads. sentence tags each matching sentence, paragraph the matching block, section the enclosing heading section (up to the next heading of the same or a shallower level) and document the whole document. Allowed only with `when`.",
-      "enum": [
-        "sentence",
-        "paragraph",
-        "section",
-        "document"
+    "Matcher": {
+      "additionalProperties": false,
+      "description": "One condition on a text unit: a PCRE2 pattern, or a list of words and phrases. Matching is case-insensitive unless `case_sensitive` is true.",
+      "oneOf": [
+        {
+          "not": {
+            "required": [
+              "words"
+            ]
+          },
+          "required": [
+            "pattern"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "pattern"
+            ]
+          },
+          "required": [
+            "words"
+          ]
+        }
       ],
-      "default": "sentence"
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "case_sensitive": {
+          "default": false,
+          "description": "Match case. Matching ignores case when false.",
+          "type": "boolean"
+        },
+        "pattern": {
+          "description": "PCRE2 pattern. Exactly one of `pattern` and `words` is set.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "words": {
+          "description": "Words and phrases, matched as whole words.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "type": "object"
     },
-    "confidence": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1,
-      "default": 1
-    },
-    "evidence": {
-      "description": "Short text that explains the tag in reports.",
-      "type": "string",
-      "minLength": 1
+    "When": {
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "heading_path"
+          ]
+        },
+        {
+          "required": [
+            "admonition_title"
+          ]
+        },
+        {
+          "required": [
+            "front_matter"
+          ]
+        },
+        {
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "required": [
+            "sentence"
+          ]
+        },
+        {
+          "required": [
+            "block_kind"
+          ]
+        }
+      ],
+      "description": "Structural conditions. All given conditions must hold. `path` and `front_matter` are document conditions; `heading_path`, `admonition_title` and `block_kind` are block conditions; `sentence` is a sentence condition. Patterns are PCRE2 and case-insensitive. Blocks of kind `code-block` are skipped unless `block_kind` names them.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "admonition_title": {
+          "$ref": "rule.schema.json#/$defs/Pcre2Pattern",
+          "description": "Matches the title of the enclosing admonition."
+        },
+        "block_kind": {
+          "description": "The block has this kind.",
+          "enum": [
+            "heading",
+            "paragraph",
+            "list-item",
+            "table-row",
+            "code-block",
+            "quote"
+          ]
+        },
+        "front_matter": {
+          "$ref": "#/$defs/FrontMatterCondition",
+          "description": "Front matter key and a pattern for its value."
+        },
+        "heading_path": {
+          "$ref": "rule.schema.json#/$defs/Pcre2Pattern",
+          "description": "Matches when the text of any enclosing heading matches."
+        },
+        "path": {
+          "$ref": "rule.schema.json#/$defs/Pcre2Pattern",
+          "description": "Matches the file path, with forward slashes."
+        },
+        "sentence": {
+          "$ref": "rule.schema.json#/$defs/Pcre2Pattern",
+          "description": "Matches the text of a sentence."
+        }
+      },
+      "type": "object"
     }
   },
-  "required": [
-    "schema_version",
-    "id",
-    "tag"
-  ],
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/tagger.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
   "anyOf": [
     {
       "required": [
@@ -116,151 +191,87 @@
       }
     }
   },
+  "description": "A context tagger written as data. It marks text units with a context tag that rules can gate on (rule contexts only and skip). It runs without code and is deterministic. A tag carries a span, a confidence and evidence, like the tags a code tagger returns over the plugin protocol. Semantics are specified in docs/contract/plugins.md. A tagger has either `match` entries, which read the text of one unit, or a `when` object, which reads document structure.",
   "patternProperties": {
-    "^x-": {}
+    "^x-": true
   },
-  "additionalProperties": false,
-  "$defs": {
-    "Matcher": {
-      "description": "One condition on a text unit: a PCRE2 pattern, or a list of words and phrases. Matching is case-insensitive unless `case_sensitive` is true.",
-      "type": "object",
-      "properties": {
-        "pattern": {
-          "type": "string",
-          "minLength": 1
-        },
-        "words": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "uniqueItems": true
-        },
-        "case_sensitive": {
-          "type": "boolean",
-          "default": false
-        }
-      },
-      "oneOf": [
-        {
-          "required": [
-            "pattern"
-          ],
-          "not": {
-            "required": [
-              "words"
-            ]
-          }
-        },
-        {
-          "required": [
-            "words"
-          ],
-          "not": {
-            "required": [
-              "pattern"
-            ]
-          }
-        }
-      ],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
+  "properties": {
+    "confidence": {
+      "default": 1,
+      "description": "Confidence in 0..=1.",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
     },
-    "When": {
-      "description": "Structural conditions. All given conditions must hold. Path and front_matter are document conditions; heading_path, admonition_title and block_kind are block conditions; sentence is a sentence condition. Patterns are PCRE2 and case-insensitive. Blocks of kind code-block are skipped unless block_kind names them.",
-      "type": "object",
-      "properties": {
-        "heading_path": {
-          "description": "Matches when the text of any enclosing heading matches.",
-          "$ref": "rule.schema.json#/$defs/Pcre2Pattern"
-        },
-        "admonition_title": {
-          "description": "Matches the title of the enclosing admonition.",
-          "$ref": "rule.schema.json#/$defs/Pcre2Pattern"
-        },
-        "front_matter": {
-          "$ref": "#/$defs/FrontMatterCondition"
-        },
-        "path": {
-          "description": "Matches the file path, with forward slashes.",
-          "$ref": "rule.schema.json#/$defs/Pcre2Pattern"
-        },
-        "sentence": {
-          "description": "Matches the text of a sentence.",
-          "$ref": "rule.schema.json#/$defs/Pcre2Pattern"
-        },
-        "block_kind": {
-          "description": "The block has this kind.",
-          "enum": [
-            "heading",
-            "paragraph",
-            "list-item",
-            "table-row",
-            "code-block",
-            "quote"
-          ]
-        }
-      },
-      "anyOf": [
-        {
-          "required": [
-            "heading_path"
-          ]
-        },
-        {
-          "required": [
-            "admonition_title"
-          ]
-        },
-        {
-          "required": [
-            "front_matter"
-          ]
-        },
-        {
-          "required": [
-            "path"
-          ]
-        },
-        {
-          "required": [
-            "sentence"
-          ]
-        },
-        {
-          "required": [
-            "block_kind"
-          ]
-        }
-      ],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
+    "description": {
+      "description": "What the tagger does, for people.",
+      "minLength": 1,
+      "type": "string"
     },
-    "FrontMatterCondition": {
-      "description": "A front matter key, and optionally a pattern its value must match. Without `matches` the key only has to exist.",
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string",
-          "minLength": 1
-        },
-        "matches": {
-          "$ref": "rule.schema.json#/$defs/Pcre2Pattern"
-        }
+    "evidence": {
+      "description": "Short text that explains the tag in reports.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "id": {
+      "description": "Tagger id, `^[a-z][a-z0-9-]*$`.",
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+      "type": "string"
+    },
+    "match": {
+      "description": "The tagger fires when at least one entry matches the unit. Not with `when`.",
+      "items": {
+        "$ref": "#/$defs/Matcher"
       },
-      "required": [
-        "key"
-      ],
-      "patternProperties": {
-        "^x-": {}
+      "minItems": 1,
+      "type": "array"
+    },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion",
+      "description": "Must be 3."
+    },
+    "scope": {
+      "default": "sentence",
+      "description": "How far a matching condition spreads its tag: `sentence` tags each matching sentence, `paragraph` the matching block, `section` the enclosing heading section (up to the next heading of the same or a shallower level) and `document` the whole document.",
+      "enum": [
+        "sentence",
+        "paragraph",
+        "section",
+        "document"
+      ]
+    },
+    "tag": {
+      "$ref": "common.schema.json#/$defs/ContextTag",
+      "description": "The context tag the tagger sets."
+    },
+    "unit": {
+      "default": "sentence",
+      "description": "The text unit that receives the tag. The span of a tag is the whole unit.",
+      "enum": [
+        "sentence",
+        "paragraph",
+        "heading",
+        "list-item",
+        "table-cell"
+      ]
+    },
+    "unless": {
+      "description": "The tagger stays silent for a unit where any of these entries matches. Not with `when`.",
+      "items": {
+        "$ref": "#/$defs/Matcher"
       },
-      "additionalProperties": false
+      "type": "array"
+    },
+    "when": {
+      "$ref": "#/$defs/When",
+      "description": "Structural conditions, instead of `match`."
     }
-  }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "tag"
+  ],
+  "title": "slopvac v3 declarative tagger",
+  "type": "object"
 }
