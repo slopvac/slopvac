@@ -18,6 +18,7 @@ use serde_json::Value;
 use snapbox::cmd::{Command, cargo_bin};
 
 const VOCABULARY: &str = "core:ste-words.word-outside-controlled-vocabulary";
+const VOCABULARY_2X: &str = "ste-words.word-outside-controlled-vocabulary";
 const RULE: &str = "\"ste-words.word-outside-controlled-vocabulary\"";
 const DEPLOY: &str =
     "schema_version = 3\n\n[[entries]]\nword = \"deploy\"\npos = \"noun\"\nreason = \"x\"\n";
@@ -214,13 +215,92 @@ fn a_blocklist_with_a_top_level_category_and_a_switch_is_refused_for_the_blockli
                   [categories]\nai-tells-formatting = \"warning\"\n\n\
                   [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"strict\"\n";
     let stderr = refused(config)?;
-    assert!(stderr.contains("`overrides[0].profile`"), "{stderr}");
+    // Line 10 of the config: `profile` is the tenth line, after the category block.
+    assert!(
+        stderr.contains("`overrides[0].profile` on line 10"),
+        "{stderr}"
+    );
     assert!(
         stderr.contains("the project sets a word blocklist"),
         "{stderr}"
     );
     assert!(
         !stderr.contains("sets a category that applies above the profile switch"),
+        "{stderr}"
+    );
+    Ok(())
+}
+
+/// A later override that sets the category of a vocabulary rule would replace the rule level
+/// that an earlier layer set, and 2.x kept that rule level.
+#[test]
+fn a_later_category_over_an_earlier_vocabulary_rule_is_refused()
+-> Result<(), Box<dyn std::error::Error>> {
+    let config = format!(
+        "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n\
+         [rules]\n{RULE} = \"error\"\n\n\
+         [[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"suggestion\"\n"
+    );
+    let stderr = refused(&config)?;
+    assert!(
+        stderr.contains("`overrides[0].categories.ste-words` on line 11 sets the level of a category that holds a word blocklist rule. In 3.0 a later category level overrides a rule-specific level that an earlier layer set"),
+        "{stderr}"
+    );
+    Ok(())
+}
+
+/// The findings of the file inside `docs` and the one outside it, as `(severity, word)`.
+type Findings = [Vec<(String, String)>; 2];
+
+/// The 2.x config of a `blocklist_2x` scenario and the findings 2.x measured for it: `docs/a.md`
+/// stands for the file inside `docs` and `b.md` for the one outside.
+fn measured_2x(name: &str) -> Result<(String, Findings), Box<dyn std::error::Error>> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../slopvac-migrate/tests/fixtures/preserve/vectors.json");
+    let data: Value = serde_json::from_str(&fs::read_to_string(path)?)?;
+    let blocklist = &data["blocklist_2x"];
+    let scenario = &blocklist["scenarios"][name];
+    let found = |file: &str| -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+        let measured = &scenario["files"][file];
+        let profile = measured["profile"].as_str().ok_or("no profile")?;
+        let level = measured["levels"][VOCABULARY_2X]
+            .as_str()
+            .or_else(|| blocklist["base"][profile]["levels"][VOCABULARY_2X].as_str())
+            .ok_or("no measured level")?;
+        Ok(if level == "off" {
+            Vec::new()
+        } else {
+            expected(&[(level, "deploy")])
+        })
+    };
+    Ok((
+        scenario["input"].as_str().ok_or("no input")?.to_owned(),
+        [found("docs/a.md")?, found("b.md")?],
+    ))
+}
+
+/// A later `off` category is the E4 guard case: the rule keeps its level outside the override
+/// and is off inside it, as in 2.x.
+#[test]
+fn a_later_off_category_over_an_earlier_vocabulary_rule_migrates_at_the_2x_level()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (config, levels) = measured_2x("top-rule-then-an-override-category-off")?;
+    assert_eq!(migrated(&config), levels, "{config}");
+    Ok(())
+}
+
+/// A later override that sets a category with no `severity` gets the legacy severity filled
+/// in, which turns on a vocabulary rule that an earlier layer turned off with its category.
+#[test]
+fn a_later_category_with_no_severity_over_an_off_category_is_refused()
+-> Result<(), Box<dyn std::error::Error>> {
+    let config = "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n\
+                  [categories]\nste-words = \"off\"\n\n\
+                  [[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\n\
+                  ste-words = { minimum_severity = \"error\" }\n";
+    let stderr = refused(config)?;
+    assert!(
+        stderr.contains("`overrides[0].categories.ste-words` on line 11 sets a category that an earlier layer turned off, with no `severity`"),
         "{stderr}"
     );
     Ok(())

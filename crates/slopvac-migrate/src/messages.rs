@@ -408,6 +408,25 @@ pub(crate) enum MigrateText {
         "`{at}` on line {line} sets a word blocklist, and the top level sets none. `--preserve-behavior` cannot keep the 2.x vocabulary levels for a blocklist that applies to some files only. A follow-up will support these layouts."
     )]
     ReasonBlocklistInOverride { at: String, line: String },
+    /// Why a migrated config is refused: a later category replaces a vocabulary rule level.
+    #[code("migrate-reason-blocklist-category-over-rule")]
+    #[text(
+        "`{at}` on line {line} sets the level of a category that holds a word blocklist rule. In 3.0 a later category level overrides a rule-specific level that an earlier layer set, and 2.x kept the rule level. `--preserve-behavior` cannot keep the 2.x level of that rule in the files this override covers. A follow-up will support these layouts."
+    )]
+    ReasonBlocklistCategoryOverRule { at: String, line: String },
+    /// Why a migrated config is refused: a later category turns an off vocabulary rule on.
+    #[code("migrate-reason-blocklist-category-over-off")]
+    #[text(
+        "`{at}` on line {line} sets a category that an earlier layer turned off, with no `severity`. `--preserve-behavior` cannot keep the 2.x level of the word blocklist rules there, because the migration would fill in the severity and turn them on. A follow-up will support these layouts."
+    )]
+    ReasonBlocklistCategoryOverOff { at: String, line: String },
+    /// Why a migrated config is refused: a later category with no severity outranks an earlier
+    /// vocabulary rule.
+    #[code("migrate-reason-blocklist-category-no-severity-over-rule")]
+    #[text(
+        "`{at}` on line {line} sets a category that holds a word blocklist rule, with no `severity`, after an earlier layer set a rule of that category or the category itself. `--preserve-behavior` cannot keep the 2.x level of that rule, because the migration would fill in the severity and it would replace the earlier level. A follow-up will support these layouts."
+    )]
+    ReasonBlocklistCategoryNoSeverityOverRule { at: String, line: String },
     /// Why a migrated config is refused: a blocklist and a profile switch.
     #[code("migrate-reason-blocklist-under-switch")]
     #[text(

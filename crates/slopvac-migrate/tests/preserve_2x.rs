@@ -16,6 +16,21 @@ use slopvac_migrate::{Options, RenameTable, migrate_config};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+/// A failure inside one scenario: the scenario name, with the typed cause kept as the source.
+#[derive(Debug, thiserror::Error)]
+#[error("scenario {name}: {source}")]
+struct ScenarioError {
+    name: String,
+    source: Box<dyn std::error::Error>,
+}
+
+fn in_scenario(name: &str, source: impl std::error::Error + 'static) -> ScenarioError {
+    ScenarioError {
+        name: name.to_owned(),
+        source: Box::new(source),
+    }
+}
+
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -180,11 +195,11 @@ fn every_migrated_config_resolves_to_the_measured_2x_levels() -> Result<()> {
             }
             continue;
         }
-        let text = migrated.map_err(|e| format!("{name}: {e}"))?.text;
+        let text = migrated.map_err(|e| in_scenario(name, e))?.text;
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("slopvac.toml");
         fs::write(&path, &text)?;
-        let config = slopvac_config::load(&path, &presets).map_err(|e| format!("{name}: {e}"))?;
+        let config = slopvac_config::load(&path, &presets).map_err(|e| in_scenario(name, e))?;
 
         let files = files
             .as_object()
