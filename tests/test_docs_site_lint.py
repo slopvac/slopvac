@@ -87,6 +87,7 @@ def test_the_site_config_is_a_3x_config() -> None:
     config = tomllib.loads(text)
     assert config["schema_version"] == 3
     assert config["profile"] == "relaxed"
+    assert config["styles"] == ["core:legacy-relaxed"]
     assert config["thresholds"] == {"max_unicode_dashes": 1}
     code = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
     assert code[0] == "schema_version = 3"
