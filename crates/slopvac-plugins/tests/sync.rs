@@ -1590,13 +1590,71 @@ mod python {
             matches!(
                 &err,
                 SyncError::PythonEnv {
-                    source: PyEnvError::Tree(_),
+                    source: PyEnvError::Tree(slopvac_plugins::extract::ExtractError::Tampered { .. }),
                     ..
                 }
             ),
             "{err:?}"
         );
         assert!(t.envs.load(&t.hash, "3.12").unwrap().is_none());
+    }
+
+    #[test]
+    fn an_extracted_archive_is_built_from_the_manifest_that_was_accepted() {
+        let env = Env::new();
+        let files: Vec<(&str, &[u8])> = PLUGIN_FILES
+            .iter()
+            .map(|(name, text)| (*name, text.as_bytes()))
+            .collect();
+        let archive = targz(&files);
+        fs::create_dir_all(env.project.path().join("dist")).unwrap();
+        fs::write(env.project.path().join("dist/py.tar.gz"), &archive).unwrap();
+        let lock = lock_text(&[format!(
+            "\n[[plugins]]\nid = \"py\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"dist/py.tar.gz\"\ndigest = \"{}\"\n",
+            Digest::of(&archive)
+        )]);
+        let uv = fake_uv(&env.data.path().join("uv-bin"), &Fake::real());
+        let envs = EnvStore::open(env.data.path().join("envs"));
+        let swapped = PLUGIN_MANIFEST.replace("python = \"3.12\"", "python = \"3.11\"");
+        // Right after the archive is extracted, the manifest in the stored tree changes.
+        let store = env
+            .store()
+            .with_read_observer(std::sync::Arc::new(move |path: &Path| {
+                let is_tree = path
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("tree-"));
+                let manifest = path.join("slopvac-plugin.toml");
+                if is_tree && manifest.exists() {
+                    fs::set_permissions(&manifest, fs::Permissions::from_mode(0o644)).unwrap();
+                    fs::write(&manifest, &swapped).unwrap();
+                }
+            }));
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+
+        let err = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+            .with_python(PythonBuild {
+                envs: &envs,
+                uv: &uv,
+                python_install_dir: Path::new("/nonexistent/uv-python"),
+            })
+            .sync(&lock)
+            .unwrap_err();
+
+        // The accepted manifest asks for 3.12 and the accepted hash is that of the archive; the
+        // changed tree does not verify against it. A sync that read the manifest again would
+        // build the environment of the changed bytes.
+        assert!(
+            matches!(
+                &err,
+                SyncError::PythonEnv {
+                    source: PyEnvError::Tree(slopvac_plugins::extract::ExtractError::Tampered { .. }),
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
     }
 
     #[test]

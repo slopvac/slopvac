@@ -1971,6 +1971,21 @@ mod single_read_tests {
     }
 
     #[test]
+    fn a_file_over_the_capture_cap_and_the_tree_budget_is_a_capture_limit() {
+        // A sparse file, so it costs no disk: over the tree budget by its metadata alone.
+        let scratch = tempfile::tempdir().unwrap();
+        let file = fs::File::create(scratch.path().join("m.toml")).unwrap();
+        file.set_len(MAX_TREE_BYTES + 1).unwrap();
+
+        let err = tree_hash_capturing(scratch.path(), "m.toml").unwrap_err();
+
+        assert!(
+            matches!(err, ExtractError::CaptureLimit { cap, .. } if cap == MAX_CAPTURE_BYTES),
+            "{err:?}"
+        );
+    }
+
+    #[test]
     fn a_named_file_over_the_capture_cap_is_a_limit_of_its_own() {
         let scratch = tempfile::tempdir().unwrap();
         let big = vec![b'x'; usize::try_from(MAX_CAPTURE_BYTES).unwrap() + 1];
