@@ -67,16 +67,12 @@ fn rst_is_accepted_and_checked_when_a_converter_exists() {
     assert!(!String::from_utf8_lossy(&out.stderr).contains("error[usage]"));
 }
 
-// STUB(slopvac-8l4.12.28): the engine has no parser for plain text, HTML or comment mode yet,
-// so these inputs are accepted by the options and then reported as unsupported (exit 2),
-// never skipped silently.
+// STUB(slopvac-8l4.3.84): the engine has no parser for plain text or HTML yet, so these inputs
+// are accepted by the options and then reported as unsupported (exit 2), never skipped
+// silently.
 #[test]
 fn inputs_without_an_engine_parser_are_an_incomplete_run() {
-    let cases: [&[&str]; 3] = [
-        &["--language", "text"],
-        &["--language", "html"],
-        &["--mode", "code-comments", "--language", "python"],
-    ];
+    let cases: [&[&str]; 2] = [&["--language", "text"], &["--language", "html"]];
     for args in cases {
         stdin_lint(args)
             .write_stdin("words\n")
@@ -86,6 +82,53 @@ fn inputs_without_an_engine_parser_are_an_incomplete_run() {
                 "error[input-unsupported]: <stdin>",
             ));
     }
+}
+
+fn comments_report(source: &str) -> (Option<i32>, serde_json::Value) {
+    let out = stdin_lint(&[
+        "--mode",
+        "code-comments",
+        "--language",
+        "python",
+        "--format",
+        "json",
+    ])
+    .write_stdin(source)
+    .output()
+    .expect("run");
+    let report = serde_json::from_slice(&out.stdout).expect("a JSON report");
+    (out.status.code(), report)
+}
+
+#[test]
+fn a_clean_comment_on_stdin_passes_with_an_info_notice() {
+    let (code, report) = comments_report("# Parse the input.\nx = 1\n");
+    assert_eq!(code, Some(0), "{report}");
+    let notices: Vec<(&str, &str)> = report["documents"][0]["unchecked"]
+        .as_array()
+        .expect("unchecked")
+        .iter()
+        .map(|n| {
+            (
+                n["code"].as_str().expect("code"),
+                n["level"].as_str().expect("level"),
+            )
+        })
+        .collect();
+    assert_eq!(notices, [("comment-rules-not-run", "info")], "{report}");
+}
+
+#[test]
+fn a_flagged_comment_on_stdin_fails_the_run() {
+    let (code, report) = comments_report("# A silver bullet for parsing.\nx = 1\n");
+    assert_eq!(code, Some(1), "{report}");
+    let rules: Vec<&str> = report["documents"][0]["findings"]
+        .as_array()
+        .expect("findings")
+        .iter()
+        .map(|f| f["rule_id"].as_str().expect("rule_id"))
+        .collect();
+    assert_eq!(rules, ["core:orwell.stale-figure"], "{report}");
 }
 
 #[test]
