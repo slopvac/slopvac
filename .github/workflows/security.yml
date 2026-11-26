@@ -263,8 +263,19 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Trivy reads ./trivy.yaml and ./trivy-secret.yaml from the checkout unless
+      # told otherwise, so a change under review could plant either file.
+      # This step writes both from fixed text to a path outside the
+      # checkout, and the scan step points at them.
+      - name: Write trusted Trivy config
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy-trusted"
+          printf '%s\n' 'severity:' '  - HIGH' '  - CRITICAL' > "$RUNNER_TEMP/trivy-trusted/trivy.yaml"
+          printf '%s\n' '{}' > "$RUNNER_TEMP/trivy-trusted/trivy-secret.yaml"
       - name: Scan filesystem
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_SECRET_CONFIG: ${{ runner.temp }}/trivy-trusted/trivy-secret.yaml
         with:
           version: v0.76.0
           scan-type: fs
@@ -275,14 +286,10 @@ jobs:
           output: trivy-results.sarif
           exit-code: "1"
           trivyignores: .trivyignore.yaml
+          trivy-config: ${{ runner.temp }}/trivy-trusted/trivy.yaml
       - name: Print Trivy findings
         if: failure()
-        run: |
-          jq -r '
-            .runs[].results[]?
-            | "\(.ruleId) [\(.level)] \(.message.text | split("\n")[0])"
-              + " @ \(.locations[0].physicalLocation.artifactLocation.uri // "?")"
-          ' trivy-results.sarif
+        run: python3 scripts/print_trivy_findings.py trivy-results.sarif
       - name: Upload Trivy SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
@@ -303,19 +310,38 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The table format prints each finding in the job log, so a failure names
-      # the file and rule without a SARIF upload (which needs security-events).
+      # Trivy reads ./trivy.yaml and ./trivy-secret.yaml from the checkout unless
+      # told otherwise, so a change under review could plant either file.
+      # This step writes both from fixed text to a path outside the
+      # checkout, and the scan step points at them.
+      - name: Write trusted Trivy config
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy-trusted"
+          printf '%s\n' 'severity:' '  - HIGH' '  - CRITICAL' > "$RUNNER_TEMP/trivy-trusted/trivy.yaml"
+          printf '%s\n' '{}' > "$RUNNER_TEMP/trivy-trusted/trivy-secret.yaml"
+      # The table format prints a scanned file name at the start of a log line,
+      # where the runner reads a leading colon pair as a workflow command. The scan
+      # writes SARIF to a file, and a failure prints it through the one escaper
+      # of this repository. The file is never uploaded, so the job needs no
+      # security-events scope.
       - name: Scan filesystem for secrets
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_SECRET_CONFIG: ${{ runner.temp }}/trivy-trusted/trivy-secret.yaml
         with:
           version: v0.76.0
           scan-type: fs
           scan-ref: .
           scanners: secret
           severity: HIGH,CRITICAL
-          format: table
+          format: sarif
+          output: trivy-secret-results.sarif
           exit-code: "1"
           trivyignores: .trivyignore.yaml
+          trivy-config: ${{ runner.temp }}/trivy-trusted/trivy.yaml
+      - name: Print Trivy findings
+        if: failure()
+        run: python3 scripts/print_trivy_findings.py trivy-secret-results.sarif
 
   security-gate:
     runs-on: ubuntu-latest
