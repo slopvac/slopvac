@@ -70,7 +70,8 @@ pub use error::SyncError;
 pub use verified::VerifiedTree;
 
 use crate::extract::{
-    ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash, verify_tree,
+    ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash, tree_hash_capturing,
+    verify_tree,
 };
 use crate::launch::Launcher;
 use crate::lock::{
@@ -81,7 +82,7 @@ use crate::oci::{
     Client, Descriptor, Digest, MAX_MANIFEST_BYTES, MEDIA_MANIFEST, Manifest, OciError, Reference,
     Target,
 };
-use crate::pyenv::{EnvStore, InstallNetwork, Installer, PythonRuntime};
+use crate::pyenv::{EnvStore, InstallNetwork, Installer, MANIFEST_FILE, PythonRuntime};
 use crate::revoke::{RevocationList, RevocationNotice, Revocations};
 use crate::sign::{
     Expectation, KeyPolicy, MAX_STATEMENT_BYTES, MEDIA_MINISIG, MEDIA_STATEMENT, signature_layers,
@@ -381,10 +382,16 @@ impl<'a> Syncer<'a> {
             id: pack.id.clone(),
             source,
         };
-        let Some(runtime) = PythonRuntime::read(tree).map_err(fail)? else {
+        // One pass hashes the tree and keeps the manifest, so the runtime is selected from the
+        // bytes the hash covers.
+        let (hash, manifest) =
+            tree_hash_capturing(tree, MANIFEST_FILE).map_err(|e| fail(e.into()))?;
+        let Some(manifest) = manifest else {
             return Ok(None);
         };
-        let hash = tree_hash(tree).map_err(|e| fail(e.into()))?;
+        let Some(runtime) = PythonRuntime::from_manifest(tree, &manifest).map_err(fail)? else {
+            return Ok(None);
+        };
         let installer = Installer {
             uv: build.uv.to_path_buf(),
             python_install_dir: build.python_install_dir.to_path_buf(),
@@ -1033,13 +1040,16 @@ pub fn status_with_python(
 }
 
 fn python_state(envs: &EnvStore, tree: &Path) -> PythonState {
-    let runtime = match PythonRuntime::read(tree) {
-        Ok(None) => return PythonState::NotChecked,
-        Ok(Some(r)) => r,
+    let (hash, manifest) = match tree_hash_capturing(tree, MANIFEST_FILE) {
+        Ok(done) => done,
         Err(e) => return PythonState::Failed(e.to_string()),
     };
-    let hash = match tree_hash(tree) {
-        Ok(h) => h,
+    let Some(manifest) = manifest else {
+        return PythonState::NotChecked;
+    };
+    let runtime = match PythonRuntime::from_manifest(tree, &manifest) {
+        Ok(None) => return PythonState::NotChecked,
+        Ok(Some(r)) => r,
         Err(e) => return PythonState::Failed(e.to_string()),
     };
     match envs.load(&hash, &runtime.python) {

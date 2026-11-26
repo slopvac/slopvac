@@ -997,7 +997,12 @@ impl TrustGate {
         names.sort();
         for name in names {
             let vp = &self.plugins[&name];
-            let Some(runtime) = PythonRuntime::read(&vp.root)? else {
+            // The bytes the hash pass read, never the file on disk: a tree with no manifest
+            // selects no runtime.
+            let Some(bytes) = vp.manifest.as_deref() else {
+                continue;
+            };
+            let Some(runtime) = PythonRuntime::from_manifest(&vp.root, bytes)? else {
                 continue;
             };
             let env =
