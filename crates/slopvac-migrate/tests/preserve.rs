@@ -597,6 +597,14 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
         .collect()
 }
 
+/// What the sweep walked and found: the number of layers and the E4 `off` guards, each as the
+/// `files` of its override block and the rule it turns off.
+#[derive(Debug)]
+struct Walk {
+    layers: usize,
+    guards: BTreeSet<(Vec<String>, String)>,
+}
+
 /// The vocabulary rule entries of a config must match the authored input in both directions.
 ///
 /// Every written entry is allowed in two forms only:
@@ -612,9 +620,8 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
 /// direction, every vocabulary rule the input authors in a layer must still be there at its
 /// authored level, so a dropped or changed entry fails too. Every authored override block must
 /// match a written one by its `files`, with or without a vocabulary rule. Extra override
-/// blocks that hold only guards are allowed. Returns the number of layers walked, or the first
-/// offence.
-fn check_vocabulary_entries(text: &str, authored: &str) -> Result<usize, String> {
+/// blocks that hold only guards are allowed. Returns what it walked, or the first offence.
+fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> {
     let doc = toml::from_str::<toml::Table>(text)
         .map_err(|e| format!("the written config does not parse: {e}\n{text}"))?;
     let authored = toml::from_str::<toml::Table>(authored).unwrap_or_default();
@@ -624,6 +631,7 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<usize, String>
     for block in &authored_blocks {
         named.extend(vocabulary_levels(block)?.into_keys());
     }
+    let mut guards = BTreeSet::new();
     // Each layer, with the authored levels of its counterpart and whether it can hold a guard.
     let mut layers: Vec<(&toml::Table, BTreeMap<String, String>, bool)> =
         vec![(&doc, authored_top, false)];
@@ -645,6 +653,9 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<usize, String>
             let guard = *may_guard && level == "off" && named.contains(id) && !own.contains_key(id);
             if !authored_here && !guard {
                 return Err(format!("generated vocabulary entry {id} = {level}\n{text}"));
+            }
+            if guard {
+                guards.insert((files_of(layer), id.clone()));
             }
         }
         for (id, level) in own {
@@ -679,7 +690,21 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<usize, String>
             "the written config has no vocabulary content, but the authored input has some\n{text}"
         ));
     }
-    Ok(layers.len())
+    Ok(Walk {
+        layers: layers.len(),
+        guards,
+    })
+}
+
+/// The `files` patterns of an override block.
+fn files_of(block: &toml::Table) -> Vec<String> {
+    block
+        .get("files")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|f| f.as_str().map(str::to_owned))
+        .collect()
 }
 
 /// Whether a config, or any of its override blocks, carries anything that a word blocklist
@@ -745,9 +770,9 @@ fn vocabulary_levels(layer: &toml::Table) -> Result<BTreeMap<String, String>, St
 )]
 fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[case] config: &str) {
     let rw = preserve(config).unwrap();
-    let walked = check_vocabulary_entries(&rw.text, config)
+    let walk = check_vocabulary_entries(&rw.text, config)
         .unwrap_or_else(|why| panic!("written config: {why}"));
-    assert!(walked >= 1, "the check walked no layer\n{}", rw.text);
+    assert!(walk.layers >= 1, "the check walked no layer\n{}", rw.text);
 }
 
 #[rstest]
@@ -833,8 +858,18 @@ const E4_GUARDED: &str = "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[
 
 /// The written config must hold an `off` guard for `rule` in the override block with `files`.
 fn require_guard(text: &str, authored: &str, files: &[&str], rule: &str) -> Result<(), String> {
-    let _ = (files, rule);
-    check_vocabulary_entries(text, authored).map(|_| ())
+    let walk = check_vocabulary_entries(text, authored)?;
+    let at = (
+        files.iter().map(|f| (*f).to_owned()).collect(),
+        rule.to_owned(),
+    );
+    if walk.guards.contains(&at) {
+        Ok(())
+    } else {
+        Err(format!(
+            "the override {files:?} has no off guard for {rule}\n{text}"
+        ))
+    }
 }
 
 #[test]
