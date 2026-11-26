@@ -130,8 +130,6 @@ _NO_RUST_GROUPS = {
         ("publish-pypi.yml", "validate"),
         ("cli-e2e.yml", "e2e"),
         ("cli-e2e.yml", "smoke"),
-        ("lint.yml", "prose"),
-        ("markdown-audit.yml", "inventory-and-audit"),
         ("publish-lint.yml", "build"),
         ("publish-lint.yml", "pypi-rc"),
         ("publish-lint.yml", "pypi"),

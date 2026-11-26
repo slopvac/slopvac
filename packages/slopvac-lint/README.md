@@ -316,7 +316,7 @@ profile = "strict"
 | `[[overrides]]` | Path-specific configuration patches |
 | `[locale]` | Spelling target and allowed spellings |
 | `[vocabulary]` | Path to a project word blocklist |
-| `[vale]` | Vale enablement and binary. `config` and `styles` are accepted but currently have no effect |
+| `[vale]` | Vale enablement and binary. `config` and `styles` are accepted and have no effect |
 | `[guidance]` | Whether `slopvac prime` points agents at writing, semantic review, and problem reporting |
 
 ### Agent guidance

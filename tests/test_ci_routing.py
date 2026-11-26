@@ -1055,3 +1055,14 @@ def test_every_input_a_crate_embeds_trips_a_cargo_delta_wire(path):
 def test_files_the_crate_tests_read_by_path_route_to_rust(path):
     # Reads built from CARGO_MANIFEST_DIR or a repository root are not include macros.
     assert in_class("rust", path)
+
+
+def test_a_change_to_the_generated_rules_reference_alone_runs_its_drift_check():
+    # The Markdown audit no longer runs `slopvac reference --check`, so the 2.x package job
+    # is the only check that the committed reference matches the rules.
+    path = "packages/slopvac-lint/docs/rules.md"
+    outputs = classes_of([path])
+    assert "package" in outputs
+    assert evaluate(JOBS["lint-package"]["if"], outputs) is True
+    commands = [step.get("run", "") for step in JOBS["lint-package"]["steps"]]
+    assert any("slopvac reference --write" in c and "--check" in c for c in commands)

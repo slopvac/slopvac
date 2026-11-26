@@ -19,33 +19,85 @@ jobs:
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
-      - name: Cache Vale download
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The audit lints with the 3.x binary built from this checkout, as the `prose` job
+      # in lint.yml does, and needs no Vale. uv stays for the Markdown parser the link
+      # audit imports.
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          path: ${{ runner.temp }}/vale-cache
-          key: vale-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_vale.py') }}
-      - name: Install Vale
-        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
-      - name: Add Vale to PATH
-        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          key: markdown-audit
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Build the slopvac binary
+        run: cargo build --locked -p slopvac
       - name: Audit tracked Markdown
+        env:
+          SLOPVAC_BIN: ${{ github.workspace }}/target/debug/slopvac
+          SLOPVAC_NO_UPDATE_CHECK: "1"
+          SLOPVAC_OFFLINE: "1"
         run: |
-          set -euo pipefail
-          uv run --project packages/slopvac-lint python - <<'PY'
+          # The audit's whole stderr goes to a private file that nothing prints: an import
+          # error, a warning or a startup failure can carry file names and report text from
+          # the repository. The script prints its fixed diagnostics on stdout.
+          # `-I` runs the interpreter isolated: no working directory or script directory on
+          # `sys.path`, and no `PYTHON*` variables or user site. A file in the checkout cannot
+          # shadow an import. `-P` alone would leave the environment and user site in play.
+          set -uo pipefail
+          status=0
+          uv run --project packages/slopvac-lint python -I - 2>"$RUNNER_TEMP/markdown-audit.stderr" <<'PY' || status=$?
           import collections
           import json
           import os
           import re
           import subprocess
+          import sys
           import tempfile
           import tomllib
           from pathlib import Path
           from urllib.parse import unquote, urlsplit
           from markdown_it import MarkdownIt
 
+          def stop(text):
+              # Expected failures print their fixed text on stdout and exit 1. A bare
+              # SystemExit(text) would print it on stderr, which the launcher keeps private.
+              print(text, flush=True)
+              raise SystemExit(1)
+
+          def fail_with_one_line(kind, value, traceback):
+              # Any exception the step does not expect ends here. The line names the type only:
+              # the message, the arguments and the traceback can hold file names and report
+              # text from the repository, which the Actions log would act on. Expected
+              # failures raise SystemExit with fixed text and never reach this hook, and
+              # SystemExit(0) keeps its code. A KeyboardInterrupt also lands here, so it
+              # still ends the run nonzero.
+              print(f"Audit failed: internal error ({kind.__name__})", flush=True)
+
+          sys.excepthook = fail_with_one_line
+          # Isolated mode (`-I`) keeps the working directory off `sys.path`, so these two
+          # entries are absolute.
+          sys.path.insert(0, str(Path.cwd() / "scripts"))
+          sys.path.insert(0, str(Path.cwd() / "scripts" / "ci"))
+          from workflow_escape import escape_workflow_data as escape
+          from markdown_audit_reports import (
+              configured_problems,
+              document_set_problems,
+              gate_problems,
+              path_problems,
+          )
+
           root = Path.cwd()
+          binary = os.environ["SLOPVAC_BIN"]
           out = Path(tempfile.mkdtemp(prefix="markdown-audit-"))
-          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          def git(*args):
+              # Git's stderr is discarded, so it can never reach the log. A failure ends in
+              # fixed text.
+              try:
+                  return subprocess.check_output(["git", *args], stderr=subprocess.DEVNULL).decode()
+              except (subprocess.CalledProcessError, OSError):
+                  stop(f"git {args[0]} failed")
+
+          tracked = git("ls-files", "-z").split("\0")
           files = sorted(p for p in tracked if Path(p).suffix.lower() in {".md", ".markdown", ".mdx"})
 
           def document_class(path):
@@ -57,6 +109,16 @@ jobs:
                   return "fixture"
               if path.endswith("CHANGELOG.md") or path == "CODE_OF_CONDUCT.md":
                   return "release"
+              # Exact paths, never a glob. Each file stays in the inventory under this class.
+              # A perf fixture, an input for the benchmark and not prose.
+              if path == "scripts/perf/fixtures/readme.md":
+                  return "fixture"
+              # A dated review disposition from 2026-10-20, kept as a historical record.
+              if path == "REVIEW-FINDINGS.md":
+                  return "release"
+              # Tool scan context that still describes the 2.x linter.
+              if path == ".codex/threat-model.md":
+                  return "managed"
               if path.endswith("/docs/rules.md"):
                   return "generated"
               if path.startswith(".beads/") or path.startswith(".agents/skills/beads/"):
@@ -66,10 +128,9 @@ jobs:
           class_counts = dict(collections.Counter(document_class(path) for path in files))
           authored_files = [path for path in files if document_class(path) == "authored"]
           print("DOCUMENT_CLASSES", json.dumps(class_counts), flush=True)
-          print("AUDIT_COMMIT", subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip(), flush=True)
+          print("AUDIT_COMMIT", git("rev-parse", "HEAD").strip(), flush=True)
           print("TRACKED_MARKDOWN", len(files), flush=True)
           print("EXTENSIONS", dict(collections.Counter(Path(p).suffix.lower() for p in files)), flush=True)
-          subprocess.run(["vale", "--version"], check=True)
           canonical = {}
           for path in files:
               resolved = Path(path).resolve(strict=True)
@@ -80,12 +141,16 @@ jobs:
           print("DISTINCT_DOCUMENTS", len(expected_paths), flush=True)
 
           def command(name, args):
-              result = subprocess.run(args, capture_output=True, text=True, timeout=1200)
+              limit = int(os.environ.get("AUDIT_LINTER_TIMEOUT", "1200"))
+              try:
+                  result = subprocess.run(args, capture_output=True, text=True, timeout=limit)
+              except subprocess.TimeoutExpired:
+                  stop(f"{name}: the linter timed out after {limit} s")
               (out / (name + ".stdout")).write_text(result.stdout)
               (out / (name + ".stderr")).write_text(result.stderr)
               print("COMMAND", name, "EXIT", result.returncode, flush=True)
-              if result.returncode not in (0, 1):
-                  print(result.stdout[-4000:], result.stderr[-4000:], flush=True)
+              # The linter's output is kept in the files above and never printed: it can hold
+              # text from the repository that the Actions log would act on.
               return result
 
           source = Path("slopvac.toml").read_text()
@@ -106,32 +171,75 @@ jobs:
               )
               for name, config, selected_files in scans:
                   target = out / (name + ".json")
-                  args = ["slopvac", "lint", "--config", config, "--format", "json", "--out", str(target)]
+                  args = [binary, "lint", "--config", config, "--format", "json", "--out", str(target)]
                   result = command(name, [*args, *selected_files])
                   exits[name] = result.returncode
-                  if not target.exists():
-                      detail = result.stdout[-2000:] + result.stderr[-2000:]
-                      raise RuntimeError(name + " did not produce a report: " + detail)
-                  reports[name] = json.loads(target.read_text())
+                  try:
+                      reports[name] = json.loads(target.read_text())
+                  except (OSError, ValueError):
+                      stop(
+                          f"{name}: the linter exited {result.returncode} and wrote no report"
+                      )
+                  # Every document needs a boolean gate verdict. `false` is allowed in the
+                  # diagnostic scans, which may fail, and not in the authored scan.
+                  bad = path_problems(name, reports[name]) + gate_problems(
+                      name, reports[name], allow_false=name != "authored"
+                  )
+                  if bad:
+                      stop("\n".join(bad))
                   summary = {k: reports[name]["summary"][k] for k in fields}
-                  print("SUMMARY", name, json.dumps(summary), flush=True)
+                  print("SUMMARY", name, escape(json.dumps(summary)), flush=True)
           finally:
               audit_config.unlink(missing_ok=True)
 
-          def relative(document):
-              return str(Path(document["path"]).resolve().relative_to(root))
+          def relative(name, index, document):
+              try:
+                  return str(Path(document["path"]).resolve().relative_to(root))
+              except ValueError:
+                  stop(f"{name}: document {index} lies outside the repository")
 
-          configured = {relative(d): d for d in reports["configured"]["documents"]}
-          scanned = {relative(d): d for d in reports["all-files"]["documents"]}
-          authored = {relative(d): d for d in reports["authored"]["documents"]}
+          # Resolve every path once, so a path outside the root stops the audit with fixed text.
+          paths = {
+              name: [relative(name, i, d) for i, d in enumerate(report["documents"])]
+              for name, report in reports.items()
+          }
+          configured = dict(zip(paths["configured"], reports["configured"]["documents"]))
+          scanned = dict(zip(paths["all-files"], reports["all-files"]["documents"]))
+          authored = dict(zip(paths["authored"], reports["authored"]["documents"]))
+          # The authored report must hold exactly the authored documents. An empty or
+          # partial report is a failure, and the messages hold counts and no paths.
+          bad = document_set_problems(
+              "authored",
+              paths["authored"],
+              {canonical[p] for p in authored_files},
+          )
+          if bad:
+              stop("\n".join(bad))
+          # The all-files report must hold every tracked document: it is the coverage guarantee.
+          bad = document_set_problems("all-files", paths["all-files"], expected_paths)
+          if bad:
+              stop("\n".join(bad))
+          # Coverage comes from the all-files scan. The configured report may be a subset.
+          bad = configured_problems(
+              paths["configured"],
+              set(scanned),
+              len(authored_files),
+          )
+          if bad:
+              stop("\n".join(bad))
           excluded = sorted(expected_paths - set(configured))
           missing = sorted(expected_paths - set(scanned))
           unexpected = sorted(set(scanned) - expected_paths)
-          unchecked = {p: d["unchecked"] for p, d in scanned.items() if d.get("unchecked")}
+          # 3.x lists informational notes in `unchecked`; only a higher level is incomplete.
+          unchecked = {
+              p: [u for u in d.get("unchecked", []) if u.get("level") != "info"]
+              for p, d in scanned.items()
+              if any(u.get("level") != "info" for u in d.get("unchecked", []))
+          }
           print("CONFIGURED_EXCLUSIONS", json.dumps(excluded), flush=True)
           print("MISSING_FROM_FULL_AUDIT", json.dumps(missing), flush=True)
           print("UNEXPECTED_DOCUMENTS", json.dumps(unexpected), flush=True)
-          print("UNCHECKED", json.dumps(unchecked), flush=True)
+          print("UNCHECKED", escape(json.dumps(unchecked)), flush=True)
           for path in files:
               target = canonical[path]
               document = scanned.get(target, {})
@@ -139,23 +247,14 @@ jobs:
               counts = dict(collections.Counter(f["severity"] for f in findings))
               entry = {
                   "path": path, "canonical_path": target, "class": document_class(path),
-                  "normally_excluded": target in excluded, "passed": document.get("passed"),
+                  "normally_excluded": target in excluded, "passed": document.get("gate", {}).get("passed"),
                   "findings": counts,
               }
-              print("FILE", json.dumps(entry), flush=True)
+              print("FILE", escape(json.dumps(entry)), flush=True)
           for path, document in configured.items():
-              if not document.get("passed", False):
-                  print("CONFIGURED_FAILURE", json.dumps({"path": path, "details": document}), flush=True)
-
-          reference = command("reference", [
-              "slopvac", "reference", "--check", "--write", "packages/slopvac-lint/docs/rules.md",
-          ])
-          print("REFERENCE_RESULT", reference.stdout[:12000], flush=True)
-          routing = command("routing", ["slopvac", "compile", "--format", "json", "--config", "slopvac.toml"])
-          if routing.returncode == 0:
-              route = json.loads(routing.stdout)
-              counts = {k: len(route[k]) for k in ("vale", "native", "disabled")}
-              print("ENGINE_ROUTING", json.dumps({"vale_version": route.get("vale_version"), **counts}), flush=True)
+              if not document.get("gate", {}).get("passed", False):
+                  counts = {k: document.get(k) for k in ("errors", "warnings", "suggestions")}
+                  print("CONFIGURED_FAILURE", escape(json.dumps({"path": path, **counts})), flush=True)
 
           parser = MarkdownIt("commonmark").enable("table")
           anchors = {}
@@ -216,7 +315,7 @@ jobs:
               f"Authored-document coverage: {len(authored)}. Authored exit: {exits['authored']}.",
               f"Configured exit: {exits['configured']}. Full diagnostic exit: {exits['all-files']}.",
               f"Missing documents: {len(missing)}. Documents with unchecked rules: {len(unchecked)}.",
-              f"Generated reference check: {reference.returncode}. Local link candidates: {len(broken)}.",
+              f"Local link candidates: {len(broken)}.",
               "",
               "The unrestricted diagnostic still scans fixtures, generated references, "
               "release records, and managed prose.",
@@ -230,8 +329,11 @@ jobs:
               missing or unexpected or unchecked
               or any(code not in (0, 1) for name, code in exits.items() if name != "authored")
               or exits["authored"] != 0
-              or reference.returncode != 0 or routing.returncode != 0
           )
           if incomplete:
-              raise SystemExit("Audit incomplete or generated reference out of date; inspect the log.")
+              stop("Audit incomplete; inspect the log.")
           PY
+          if [ "$status" -ne 0 ]; then
+            echo "Audit failed (exit $status)"
+            exit "$status"
+          fi

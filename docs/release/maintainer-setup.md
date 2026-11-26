@@ -144,7 +144,7 @@ The `revocations` environment is separate from `release` on purpose. This schedu
 2. Open the new `slopvac-revocations` package under the `slopvac` organisation's packages. Packages in an organisation start private. Change its visibility to public, and link it to the `slopvac/slopvac` repository so the workflow keeps write access. While it is private, users cannot pull the list anonymously and every online sync fails.
 3. Check the result without a login: `oras manifest fetch ghcr.io/slopvac/slopvac-revocations:latest` must show the artifact type `application/vnd.slopvac.revocations.v1` and two layers, the list and then its signature.
 
-Rerun the workflow, without `first_publication`, whenever the list has lapsed. A rerun issues a newer list, which replaces the old one. The CLI refuses a list with an older `issued` time than the one it cached.
+Rerun the workflow, without `first_publication`, whenever the list has lapsed. A rerun issues a newer list, which replaces the old one. The CLI rejects a list with an older `issued` time than the one it cached.
 
 ### Recovery and key rotation
 

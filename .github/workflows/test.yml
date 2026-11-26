@@ -677,8 +677,11 @@ jobs:
         working-directory: packages/slopvac-lint
         run: python3 -m pytest tests -q
 
+      # The 2.x CLI looks for slopvac.toml from the working directory upward, and the
+      # repository's own slopvac.toml is a 3.x file that it rejects (exit 2). The three
+      # steps below run from the runner's temp directory, so they never read it.
       - name: Ruleset loads for every locale
-        working-directory: packages/slopvac-lint
+        working-directory: ${{ runner.temp }}
         run: |
           set -euo pipefail
           for locale in en-US en-GB und; do
@@ -694,11 +697,11 @@ jobs:
 
       - name: The rules reference is current
         if: matrix.python == '3.14'
-        working-directory: packages/slopvac-lint
-        run: slopvac reference --write docs/rules.md --check
+        working-directory: ${{ runner.temp }}
+        run: slopvac reference --write "$GITHUB_WORKSPACE/packages/slopvac-lint/docs/rules.md" --check
 
       - name: The README's own commands work
-        working-directory: packages/slopvac-lint
+        working-directory: ${{ runner.temp }}
         run: |
           set -euo pipefail
           slopvac --version

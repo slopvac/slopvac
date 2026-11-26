@@ -38,10 +38,10 @@ A new crate needs a `Cargo.lock` entry in `extra-files` in `release-please-confi
 Run Slopvac's repository prose gate on the files you changed:
 
 ```sh
-uvx --from ./packages/slopvac-lint slopvac <files>
+cargo run -p slopvac -- lint <files>
 ```
 
-Exit 2 means the check is incomplete, not clean. If the command exits 2, install Vale 3.18 or later and rerun it. Fix findings before you open a pull request.
+This builds the 3.x binary from your checkout and applies the root `slopvac.toml`. The `prose` job in `lint.yml` runs the same binary. Exit 1 means a finding failed the gate. Exit 2 means the run was incomplete or the invocation was invalid, for example a `slopvac.toml` with no `schema_version`. Exit 2 is not clean, and the `prose` job fails on it. Fix the cause and rerun. Fix findings before you open a pull request.
 
 ### Review comments on pull requests
 
