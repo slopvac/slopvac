@@ -1,7 +1,9 @@
 //! Read `.slopvac/plugins.lock` of a project.
 
+use std::cell::RefCell;
 use std::fmt;
 use std::path::Path;
+use std::rc::Rc;
 
 use slopvac_fs::{InputKind, ReadOptions, read_capped_regular_to_string};
 
@@ -38,6 +40,31 @@ impl std::error::Error for LockReadError {
     }
 }
 
+thread_local! {
+    /// What a test hung on the lock reader of this thread.
+    static OBSERVER: RefCell<Option<Rc<dyn Fn()>>> = const { RefCell::new(None) };
+}
+
+/// Ends the observation that [`observe_lock_reads`] started, when dropped.
+#[doc(hidden)]
+#[must_use]
+pub struct LockReadObservation(());
+
+impl Drop for LockReadObservation {
+    fn drop(&mut self) {
+        OBSERVER.with(|slot| *slot.borrow_mut() = None);
+    }
+}
+
+/// Call `observer` after every read of a lock file on this thread, however the read is reached,
+/// until the returned guard is dropped. A test counts the reads of one command with it, and
+/// changes the file between two of them.
+#[doc(hidden)]
+pub fn observe_lock_reads(observer: impl Fn() + 'static) -> LockReadObservation {
+    OBSERVER.with(|slot| *slot.borrow_mut() = Some(Rc::new(observer)));
+    LockReadObservation(())
+}
+
 /// Read and parse `<project_root>/.slopvac/plugins.lock`, refusing a file over
 /// [`MAX_LOCK_BYTES`]. A missing file is an empty lock unless `required`.
 ///
@@ -46,6 +73,15 @@ impl std::error::Error for LockReadError {
 /// missing and `required`), and `plugins-lock-invalid` when it is not a valid lock. The cause of
 /// the second keeps the location only, never the rejected text.
 pub fn read_project_lock(project_root: &Path, required: bool) -> Result<Lockfile, LockReadError> {
+    let read = read_lock_file(project_root, required);
+    let observer = OBSERVER.with(|slot| slot.borrow().clone());
+    if let Some(observer) = observer {
+        observer();
+    }
+    read
+}
+
+fn read_lock_file(project_root: &Path, required: bool) -> Result<Lockfile, LockReadError> {
     let path = project_root.join(".slopvac/plugins.lock");
     let invalid = |source: LockError| {
         let detail = source.diagnostic();

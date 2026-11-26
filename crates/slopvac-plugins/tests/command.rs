@@ -156,9 +156,6 @@ impl Fixture {
         if let Some(python) = setup.python {
             runner = runner.with_python(python);
         }
-        if let Some(observer) = &setup.lock_read {
-            runner = runner.with_lock_read_observer(observer.as_ref());
-        }
         runner = runner
             .with_executables(setup.executables)
             .with_locked(setup.locked);
@@ -178,16 +175,9 @@ struct Setup<'a> {
     envs: Option<&'a EnvStore>,
     python: Option<PythonBuild<'a>>,
     locked: bool,
-    lock_read: Option<Box<dyn Fn() + 'a>>,
 }
 
 impl<'a> Setup<'a> {
-    /// Call `observer` after each read of the lock file.
-    fn lock_read(mut self, observer: impl Fn() + 'a) -> Self {
-        self.lock_read = Some(Box::new(observer));
-        self
-    }
-
     fn locked(mut self) -> Self {
         self.locked = true;
         self
@@ -1809,12 +1799,13 @@ fn trust_reads_the_lock_once_and_everything_uses_that_read() {
         seen: std::rc::Rc::clone(&seen),
     };
     let counted = std::rc::Rc::clone(&reads);
-    let ran = f.run(&["trust", "fake"], false, |s| {
-        s.loader(loader).lock_read(move || {
-            counted.set(counted.get() + 1);
-            fs::write(&lock, format!("schema_version = 3\n{swapped}")).unwrap();
-        })
+    // The reader itself reports every read, so a read that does not go through `Runner` is
+    // counted too.
+    let _observing = slopvac_plugins::lock::observe_lock_reads(move || {
+        counted.set(counted.get() + 1);
+        fs::write(&lock, format!("schema_version = 3\n{swapped}")).unwrap();
     });
+    let ran = f.run(&["trust", "fake"], false, |s| s.loader(loader));
     assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
     assert_eq!(reads.get(), 1, "the lock was read more than once");
     assert_eq!(*seen.borrow(), [OTHER_HASH]);
