@@ -1,9 +1,10 @@
-"""The Trivy gate stays strict; one scoped, expiring ignore covers a known gap."""
+"""The Trivy gates keep main policy, read trusted config and print nothing raw."""
 
 from __future__ import annotations
 
 import datetime
 import json
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -12,20 +13,50 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+WORKFLOWS = ROOT / ".github/workflows"
+JOBS = ["trivy", "trivy-secret"]
+SCAN = "scripts/ci/run_trivy.sh"
+WRITER = "scripts/ci/trivy_trusted_config.sh"
+REPORTER = "scripts/print_trivy_findings.py"
+ALL_SEVERITIES = {"UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
+HOSTILE = "::error::injected"
+GROUP = "##[group]injected"
+
+# The effective policy of each job on main 4a7cceaf02, worked out from that
+# workflow and trivy-action v0.36.0 (action.yaml, entrypoint.sh), not from the
+# current workflow. The action unsets TRIVY_SEVERITY for format sarif, so the
+# full scan gates on every severity. The secret scan prints a table, so its
+# severity input applies.
+MAIN_POLICY = {
+    "trivy": {
+        "scanners": {"vuln", "misconfig", "secret"},
+        "severities": ALL_SEVERITIES,
+        "exit_code": "1",
+        "ignorefile": ".trivyignore.yaml",
+        "version": "v0.76.0",
+    },
+    "trivy-secret": {
+        "scanners": {"secret"},
+        "severities": {"HIGH", "CRITICAL"},
+        "exit_code": "1",
+        "ignorefile": ".trivyignore.yaml",
+        "version": "v0.76.0",
+    },
+}
 
 
 def load_workflow() -> dict:
-    return yaml.safe_load((ROOT / ".github/workflows/security.yml").read_text())
+    return yaml.safe_load((WORKFLOWS / "security.yml").read_text())
 
 
-def trivy_step() -> dict:
-    workflow = load_workflow()
-    steps = workflow["jobs"]["trivy"]["steps"]
-    return next(
-        s
-        for s in steps
-        if str(s.get("uses", "")).startswith("aquasecurity/trivy-action@")
-    )
+def steps_of(job: str) -> list[dict]:
+    return load_workflow()["jobs"][job]["steps"]
+
+
+def step_running(job: str, script: str) -> dict:
+    found = [s for s in steps_of(job) if script in str(s.get("run", ""))]
+    assert len(found) == 1, f"{job}: expected one step that runs {script}"
+    return found[0]
 
 
 def test_ignore_file_has_one_scoped_expiring_entry() -> None:
@@ -39,251 +70,240 @@ def test_ignore_file_has_one_scoped_expiring_entry() -> None:
     assert entry["expired_at"] == datetime.date(2026, 12, 18)
 
 
-def test_workflow_passes_ignore_file_and_keeps_gate() -> None:
-    with_ = trivy_step()["with"]
-    assert with_["trivyignores"] == ".trivyignore.yaml"
-    assert with_["exit-code"] == "1"
-    assert with_["severity"] == "HIGH,CRITICAL"
-    assert sorted(with_["scanners"].split(",")) == ["misconfig", "secret", "vuln"]
+@pytest.mark.parametrize("job", JOBS)
+def test_trivy_gate_cannot_be_bypassed_by_continue_on_error(job: str) -> None:
+    workflow_job = load_workflow()["jobs"][job]
+    assert "continue-on-error" not in workflow_job
+    assert not [s for s in workflow_job["steps"] if "continue-on-error" in s]
 
 
-SCRIPT = "scripts/print_trivy_findings.py"
-HOSTILE = "::error::injected"
-
-
-def sarif_with(rule_id: str, text: str, uri: str) -> dict:
-    return {
-        "runs": [
-            {
-                "results": [
-                    {
-                        "ruleId": rule_id,
-                        "level": "error",
-                        "message": {"text": text},
-                        "locations": [
-                            {"physicalLocation": {"artifactLocation": {"uri": uri}}}
-                        ],
-                    },
-                    {
-                        "ruleId": "AVD-X-1",
-                        "level": "warning",
-                        "message": {"text": "no place"},
-                    },
-                ]
-            },
-            {},
-        ]
+def test_secret_job_keeps_read_only_permissions() -> None:
+    assert load_workflow()["jobs"]["trivy-secret"]["permissions"] == {
+        "contents": "read"
     }
 
 
-def run_printer(step: dict, tmp_path: Path, sarif: dict) -> subprocess.CompletedProcess:
-    name = Path(step["run"].split()[-1]).name
-    (tmp_path / name).write_text(json.dumps(sarif))
-    command = step["run"].replace(SCRIPT, str(ROOT / SCRIPT))
-    return subprocess.run(
-        ["bash", "-euo", "pipefail", "-c", command],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-
-JOBS = ["trivy", "trivy-secret"]
-
-
-def printer_step(job: str) -> dict:
-    # Looked up inside the test, so a missing step fails an assertion.
-    steps = load_workflow()["jobs"][job]["steps"]
-    found = [s for s in steps if s.get("name") == "Print Trivy findings"]
-    assert len(found) == 1, f"{job}: expected one Print Trivy findings step"
-    return found[0]
-
-
 @pytest.mark.parametrize("job", JOBS)
-def test_failed_scan_prints_findings(job: str, tmp_path: Path) -> None:
-    step = printer_step(job)
-    assert step["if"] == "failure()"
-    done = run_printer(
-        step,
-        tmp_path,
-        sarif_with("CVE-2026-0001", "first line\nsecond line", "a/lock.json"),
-    )
-    assert done.returncode == 0, done.stderr
-    assert done.stdout.splitlines() == [
-        "CVE-2026-0001 [error] first line @ a/lock.json",
-        "AVD-X-1 [warning] no place @ ?",
-    ]
-
-
-@pytest.mark.parametrize("job", JOBS)
-@pytest.mark.parametrize("field", ["rule", "text", "uri"])
-def test_printed_findings_start_no_workflow_command(
-    job: str, field: str, tmp_path: Path
+def test_trivy_comes_from_the_pinned_setup_action_at_the_main_version(
+    job: str,
 ) -> None:
-    step = printer_step(job)
-    # A scanned file name or a finding text can start a line of the job log.
-    args = {"rule": "CVE-1", "text": "t", "uri": "a"}
-    args[field] = HOSTILE
-    done = run_printer(
-        step, tmp_path, sarif_with(args["rule"], args["text"], args["uri"])
-    )
-    assert done.returncode == 0, done.stderr
-    for line in done.stdout.splitlines():
-        assert not line.lstrip().startswith(("::", "##["))
-    assert "::" not in done.stdout
-
-
-def test_trivy_gate_cannot_be_bypassed_by_continue_on_error() -> None:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/security.yml").read_text())
-    assert "continue-on-error" not in workflow["jobs"]["trivy"]
-    assert "continue-on-error" not in trivy_step()
-
-
-def secret_scan_job() -> dict:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/security.yml").read_text())
-    return workflow["jobs"]["trivy-secret"]
-
-
-def test_secret_scan_runs_with_the_same_gate_settings_as_the_full_scan() -> None:
-    job = secret_scan_job()
-    (scan,) = [
+    (setup,) = [
         s
-        for s in job["steps"]
-        if str(s.get("uses", "")).startswith("aquasecurity/trivy-action@")
+        for s in steps_of(job)
+        if str(s.get("uses", "")).startswith("aquasecurity/setup-trivy@")
     ]
-    assert scan["uses"] == trivy_step()["uses"]
-    with_ = scan["with"]
-    assert with_["scanners"] == "secret"
-    assert with_["severity"] == "HIGH,CRITICAL"
-    assert with_["exit-code"] == "1"
-    assert with_["trivyignores"] == ".trivyignore.yaml"
-    assert with_["version"] == trivy_step()["with"]["version"]
-    assert "continue-on-error" not in job
-    assert "continue-on-error" not in scan
-    assert job["permissions"] == {"contents": "read"}
+    ref = setup["uses"].split("@")[1].split()[0]
+    assert len(ref) == 40 and set(ref) <= set("0123456789abcdef")
+    assert setup["with"]["version"] == MAIN_POLICY[job]["version"]
 
 
-def all_trivy_jobs() -> list[tuple[str, str, dict, list[dict]]]:
-    """Every (file, job, trivy step, steps before it) in every workflow."""
-    found = []
-    for path in sorted((ROOT / ".github/workflows").glob("*.y*ml")):
-        for name, job in (yaml.safe_load(path.read_text()).get("jobs") or {}).items():
-            steps = job.get("steps") or []
-            for i, step in enumerate(steps):
-                if str(step.get("uses", "")).startswith("aquasecurity/trivy-action@"):
-                    found.append((path.name, name, step, steps[:i]))
-    return found
+def test_no_workflow_uses_trivy_action() -> None:
+    # The action runs Trivy inside itself, so its streams cannot be redirected.
+    for path in WORKFLOWS.glob("*.y*ml"):
+        assert "aquasecurity/trivy-action" not in path.read_text(), path.name
 
 
-def test_every_trivy_step_is_found() -> None:
-    assert {(f, j) for f, j, _, _ in all_trivy_jobs()} == {
-        ("security.yml", "trivy"),
-        ("security.yml", "trivy-secret"),
-    }
+@pytest.mark.parametrize("job", JOBS)
+def test_no_step_sets_a_trivy_environment_variable(job: str) -> None:
+    for step in steps_of(job):
+        assert not [k for k in step.get("env", {}) if k.startswith("TRIVY_")]
+    assert not [k for k in load_workflow()["jobs"][job].get("env", {})]
 
 
-WRITER = "scripts/ci/trivy_trusted_config.sh"
-ALL_SEVERITIES = {"UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
-
-# The effective policy of each job on main 4a7cceaf02, worked out from that
-# workflow and trivy-action v0.36.0 (not from the current workflow). The action
-# unsets TRIVY_SEVERITY for format sarif, so the full scan gates on every severity.
-MAIN_POLICY = {
-    "trivy": {
-        "scanners": {"vuln", "misconfig", "secret"},
-        "severities": ALL_SEVERITIES,
-        "exit_code": "1",
-        "ignore": ".trivyignore.yaml",
-    },
-    "trivy-secret": {
-        "scanners": {"secret"},
-        "severities": {"HIGH", "CRITICAL"},
-        "exit_code": "1",
-        "ignore": ".trivyignore.yaml",
-    },
-}
+# --- trusted config -----------------------------------------------------------
 
 
-def writer_step(job: str, before: list[dict]) -> dict:
-    found = [s for s in before if s.get("name") == "Write trusted Trivy config"]
-    assert len(found) == 1, f"{job}: expected one Write trusted Trivy config step"
-    return found[0]
+def run_text(job: str, script: str) -> str:
+    return step_running(job, script)["run"]
 
 
-def run_writer(step: dict, tmp_path: Path) -> Path:
-    command = step["run"].replace(WRITER, str(ROOT / WRITER))
+def writer_severities(job: str) -> str:
+    run = run_text(job, WRITER)
+    assert run.strip().startswith(f"bash {WRITER} ")
+    assert "${{" not in run  # fixed text, never an expression
+    return run.split()[-1]
+
+
+@pytest.mark.parametrize("job", JOBS)
+def test_trusted_config_carries_the_severity_policy_of_main(
+    job: str, tmp_path: Path
+) -> None:
     done = subprocess.run(
-        ["bash", "-c", command],
+        ["bash", str(ROOT / WRITER), writer_severities(job)],
         env={"RUNNER_TEMP": str(tmp_path), "PATH": "/usr/bin:/bin"},
         capture_output=True,
         text=True,
         check=False,
     )
     assert done.returncode == 0, done.stderr
-    return tmp_path / "trivy-trusted"
-
-
-def steps_of(job: str) -> list[dict]:
-    return load_workflow()["jobs"][job]["steps"]
-
-
-@pytest.mark.parametrize("job", JOBS)
-def test_trivy_reads_config_from_outside_the_checkout(job: str) -> None:
-    # Trivy reads ./trivy.yaml and ./trivy-secret.yaml from the working
-    # directory unless told otherwise, so a pull request could plant either.
-    steps = steps_of(job)
-    scan = next(s for s in steps if str(s.get("uses", "")).startswith("aquasecurity/"))
-    trusted = "${{ runner.temp }}/trivy-trusted/"
-    assert scan["with"]["trivy-config"] == trusted + "trivy.yaml"
-    assert scan["env"]["TRIVY_SECRET_CONFIG"] == trusted + "trivy-secret.yaml"
-    run = writer_step(job, steps[: steps.index(scan)])["run"]
-    assert run.startswith(f"bash {WRITER} ")
-    assert "${{" not in run  # fixed text, no expression
-
-
-@pytest.mark.parametrize("job", JOBS)
-def test_effective_policy_matches_main(job: str, tmp_path: Path) -> None:
-    want = MAIN_POLICY[job]
-    steps = steps_of(job)
-    scan = next(s for s in steps if str(s.get("uses", "")).startswith("aquasecurity/"))
-    base = run_writer(writer_step(job, steps[: steps.index(scan)]), tmp_path)
-    config = yaml.safe_load((base / "trivy.yaml").read_text())
-    with_ = scan["with"]
-    # trivy-action unsets TRIVY_SEVERITY for sarif, so the config decides there.
-    if with_["format"] == "sarif":
-        got = set(config["severity"])
-    else:
-        got = set(with_["severity"].split(","))
-    assert got == want["severities"]
-    assert set(with_["scanners"].split(",")) == want["scanners"]
-    assert with_["exit-code"] == want["exit_code"]
-    assert with_["trivyignores"] == want["ignore"]
-    assert "ignore-unfixed" not in with_
-    assert "skip-dirs" not in with_ and "skip-files" not in with_
-
-
-def test_trusted_config_holds_only_severity_and_an_empty_secret_config(
-    tmp_path: Path,
-) -> None:
-    step = writer_step("trivy", steps_of("trivy"))
-    base = run_writer(step, tmp_path)
+    base = tmp_path / "trivy-trusted"
     config = yaml.safe_load((base / "trivy.yaml").read_text())
     assert set(config) == {"severity"}
+    assert set(config["severity"]) == MAIN_POLICY[job]["severities"]
     assert (base / "trivy-secret.yaml").read_text().strip() == "{}"
 
 
-# trivy-action v0.36.0 `cache-dir` default, from its action.yaml.
-ACTION_DEFAULT_CACHE_DIR = "${{ github.workspace }}/.cache/trivy"
+def test_trusted_config_rejects_an_unknown_severity(tmp_path: Path) -> None:
+    done = subprocess.run(
+        ["bash", str(ROOT / WRITER), "HIGH,NONE"],
+        env={"RUNNER_TEMP": str(tmp_path), "PATH": "/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 2
 
 
-def cache_paths() -> list[tuple[str, str]]:
-    """(where, path) for every Trivy cache location any workflow sets."""
+# --- scan harness: the real step text against a stub trivy ----------------------
+
+STUB = """#!/usr/bin/env bash
+printf "%s\\n" "$@" > "$STUB_ARGV"
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then out="$2"; fi
+  shift
+done
+if [ -n "${STUB_SARIF:-}" ]; then cp "$STUB_SARIF" "$out"; fi
+printf "%s\\n" "::error::injected" "##[group]injected"
+printf "%s\\n" "::error::injected" "##[group]injected" >&2
+exit "$STUB_EXIT"
+"""
+
+
+def finding(rule: str, text: str, uri: str) -> dict:
+    return {
+        "ruleId": rule,
+        "level": "error",
+        "message": {"text": text},
+        "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+    }
+
+
+def hostile_sarif() -> dict:
+    result = finding(HOSTILE, GROUP + "\nsecond", "a::warning::b")
+    return {"runs": [{"results": [result]}]}
+
+
+class Scan:
+    def __init__(self, job: str, tmp_path: Path, exit_code: int, sarif: bool) -> None:
+        self.ws = tmp_path / "ws"
+        self.runner_temp = tmp_path / "rt"
+        self.ws.mkdir()
+        self.runner_temp.mkdir()
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        stub = bin_dir / "trivy"
+        stub.write_text(STUB)
+        stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+        self.argv_file = tmp_path / "argv.txt"
+        sarif_file = tmp_path / "stub.sarif"
+        sarif_file.write_text(json.dumps(hostile_sarif()))
+        env = {
+            "PATH": f"{bin_dir}:{Path(sys.executable).parent}:/usr/bin:/bin",
+            "RUNNER_TEMP": str(self.runner_temp),
+            "STUB_ARGV": str(self.argv_file),
+            "STUB_EXIT": str(exit_code),
+        }
+        if sarif:
+            env["STUB_SARIF"] = str(sarif_file)
+        command = run_text(job, SCAN).replace(SCAN, str(ROOT / SCAN))
+        self.done = subprocess.run(
+            ["bash", "-c", command],
+            cwd=self.ws,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def flags(self) -> dict[str, str]:
+        argv = self.argv_file.read_text().splitlines()
+        assert argv[:2] == ["fs", "."]
+        pairs = {}
+        for i, arg in enumerate(argv):
+            if arg.startswith("--"):
+                nxt = argv[i + 1] if i + 1 < len(argv) else ""
+                pairs[arg] = "" if nxt.startswith("--") else nxt
+        return pairs
+
+
+@pytest.mark.parametrize("job", JOBS)
+def test_scan_runs_with_the_exact_policy_of_main(job: str, tmp_path: Path) -> None:
+    want = MAIN_POLICY[job]
+    flags = Scan(job, tmp_path, 0, sarif=True).flags()
+    assert set(flags["--scanners"].split(",")) == want["scanners"]
+    assert set(flags["--severity"].split(",")) == want["severities"]
+    assert flags["--exit-code"] == want["exit_code"]
+    assert flags["--ignorefile"] == want["ignorefile"]
+    assert flags["--format"] == "sarif"
+    assert not [f for f in flags if f.startswith("--skip") or f == "--ignore-unfixed"]
+
+
+@pytest.mark.parametrize("job", JOBS)
+def test_trusted_config_and_scan_flags_share_one_severity_policy(job: str) -> None:
+    words = run_text(job, SCAN).split()
+    assert writer_severities(job) == words[-2]
+
+
+@pytest.mark.parametrize("job", JOBS)
+def test_scan_reads_config_and_cache_only_from_the_runner_temp(
+    job: str, tmp_path: Path
+) -> None:
+    scan = Scan(job, tmp_path, 0, sarif=True)
+    flags = scan.flags()
+    temp = str(scan.runner_temp)
+    assert flags["--config"] == f"{temp}/trivy-trusted/trivy.yaml"
+    assert flags["--secret-config"] == f"{temp}/trivy-trusted/trivy-secret.yaml"
+    assert flags["--cache-dir"].startswith(temp + "/")
+    assert str(scan.ws) not in " ".join(flags.values())
+
+
+@pytest.mark.parametrize("job", JOBS)
+@pytest.mark.parametrize("code", [0, 1, 3], ids=["pass", "findings", "fatal"])
+def test_scan_keeps_the_exit_code_and_prints_nothing_raw(
+    job: str, code: int, tmp_path: Path
+) -> None:
+    done = Scan(job, tmp_path, code, sarif=True).done
+    assert done.returncode == code
+    both = done.stdout + done.stderr
+    assert HOSTILE not in both
+    assert GROUP not in both
+    assert "##[" not in both
+    for line in both.splitlines():
+        assert not line.startswith("::")
+    if code == 0:
+        assert both == ""
+    else:
+        assert done.stdout.splitlines() == [
+            f"Trivy scan failed (exit {code})",
+            (
+                "%3A%3Aerror%3A%3Ainjected [error] \\u{23}#[group]injected"
+                " @ a%3A%3Awarning%3A%3Ab"
+            ),
+        ]
+        assert done.stderr == ""
+
+
+@pytest.mark.parametrize("job", JOBS)
+def test_scan_failure_without_a_report_prints_two_fixed_lines(
+    job: str, tmp_path: Path
+) -> None:
+    done = Scan(job, tmp_path, 1, sarif=False).done
+    assert done.returncode == 1
+    assert done.stdout.splitlines() == [
+        "Trivy scan failed (exit 1)",
+        "Trivy report is missing or unreadable",
+    ]
+    assert done.stderr == ""
+
+
+# --- cache ---------------------------------------------------------------------
+
+
+def trivy_cache_paths() -> list[tuple[str, str]]:
+    """(where, path) for every actions/cache step that caches Trivy data."""
     found = []
-    for file, job, step, _ in all_trivy_jobs():
-        path = step["with"].get("cache-dir", ACTION_DEFAULT_CACHE_DIR)
-        found.append((f"{file}:{job}", path))
-    for path in sorted((ROOT / ".github/workflows").glob("*.y*ml")):
+    for path in sorted(WORKFLOWS.glob("*.y*ml")):
         for name, job in (yaml.safe_load(path.read_text()).get("jobs") or {}).items():
             for step in job.get("steps") or []:
                 where = str(step.get("with", {}).get("path", ""))
@@ -294,20 +314,33 @@ def cache_paths() -> list[tuple[str, str]]:
     return found
 
 
-def test_trivy_caches_are_found() -> None:
-    assert len(cache_paths()) >= 2
+def test_the_trivy_database_cache_steps_are_found() -> None:
+    assert {w for w, _ in trivy_cache_paths()} == {
+        "security.yml:trivy",
+        "security.yml:trivy-secret",
+    }
 
 
-@pytest.mark.parametrize(("where", "path"), cache_paths())
+@pytest.mark.parametrize(("where", "path"), trivy_cache_paths())
 def test_trivy_cache_is_outside_the_checkout(where: str, path: str) -> None:
-    # A pull request can plant a vulnerability database in the checkout, which
-    # would hide findings. The cache must live under the runner temp directory.
+    # A change under review can plant a vulnerability database in the checkout,
+    # which would hide findings. The cache lives under the runner temp directory.
     assert path.startswith("${{ runner.temp }}/"), f"{where}: cache path {path}"
     assert "github.workspace" not in path
 
 
-REPORTER = ROOT / SCRIPT
+# --- reporter ------------------------------------------------------------------
+
 UNUSABLE = "Trivy report is missing or unreadable\n"
+
+
+def run_reporter(report: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(ROOT / REPORTER), str(report)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 @pytest.mark.parametrize(
@@ -322,12 +355,35 @@ def test_reporter_fails_with_a_fixed_message_on_an_unusable_report(
     report.parent.mkdir()
     if content is not None:
         report.write_text(content)
-    done = subprocess.run(
-        [sys.executable, str(REPORTER), str(report)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    done = run_reporter(report)
     assert done.returncode != 0
     assert done.stdout == UNUSABLE
     assert done.stderr == ""
+
+
+def test_reporter_prints_one_line_per_finding(tmp_path: Path) -> None:
+    report = tmp_path / "r.sarif"
+    results = [
+        finding("CVE-2026-0001", "first line\nsecond line", "a/lock.json"),
+        {"ruleId": "AVD-X-1", "level": "warning", "message": {"text": "no place"}},
+    ]
+    report.write_text(json.dumps({"runs": [{"results": results}, {}]}))
+    done = run_reporter(report)
+    assert done.returncode == 0
+    assert done.stdout.splitlines() == [
+        "CVE-2026-0001 [error] first line @ a/lock.json",
+        "AVD-X-1 [warning] no place @ ?",
+    ]
+
+
+@pytest.mark.parametrize("field", ["rule", "text", "uri"])
+def test_reporter_escapes_every_field(field: str, tmp_path: Path) -> None:
+    values = {"rule": "CVE-1", "text": "t", "uri": "a"}
+    values[field] = HOSTILE
+    report = tmp_path / "r.sarif"
+    result = finding(values["rule"], values["text"], values["uri"])
+    report.write_text(json.dumps({"runs": [{"results": [result]}]}))
+    done = run_reporter(report)
+    assert done.returncode == 0
+    assert "::" not in done.stdout
+    assert len(done.stdout.splitlines()) == 1
