@@ -244,7 +244,7 @@ fn install_with(
         name: "fake".into(),
         version: Some("1.0.0".into()),
         source: "oci:ghcr.io/acme/fake".into(),
-        manifest: std::fs::read(out.root.join("slopvac-plugin.toml")).ok(),
+        manifest: common::manifest_of(&out.root),
         root: out.root,
         tree: out.hash,
         manifest_digest: Some(Digest::of(b"fake").to_string()),
@@ -1292,7 +1292,7 @@ mod unix_only {
     fn wiring_refuses_captured_bytes_that_are_not_a_manifest_whatever_the_disk_holds() {
         let s = Scratch::new("u-wire-captured-bad");
         let (mut b, _) = manifest_plugin(&s, PY_MANIFEST);
-        b.vp.manifest = Some(b"runtime = [".to_vec());
+        b.vp.manifest = b"runtime = [".to_vec();
         let empty = EnvStore::open(s.dir("no-envs"));
         let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
             .with_python_plugins(&empty)

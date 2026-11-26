@@ -231,12 +231,8 @@ impl<'a> Runner<'a> {
         )
         .with_revocation_cache(self.revocations.clone());
         // From the manifest bytes the loader's hash pass read, never from the disk again.
-        let managed = match vp.manifest.as_deref() {
-            Some(bytes) => {
-                PythonRuntime::from_manifest(&vp.root, bytes).map_err(|_| withheld(code))?
-            }
-            None => None,
-        };
+        let managed = PythonRuntime::from_manifest(&vp.root, &vp.manifest)
+            .map_err(|_| withheld(code))?;
         if managed.is_some() {
             let envs = self.envs.ok_or_else(|| render(&CliText::WhyNoEnvs))?;
             gate = gate.with_python_plugins(envs).map_err(|_| withheld(code))?;

@@ -712,10 +712,11 @@ pub struct VerifiedPlugin {
     pub key_fingerprint: Option<String>,
     /// Key id of the key that signed it, which the revocation list names.
     pub key_id: Option<String>,
-    /// Content of `slopvac-plugin.toml` as the pass that hashed the tree read it, or `None` for
-    /// a tree that has none. The gate selects a managed runtime from these bytes and never opens
-    /// the file again. A code plugin built by the loader always has them.
-    pub manifest: Option<Vec<u8>>,
+    /// Content of `slopvac-plugin.toml` as the pass that hashed the tree read it. Every verified
+    /// plugin is a code plugin, and a code plugin has a manifest, so the field is not optional:
+    /// no path can skip a runtime for a missing manifest. The gate selects a managed runtime
+    /// from these bytes and never opens the file again.
+    pub manifest: Vec<u8>,
 }
 
 /// Whether `name` may not be passed to a plugin: it loads code into the child
@@ -997,12 +998,8 @@ impl TrustGate {
         names.sort();
         for name in names {
             let vp = &self.plugins[&name];
-            // The bytes the hash pass read, never the file on disk: a tree with no manifest
-            // selects no runtime.
-            let Some(bytes) = vp.manifest.as_deref() else {
-                continue;
-            };
-            let Some(runtime) = PythonRuntime::from_manifest(&vp.root, bytes)? else {
+            // The bytes the hash pass read, never the file on disk.
+            let Some(runtime) = PythonRuntime::from_manifest(&vp.root, &vp.manifest)? else {
                 continue;
             };
             let env =

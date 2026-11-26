@@ -262,7 +262,7 @@ impl PluginLoader for TreeLoader {
             name: self.id.clone(),
             version: Some("1.0.0".into()),
             source: "test".into(),
-            manifest: std::fs::read(self.root.join("slopvac-plugin.toml")).ok(),
+            manifest: common::manifest_of(&self.root),
             root: self.root.clone(),
             tree: tree_hash(&self.root).unwrap(),
             manifest_digest: self.manifest_digest.clone(),
@@ -903,7 +903,7 @@ mod python_env {
                 name: "py".into(),
                 version: Some("1.0.0".into()),
                 source: "test".into(),
-                manifest: std::fs::read(self.root.join("slopvac-plugin.toml")).ok(),
+                manifest: common::manifest_of(&self.root),
                 root: self.root.clone(),
                 tree: tree_hash(&self.root).unwrap(),
                 manifest_digest: None,
@@ -971,7 +971,7 @@ mod python_env {
                 root: self.root.clone(),
             }
             .parts();
-            vp.manifest = Some(b"runtime = [".to_vec());
+            vp.manifest = b"runtime = [".to_vec();
             Ok((vp, spec))
         }
     }

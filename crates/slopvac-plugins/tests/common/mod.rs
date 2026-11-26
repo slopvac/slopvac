@@ -19,6 +19,19 @@ use slopvac_plugins::{
     StartError, Timeouts,
 };
 
+/// A manifest for a native code plugin whose tree has none on disk.
+pub const NATIVE_MANIFEST: &str = "schema_version = 3\nid = \"fake\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
+
+/// The manifest bytes of the fixture tree at `root`: the file when it exists, a native manifest
+/// when it is absent, and a failed setup for any other error.
+pub fn manifest_of(root: &Path) -> Vec<u8> {
+    match std::fs::read(root.join("slopvac-plugin.toml")) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => NATIVE_MANIFEST.as_bytes().to_vec(),
+        Err(e) => panic!("cannot read the fixture manifest: {e}"),
+    }
+}
+
 // Fixed-answer gates for the host protocol tests; the trust gate is tested in trust.rs.
 pub struct Allow;
 impl SpawnGate for Allow {

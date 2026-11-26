@@ -10,6 +10,7 @@
     reason = "test code: a panic is a failed test"
 )]
 
+mod common;
 mod oci_server;
 mod revocations;
 mod support;
@@ -674,7 +675,7 @@ fn install(dir: &Path, manifest: &str, key_id: &str) -> VerifiedPlugin {
         name: "fake".into(),
         version: Some("1.0.0".into()),
         source: "oci:ghcr.io/acme/fake".into(),
-        manifest: std::fs::read(out.root.join("slopvac-plugin.toml")).ok(),
+        manifest: common::manifest_of(&out.root),
         root: out.root,
         tree: out.hash,
         manifest_digest: Some(manifest.into()),
