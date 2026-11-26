@@ -822,7 +822,7 @@ fn vocabulary_levels(layer: &toml::Table) -> Result<BTreeMap<String, String>, St
 #[case::authored_category_level(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"warning\"\n", &[])]
 #[case::e4_guard_for_an_authored_rule(
-    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n", &[(&["docs/**"], VOCABULARY_RULE)])]
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n", &[(&["docs/**"] as &[&str], VOCABULARY_RULE)])]
 #[case::override_changes_path(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"o.toml\"\n", &[])]
 fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(
