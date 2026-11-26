@@ -21,7 +21,7 @@ use crate::{
     BlockKind, BlockView, DocumentView, Error, Pattern, PatternBudget, Tag, TagSink, Tagger,
 };
 
-/// The text unit that receives the tag.
+/// The text unit that receives the tag. The span of a tag is the whole unit.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 #[schemars(inline)]

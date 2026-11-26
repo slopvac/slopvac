@@ -19,7 +19,9 @@ use crate::{
     BlockKind, BlockView, DocumentView, Error, Pattern, PatternBudget, Tag, TagSink, normalize_path,
 };
 
-/// How far a matching condition spreads its tag.
+/// How far a matching condition spreads its tag: `sentence` tags each matching sentence,
+/// `paragraph` the matching block, `section` the enclosing heading section (up to the next
+/// heading of the same or a shallower level) and `document` the whole document.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 #[schemars(inline)]
