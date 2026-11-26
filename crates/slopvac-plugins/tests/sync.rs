@@ -678,6 +678,67 @@ fn a_path_archive_is_installed_by_its_digest_and_cached_for_offline_use() {
     );
 }
 
+/// An archive source synced offline, so the store holds a recorded tree. Returns the lock and the
+/// tree, made writable so a test can change it.
+#[cfg(unix)]
+fn recorded_archive(env: &Env) -> (Lockfile, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let archive = targz(FILES);
+    fs::create_dir_all(env.project.path().join("dist")).unwrap();
+    fs::write(env.project.path().join("dist/style.tar.gz"), &archive).unwrap();
+    let lock = lock_text(&[path_archive_entry(&Digest::of(&archive).to_string())]);
+    let report = run(env, Network::Offline, &KeyPolicy::default(), &lock).unwrap();
+    let tree = report.packs[0].tree.clone();
+    fs::set_permissions(&tree, fs::Permissions::from_mode(0o755)).unwrap();
+    (lock, tree)
+}
+
+/// A recorded tree that the walk refuses is reported as refused. It is tampering only when a hash
+/// finished and does not match.
+#[cfg(unix)]
+#[test]
+fn status_reports_a_recorded_tree_the_walk_refuses_as_refused_and_not_tampered() {
+    let env = Env::new();
+    let (lock, tree) = recorded_archive(&env);
+    std::os::unix::fs::symlink("rules", tree.join("link")).unwrap();
+
+    let err = status(&env.store(), env.project.path(), &lock).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            SyncError::Extract {
+                source: slopvac_plugins::extract::ExtractError::Refused(_),
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+}
+
+/// A recorded tree whose manifest cannot be kept is reported with that cause, not as changed.
+#[cfg(unix)]
+#[test]
+fn status_keeps_the_capture_limit_of_a_recorded_tree() {
+    let env = Env::new();
+    let (lock, tree) = recorded_archive(&env);
+    fs::write(tree.join("slopvac-plugin.toml"), vec![b'x'; (1 << 20) + 1]).unwrap();
+
+    let err = status(&env.store(), env.project.path(), &lock).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            SyncError::Extract {
+                source: slopvac_plugins::extract::ExtractError::CaptureLimit { .. },
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+}
+
 #[test]
 fn a_path_archive_that_does_not_match_the_lock_digest_installs_nothing() {
     let env = Env::new();

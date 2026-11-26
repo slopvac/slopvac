@@ -1481,14 +1481,27 @@ fn tree_hash_observed(
 
 /// The walk behind [`tree_hash`] and the capturing variants: one pass that hashes every file,
 /// reads the executable list, and keeps what `keep` asks for, by relative path.
-#[expect(
-    clippy::too_many_lines,
-    reason = "one pass: the hash, the executable list and the capture share its state"
-)]
 fn hash_walk(
     dir: &Path,
     keep: &Keep<'_>,
     after_hash: &mut dyn FnMut(&str, &Path),
+) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
+    hash_walk_with(dir, keep, after_hash, &mut |_, _| {}, MAX_TREE_BYTES)
+}
+
+/// [`hash_walk`] with the tree byte budget given, and `before_read` called for each file after its
+/// metadata was checked and before it is opened. The unit tests use the two to make a file grow
+/// at the one moment a read would see more bytes than its metadata said.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass: the hash, the executable list and the capture share its state"
+)]
+fn hash_walk_with(
+    dir: &Path,
+    keep: &Keep<'_>,
+    after_hash: &mut dyn FnMut(&str, &Path),
+    before_read: &mut dyn FnMut(&str, &Path),
+    tree_budget: u64,
 ) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
     let dir = normalised(dir);
     let dir = dir.as_path();
@@ -1501,7 +1514,7 @@ fn hash_walk(
     let mut names: HashMap<String, (String, bool)> = HashMap::new();
     let mut stack = vec![(dir.to_owned(), String::new())];
     let mut nodes = NodeBudget::new(MAX_TREE_NODES);
-    let mut budget = MAX_TREE_BYTES;
+    let mut budget = tree_budget;
     let mut sidecar: Option<Vec<u8>> = None;
     let mut captured = std::collections::BTreeMap::new();
     let mut keep_left = match keep {
@@ -1566,6 +1579,7 @@ fn hash_walk(
                 if is_executable(&child) {
                     on_disk_exec.insert(rel.clone());
                 }
+                before_read(&rel, &child);
                 let mut f = open_regular(&child).map_err(|e| {
                     if e.kind() == io::ErrorKind::InvalidInput {
                         refused(TransportText::ExtractFileType { path: rel.clone() }.to_string())
@@ -2018,6 +2032,61 @@ mod single_read_tests {
 
         assert!(
             matches!(err, ExtractError::CaptureLimit { cap: 15, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_refused_install_shows_no_absolute_path() {
+        let scratch = tempfile::tempdir().unwrap();
+        let store = scratch.path().join("trees");
+        let mut staged = StagedTree::new(&store, Limits::default()).unwrap();
+        staged.write_file("a", &mut &b"x"[..], false).unwrap();
+        let other = scratch.path().join("other");
+        fs::create_dir(&other).unwrap();
+        fs::write(other.join("a"), b"y").unwrap();
+        let wrong = tree_hash(&other).unwrap();
+
+        let err = staged.install_accepted(&store, &wrong).unwrap_err();
+
+        assert!(matches!(err, ExtractError::Tampered { .. }), "{err:?}");
+        let text = err.to_string();
+        assert!(
+            !text.contains(scratch.path().to_str().unwrap()),
+            "the text names the staging path: {text}"
+        );
+        assert!(
+            !text.split_whitespace().any(|w| w.starts_with('/')),
+            "the text holds an absolute path: {text}"
+        );
+    }
+
+    #[test]
+    fn a_file_that_grows_past_the_cap_as_the_tree_budget_runs_out_is_a_capture_limit() {
+        let scratch = tempfile::tempdir().unwrap();
+        let manifest = scratch.path().join("m.toml");
+        fs::write(&manifest, b"x").unwrap();
+        let grown = manifest.clone();
+
+        // The budget is 512 KiB, under the 1 MiB capture cap. The file grows to 3 MiB (sparse)
+        // between its metadata and its read, so the budget trips first. Reading on, a bounded
+        // probe finds that the cap was crossed too, and the cap decides.
+        let err = hash_walk_with(
+            scratch.path(),
+            &Keep::File("m.toml"),
+            &mut |_, _| {},
+            &mut |rel, _| {
+                if rel == "m.toml" {
+                    let file = fs::OpenOptions::new().write(true).open(&grown).unwrap();
+                    file.set_len(3 << 20).unwrap();
+                }
+            },
+            512 << 10,
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(err, ExtractError::CaptureLimit { cap, .. } if cap == MAX_CAPTURE_BYTES),
             "{err:?}"
         );
     }

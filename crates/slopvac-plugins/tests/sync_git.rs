@@ -369,7 +369,17 @@ fn a_staged_git_tree_changed_after_it_was_checked_is_refused() {
 
     let result = env.sync_in(&store, &remote, &lock, None);
 
-    assert!(result.is_err(), "{result:?}");
+    let err = result.unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            SyncError::Extract {
+                source: slopvac_plugins::extract::ExtractError::Tampered { .. },
+                ..
+            }
+        ),
+        "{err:?}"
+    );
     env.assert_no_trees();
 }
 
@@ -435,6 +445,11 @@ fn a_stored_git_tree_is_synced_from_the_manifest_that_was_checked() {
 
     assert_eq!(second.packs[0].change, Change::Unchanged);
     assert_eq!(second.packs[0].python_env, key);
+    // The observer did swap the file: the tree on disk holds the replacement.
+    assert_eq!(
+        fs::read_to_string(second.packs[0].tree.join("slopvac-plugin.toml")).unwrap(),
+        PY_MANIFEST.replace("python = \"3.12\"", "python = \"3.11\"")
+    );
 }
 
 #[test]
