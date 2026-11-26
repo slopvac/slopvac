@@ -184,7 +184,25 @@ impl PythonRuntime {
             MAX_MANIFEST_BYTES,
         )
         .map_err(|e| RuntimeError::Read(Box::new(e)))?;
-        let text = std::str::from_utf8(&bytes).map_err(RuntimeError::NotUtf8)?;
+        Self::parse(&bytes)
+    }
+
+    /// The runtime that `bytes` select, where `bytes` are the content of the manifest at the root
+    /// of `root` as the pass that hashed the tree read it. Opens no file, so a manifest that
+    /// changes on disk after the hash cannot change the result. Same results and errors as
+    /// [`Self::read`] for the same content.
+    ///
+    /// # Errors
+    /// [`PyEnvError::Manifest`], as for [`Self::read`], except for the errors of reading the file.
+    pub fn from_manifest(root: &Path, bytes: &[u8]) -> std::result::Result<Option<Self>, PyEnvError> {
+        Self::parse(bytes).map_err(|source| PyEnvError::Manifest {
+            path: root.join(MANIFEST_FILE),
+            source,
+        })
+    }
+
+    fn parse(bytes: &[u8]) -> RuntimeResult<Option<Self>> {
+        let text = std::str::from_utf8(bytes).map_err(RuntimeError::NotUtf8)?;
         let manifest: Manifest =
             toml::from_str(text).map_err(|e| RuntimeError::Toml(TomlCause::new(text, &e)))?;
         let Some(plugin) = manifest.plugin else {

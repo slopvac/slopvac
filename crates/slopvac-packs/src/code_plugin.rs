@@ -193,6 +193,7 @@ pub fn load_code_plugin(
             .signature
             .as_ref()
             .map(|s| s.key_id.as_str().to_owned()),
+        manifest: Some(bytes.to_vec()),
     };
     Ok((plugin, spec))
 }

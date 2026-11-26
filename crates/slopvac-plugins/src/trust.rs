@@ -712,6 +712,10 @@ pub struct VerifiedPlugin {
     pub key_fingerprint: Option<String>,
     /// Key id of the key that signed it, which the revocation list names.
     pub key_id: Option<String>,
+    /// Content of `slopvac-plugin.toml` as the pass that hashed the tree read it, or `None` for
+    /// a tree that has none. The gate selects a managed runtime from these bytes and never opens
+    /// the file again. A code plugin built by the loader always has them.
+    pub manifest: Option<Vec<u8>>,
 }
 
 /// Whether `name` may not be passed to a plugin: it loads code into the child

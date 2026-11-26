@@ -262,6 +262,7 @@ impl PluginLoader for TreeLoader {
             name: self.id.clone(),
             version: Some("1.0.0".into()),
             source: "test".into(),
+            manifest: std::fs::read(self.root.join("slopvac-plugin.toml")).ok(),
             root: self.root.clone(),
             tree: tree_hash(&self.root).unwrap(),
             manifest_digest: self.manifest_digest.clone(),
@@ -902,6 +903,7 @@ mod python_env {
                 name: "py".into(),
                 version: Some("1.0.0".into()),
                 source: "test".into(),
+                manifest: std::fs::read(self.root.join("slopvac-plugin.toml")).ok(),
                 root: self.root.clone(),
                 tree: tree_hash(&self.root).unwrap(),
                 manifest_digest: None,
@@ -955,6 +957,41 @@ mod python_env {
             ..spec
         };
         gate.check(&spec).unwrap();
+    }
+
+    /// Hands out `py` with captured manifest bytes that are not a manifest, while the file on
+    /// disk is a valid Python manifest.
+    struct BadCapture {
+        root: PathBuf,
+    }
+
+    impl PluginLoader for BadCapture {
+        fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
+            let (mut vp, spec) = PyLoader {
+                root: self.root.clone(),
+            }
+            .parts();
+            vp.manifest = Some(b"runtime = [".to_vec());
+            Ok((vp, spec))
+        }
+    }
+
+    #[test]
+    fn trust_selects_the_runtime_from_the_manifest_the_loader_captured() {
+        let p = project();
+        p.f.run(&["sync"], false, |s| s.python(p.build()))
+            .result
+            .unwrap();
+        let root = p.f.project().join("plugins/py");
+        let err =
+            p.f.run(&["trust", "py"], false, |s| {
+                s.envs(&p.envs).loader(BadCapture { root })
+            })
+            .result
+            .unwrap_err();
+        assert_eq!(err.code(), "plugins-trust-inputs-failed");
+        assert_eq!(err.exit_code(), 2);
+        assert_eq!(TrustStore::open(p.f.state()).records().unwrap().len(), 0);
     }
 
     #[test]

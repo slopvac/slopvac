@@ -244,6 +244,7 @@ fn install_with(
         name: "fake".into(),
         version: Some("1.0.0".into()),
         source: "oci:ghcr.io/acme/fake".into(),
+        manifest: std::fs::read(out.root.join("slopvac-plugin.toml")).ok(),
         root: out.root,
         tree: out.hash,
         manifest_digest: Some(Digest::of(b"fake").to_string()),
@@ -516,6 +517,21 @@ fn read_runtime(name: &str, manifest: Option<&str>) -> Result<Option<PythonRunti
         fs::write(s.dir("tree").join(MANIFEST_FILE), m).unwrap();
     }
     PythonRuntime::read(&s.dir("tree"))
+}
+
+#[test]
+fn bytes_select_the_same_runtime_as_the_file_that_holds_them() {
+    let m = manifest(
+        "code",
+        "runtime = \"python\"\npython = \"3.12\"\ncommand = \"bin/tagger.py\"\nargs = [\"--stdio\"]\n",
+    );
+    let from_file = read_runtime("same", Some(&m)).unwrap().unwrap();
+    let from_bytes = PythonRuntime::from_manifest(Path::new("tree"), m.as_bytes())
+        .unwrap()
+        .unwrap();
+    assert_eq!(from_bytes.python, from_file.python);
+    assert_eq!(from_bytes.command, from_file.command);
+    assert_eq!(from_bytes.args, from_file.args);
 }
 
 #[test]
@@ -1251,6 +1267,38 @@ mod unix_only {
         fs::write(&file, "VALUE = 'changed, and longer'\n").unwrap();
         let err = g.check(&sp).unwrap_err();
         assert!(matches!(err, PluginError::HashMismatch(_)), "{err:?}");
+    }
+
+    #[test]
+    fn wiring_uses_the_manifest_captured_with_the_hash_not_the_file_on_disk() {
+        let s = Scratch::new("u-wire-captured");
+        let (b, _) = manifest_plugin(&s, PY_MANIFEST);
+        // After the hash, the file on disk stops asking for Python. The captured bytes still do.
+        let path = b.vp.root.join(MANIFEST_FILE);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&path, manifest("code", "command = \"plugin.py\"\n")).unwrap();
+        let empty = EnvStore::open(s.dir("no-envs"));
+        let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
+            .with_python_plugins(&empty)
+            .err()
+            .unwrap();
+        assert!(
+            matches!(&err, PyEnvError::EnvMissing { plugin, python } if plugin == "fake" && python == "3.12"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn wiring_refuses_captured_bytes_that_are_not_a_manifest_whatever_the_disk_holds() {
+        let s = Scratch::new("u-wire-captured-bad");
+        let (mut b, _) = manifest_plugin(&s, PY_MANIFEST);
+        b.vp.manifest = Some(b"runtime = [".to_vec());
+        let empty = EnvStore::open(s.dir("no-envs"));
+        let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
+            .with_python_plugins(&empty)
+            .err()
+            .unwrap();
+        assert!(matches!(&err, PyEnvError::Manifest { .. }), "{err:?}");
     }
 
     #[test]
