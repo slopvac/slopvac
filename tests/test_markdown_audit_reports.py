@@ -186,3 +186,25 @@ def test_an_empty_authored_report_fails_the_audit_step(tmp_path) -> None:
     done = run_audit(tmp_path, {"authored": 'report["documents"] = []'})
     assert done.returncode != 0
     assert "authored: the report omits" in done.stderr
+
+
+_CONFIGURED_FAULTS = {
+    "empty": 'report["documents"] = []',
+    "one-omitted": 'del report["documents"][0]',
+    "one-extra": 'report["documents"].append(dict(report["documents"][0], path="extra.md"))',
+}
+
+
+@pytest.mark.parametrize("fault", list(_CONFIGURED_FAULTS))
+def test_a_partial_configured_report_fails_the_audit_step(tmp_path, fault) -> None:
+    done = run_audit(tmp_path, {"configured": _CONFIGURED_FAULTS[fault]})
+    assert done.returncode != 0
+    assert "configured: the report " in done.stderr
+    _no_workflow_command(done.stderr)
+
+
+@pytest.mark.parametrize("fault", ["empty", "one-omitted"])
+def test_a_partial_all_files_report_fails_the_audit_step(tmp_path, fault) -> None:
+    done = run_audit(tmp_path, {"all-files": _CONFIGURED_FAULTS[fault]})
+    assert done.returncode != 0
+    assert "Audit incomplete" in done.stderr

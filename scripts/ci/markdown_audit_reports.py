@@ -12,6 +12,8 @@ fail). It is a problem only where `allow_false` is off, as in the authored scan.
 
 from __future__ import annotations
 
+import subprocess
+
 
 def gate_problems(name: str, report: object, *, allow_false: bool) -> list[str]:
     """Return one message per document of `report` whose gate verdict is unusable.
@@ -50,3 +52,18 @@ def document_set_problems(name: str, reported: list[str], expected: set[str]) ->
     if duplicates := len(reported) - len(found):
         problems.append(f"{name}: the report holds {duplicates} duplicate document(s)")
     return problems
+
+
+def excluded_by_config(files: list[str], patterns: list[str]) -> set[str]:
+    """Return the tracked `files` that the config's `exclude` patterns select out.
+
+    The engine reads `exclude` as gitignore patterns, so git applies them here: no second
+    glob matcher, and no list of the excluded files in the workflow.
+    """
+    if not patterns:
+        return set()
+    command = ["git", "ls-files", "-z", "--cached", "--ignored"]
+    for pattern in patterns:
+        command += ["--exclude", pattern]
+    out = subprocess.run(command, capture_output=True, check=True, text=True).stdout
+    return {path for path in out.split("\0") if path} & set(files)

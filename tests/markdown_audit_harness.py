@@ -41,6 +41,8 @@ documents = [
         "unchecked": [],
     }}
     for path in files
+    # The configured scan applies the root slopvac.toml, which excludes CHANGELOG.md.
+    if not (scan == "configured" and path == "CHANGELOG.md")
 ]
 report = {{
     "documents": documents,
