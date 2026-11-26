@@ -431,9 +431,7 @@ fn a_stored_git_tree_is_synced_from_the_manifest_that_was_checked() {
                 fs::write(&manifest, &swapped).unwrap();
             }
         }));
-    let second = env
-        .sync_in(&store, &remote, &lock, Some(build()))
-        .unwrap();
+    let second = env.sync_in(&store, &remote, &lock, Some(build())).unwrap();
 
     assert_eq!(second.packs[0].change, Change::Unchanged);
     assert_eq!(second.packs[0].python_env, key);

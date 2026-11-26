@@ -1590,7 +1590,9 @@ mod python {
             matches!(
                 &err,
                 SyncError::PythonEnv {
-                    source: PyEnvError::Tree(slopvac_plugins::extract::ExtractError::Tampered { .. }),
+                    source: PyEnvError::Tree(
+                        slopvac_plugins::extract::ExtractError::Tampered { .. }
+                    ),
                     ..
                 }
             ),
@@ -1649,7 +1651,9 @@ mod python {
             matches!(
                 &err,
                 SyncError::PythonEnv {
-                    source: PyEnvError::Tree(slopvac_plugins::extract::ExtractError::Tampered { .. }),
+                    source: PyEnvError::Tree(
+                        slopvac_plugins::extract::ExtractError::Tampered { .. }
+                    ),
                     ..
                 }
             ),
@@ -1667,8 +1671,8 @@ mod python {
             ("pylock.toml", EMPTY_LOCK),
         ]);
 
-        let err = status_with_python(&t.env.store(), &t.envs, t.env.project.path(), &t.lock)
-            .unwrap_err();
+        let err =
+            status_with_python(&t.env.store(), &t.envs, t.env.project.path(), &t.lock).unwrap_err();
 
         assert!(
             matches!(

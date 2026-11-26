@@ -344,7 +344,7 @@ impl<'a> Syncer<'a> {
 
         let mut states = Vec::with_capacity(acquired.len());
         for (pack, how) in &acquired {
-            if matches!(how, Acquired::Archive(_) | Acquired::Staged(_)) {
+            if matches!(how, Acquired::Archive(_) | Acquired::Staged(..)) {
                 let state = self.store.inspect(&pack.digest)?;
                 let mut set_aside = None;
                 if let TreeState::Tampered(dir) = &state {
@@ -1132,13 +1132,12 @@ fn status_in(
                         PackState::InPlaceChanged(dir)
                     }
                 }
-                _ => match store
-                    .inspect_accepted(&pack.digest)
-                    .map_err(|source| SyncError::Extract {
+                _ => match store.inspect_accepted(&pack.digest).map_err(|source| {
+                    SyncError::Extract {
                         id: pack.id.clone(),
                         source,
-                    })?
-                {
+                    }
+                })? {
                     (TreeState::Absent, _) => PackState::NotInstalled,
                     (TreeState::Intact(dir), seen) => {
                         accepted = seen;
