@@ -531,11 +531,19 @@ fn trust_of_a_synced_code_plugin_records_trust_and_exits_0() {
         .slopvac()
         .args(["--offline", "plugins", "status"])
         .assert()
-        .stdout(predicate::str::contains("trusted"))
-        .stdout(predicate::str::contains("not trusted").not());
+        .success()
+        .stdout(predicate::function(|out: &str| {
+            out.lines().any(|line| {
+                line.starts_with("fmt 1.0.0 (code): ")
+                    && line.ends_with("; trusted")
+                    && !line.contains("not trusted")
+            })
+        }));
 }
 
 /// A locked code plugin with no installed tree fails for that reason, not for a missing loader.
+/// The debug log names the stable text id of the refusal and the plugin, since the command
+/// withholds the loader's own text.
 #[test]
 fn trust_of_a_locked_code_plugin_that_is_not_synced_exits_2() {
     let sandbox = Sandbox::new();
@@ -546,11 +554,52 @@ fn trust_of_a_locked_code_plugin_that_is_not_synced_exits_2() {
     );
     sandbox
         .slopvac()
+        .env("SLOPVAC_LOG", "debug")
         .args(["--offline", "plugins", "trust", "fmt"])
         .assert()
         .code(2)
-        .stderr(predicate::str::starts_with(
+        .stderr(predicate::str::contains(
             "error[plugins-trust-inputs-failed]: ",
         ))
-        .stderr(predicate::str::contains("the plugin files are not loaded").not());
+        .stderr(predicate::str::contains("the plugin files are not loaded").not())
+        .stderr(predicate::str::contains("plugin-not-installed"))
+        .stderr(predicate::str::contains("fmt"));
+}
+
+/// Trust is pinned to the synced tree: a file changed after sync is refused, and nothing is
+/// recorded. The debug log names the stable text id of the refusal.
+#[test]
+fn trust_of_a_code_plugin_changed_since_sync_exits_2_and_records_nothing() {
+    let sandbox = Sandbox::new();
+    lock_code_plugin(&sandbox);
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+    let manifest = sandbox.project().join("plugins/fmt/slopvac-plugin.toml");
+    let original = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        &manifest,
+        original.replace("hooks = []", "args = [\"--extra\"]\nhooks = []"),
+    )
+    .unwrap();
+    sandbox
+        .slopvac()
+        .env("SLOPVAC_LOG", "debug")
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error[plugins-trust-inputs-failed]: ",
+        ))
+        .stderr(predicate::str::contains("plugin-tampered"))
+        .stderr(predicate::str::contains("fmt"));
+    fs::write(&manifest, original).unwrap();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("not trusted"));
 }

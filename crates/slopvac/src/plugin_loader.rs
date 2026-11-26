@@ -95,3 +95,136 @@ impl PluginLoader for InstalledPlugins<'_> {
         load_code_plugin(locked, &root, &context).map_err(|e| e.to_string())
     }
 }
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    const PLUGIN_TOML: &str = "schema_version = 3\nid = \"fmt\"\nversion = \"1.0.0\"\n\
+        slopvac_api = 1\nkind = \"code\"\n[provides]\n[plugin]\ncommand = \"bin/fmt\"\n\
+        args = [\"--serve\"]\nnetwork = false\nhooks = []\n\
+        features = { required = [], optional = [] }\n";
+
+    struct World {
+        dir: tempfile::TempDir,
+        policy: KeyPolicy,
+    }
+
+    impl World {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            fs::create_dir_all(dir.path().join("project/.slopvac")).unwrap();
+            fs::create_dir_all(dir.path().join("store")).unwrap();
+            Self {
+                dir,
+                policy: KeyPolicy::compiled().unwrap(),
+            }
+        }
+
+        fn project(&self) -> PathBuf {
+            self.dir.path().join("project")
+        }
+
+        fn lock_path(&self) -> PathBuf {
+            self.project().join(".slopvac/plugins.lock")
+        }
+
+        /// A code plugin in the project at `plugins/fmt`, locked by its tree hash. Returns that hash.
+        fn path_plugin(&self) -> String {
+            let plugin = self.project().join("plugins/fmt");
+            fs::create_dir_all(plugin.join("bin")).unwrap();
+            fs::write(plugin.join("slopvac-plugin.toml"), PLUGIN_TOML).unwrap();
+            fs::write(plugin.join("bin/fmt"), "").unwrap();
+            let digest = tree_hash(&plugin).unwrap().as_str().to_owned();
+            fs::write(
+                self.lock_path(),
+                format!(
+                    "schema_version = 3\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
+                     slopvac_api = 1\nsource = \"plugins/fmt\"\ndigest = \"{digest}\"\n"
+                ),
+            )
+            .unwrap();
+            digest
+        }
+
+        fn loader(&self) -> InstalledPlugins<'_> {
+            InstalledPlugins::new(
+                &self.project(),
+                &self.dir.path().join("store"),
+                &self.policy,
+            )
+        }
+
+        fn fmt() -> PackId {
+            "fmt".parse().unwrap()
+        }
+    }
+
+    #[test]
+    fn a_locked_code_plugin_with_no_installed_tree_is_refused_as_not_installed() {
+        let world = World::new();
+        fs::write(
+            world.lock_path(),
+            "schema_version = 3\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
+             slopvac_api = 1\nsource = \"oci://registry.invalid/acme/fmt:1.0.0\"\n\
+             digest = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n",
+        )
+        .unwrap();
+        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+        assert!(
+            matches!(
+                refusal,
+                LoadRefusal::Synced(SyncedError::NotInstalled { .. })
+            ),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn an_intact_in_place_plugin_carries_the_hash_the_lock_pins() {
+        let world = World::new();
+        let digest = world.path_plugin();
+        let (plugin, _) = world.loader().try_load(&World::fmt()).unwrap();
+        assert_eq!(plugin.tree.as_str(), digest);
+    }
+
+    #[test]
+    fn an_in_place_plugin_that_changed_since_the_lock_is_refused_as_tampered() {
+        let world = World::new();
+        world.path_plugin();
+        let manifest = world.project().join("plugins/fmt/slopvac-plugin.toml");
+        fs::write(&manifest, PLUGIN_TOML.replace("--serve", "--other")).unwrap();
+        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+        assert!(
+            matches!(refusal, LoadRefusal::Synced(SyncedError::Tampered { .. })),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_lock_is_refused_as_unreadable_and_not_as_unlocked() {
+        let world = World::new();
+        fs::create_dir_all(world.lock_path()).unwrap();
+        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+        assert!(
+            matches!(refusal, LoadRefusal::Lock(RunError::LockUnreadable { .. })),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn an_invalid_lock_is_refused_as_invalid_and_not_as_unlocked() {
+        let world = World::new();
+        fs::write(world.lock_path(), "schema_version = [\n").unwrap();
+        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+        assert!(
+            matches!(refusal, LoadRefusal::Lock(RunError::LockInvalid { .. })),
+            "{refusal:?}"
+        );
+    }
+}

@@ -128,15 +128,13 @@ fn the_declaration_comes_from_the_plugin_table() {
 }
 
 #[test]
-fn a_path_source_plugin_has_no_manifest_digest_and_no_key() {
+fn a_plugin_takes_its_identity_from_the_lock_and_the_context() {
     let dir = tempfile::tempdir().unwrap();
     let context = install(dir.path(), &manifest("acme", "1.0.0", TABLE));
     let (plugin, _) = load_code_plugin(&path_locked(), dir.path(), &context).unwrap();
     assert_eq!(plugin.name, "acme");
     assert_eq!(plugin.version.as_deref(), Some("1.0.0"));
     assert_eq!(plugin.tree, context.tree().clone());
-    assert_eq!(plugin.manifest_digest, None);
-    assert_eq!(plugin.key_id, None);
 }
 
 #[test]
@@ -162,11 +160,67 @@ fn a_signed_registry_plugin_takes_its_digest_and_key_from_the_lock() {
 }
 
 #[test]
-fn the_error_text_comes_from_the_catalog_and_holds_no_file_content() {
+fn a_mismatch_names_the_lock_id_and_never_the_manifest_text() {
     let dir = tempfile::tempdir().unwrap();
     let context = install(dir.path(), &manifest("evil", "1.0.0", TABLE));
     let error = load_code_plugin(&path_locked(), dir.path(), &context).unwrap_err();
     let text = error.to_string();
     assert!(text.contains("acme"), "{text}");
     assert!(!text.contains("evil"), "{text}");
+}
+#[test]
+fn a_path_source_plugin_has_no_manifest_digest_and_no_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let context = install(dir.path(), &manifest("acme", "1.0.0", TABLE));
+    let (plugin, _) = load_code_plugin(&path_locked(), dir.path(), &context).unwrap();
+    assert_eq!(plugin.manifest_digest, None);
+    assert_eq!(plugin.key_id, None);
+}
+
+/// The tree hash is the caller's: the loader never replaces it with a hash of its own, so a
+/// caller that pins trust to the synced tree keeps what it pinned.
+#[test]
+fn the_tree_in_the_plugin_is_the_hash_the_caller_passed() {
+    let dir = tempfile::tempdir().unwrap();
+    install(dir.path(), &manifest("acme", "1.0.0", TABLE));
+    let pinned =
+        slopvac_plugins::extract::TreeHash::parse(&format!("sha256:{}", "ab".repeat(32))).unwrap();
+    let context = CodePluginContext::new(pinned.clone(), PATH_ENV);
+    let (plugin, _) = load_code_plugin(&path_locked(), dir.path(), &context).unwrap();
+    assert_eq!(plugin.tree, pinned);
+    assert_ne!(plugin.tree, tree_hash(dir.path()).unwrap());
+}
+
+#[rstest]
+#[case::data_plugin("data", manifest("acme", "1.0.0", TABLE), "plugin-loader-not-code")]
+#[case::id_differs("code", manifest("evil", "1.0.0", TABLE), "plugin-manifest-mismatch")]
+#[case::version_differs("code", manifest("acme", "2.0.0", TABLE), "plugin-manifest-mismatch")]
+#[case::unsafe_command(
+    "code",
+    manifest("acme", "1.0.0", &TABLE.replace("bin/acme", "../x")),
+    "plugin-loader-command-unsafe"
+)]
+#[case::invalid_manifest(
+    "code",
+    "schema_version = 3\nid = \"acme\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[provides]\n".to_owned(),
+    "plugin-loader-manifest-invalid"
+)]
+fn a_refusal_reports_its_catalog_code(
+    #[case] lock_kind: &str,
+    #[case] manifest_text: String,
+    #[case] code: &str,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let context = install(dir.path(), &manifest_text);
+    let lock = locked(lock_kind, "source = \"plugins/acme\"\n");
+    let error = load_code_plugin(&lock, dir.path(), &context).unwrap_err();
+    assert_eq!(error.code(), code);
+}
+
+#[test]
+fn a_tree_without_a_manifest_reports_the_unreadable_code() {
+    let dir = tempfile::tempdir().unwrap();
+    let context = CodePluginContext::new(tree_hash(dir.path()).unwrap(), PATH_ENV);
+    let error = load_code_plugin(&path_locked(), dir.path(), &context).unwrap_err();
+    assert_eq!(error.code(), "plugin-loader-manifest-unreadable");
 }
