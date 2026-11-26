@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use crate::lint_messages::{LintFixMessage, LintFixReason};
 use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
+use slopvac_comments::Language;
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{
@@ -210,22 +211,29 @@ pub(crate) fn budget_data_of(
 }
 
 /// The engine kind for a discovered file, or why there is none.
-fn kind_of_file(kind: &FileKind) -> Result<Kind, &'static str> {
+///
+/// A source file or a TOML file is read as comments. `file_name` picks the dialect, such as
+/// `.tsx`.
+fn kind_of_file(kind: &FileKind, file_name: &str) -> Result<Kind, &'static str> {
     match kind {
         FileKind::Markdown => Ok(Kind::Markdown),
         FileKind::Mdx => Ok(Kind::Mdx),
         FileKind::Rst => Ok(Kind::Rst),
-        // STUB(slopvac-8l4.12.28): HTML and plain text have no engine parser yet, and
-        // comment-mode rules run once slopvac-8l4.3.26 lands.
-        FileKind::Html | FileKind::Text | FileKind::Toml | FileKind::Source(_) => {
-            Err("this file type has no engine parser yet")
-        }
+        FileKind::Toml => Ok(Kind::Comments(Language::Toml)),
+        FileKind::Source(name) => Language::from_name(name)
+            .map(|language| Kind::Comments(language.refine(file_name)))
+            .ok_or("this language has no engine parser yet"),
+        // STUB(slopvac-8l4.3.84): HTML and plain text have no engine parser yet.
+        FileKind::Html | FileKind::Text => Err("this file type has no engine parser yet"),
     }
 }
 
 fn kind_of_language(plan: &StdinPlan) -> Result<Kind, &'static str> {
     if plan.mode != "prose" {
-        return Err("comment mode has no engine parser yet");
+        // Stdin has no file name, so no dialect is refined.
+        return Language::from_name(&plan.language)
+            .map(Kind::Comments)
+            .ok_or("this language has no engine parser yet");
     }
     match plan.language.as_str() {
         "markdown" => Ok(Kind::Markdown),
@@ -718,7 +726,10 @@ fn collect_targets(
             {
                 continue;
             }
-            let kind = match kind_of_file(&file.kind) {
+            let kind = match kind_of_file(
+                &file.kind,
+                file.path.file_name().and_then(|n| n.to_str()).unwrap_or_default(),
+            ) {
                 Ok(kind) => kind,
                 Err(why) => {
                     run.skip("input-unsupported", &shown, format!("{shown}: {why}"));
@@ -1447,6 +1458,59 @@ mod read_tests {
     }
 }
 
+#[cfg(test)]
+mod kind_tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::rust(FileKind::Source("rust"), "a.rs", Some(Language::Rust))]
+    #[case::python(FileKind::Source("python"), "a.py", Some(Language::Python))]
+    #[case::typescript(FileKind::Source("typescript"), "a.ts", Some(Language::TypeScript))]
+    #[case::tsx(FileKind::Source("typescript"), "a.tsx", Some(Language::Tsx))]
+    #[case::toml(FileKind::Toml, "a.toml", Some(Language::Toml))]
+    #[case::unknown(FileKind::Source("no-such-language"), "a.xyz", None)]
+    fn a_file_reads_as_comments_in_its_language(
+        #[case] kind: FileKind,
+        #[case] file_name: &str,
+        #[case] language: Option<Language>,
+    ) {
+        let got = kind_of_file(&kind, file_name);
+        match language {
+            Some(language) => assert_eq!(got, Ok(Kind::Comments(language))),
+            None => assert!(got.is_err()),
+        }
+    }
+
+    #[rstest]
+    #[case::html(FileKind::Html)]
+    #[case::text(FileKind::Text)]
+    fn html_and_text_stay_unsupported(#[case] kind: FileKind) {
+        assert!(kind_of_file(&kind, "a").is_err());
+    }
+
+    #[rstest]
+    #[case::python("code-comments", "python", Some(Kind::Comments(Language::Python)))]
+    #[case::typescript(
+        "code-comments",
+        "typescript",
+        Some(Kind::Comments(Language::TypeScript))
+    )]
+    #[case::unknown("code-comments", "no-such-language", None)]
+    #[case::markdown("prose", "markdown", Some(Kind::Markdown))]
+    #[case::prose_python("prose", "python", None)]
+    fn stdin_kind_follows_mode_and_language(
+        #[case] mode: &'static str,
+        #[case] language: &str,
+        #[case] want: Option<Kind>,
+    ) {
+        let plan = StdinPlan {
+            mode,
+            language: language.to_owned(),
+        };
+        assert_eq!(kind_of_language(&plan).ok(), want);
+    }
+}
 #[cfg(test)]
 mod skip_tests {
     use super::*;
