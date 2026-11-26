@@ -647,7 +647,7 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> 
         written: &doc,
         own: authored_top,
         may_guard: false,
-        category: vocabulary_category_level(&authored),
+        category: vocabulary_category_level(&authored)?,
     }];
     for block in override_blocks(&doc) {
         let counterpart = authored_blocks
@@ -658,7 +658,10 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> 
             Some(c) => vocabulary_levels(c)?,
             None => BTreeMap::new(),
         };
-        let category = counterpart.and_then(vocabulary_category_level);
+        let category = counterpart
+            .map(vocabulary_category_level)
+            .transpose()?
+            .flatten();
         layers.push(Layer {
             written: block,
             own,
@@ -684,8 +687,9 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> 
                 guards.insert((files_of(layer), id.clone()));
             }
         }
+        let written_category = vocabulary_category_level(layer)?;
         if let Some(level) = category
-            && vocabulary_category_level(layer).as_ref() != Some(level)
+            && written_category.as_ref() != Some(level)
         {
             let at = if *may_guard {
                 format!("override {:?}", files_of(layer))
@@ -734,17 +738,26 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> 
     })
 }
 
-/// The level of the `ste-words` category in one layer, in its bare or `core:` spelling, as a
-/// bare string or a `severity`. `None` when the layer sets no level for it.
-fn vocabulary_category_level(layer: &toml::Table) -> Option<String> {
-    let categories = layer.get("categories")?.as_table()?;
-    ["ste-words", "core:ste-words"].iter().find_map(|key| {
-        let entry = categories.get(*key)?;
+/// The level of the `ste-words` category in one layer, as a bare string or a `severity`, under
+/// its bare and `core:` spellings. `None` when the layer sets no level for it. The two
+/// spellings must not disagree, as with the rule entries.
+fn vocabulary_category_level(layer: &toml::Table) -> Result<Option<String>, String> {
+    let Some(categories) = layer.get("categories").and_then(toml::Value::as_table) else {
+        return Ok(None);
+    };
+    let level_of = |key: &str| -> Option<String> {
+        let entry = categories.get(key)?;
         entry
             .as_str()
             .or_else(|| entry.get("severity")?.as_str())
             .map(str::to_owned)
-    })
+    };
+    match (level_of("ste-words"), level_of("core:ste-words")) {
+        (Some(bare), Some(core)) if bare != core => Err(format!(
+            "category ste-words conflicts: {bare} and {core} under its bare and core: spellings"
+        )),
+        (bare, core) => Ok(bare.or(core)),
+    }
 }
 
 /// The `files` patterns of an override block.
