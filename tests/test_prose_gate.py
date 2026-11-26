@@ -341,5 +341,62 @@ def test_a_sarif_with_a_bad_or_empty_run_is_reported(exported_sarif, variant) ->
     assert _sarif_problems(variant(copy.deepcopy(exported_sarif))) != []
 
 
+def _location(uri: str) -> dict:
+    return {
+        "physicalLocation": {
+            "artifactLocation": {"uri": uri},
+            "region": {"startLine": 1},
+        }
+    }
+
+
+def _result_with(sarif: dict, **changes) -> dict:
+    sarif = copy.deepcopy(sarif)
+    result = sarif["runs"][0]["results"][0]
+    for key, value in changes.items():
+        if value is _MISSING:
+            result.pop(key, None)
+        else:
+            result[key] = value
+    return sarif
+
+
+_MISSING = object()
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        pytest.param(
+            lambda s: _result_with(
+                s, locations=[_location(FIXTURE), _location("/abs/slop-laden.md")]
+            ),
+            id="valid-first-absolute-second",
+        ),
+        pytest.param(
+            lambda s: _result_with(
+                s, locations=[_location(FIXTURE), _location("file:///abs/x.md")]
+            ),
+            id="valid-first-file-uri-second",
+        ),
+        pytest.param(lambda s: _result_with(s, locations=[]), id="empty-locations"),
+        pytest.param(lambda s: _result_with(s, locations=_MISSING), id="no-locations"),
+        pytest.param(
+            lambda s: _result_with(s, relatedLocations=[_location("/abs/x.md")]),
+            id="related-location-absolute",
+        ),
+    ],
+)
+def test_a_result_with_a_bad_or_missing_location_is_reported(
+    exported_sarif, variant
+) -> None:
+    assert _sarif_problems(variant(exported_sarif)) != []
+
+
+def test_a_result_with_a_valid_related_location_is_accepted(exported_sarif) -> None:
+    sarif = _result_with(exported_sarif, relatedLocations=[_location(FIXTURE)])
+    assert _sarif_problems(sarif) == []
+
+
 def test_a_sarif_with_another_version_is_reported(exported_sarif) -> None:
     assert _sarif_problems({**exported_sarif, "version": "2.0.0"}) != []
