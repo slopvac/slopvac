@@ -167,6 +167,20 @@ impl Client {
         Self::build(creds, false, Timeouts::default(), &TestNet::default())
     }
 
+    /// Test seam: a production client (it refuses every `http://` URL) that adds one to
+    /// `attempts` each time it is asked to send a request, before it checks the URL. A test
+    /// proves that a path makes no request by asserting zero.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn counting_for_tests(
+        creds: Box<dyn CredentialSource>,
+        attempts: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) -> Self {
+        let mut client = Self::with_credentials(creds);
+        client.transport = client.transport.counting(attempts);
+        client
+    }
+
     /// Test seam: like [`Client::with_credentials`] but speaks plain HTTP to
     /// loopback registries, which integration tests need for their fake server.
     ///

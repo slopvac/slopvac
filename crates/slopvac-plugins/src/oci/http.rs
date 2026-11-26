@@ -244,6 +244,7 @@ pub(crate) struct TestNet {
 pub(crate) struct Transport {
     config: Config,
     allow_loopback_http: bool,
+    attempts: Option<Arc<std::sync::atomic::AtomicUsize>>,
 }
 
 #[derive(Clone)]
@@ -423,7 +424,14 @@ impl Transport {
         Self {
             config,
             allow_loopback_http,
+            attempts: None,
         }
+    }
+
+    /// Count each request this transport is asked to send, before it checks the URL.
+    pub(crate) fn counting(mut self, attempts: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+        self.attempts = Some(attempts);
+        self
     }
 
     /// Where a redirect from `url` to `location` may go. This is the only check a
@@ -440,6 +448,9 @@ impl Transport {
     }
 
     pub(crate) fn send(&self, req: &Req<'_>) -> Result<Response<Body>, OciError> {
+        if let Some(attempts) = &self.attempts {
+            attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
         let mut url = req.url.clone();
         let mut auth = req.authorization.clone();
         let mut hops = 0;

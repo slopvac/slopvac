@@ -1635,20 +1635,25 @@ fn an_online_syncer_with_a_cache_miss_checks_the_cache_only_and_makes_no_request
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
-    // The production client refuses every request it is asked to make: a syncer that reached
-    // for the network would fail with a fetch error instead of the cache miss below. The
-    // servers are watched as well.
-    let c = Client::with_credentials(Box::new(Anonymous));
+    // The client counts each request it is asked to send, before it refuses the URL, and the
+    // revocation source counts each use, before it touches the cache or the network.
+    let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let touched = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let c = Client::counting_for_tests(Box::new(Anonymous), std::sync::Arc::clone(&attempts));
     let pol = policy("acme", &[&key]);
     let lock = oci_lock(&server.registry(), &p);
     let store = env.store();
-    let revs = env.revocations(NOW);
+    let revs = env
+        .revocations(NOW)
+        .with_access_counter_for_tests(std::sync::Arc::clone(&touched));
 
     let err = Syncer::new(&store, Network::Online(&c), &pol, env.project.path(), &revs)
         .verify_cached_signature(locked_style(&lock))
         .unwrap_err();
 
     assert_eq!(err.code(), "offline-plugin-missing");
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(touched.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert!(server.requests().is_empty(), "{:?}", server.requests());
     assert!(
         env.list.server.requests().is_empty(),
