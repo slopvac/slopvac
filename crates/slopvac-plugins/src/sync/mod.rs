@@ -486,7 +486,7 @@ impl<'a> Syncer<'a> {
         &self,
         pack: &LockedPack,
         text: &str,
-        fetch: bool,
+        may_fetch: bool,
     ) -> Result<(Reference, Manifest, String), SyncError> {
         let id = &pack.id;
         let layout = |why: &str| SyncError::Layout {
@@ -521,7 +521,7 @@ impl<'a> Syncer<'a> {
             .unwrap_or_default()
             .to_owned();
 
-        let body = self.manifest_bytes(pack, &reference, &locked, fetch)?;
+        let body = self.manifest_bytes(pack, &reference, &locked, may_fetch)?;
         let manifest: Manifest =
             serde_json::from_slice(&body).map_err(|e| layout(&messages::manifest_parse(&e)))?;
         if manifest
