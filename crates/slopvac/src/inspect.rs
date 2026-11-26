@@ -489,8 +489,18 @@ fn suppression(rule: &LoadedRule) -> Option<String> {
 /// `unknown-rule` when the ID matches no shipped rule; a bare 2.x ID gets a pointer to
 /// `slopvac migrate`.
 pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
-    let id = m.get_one::<String>("rule").expect("required");
     let (set, sev) = load(m)?;
+    explain_in(&set, &sev, m, out)
+}
+
+/// `slopvac explain RULE` over a given catalog and severities.
+fn explain_in(
+    set: &Catalog,
+    sev: &Severities,
+    m: &ArgMatches,
+    out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
+    let id = m.get_one::<String>("rule").expect("required");
     let found = slopvac_model::RuleId::new(id.clone())
         .ok()
         .and_then(|rid| set.get(&rid));
@@ -511,7 +521,7 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
         .expect("a rule has a category");
     let text = match format_of(m) {
         "json" => {
-            let mut value = rule_json(category, rule, &sev);
+            let mut value = rule_json(category, rule, sev);
             if let Value::Object(map) = &mut value {
                 map.insert("schema_version".into(), json!(SchemaVersion::VALUE));
                 if let Some(s) = suppression(rule) {
@@ -522,9 +532,9 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
         }
         "md" => format!(
             "{DISABLE}\n{}\n{ENABLE}\n",
-            rule_block(rule, &sev).join("\n")
+            rule_block(rule, sev).join("\n")
         ),
-        _ => explain_text(rule, &sev),
+        _ => explain_text(rule, sev),
     };
     emit(out, &text)
 }
@@ -701,5 +711,117 @@ mod tests {
         let text = run_rules(&["--category", value]).unwrap();
         assert_eq!(text.lines().count(), count + 1, "{text}");
         assert!(text.contains(id), "{text}");
+    }
+
+    /// The catalog of a full run plus a plugin `acme` that ships the category `terms` and the
+    /// rule `acme:terms.casing`, which has the same category id as a core category.
+    fn core_and_acme() -> Catalog {
+        let mut sets = Catalog::load().expect("the rules load").into_sets();
+        sets.extend(
+            crate::rule_catalog::catalog_with_rules(&[("acme", "terms", "casing")]).into_sets(),
+        );
+        Catalog::from_sets(sets)
+    }
+
+    fn run(command: &str, args: &[&str]) -> String {
+        let mut words = vec!["slopvac", command];
+        words.extend_from_slice(args);
+        let matches = crate::cli::command().try_get_matches_from(words).unwrap();
+        let (_, m) = matches.subcommand().unwrap();
+        let catalog = core_and_acme();
+        let sev = Severities::unconfigured().for_catalog(&catalog);
+        let mut out = Vec::new();
+        if command == "rules" {
+            rules_in(&catalog, &sev, m, &mut out).unwrap();
+        } else {
+            explain_in(&catalog, &sev, m, &mut out).unwrap();
+        }
+        String::from_utf8(out).unwrap()
+    }
+
+    fn run_json(command: &str, args: &[&str]) -> Value {
+        let mut words = args.to_vec();
+        words.extend(["--format", "json"]);
+        serde_json::from_str(&run(command, &words)).unwrap()
+    }
+
+    const ACME_RULE: &str = "acme:terms.casing";
+    const CORE_RULE: &str = "core:terms.casing";
+
+    #[test]
+    fn a_listing_of_one_other_plugin_names_that_plugin() {
+        let v = run_json("rules", &["--category", "acme:terms"]);
+        assert_eq!(v["plugin"], "acme");
+        assert_eq!(v["plugins"], json!(["acme"]));
+        let rules = v["rules"].as_array().unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["id"], ACME_RULE);
+        assert_eq!(rules[0]["plugin"], "acme");
+    }
+
+    #[test]
+    fn a_mixed_listing_names_every_plugin_and_each_entry_its_own() {
+        let v = run_json("rules", &[]);
+        assert_eq!(v["plugins"], json!(["core", "acme"]));
+        let plugin_of = |id: &str| {
+            v["rules"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|e| e["id"] == id)
+                .unwrap_or_else(|| panic!("{id} is listed"))["plugin"]
+                .clone()
+        };
+        assert_eq!(plugin_of(CORE_RULE), "core");
+        assert_eq!(plugin_of(ACME_RULE), "acme");
+        let categories: Vec<(&str, &str)> = v["categories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["id"] == "terms")
+            .map(|c| ("terms", c["plugin"].as_str().unwrap()))
+            .collect();
+        assert_eq!(categories, [("terms", "core"), ("terms", "acme")]);
+    }
+
+    #[test]
+    fn a_qualified_category_filter_does_not_match_a_category_of_another_plugin() {
+        // `terms` exists in `core` and `acme`; each qualified filter lists only its own rule.
+        let ids = |value: &str| -> Vec<String> {
+            run_json("rules", &["--category", value])["rules"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["id"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        assert_eq!(ids("core:terms"), [CORE_RULE]);
+        assert_eq!(ids("acme:terms"), [ACME_RULE]);
+        assert_eq!(ids("acme:ai-residue"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_rule_of_another_plugin_has_no_url_in_json_and_a_core_rule_keeps_its_page() {
+        let listed = run_json("rules", &["--category", "acme:terms"]);
+        assert!(listed["rules"][0].get("url").is_none(), "{listed}");
+        let explained = run_json("explain", &[ACME_RULE]);
+        assert_eq!(explained["id"], ACME_RULE, "{explained}");
+        assert!(explained.get("url").is_none(), "{explained}");
+        let core = run_json("explain", &[CORE_RULE]);
+        assert!(core["url"].as_str().is_some(), "{core}");
+    }
+
+    #[rstest::rstest]
+    #[case::rules_text("rules", &["--category", "acme:terms"])]
+    #[case::rules_markdown("rules", &["--category", "acme:terms", "--format", "md"])]
+    #[case::explain_text("explain", &[ACME_RULE])]
+    #[case::explain_markdown("explain", &[ACME_RULE, "--format", "md"])]
+    fn a_rule_of_another_plugin_has_no_page_link_in_text_and_markdown(
+        #[case] command: &str,
+        #[case] args: &[&str],
+    ) {
+        let out = run(command, args);
+        assert!(out.contains(ACME_RULE), "the rule is listed: {out}");
+        assert!(!out.contains("Page:"), "{out}");
     }
 }

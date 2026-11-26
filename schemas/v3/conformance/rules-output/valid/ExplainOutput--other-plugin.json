@@ -1,7 +1,7 @@
 {
   "ai_signal": "none",
   "ai_signal_source": "unmeasured",
-  "category": "ai-residue",
+  "category": "style",
   "citation": {
     "note": "Enforced at every tier because the match is never a register question.",
     "source": "vale-styles/ai-residue/ChatLeakage.yml",
@@ -31,6 +31,5 @@
   "scope": "prose",
   "severity": "error",
   "text_type": "any",
-  "url": "https://slopvac.github.io/slopvac/v3/rules/ai-residue/chat-leakage/",
   "schema_version": 3
 }

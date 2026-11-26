@@ -1,5 +1,4 @@
 //! Only the rules of the built-in plugin `core` have a documentation page.
-#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use slopvac_model::RuleId;
 use slopvac_report::RenderOptions;

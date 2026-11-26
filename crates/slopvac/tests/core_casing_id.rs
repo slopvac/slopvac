@@ -1,6 +1,9 @@
-//! The built-in term-casing rule is a core rule, `core:terms.casing`, so a user plugin may take
-//! the id `terms` (the contract reserves only `core` and the `slopvac` namespace).
-#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
+//! The built-in term-casing rule is a core rule, `core:terms.casing`, and no pack `terms` is
+//! built in, so the id `terms` is free for a user plugin (the contract reserves only `core` and
+//! the `slopvac` namespace).
+//!
+//! The CLI does not load synced plugins yet, so these tests do not load a plugin that ships a
+//! `terms.casing` rule. That collision check needs the loader and belongs to slopvac-8l4.9.100.
 
 use std::fs;
 
@@ -25,8 +28,12 @@ fn stdout_of(assert: &snapbox::cmd::OutputAssert) -> String {
     String::from_utf8_lossy(&assert.get_output().stdout).into_owned()
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "a helper of the tests: a panic is a failed test"
+)]
 /// A project that declares a plugin with the id `terms`, plus a clean document.
-fn project_with_plugin_terms() -> tempfile::TempDir {
+fn project_with_plugins_entry_terms() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(
         dir.path().join("slopvac.toml"),
@@ -38,20 +45,19 @@ fn project_with_plugin_terms() -> tempfile::TempDir {
 }
 
 #[test]
-fn a_plugin_with_the_id_terms_is_not_refused_by_lint() {
-    let dir = project_with_plugin_terms();
+fn a_plugins_entry_named_terms_validates_and_lints_without_a_reserved_id_refusal() {
+    let dir = project_with_plugins_entry_terms();
     let assert = slopvac(dir.path())
         .args(["lint", "doc.md"])
         .assert()
         .code(0);
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
     assert!(!stderr.contains("reserved"), "stderr: {stderr}");
-    assert!(!stderr.contains("collision"), "stderr: {stderr}");
 }
 
 #[test]
 fn the_catalogue_lists_no_plugin_named_terms() {
-    let dir = project_with_plugin_terms();
+    let dir = project_with_plugins_entry_terms();
     let assert = slopvac(dir.path())
         .args(["rules", "--format", "json"])
         .assert()
@@ -68,7 +74,7 @@ fn the_catalogue_lists_no_plugin_named_terms() {
 
 #[test]
 fn the_catalogue_lists_the_casing_rule_under_core() {
-    let dir = project_with_plugin_terms();
+    let dir = project_with_plugins_entry_terms();
     let assert = slopvac(dir.path())
         .args(["rules", "--format", "json"])
         .assert()
