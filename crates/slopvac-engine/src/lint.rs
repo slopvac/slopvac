@@ -437,6 +437,13 @@ fn comment_not_run(level: NoticeLevel, ids: &[&str], named: bool) -> Notice {
     notice(level, &message).with_data(data)
 }
 
+/// Whether the checkers of `kind` only read prose, so a standalone diagram never reaches them
+/// and a rule of that kind is not applicable to one. A kind that is not listed may have a
+/// diagram checker, so its not-run warning stays.
+fn reads_no_diagram(kind: &str) -> bool {
+    matches!(kind, "metric" | CAPITALIZATION)
+}
+
 /// The `unrun` key of capitalization rules in a style the engine does not run.
 const CAPITALIZATION: &str = "capitalization";
 
@@ -1023,14 +1030,13 @@ impl Engine {
     /// The notices about active rules the engine does not run and that apply to a document of
     /// `genre`.
     fn not_run_notices(&self, genre: &GenreId, kind: Kind) -> Vec<Notice> {
-        // No prose checker reads a standalone diagram, so a rule of one is not applicable to it.
-        if matches!(kind, Kind::Diagram(_)) {
-            return Vec::new();
-        }
         let mut ids: std::collections::BTreeMap<&str, Vec<&RuleId>> =
             std::collections::BTreeMap::new();
         for n in &self.not_run {
-            if n.genres.as_ref().is_none_or(|g| g.contains(genre)) {
+            let on_diagram = matches!(kind, Kind::Diagram(_));
+            if n.genres.as_ref().is_none_or(|g| g.contains(genre))
+                && !(on_diagram && reads_no_diagram(n.kind))
+            {
                 ids.entry(n.kind).or_default().push(&n.id);
             }
         }
@@ -1191,11 +1197,13 @@ impl Engine {
                 }
             }
         }
-        // The rules of a custom checker have no loaded rule.
+        // The rules of a custom checker have no loaded rule, so no genre limits them. Every
+        // other diagram rule went through the genre filter above.
         let mut custom: Vec<&str> = self
             .diagram_rules
-            .keys()
-            .map(RuleId::as_str)
+            .iter()
+            .filter(|(_, active)| active.at.is_none())
+            .map(|(id, _)| id.as_str())
             .filter(|id| !skipped.contains(id))
             .collect();
         custom.sort_unstable();

@@ -425,7 +425,7 @@ fn both_comment_notices_list_their_ids_in_sorted_order() {
     let mut beta = long_rule();
     beta["id"] = json!("beta");
     let e = per_document(
-        &[zeta, alpha, mid, beta],
+        &[zeta, mid, alpha, beta],
         &["core:cat.zeta", "core:cat.beta"],
     );
     let doc = e
@@ -468,4 +468,59 @@ fn a_standalone_diagram_has_no_not_run_warning_for_prose_checkers() {
         .unwrap();
     assert!(doc.unchecked.is_empty(), "{:?}", doc.unchecked);
     assert!(doc.gate.is_passed());
+}
+
+fn reference_only_signal() -> Value {
+    rule(
+        "label-run-on",
+        &json!({"kind": "structure", "check": "diagram-label-run-on"}),
+        &json!({"scope": "prose", "applies_to": {"genres": ["reference"]}}),
+    )
+}
+
+#[rstest]
+#[case::matching_genre("reference", 1, false)]
+#[case::other_genre("consumer", 0, true)]
+fn a_named_diagram_signal_follows_the_genre_filter(
+    #[case] genre: &str,
+    #[case] warnings: usize,
+    #[case] complete: bool,
+) {
+    let e = per_document(&[reference_only_signal()], &["core:cat.label-run-on"]);
+    let doc = e
+        .lint(&Input::comments("f", "# fine\n", Language::Shell).with_declared_genre(genre))
+        .unwrap();
+    let named: Vec<_> = doc
+        .unchecked
+        .iter()
+        .filter(|n| n.code.as_str() == "comment-rule-named-not-run")
+        .collect();
+    assert_eq!(named.len(), warnings, "{:?}", doc.unchecked);
+    if warnings == 1 {
+        assert_eq!(named[0].data["rules"], json!(["core:cat.label-run-on"]));
+    }
+    assert_eq!(doc.unchecked.len(), warnings, "{:?}", doc.unchecked);
+    assert_eq!(doc.gate.is_passed(), complete);
+}
+
+#[test]
+fn a_standalone_diagram_still_warns_for_a_check_nothing_runs() {
+    let unknown = rule(
+        "mystery",
+        &json!({"kind": "structure", "check": "mystery-check"}),
+        &json!({}),
+    );
+    let doc = engine(&[unknown])
+        .lint(&Input::diagram(
+            "d.mmd",
+            "flowchart TD\n  A --> B\n",
+            slopvac_diagrams::Format::Mermaid,
+        ))
+        .unwrap();
+    let [n] = doc.unchecked.as_slice() else {
+        panic!("{:?}", doc.unchecked)
+    };
+    assert_eq!(n.code.as_str(), "rule-kind-not-implemented");
+    assert_eq!(n.level, NoticeLevel::Warning);
+    assert!(!doc.gate.is_passed());
 }

@@ -272,3 +272,27 @@ fn escaped_backticks_in_a_markdown_heading_are_literal_text() {
         .collect();
     assert_eq!(got, [(1, "`Alpha Beta` Gamma"), (3, "`Alpha` Beta Gamma")]);
 }
+
+#[test]
+fn the_unrun_style_notice_lists_its_rule_ids_in_sorted_order() {
+    let styled = |id: &str| {
+        rule(
+            id,
+            &json!({"kind": "capitalization", "style": "title"}),
+            &json!({"scope": "heading"}),
+        )
+    };
+    let e = Engine::new(
+        vec![ruleset(vec![category(
+            "cat",
+            &[styled("zeta"), styled("alpha")],
+        )])],
+        settings(),
+    )
+    .unwrap();
+    let doc = e.lint(&Input::markdown("a.md", "# Heading\n")).unwrap();
+    let [n] = doc.unchecked.as_slice() else {
+        panic!("{:?}", doc.unchecked)
+    };
+    assert_eq!(n.data["rules"], json!(["core:cat.alpha", "core:cat.zeta"]));
+}
