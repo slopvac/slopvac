@@ -483,13 +483,13 @@ impl Revocations {
     #[doc(hidden)]
     #[must_use]
     #[cfg(feature = "test-support")]
-pub fn with_access_counter_for_tests(mut self, counter: Arc<AtomicUsize>) -> Self {
+    pub fn with_access_counter_for_tests(mut self, counter: Arc<AtomicUsize>) -> Self {
         self.touched = Some(counter);
         self
     }
 
     #[cfg(feature = "test-support")]
-fn touch(&self) {
+    fn touch(&self) {
         if let Some(counter) = &self.touched {
             counter.fetch_add(1, Ordering::SeqCst);
         }
@@ -540,7 +540,7 @@ fn touch(&self) {
     /// [`RevocationError::Io`] when the lock file cannot be created or locked.
     pub fn lock(&self) -> Result<CacheLock, RevocationError> {
         #[cfg(feature = "test-support")]
-self.touch();
+        self.touch();
         create_private_dir(&self.dir).map_err(io_err(RevokePhrase::CreateDir.as_static()))?;
         let file = OpenOptions::new()
             .create(true)
@@ -560,7 +560,7 @@ self.touch();
     /// hold a list a root key signed.
     pub fn cached(&self) -> Result<Current, RevocationError> {
         #[cfg(feature = "test-support")]
-self.touch();
+        self.touch();
         let Some((list, fetched_at)) = self.read_cache()? else {
             return Ok(Current {
                 list: RevocationList::default(),
@@ -595,7 +595,7 @@ self.touch();
     /// cache write failures. The cache is unchanged on any error.
     pub fn refresh(&self, client: &Client) -> Result<Current, RevocationError> {
         #[cfg(feature = "test-support")]
-self.touch();
+        self.touch();
         let (statement, minisig) = self.fetch(client)?;
         let list = RevocationList::verify(&statement, &minisig, &self.roots)?;
         if list.expired_at(self.now_at) {

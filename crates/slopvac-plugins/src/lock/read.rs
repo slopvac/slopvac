@@ -81,7 +81,7 @@ pub fn observe_lock_reads(observer: impl Fn() + 'static) -> LockReadObservation 
 pub fn read_project_lock(project_root: &Path, required: bool) -> Result<Lockfile, LockReadError> {
     let read = read_lock_file(project_root, required);
     #[cfg(feature = "test-support")]
-{
+    {
         let observer = OBSERVER.with(|slot| slot.borrow().clone());
         if let Some(observer) = observer {
             observer();

@@ -173,7 +173,7 @@ impl Client {
     #[doc(hidden)]
     #[must_use]
     #[cfg(feature = "test-support")]
-pub fn counting_for_tests(
+    pub fn counting_for_tests(
         creds: Box<dyn CredentialSource>,
         attempts: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     ) -> Self {

@@ -1495,7 +1495,9 @@ fn hash_walk(
                                 },
                             }
                         } else {
-                            refused(TransportText::ExtractTreeSize { path: rel.clone() }.to_string())
+                            refused(
+                                TransportText::ExtractTreeSize { path: rel.clone() }.to_string(),
+                            )
                         });
                     }
                     if wanted {
@@ -1942,6 +1944,9 @@ mod single_read_tests {
         let hash = tree_hash(scratch.path()).unwrap();
 
         // The same hash through the capturing pass: the list is read once, whatever its size.
-        assert_eq!(tree_hash_capturing(scratch.path(), "m.toml").unwrap().0, hash);
+        assert_eq!(
+            tree_hash_capturing(scratch.path(), "m.toml").unwrap().0,
+            hash
+        );
     }
 }

@@ -32,12 +32,10 @@ pub use expand::{GLOB_MAX_ALTERNATIVES, GLOB_MAX_BYTES, GLOB_MAX_DEPTH};
 pub use messages::message_entries;
 pub use pack::{LoadedPack, Packs};
 pub use problem::{ArtifactFault, RuleFault, RuleProblem};
-pub use source::{
-    DirSource, EmbeddedSource, FileTable, MANIFEST_FILE, PackSource, SourceError,
-};
-pub use synced::{SyncedError, load_synced, load_synced_within};
+pub use source::{DirSource, EmbeddedSource, FileTable, MANIFEST_FILE, PackSource, SourceError};
 #[cfg(feature = "test-support")]
 pub use synced::load_synced_observed;
+pub use synced::{SyncedError, load_synced, load_synced_within};
 
 pub use manifest::{
     HookDecl, Manifest, ManifestError, PackKind, PackPath, PluginRuntime, PluginTable, Provides,

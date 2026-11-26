@@ -330,7 +330,10 @@ fn a_data_plugin_loads_the_rule_file_its_hash_covered_not_the_one_on_disk() {
     .unwrap();
 
     assert!(seen.iter().any(|r| r == "categories/c.json"), "{seen:?}");
-    assert_eq!(fs::read_to_string(tree.join("categories/c.json")).unwrap(), replacement);
+    assert_eq!(
+        fs::read_to_string(tree.join("categories/c.json")).unwrap(),
+        replacement
+    );
     assert_eq!(packs[0].rules().len(), 1);
 }
 

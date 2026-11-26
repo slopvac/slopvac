@@ -194,7 +194,10 @@ impl PythonRuntime {
     ///
     /// # Errors
     /// [`PyEnvError::Manifest`], as for [`Self::read`], except for the errors of reading the file.
-    pub fn from_manifest(root: &Path, bytes: &[u8]) -> std::result::Result<Option<Self>, PyEnvError> {
+    pub fn from_manifest(
+        root: &Path,
+        bytes: &[u8],
+    ) -> std::result::Result<Option<Self>, PyEnvError> {
         Self::parse(bytes).map_err(|source| PyEnvError::Manifest {
             path: root.join(MANIFEST_FILE),
             source,

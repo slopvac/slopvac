@@ -432,7 +432,7 @@ impl Transport {
 
     /// Count each request this transport is asked to send, before it checks the URL.
     #[cfg(feature = "test-support")]
-pub(crate) fn counting(mut self, attempts: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+    pub(crate) fn counting(mut self, attempts: Arc<std::sync::atomic::AtomicUsize>) -> Self {
         self.attempts = Some(attempts);
         self
     }
@@ -452,7 +452,7 @@ pub(crate) fn counting(mut self, attempts: Arc<std::sync::atomic::AtomicUsize>) 
 
     pub(crate) fn send(&self, req: &Req<'_>) -> Result<Response<Body>, OciError> {
         #[cfg(feature = "test-support")]
-if let Some(attempts) = &self.attempts {
+        if let Some(attempts) = &self.attempts {
             attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
         let mut url = req.url.clone();

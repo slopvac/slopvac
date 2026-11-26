@@ -6,6 +6,8 @@
 //! this build does not implement and a `requires` loop each stop the run.
 
 use std::collections::HashSet;
+#[cfg(feature = "test-support")]
+use std::path::Path;
 
 use semver::Version;
 use slopvac_model::{ApiVersion, PackId};
@@ -18,9 +20,7 @@ use slopvac_plugins::sync::{Store, SyncError};
 
 use crate::messages::PackMessage;
 use crate::source::MemorySource;
-use crate::{
-    Budget, Limits, LoadedPack, PackError, PackKind, Packs, Source, to_lock_id,
-};
+use crate::{Budget, Limits, LoadedPack, PackError, PackKind, Packs, Source, to_lock_id};
 
 /// Most bytes of one plugin tree a load keeps in memory.
 const PLUGIN_TREE_CAP: u64 = 32 << 20;
@@ -334,7 +334,9 @@ fn load_inner(
         // bytes the hash covers and no file is opened a second time.
         #[cfg(feature = "test-support")]
         let hashed = match after_hash.as_deref_mut() {
-            Some(observer) => tree_hash_capturing_files_observed(&tree.dir, PLUGIN_TREE_CAP, observer),
+            Some(observer) => {
+                tree_hash_capturing_files_observed(&tree.dir, PLUGIN_TREE_CAP, observer)
+            }
             None => tree_hash_capturing_files(&tree.dir, PLUGIN_TREE_CAP),
         };
         #[cfg(not(feature = "test-support"))]

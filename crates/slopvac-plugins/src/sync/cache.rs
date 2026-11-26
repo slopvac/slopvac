@@ -83,7 +83,7 @@ impl Store {
     #[doc(hidden)]
     #[must_use]
     #[cfg(feature = "test-support")]
-pub fn with_read_observer(
+    pub fn with_read_observer(
         mut self,
         observer: std::sync::Arc<dyn Fn(&Path) + Send + Sync>,
     ) -> Self {
@@ -93,7 +93,7 @@ pub fn with_read_observer(
 
     /// Tell the observer, if a test set one, that `path` was just checked.
     #[cfg(feature = "test-support")]
-pub(super) fn observe(&self, path: &Path) {
+    pub(super) fn observe(&self, path: &Path) {
         if let Some(observer) = &self.observer {
             (observer.0)(path);
         }
@@ -175,7 +175,7 @@ pub(super) fn observe(&self, path: &Path) {
             && hash_file(&path).is_ok_and(|actual| actual == *digest);
         if ok {
             #[cfg(feature = "test-support")]
-self.observe(&path);
+            self.observe(&path);
             Some(path)
         } else {
             let _ = fs::remove_file(&path);
