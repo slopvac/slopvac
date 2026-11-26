@@ -1212,9 +1212,12 @@ fn a_list_naming_the_plugins_key_stops_a_plugin_signed_by_it() {
 /// when it is absent, and a failed setup for any other error.
 fn manifest_of(root: &Path) -> Vec<u8> {
     const NATIVE: &str = "schema_version = 3\nid = \"fake\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
-    match fs::read(root.join("slopvac-plugin.toml")) {
-        Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => NATIVE.as_bytes().to_vec(),
-        Err(e) => Err(e).expect("the fixture manifest is readable"),
+    let read = fs::read(root.join("slopvac-plugin.toml"));
+    if read
+        .as_ref()
+        .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+    {
+        return NATIVE.as_bytes().to_vec();
     }
+    read.expect("the fixture manifest is readable")
 }
