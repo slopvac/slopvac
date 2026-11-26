@@ -228,6 +228,16 @@ fn kind_of_file(kind: &FileKind, file_name: &str) -> Result<Kind, &'static str> 
     }
 }
 
+/// [`kind_of_file`] for the file at `path`, which names the dialect.
+fn kind_of_path(kind: &FileKind, path: &Path) -> Result<Kind, &'static str> {
+    kind_of_file(
+        kind,
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default(),
+    )
+}
+
 fn kind_of_language(plan: &StdinPlan) -> Result<Kind, &'static str> {
     if plan.mode != "prose" {
         // Stdin has no file name, so no dialect is refined.
@@ -726,13 +736,7 @@ fn collect_targets(
             {
                 continue;
             }
-            let kind = match kind_of_file(
-                &file.kind,
-                file.path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or_default(),
-            ) {
+            let kind = match kind_of_path(&file.kind, &file.path) {
                 Ok(kind) => kind,
                 Err(why) => {
                     run.skip("input-unsupported", &shown, format!("{shown}: {why}"));
@@ -1483,6 +1487,17 @@ mod kind_tests {
             Some(language) => assert_eq!(got, Ok(Kind::Comments(language))),
             None => assert!(got.is_err()),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_tsx_file_with_a_non_utf8_stem_is_still_tsx() {
+        use std::os::unix::ffi::OsStrExt as _;
+        let path = Path::new(std::ffi::OsStr::from_bytes(b"src/\xff.tsx"));
+        assert_eq!(
+            kind_of_path(&FileKind::Source("typescript"), path),
+            Ok(Kind::Comments(Language::Tsx))
+        );
     }
 
     #[rstest]

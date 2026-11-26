@@ -109,13 +109,11 @@ fn a_clean_comment_passes_and_lists_the_rules_that_read_no_comment(
     );
 }
 
-#[test]
-fn a_comment_finding_over_the_gate_fails_the_run() {
-    let (code, report) = lint(
-        CONFIG,
-        "src/a.rs",
-        "// A silver bullet for parsing.\nfn main() {}\n",
-    );
+#[rstest]
+#[case::rust("src/a.rs", "// A silver bullet for parsing.\nfn main() {}\n")]
+#[case::toml("src/a.toml", "# A silver bullet for parsing.\nname = \"a\"\n")]
+fn a_comment_finding_over_the_gate_fails_the_run(#[case] file: &str, #[case] source: &str) {
+    let (code, report) = lint(CONFIG, file, source);
     assert_eq!(code, Some(1), "{report}");
     let rules: Vec<&str> = report["documents"][0]["findings"]
         .as_array()

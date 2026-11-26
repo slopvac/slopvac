@@ -84,8 +84,7 @@ fn inputs_without_an_engine_parser_are_an_incomplete_run() {
     }
 }
 
-#[test]
-fn comments_on_stdin_are_linted_through_the_engine() {
+fn comments_report(source: &str) -> (Option<i32>, serde_json::Value) {
     let out = stdin_lint(&[
         "--mode",
         "code-comments",
@@ -94,18 +93,37 @@ fn comments_on_stdin_are_linted_through_the_engine() {
         "--format",
         "json",
     ])
-    .write_stdin("# Parse the input.\nx = 1\n")
+    .write_stdin(source)
     .output()
     .expect("run");
-    assert_eq!(out.status.code(), Some(0), "{out:?}");
-    let report: serde_json::Value = serde_json::from_slice(&out.stdout).expect("a JSON report");
-    let codes: Vec<&str> = report["documents"][0]["unchecked"]
+    let report = serde_json::from_slice(&out.stdout).expect("a JSON report");
+    (out.status.code(), report)
+}
+
+#[test]
+fn a_clean_comment_on_stdin_passes_with_an_info_notice() {
+    let (code, report) = comments_report("# Parse the input.\nx = 1\n");
+    assert_eq!(code, Some(0), "{report}");
+    let notices: Vec<(&str, &str)> = report["documents"][0]["unchecked"]
         .as_array()
         .expect("unchecked")
         .iter()
-        .map(|n| n["code"].as_str().expect("code"))
+        .map(|n| (n["code"].as_str().expect("code"), n["level"].as_str().expect("level")))
         .collect();
-    assert_eq!(codes, ["comment-rules-not-run"], "{report}");
+    assert_eq!(notices, [("comment-rules-not-run", "info")], "{report}");
+}
+
+#[test]
+fn a_flagged_comment_on_stdin_fails_the_run() {
+    let (code, report) = comments_report("# A silver bullet for parsing.\nx = 1\n");
+    assert_eq!(code, Some(1), "{report}");
+    let rules: Vec<&str> = report["documents"][0]["findings"]
+        .as_array()
+        .expect("findings")
+        .iter()
+        .map(|f| f["rule_id"].as_str().expect("rule_id"))
+        .collect();
+    assert_eq!(rules, ["core:orwell.stale-figure"], "{report}");
 }
 
 #[test]
