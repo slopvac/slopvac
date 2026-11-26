@@ -45,6 +45,22 @@ fn locked(kind: &str, source_and_signature: &str) -> LockedPack {
         .clone()
 }
 
+/// Load with the manifest bytes as the loader's hash pass would hand them over.
+fn load_from(
+    locked: &LockedPack,
+    dir: &Path,
+    context: &CodePluginContext,
+) -> Result<
+    (
+        slopvac_plugins::trust::VerifiedPlugin,
+        slopvac_plugins::host::PluginSpec,
+    ),
+    CodePluginError,
+> {
+    let manifest = fs::read(dir.join("slopvac-plugin.toml")).ok();
+    load_code_plugin(locked, dir, manifest.as_deref(), context)
+}
+
 fn path_locked() -> LockedPack {
     locked("code", "source = \"plugins/acme\"\n")
 }
