@@ -149,6 +149,23 @@ fn sized_file(dir: &std::path::Path, name: &str, len: u64) {
         .expect("set_len");
 }
 
+#[test]
+fn a_text_refusal_escapes_control_characters_in_the_file_name() {
+    let dir = project();
+    // A newline and an ESC in the name. `slopvac_sanitize::line` writes each as `\u{..}` with the
+    // code point in lowercase hex: newline is `\u{a}` and ESC is `\u{1b}`.
+    let name = "a\nb\u{1b}c.md";
+    fs::write(dir.path().join(name), over_budget()).expect("write");
+    let out = slopvac(dir.path())
+        .args(["claims", name, "--original", "old.md", "--format", "text"])
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr:?}");
+    assert_eq!(stderr.lines().count(), 1, "{stderr:?}");
+    assert!(stderr.contains("a\\u{a}b\\u{1b}c.md"), "{stderr:?}");
+}
+
 #[rstest::rstest]
 #[case::original("old.md")]
 #[case::revised("new.md")]
