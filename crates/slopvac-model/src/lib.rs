@@ -12,6 +12,7 @@ mod edit;
 mod ids;
 mod messages;
 mod notice;
+mod notice_data;
 mod origin;
 mod report;
 mod reserved;
@@ -27,6 +28,7 @@ pub use ids::{
 };
 pub use messages::{message_entries, phrase_entries};
 pub use notice::{NoticeError, NoticeMessage, Result as NoticeResult};
+pub use notice_data::{BudgetNoticeData, NoticeData, RulesNoticeData, UnsupportedNoticeData};
 pub use origin::{
     Origin, OriginError, OriginLabel, OriginLocator, Result as OriginResult, SegmentId,
     SegmentRange,

@@ -594,6 +594,11 @@ use slopvac_messages::Kind;
     Kind::Text,
     "passed is {passed} but there are {count} reasons"
 )]
+#[case::model_notice_data_shape(
+    "model-notice-data-shape",
+    Kind::Text,
+    "the data of a `{code}` notice does not have the shape of that code"
+)]
 #[case::model_empty("model-reason-empty", Kind::Text, "empty")]
 #[case::model_long("model-reason-too-long", Kind::Text, "too long")]
 #[case::model_locator_character(

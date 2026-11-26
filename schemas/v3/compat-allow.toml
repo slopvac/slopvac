@@ -690,3 +690,206 @@ pointer = "/$defs/RunSummary/properties/categories/items/$ref(lint-report.schema
 kind = "pattern-changed"
 reason = "A category of a plugin other than core is reported as <plugin>:<category>, so two plugins that ship the same bare category id stay apart in the report. The pattern of this output field now also accepts the qualified form. Every value the old pattern accepted is still accepted and unchanged, because a core category keeps its bare id, so a consumer that reads a report of a core-only run sees no difference. A consumer that validates a report of a run with another plugin needs the wider pattern."
 approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/0/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/1/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/2/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/3/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/4/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/5/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/6/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/notices/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/0/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/notices/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/1/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/notices/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/2/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/notices/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/3/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/notices/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/4/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/notices/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/5/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/properties/notices/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/6/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Document/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/0/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Document/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/1/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Document/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/2/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Document/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/3/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Document/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/4/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Document/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/5/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Document/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/allOf/6/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Notice/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Notice/allOf/0/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Notice/allOf/1/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Notice/allOf/2/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Notice/allOf/3/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Notice/allOf/4/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Notice/allOf/5/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "lint-report.schema.json"
+pointer = "/$defs/Notice/allOf/6/if"
+kind = "if-changed"
+reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
+approved_by = "contract owner (slopvac-8l4.2)"

@@ -8,6 +8,10 @@ pub(crate) fn edit_position(reason: &crate::PositionError) -> ModelText {
     }
 }
 
+pub(crate) fn notice_data_shape(code: &str) -> ModelText {
+    ModelText::NoticeDataShape { code: code.into() }
+}
+
 pub(crate) fn gate_inconsistent(passed: bool, count: usize) -> ModelText {
     ModelText::GateInconsistent {
         passed: passed.to_string(),
@@ -140,6 +144,10 @@ pub(crate) enum ModelText {
     #[code("model-gate-empty-reason")]
     #[text("a gate reason must not be empty")]
     GateEmptyReason,
+    /// The data of a notice does not have the shape its code declares.
+    #[code("model-notice-data-shape")]
+    #[text("the data of a `{code}` notice does not have the shape of that code")]
+    NoticeDataShape { code: String },
     /// A gate status contradicts its reasons.
     #[code("model-gate-inconsistent")]
     #[text("passed is {passed} but there are {count} reasons")]

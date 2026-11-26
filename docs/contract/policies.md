@@ -444,7 +444,7 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
   | --- | --- | --- |
   | `rule-kind-not-implemented` | warning | Active rules of a kind or check the engine does not run did not run. `data.rules` lists them. The run is incomplete. |
   | `comment-rule-named-not-run` | warning | In code-comments mode, rules that the user enabled by name cannot run on comments. `data.rules` lists them. The run is incomplete. |
-  | `rule-style-not-implemented` | warning | Active capitalization rules did not run, because the engine runs only the sentence style. |
+  | `rule-style-not-implemented` | warning | Active capitalization rules did not run, because the engine runs only the sentence style. `data.rules` lists them. The run is incomplete. |
   | `vocabulary-no-blocklist` | info | Active vocabulary rules did not run, because no word blocklist is set. |
   | `vocabulary-no-taggable-entries` | info | Active vocabulary rules did not run, because the blocklist holds no noun, verb, adjective or adverb entry of three or more letters. |
   | `vocabulary-sweep-shared` | info | Several vocabulary rules share one blocklist sweep, and it runs once under one of them. |

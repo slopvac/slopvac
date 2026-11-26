@@ -31,7 +31,7 @@ pub mod cli;
 use std::collections::BTreeMap;
 use std::fmt;
 
-use slopvac_model::{Notice, NoticeLevel, RuleId};
+use slopvac_model::{Notice, NoticeData, NoticeLevel, RuleId};
 use slopvac_rules::{Case, LoadedRule, MatchKind, Scope, Want};
 
 use crate::{Engine, EngineError, Input, Level};
@@ -139,20 +139,11 @@ impl CaseReport {
         if rules.is_empty() {
             return None;
         }
-        let data = serde_json::Map::from_iter([(
-            "rules".to_owned(),
-            rules
-                .iter()
-                .map(|id| serde_json::Value::String(id.to_string()))
-                .collect(),
-        )]);
-        Some(
-            crate::lint::notice(
-                NoticeLevel::Warning,
-                &crate::messages::EngineNotice::CasesRuleUnchecked { count: rules.len() },
-            )
-            .with_data(data),
-        )
+        Some(crate::lint::notice_with_data(
+            NoticeLevel::Warning,
+            &crate::messages::EngineNotice::CasesRuleUnchecked { count: rules.len() },
+            NoticeData::cases_rule_unchecked(rules.iter().map(ToString::to_string)),
+        ))
     }
 
     /// The exit code, by the contract ruling in `docs/contract/rules.md`: 1 when a case or

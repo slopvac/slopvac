@@ -359,12 +359,23 @@ fn directive_text_is_not_matched(#[case] extra: Value, #[case] source: &str, #[c
 }
 
 #[rstest]
-#[case::on_by_default(false, "comment-rules-not-run", NoticeLevel::Info)]
-#[case::named_by_the_user(true, "comment-rule-named-not-run", NoticeLevel::Warning)]
+#[case::on_by_default(
+    false,
+    "comment-rules-not-run",
+    NoticeLevel::Info,
+    "1 active rule(s) do not run on code comments, which only the tokens, pattern, substitution and capitalization rules read: core:cat.long"
+)]
+#[case::named_by_the_user(
+    true,
+    "comment-rule-named-not-run",
+    NoticeLevel::Warning,
+    "1 rule(s) you enabled by name do not run on code comments, which only the tokens, pattern, substitution and capitalization rules read: core:cat.long"
+)]
 fn a_prose_only_rule_is_info_by_default_and_a_warning_when_the_user_named_it(
     #[case] named: bool,
     #[case] code: &str,
     #[case] level: NoticeLevel,
+    #[case] message: &str,
 ) {
     let mut s = settings();
     if named {
@@ -378,6 +389,7 @@ fn a_prose_only_rule_is_info_by_default_and_a_warning_when_the_user_named_it(
         panic!("{:?}", doc.unchecked)
     };
     assert_eq!((n.code.as_str(), n.level), (code, level));
+    assert_eq!(n.message.as_str(), message);
     assert_eq!(n.data["rules"], json!(["core:cat.long"]));
     // A warning notice makes the run incomplete, which fails the gate.
     assert_eq!(doc.gate.is_passed(), !named);

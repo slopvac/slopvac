@@ -158,6 +158,11 @@ fn rule_kind_not_implemented_lists_its_rules_in_a_warning_notice(
     };
     assert_eq!(n.code.as_str(), "rule-kind-not-implemented");
     assert_eq!(n.level, NoticeLevel::Warning);
+    let kind = matcher["kind"].as_str().unwrap();
+    assert_eq!(
+        n.message.as_str(),
+        format!("1 active {kind} rule(s) did not run: the engine does not run {kind} rules yet")
+    );
     assert_eq!(n.data["rules"], json!(["core:cat.pending"]));
     assert!(!doc.gate.is_passed());
 }

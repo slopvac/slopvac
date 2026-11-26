@@ -21,8 +21,8 @@ use slopvac_diagrams::{
 use slopvac_model::{
     AiSignal, BomMode, CategoryId, CategoryName, ContextTag, Contexts, Document, Edit, Extent,
     Finding, Fix, GenreId, GenreReason, GenreResult, GenreSource, KebabName, LineCol,
-    NonEmptyString, Notice, NoticeLevel, PackId, PositionError, RuleId, RuleProvenance, Severity,
-    SourceIndex, Span,
+    NonEmptyString, Notice, NoticeData, NoticeLevel, PackId, PositionError, RuleId, RuleProvenance,
+    Severity, SourceIndex, Span,
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
@@ -423,18 +423,21 @@ struct DiagramResult {
 
 /// The notice for rules that code-comment mode cannot run, with their ids in `data.rules`.
 fn comment_not_run(level: NoticeLevel, ids: &[&str], named: bool) -> Notice {
-    let rules = ids
-        .iter()
-        .map(|id| serde_json::Value::String((*id).to_owned()))
-        .collect();
-    let data = serde_json::Map::from_iter([("rules".to_owned(), rules)]);
     let (count, rules) = (ids.len(), ids.join(", "));
-    let message = if named {
-        EngineNotice::CommentRuleNamed { count, rules }
+    let ids = ids.iter().copied();
+    if named {
+        notice_with_data(
+            level,
+            &EngineNotice::CommentRuleNamed { count, rules },
+            NoticeData::comment_rule_named_not_run(ids),
+        )
     } else {
-        EngineNotice::CommentRules { count, rules }
-    };
-    notice(level, &message).with_data(data)
+        notice_with_data(
+            level,
+            &EngineNotice::CommentRules { count, rules },
+            NoticeData::comment_rules_not_run(ids),
+        )
+    }
 }
 
 /// Whether the checkers of `kind` only read prose, so a standalone diagram never reaches them
@@ -451,26 +454,27 @@ fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Notice {
     let count = rules.len();
     let mut ids: Vec<&str> = rules.iter().map(|id| id.as_str()).collect();
     ids.sort_unstable();
-    let data = serde_json::Map::from_iter([(
-        "rules".to_owned(),
-        ids.iter()
-            .map(|id| serde_json::Value::String((*id).to_owned()))
-            .collect(),
-    )]);
     // A rule that should have run and did not makes the run incomplete, so the level is a
     // warning. A style that cannot run would otherwise pass in silence.
-    let message = if kind == CAPITALIZATION {
-        EngineNotice::RuleStyle {
-            count,
-            kind: kind.into(),
-        }
+    if kind == CAPITALIZATION {
+        notice_with_data(
+            NoticeLevel::Warning,
+            &EngineNotice::RuleStyle {
+                count,
+                kind: kind.into(),
+            },
+            NoticeData::rule_style_not_implemented(ids),
+        )
     } else {
-        EngineNotice::RuleKind {
-            count,
-            kind: kind.into(),
-        }
-    };
-    notice(NoticeLevel::Warning, &message).with_data(data)
+        notice_with_data(
+            NoticeLevel::Warning,
+            &EngineNotice::RuleKind {
+                count,
+                kind: kind.into(),
+            },
+            NoticeData::rule_kind_not_implemented(ids),
+        )
+    }
 }
 
 fn level_of(settings: &Settings, id: &RuleId, category: &CategoryName, shipped: Severity) -> Level {
@@ -498,6 +502,23 @@ pub(crate) fn notice(level: NoticeLevel, message: &EngineNotice) -> Notice {
     let message = slopvac_model::NoticeMessage::try_from_catalog(message)
         .expect("the private engine catalog supplies valid notice messages");
     Notice::from_catalog(level, message)
+}
+
+/// A notice for a typed code. The code comes from `data`, which only a constructor of one
+/// code builds, and the text from the catalog `message`. The two name the same code at every
+/// call site, and the public-path engine tests assert the code, message and data together.
+#[expect(
+    clippy::expect_used,
+    reason = "EngineNotice is a private derived catalog with validated codes and bundled nonempty summaries"
+)]
+pub(crate) fn notice_with_data(
+    level: NoticeLevel,
+    message: &EngineNotice,
+    data: NoticeData,
+) -> Notice {
+    let message = slopvac_model::NoticeMessage::try_from_catalog(message)
+        .expect("the private engine catalog supplies valid notice messages");
+    Notice::from_catalog_data(level, message, data)
 }
 
 impl Engine {
@@ -2142,46 +2163,35 @@ impl Run<'_> {
     /// establish a pass, so the run is incomplete. A diagram of an unsupported type gets an
     /// info notice: valid content that the extractor does not read.
     fn extraction_notice(&self, format: DiagramFormat, status: ExtractionStatus) -> Option<Notice> {
-        let (level, message) = match status {
+        let mut n = match status {
             ExtractionStatus::Ok => return None,
-            ExtractionStatus::Unsupported(r) => (
+            ExtractionStatus::Unsupported(r) => notice_with_data(
                 NoticeLevel::Info,
-                EngineNotice::ExtractUnsupported { reason: r.into() },
+                &EngineNotice::ExtractUnsupported { reason: r.into() },
+                NoticeData::extract_unsupported(self.input.path, format_name(format)),
             ),
-            ExtractionStatus::Malformed(r) => (
+            ExtractionStatus::Malformed(r) => notice(
                 NoticeLevel::Warning,
-                EngineNotice::ExtractMalformed { reason: r.into() },
+                &EngineNotice::ExtractMalformed { reason: r.into() },
             ),
-            ExtractionStatus::BudgetExhausted(hit) => (
+            ExtractionStatus::BudgetExhausted(hit) => notice_with_data(
                 NoticeLevel::Warning,
-                EngineNotice::ExtractBudget {
+                &EngineNotice::ExtractBudget {
                     cap: hit.cap.into(),
                     limit: hit.limit,
                 },
+                NoticeData::extract_budget(hit.cap, hit.limit),
             ),
             // A status added later is a failure until this match learns its code.
-            _ => (
+            _ => notice(
                 NoticeLevel::Warning,
-                EngineNotice::ExtractMalformed {
+                &EngineNotice::ExtractMalformed {
                     reason: crate::messages::EnginePhrase::ExtractionFailed.text(),
                 },
             ),
         };
-        let mut n = notice(level, &message);
         n.path = Some(self.input.path.to_owned());
-        let mut data = serde_json::Map::new();
-        match status {
-            ExtractionStatus::Unsupported(_) => {
-                data.insert("document".to_owned(), self.input.path.into());
-                data.insert("kind".to_owned(), format_name(format).into());
-            }
-            ExtractionStatus::BudgetExhausted(hit) => {
-                data.insert("budget".to_owned(), hit.cap.into());
-                data.insert("limit".to_owned(), hit.limit.into());
-            }
-            _ => {}
-        }
-        Some(n.with_data(data))
+        Some(n)
     }
 
     /// The parsed paragraphs that have prose, each with its analysis. A diagram file has none.

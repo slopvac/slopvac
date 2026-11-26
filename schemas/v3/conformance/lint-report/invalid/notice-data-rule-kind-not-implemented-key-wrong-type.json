@@ -1,0 +1,47 @@
+{
+  "schema_version": 3,
+  "slopvac_version": "3.0.0",
+  "summary": {
+    "documents": 0,
+    "words": 0,
+    "findings": 0,
+    "errors": 0,
+    "warnings": 0,
+    "suggestions": 0,
+    "per_100_words": 0.0,
+    "score": 100.0,
+    "passed": true,
+    "categories": [],
+    "ai_register": {
+      "strong": {
+        "findings": 0,
+        "errors": 0,
+        "warnings": 0,
+        "per_100_words": 0.0
+      },
+      "weak": {
+        "findings": 0,
+        "errors": 0,
+        "warnings": 0,
+        "per_100_words": 0.0
+      }
+    },
+    "prose": {
+      "findings": 0,
+      "errors": 0,
+      "warnings": 0,
+      "per_100_words": 0.0
+    }
+  },
+  "documents": [],
+  "notices": [
+    {
+      "code": "rule-kind-not-implemented",
+      "level": "warning",
+      "message": "Notice for rule-kind-not-implemented.",
+      "data": {
+        "rules": "x"
+      }
+    }
+  ]
+}

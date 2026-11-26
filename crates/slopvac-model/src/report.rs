@@ -7,8 +7,9 @@ use thiserror::Error;
 
 use crate::edit::{Edit, EditError, sorted_without_overlap};
 use crate::ids::{CategoryName, Contexts, PackId, RuleId, SchemaVersion, Severity};
+use crate::notice_data::{NoticeData, data_conditions, data_schema};
 use crate::origin::Origin;
-use crate::schema::{absent_not_null, dependent_required, if_then, open_object, x_extensions};
+use crate::schema::{absent_not_null, dependent_required, if_then, x_extensions};
 use crate::span::{LineCol, LineColError, Span};
 use crate::values::{
     Density, GenreId, KebabName, NonEmptyString, Score, present, required_nullable,
@@ -20,7 +21,7 @@ fn nullable_budget(_: &mut schemars::SchemaGenerator) -> Schema {
 }
 
 /// The schema of a count: a non-negative integer, shared as `$defs/Count`.
-struct Count;
+pub(crate) struct Count;
 
 impl JsonSchema for Count {
     fn schema_name() -> std::borrow::Cow<'static, str> {
@@ -57,8 +58,8 @@ pub enum NoticeLevel {
 
 /// A stable, machine-readable fact with a human message. Consumers branch on `code`, never on
 /// `message`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[schemars(transform = x_extensions)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[schemars(transform = x_extensions, extend("allOf" = data_conditions()))]
 pub struct Notice {
     /// Stable kebab-case identifier. A code is never reused for a different meaning.
     pub code: KebabName,
@@ -78,7 +79,7 @@ pub struct Notice {
     /// array. Each notice code documents its own keys. Consumers must ignore keys they do
     /// not know. Omitted when the notice has none.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
-    #[schemars(transform = open_object)]
+    #[schemars(schema_with = "data_schema")]
     pub data: serde_json::Map<String, Value>,
 }
 
@@ -96,6 +97,30 @@ impl Notice {
         }
     }
 
+    /// Build a notice for a typed code. The notice takes its code from `data`, and its text
+    /// from `message`, so a code and a shape that do not match cannot be built. The caller
+    /// passes the message that renders the same code; a test of each caller keeps them equal.
+    #[must_use]
+    pub fn from_catalog_data(
+        level: NoticeLevel,
+        message: crate::NoticeMessage,
+        data: NoticeData,
+    ) -> Self {
+        let (_, message) = message.into_parts();
+        #[expect(
+            clippy::expect_used,
+            reason = "the codes of NoticeData are string constants, and a test checks that each is kebab-case"
+        )]
+        let code = KebabName::new(data.code()).expect("a notice data code is kebab-case");
+        Self {
+            code,
+            level,
+            message,
+            path: None,
+            data: data.into_map(),
+        }
+    }
+
     /// Validate and render an arbitrary catalog before constructing its notice.
     ///
     /// # Errors
@@ -109,11 +134,74 @@ impl Notice {
             .map(|message| Self::from_catalog(level, message))
     }
 
-    /// Returns the notice with `data` attached.
+    /// Returns the notice with typed `data` attached. This is the setter for a code with a
+    /// typed shape; the published schema checks the shape per code.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::NoticeError::DataShape`] when the notice code does not carry the shape
+    /// of `data`. The notice is dropped with the error, so a caller that wants to keep it
+    /// clones it first.
+    pub fn with(mut self, data: NoticeData) -> crate::NoticeResult<Self> {
+        if !data.serves(self.code.as_str()) {
+            return Err(crate::NoticeError::DataShape(self.code.as_str().to_owned()));
+        }
+        self.data = data.into_map();
+        Ok(self)
+    }
+
+    /// Returns the notice with untyped `data` attached.
+    ///
+    /// The map is not checked against a shape. Use [`Notice::with`] for a code that has a
+    /// typed shape. The CLI and the agents still use this method, until their codes get
+    /// shapes.
     #[must_use]
     pub fn with_data(mut self, data: serde_json::Map<String, Value>) -> Self {
         self.data = data;
         self
+    }
+}
+
+/// The wire form of a [`Notice`], before the shape of its `data` is checked.
+#[derive(Deserialize)]
+struct NoticeWire {
+    code: KebabName,
+    level: NoticeLevel,
+    message: NonEmptyString,
+    #[serde(default, deserialize_with = "present")]
+    path: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    data: Option<serde_json::Map<String, Value>>,
+}
+
+impl<'de> Deserialize<'de> for Notice {
+    /// Reads a notice and, for a code with a typed shape, checks `data` against that shape.
+    /// Absent `data` is allowed, and so are keys the shape does not name. The error names the
+    /// code and never the data.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = NoticeWire::deserialize(deserializer)?;
+        let data = match wire.data {
+            None => serde_json::Map::new(),
+            Some(map) => {
+                let value = Value::Object(map);
+                if !NoticeData::fits(wire.code.as_str(), &value) {
+                    return Err(serde::de::Error::custom(crate::NoticeError::DataShape(
+                        wire.code.as_str().to_owned(),
+                    )));
+                }
+                match value {
+                    Value::Object(map) => map,
+                    _ => serde_json::Map::new(),
+                }
+            }
+        };
+        Ok(Self {
+            code: wire.code,
+            level: wire.level,
+            message: wire.message,
+            path: wire.path,
+            data,
+        })
     }
 }
 

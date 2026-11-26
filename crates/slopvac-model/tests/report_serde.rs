@@ -11,7 +11,7 @@ use slopvac_model::{ConfigSource, Notice, Report};
 const BARE: &str = r#"{"code":"extract-budget","level":"warning","message":"Extraction stopped."}"#;
 const WITH_DATA: &str = r#"{"code":"extract-budget","level":"warning","message":"Extraction stopped.","data":{"budget":"segments","limit":1000000}}"#;
 const EMPTY_DATA: &str =
-    r#"{"code":"extract-budget","level":"warning","message":"Extraction stopped.","data":{}}"#;
+    r#"{"code":"config-unknown-rule","level":"warning","message":"Extraction stopped.","data":{}}"#;
 
 fn bare_notice() -> Notice {
     serde_json::from_str(BARE).unwrap()
@@ -41,7 +41,10 @@ fn a_notice_without_data_writes_no_data_key() {
 #[test]
 fn a_notice_with_an_empty_data_object_writes_no_data_key() {
     let parsed: Notice = serde_json::from_str(EMPTY_DATA).unwrap();
-    assert_eq!(serde_json::to_string(&parsed).unwrap(), BARE);
+    assert_eq!(
+        serde_json::to_string(&parsed).unwrap(),
+        r#"{"code":"config-unknown-rule","level":"warning","message":"Extraction stopped."}"#
+    );
 }
 
 #[test]

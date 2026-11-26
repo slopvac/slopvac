@@ -97,14 +97,6 @@ pub fn absent_not_null(schema: &mut Schema) {
     }
 }
 
-/// An object with any members: drop the `"additionalProperties": true` schemars writes for a
-/// map of JSON values. Without the keyword the schema means the same.
-pub(crate) fn open_object(schema: &mut Schema) {
-    if schema.get("additionalProperties") == Some(&Value::Bool(true)) {
-        schema.remove("additionalProperties");
-    }
-}
-
 /// `{"if": .., "then": ..}`: a conditional for an `allOf` list.
 #[must_use]
 pub fn if_then(condition: &Value, then: &Value) -> Value {
