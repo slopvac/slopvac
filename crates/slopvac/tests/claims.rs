@@ -290,7 +290,11 @@ fn a_json_report_of_a_text_over_the_sentence_budget_is_a_refusal_notice_with_the
     assert!(errors.is_empty(), "{errors:?}\n{report}");
     assert_eq!(report["schema_version"], 3, "{report}");
     assert_eq!(report["documents"], serde_json::json!([]), "{report}");
-    assert_eq!(report["notices"].as_array().map(Vec::len), Some(1), "{report}");
+    assert_eq!(
+        report["notices"].as_array().map(Vec::len),
+        Some(1),
+        "{report}"
+    );
     let notice = &report["notices"][0];
     assert_eq!(notice["code"], "context-budget-exceeded", "{report}");
     assert_eq!(notice["data"]["budget"], "sentences", "{report}");
@@ -340,18 +344,36 @@ fn a_text_refusal_names_the_input_and_the_limit(#[case] input: &str) {
     let dir = project();
     fs::write(dir.path().join(input), over_budget()).expect("write");
     let out = slopvac(dir.path())
-        .args(["claims", "new.md", "--original", "old.md", "--format", "text"])
+        .args([
+            "claims",
+            "new.md",
+            "--original",
+            "old.md",
+            "--format",
+            "text",
+        ])
         .output()
         .expect("run");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(2), "{stderr}");
-    assert!(out.stdout.is_empty(), "{}", String::from_utf8_lossy(&out.stdout));
+    assert!(
+        out.stdout.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
     assert!(
         stderr.starts_with("error[context-budget-exceeded]: ") && stderr.contains(input),
         "{stderr}"
     );
-    assert!(stderr.contains("215536") || stderr.contains("215,536"), "{stderr}");
-    let other = if input == "old.md" { "new.md" } else { "old.md" };
+    assert!(
+        stderr.contains("215536") || stderr.contains("215,536"),
+        "{stderr}"
+    );
+    let other = if input == "old.md" {
+        "new.md"
+    } else {
+        "old.md"
+    };
     assert!(!stderr.contains(other), "{stderr}");
 }
 
@@ -378,14 +400,24 @@ fn a_refused_input_behind_a_symlink_out_of_the_project_shows_only_its_file_name(
     };
     let run = |format: &str| {
         slopvac(&project)
-            .args(["claims", revised, "--original", "old.md", "--format", format])
+            .args([
+                "claims",
+                revised,
+                "--original",
+                "old.md",
+                "--format",
+                format,
+            ])
             .output()
             .expect("run")
     };
     let json = run("json");
     assert_eq!(json.status.code(), Some(2));
     let report: Value = serde_json::from_slice(&json.stdout).expect("json on stdout");
-    assert_eq!(report["notices"][0]["data"]["path"], "<external>/big.md", "{report}");
+    assert_eq!(
+        report["notices"][0]["data"]["path"], "<external>/big.md",
+        "{report}"
+    );
     let text = run("text");
     let stderr = String::from_utf8_lossy(&text.stderr);
     assert_eq!(text.status.code(), Some(2), "{stderr}");
