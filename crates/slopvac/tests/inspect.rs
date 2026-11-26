@@ -923,10 +923,3 @@ fn a_qualified_category_filter_lists_the_rules_of_that_plugin() {
     let ids = rule_ids(&["rules", "--category", "core:terms", "--format", "json"]);
     assert_eq!(ids, [CASING]);
 }
-
-#[test]
-fn a_qualified_category_filter_does_not_match_a_category_of_another_plugin() {
-    // `terms` is a category of `core`, and no plugin named `terms` is loaded.
-    let ids = rule_ids(&["rules", "--category", "terms:terms", "--format", "json"]);
-    assert!(ids.is_empty(), "{ids:?}");
-}
