@@ -3,7 +3,7 @@
 //!
 //! [`RPC_CODES`] maps the numeric JSON-RPC codes to their `slopvac_code`.
 //! [`RpcError::code_name`](crate::RpcError::code_name) reads it, so a code the host reports has a
-//! row. [`HOST_CODES`] lists the codes the host raises in diagnostics with no numeric code.
+//! row. `HOST_CODES` lists the codes the host raises in diagnostics with no numeric code.
 //! `protocol_error_tables` renders both as the two Markdown tables of section 10. A test
 //! compares that text with the committed document, so a row without a mapping and a mapping
 //! without a row both fail the build.
@@ -304,22 +304,38 @@ mod tests {
 
     const DOC: &str = include_str!("../../../docs/contract/plugin-protocol.md");
 
-    fn block(name: &str) -> &'static str {
+    /// The text of the one generated block `name`. The site generator publishes rows from
+    /// the same two blocks and refuses a missing or repeated one, so this refuses it too.
+    fn block_in<'a>(doc: &'a str, name: &str) -> Result<&'a str, String> {
         let begin = format!("<!-- generated:{name} begin -->\n");
         let end = format!("<!-- generated:{name} end -->");
-        let Some(start) = DOC.find(&begin) else {
-            panic!("no `{begin}` marker");
-        };
-        let start = start + begin.len();
-        let Some(len) = DOC[start..].find(&end) else {
-            panic!("no `{end}` marker");
-        };
-        &DOC[start..start + len]
+        let (begins, ends) = (doc.matches(&begin).count(), doc.matches(&end).count());
+        if begins != 1 || ends != 1 {
+            return Err(format!(
+                "`{name}` needs one begin and one end marker, found {begins} and {ends}"
+            ));
+        }
+        let start = doc.find(&begin).unwrap_or_default() + begin.len();
+        let len = doc[start..].find(&end).ok_or("end marker before begin")?;
+        Ok(&doc[start..start + len])
+    }
+
+    fn block(name: &str) -> &'static str {
+        block_in(DOC, name).unwrap_or_default()
+    }
+
+    #[rstest]
+    #[case::missing("")]
+    #[case::twice(
+        "<!-- generated:x begin -->\na\n<!-- generated:x end -->\n<!-- generated:x begin -->\nb\n<!-- generated:x end -->"
+    )]
+    fn a_missing_or_repeated_block_is_refused(#[case] doc: &str) {
+        assert!(block_in(doc, "x").is_err());
     }
 
     /// Table rows in section 10 that sit outside the generated blocks. The site generator
-    /// (`scripts/docs/plugin_pages.py`) publishes every table row of section 10, so a row
-    /// outside a block would ship without the drift check ever seeing it.
+    /// (`scripts/docs/plugin_pages.py`) publishes rows only from the blocks, so a row outside
+    /// them is dead text that no check covers, and the gate refuses it.
     fn rows_outside_blocks(doc: &str) -> Vec<String> {
         let Some(start) = doc.find("\n## 10. Error codes\n") else {
             return vec!["no section 10".to_owned()];

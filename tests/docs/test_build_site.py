@@ -72,14 +72,18 @@ CONTRACT = """\
 
 ## 10. Error codes
 
+<!-- generated:rpc-codes begin -->
 | Code | `slopvac_code` | Meaning |
 |---|---|---|
 | -32700 | `parse-error` | The body is not valid JSON. |
 | -32001 | `protocol-version-unsupported` | No common version. |
+<!-- generated:rpc-codes end -->
 
+<!-- generated:host-codes begin -->
 | `slopvac_code` | Cause |
 |---|---|
 | `plugin-timeout` | A timer expired. |
+<!-- generated:host-codes end -->
 
 ## 11. Security
 """
@@ -797,6 +801,100 @@ def test_a_malformed_error_table_row_stops_the_build(
     _with_contract(sources, row)
     with pytest.raises(SystemExit, match="malformed"):
         _run(sources)
+
+
+def _contract(sources: dict[str, Path], text: str) -> str:
+    (sources["contract"] / "plugin-protocol.md").write_text(text)
+    _run(sources)
+    errors = _read(sources, "plugins/protocol.md").split("## Errors")[1]
+    return errors.split("## Definitions")[0]
+
+
+def test_a_row_between_unrelated_markers_is_not_published(
+    sources: dict[str, Path],
+) -> None:
+    extra = (
+        "<!-- other begin -->\n| -32020 | `unrelated` | Not generated. |\n"
+        "<!-- other end -->\n"
+    )
+    errors = _contract(
+        sources,
+        CONTRACT.replace("<!-- generated:host", extra + "<!-- generated:host", 1),
+    )
+    assert "unrelated" not in errors
+    assert "`parse-error`" in errors
+
+
+def test_a_row_inside_a_code_fence_is_not_published(sources: dict[str, Path]) -> None:
+    fence = "```text\n| -32021 | `fenced` | In a fence. |\n```\n"
+    for where in ("<!-- generated:rpc-codes end -->", "## 11. Security"):
+        errors = _contract(sources, CONTRACT.replace(where, fence + where, 1))
+        assert "fenced" not in errors
+
+
+def test_the_error_heading_does_not_decide_which_rows_are_published(
+    sources: dict[str, Path],
+) -> None:
+    decoy = "## 8. Error codes\n\n| -32022 | `decoy` | Before the real section. |\n\n"
+    errors = _contract(
+        sources,
+        CONTRACT.replace("## 9. Other", decoy + "## 9. Other", 1).replace(
+            "## 10. Error codes", "## 10. Failure list", 1
+        ),
+    )
+    assert "decoy" not in errors
+    assert "`plugin-timeout`" in errors
+
+
+@pytest.mark.parametrize("name", ["rpc-codes", "host-codes"])
+@pytest.mark.parametrize("damage", ["missing", "twice"])
+def test_a_missing_or_repeated_block_stops_the_build(
+    sources: dict[str, Path], name: str, damage: str
+) -> None:
+    begin = f"<!-- generated:{name} begin -->"
+    end = f"<!-- generated:{name} end -->"
+    if damage == "missing":
+        text = CONTRACT.replace(begin, "").replace(end, "")
+    else:
+        text = CONTRACT.replace("## 11. Security", f"{begin}\n{end}\n## 11. Security")
+    (sources["contract"] / "plugin-protocol.md").write_text(text)
+    with pytest.raises(SystemExit, match=name):
+        _run(sources)
+
+
+def test_the_real_contract_publishes_exactly_the_rows_of_its_two_blocks() -> None:
+    import plugin_pages
+
+    doc = (ROOT / "docs/contract/plugin-protocol.md").read_text()
+    expected: dict[str, list[str]] = {}
+    for name in ("rpc-codes", "host-codes"):
+        block = doc.split(f"<!-- generated:{name} begin -->\n")[1]
+        block = block.split(f"<!-- generated:{name} end -->")[0]
+        expected[name] = [
+            line for line in block.splitlines()[2:] if line.startswith("|")
+        ]
+    codes, diagnostics = plugin_pages._error_tables(
+        ROOT / "docs/contract/plugin-protocol.md"
+    )
+    assert len(codes) == len(expected["rpc-codes"])
+    assert len(diagnostics) == len(expected["host-codes"])
+    assert [c[1] for c in codes] == [
+        r.split("|")[2].strip().strip("`") for r in expected["rpc-codes"]
+    ]
+    assert [d[0] for d in diagnostics] == [
+        r.split("|")[1].strip().strip("`") for r in expected["host-codes"]
+    ]
+
+
+def test_the_publisher_and_the_rust_gate_use_the_same_block_names() -> None:
+    import plugin_pages
+
+    source = (ROOT / "crates/slopvac-plugins/src/error_codes.rs").read_text()
+    assert "<!-- generated:{name} begin -->" in source
+    assert "<!-- generated:{name} end -->" in source
+    cases = re.findall(r'#\[case::\w+\("([a-z-]+)", (?:true|false)\)\]', source)
+    assert sorted(cases) == sorted(plugin_pages.ERROR_BLOCKS)
+    assert plugin_pages.BLOCK_MARKER == "<!-- generated:{name} {edge} -->"
 
 
 # --- URLs and link structure -----------------------------------------------

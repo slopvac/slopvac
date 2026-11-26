@@ -259,38 +259,84 @@ _TABLE_HEADERS = (
     ["`slopvac_code`", "Cause"],
 )
 
+# The two generated blocks of the error-code section. The Rust drift gate
+# (crates/slopvac-plugins/src/error_codes.rs) verifies exactly their text, so the
+# site publishes rows from nowhere else. A test pins these names to the gate's.
+ERROR_BLOCKS = ("rpc-codes", "host-codes")
+BLOCK_MARKER = "<!-- generated:{name} {edge} -->"
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def _block_rows(contract: Path, body: str, name: str) -> list[str]:
+    """Table lines of the one generated block `name`, outside any code fence."""
+    begin = BLOCK_MARKER.format(name=name, edge="begin")
+    end = BLOCK_MARKER.format(name=name, edge="end")
+    rows: list[str] = []
+    begins = ends = 0
+    inside = False
+    fence = ""
+    for line in body.splitlines():
+        stripped = line.strip()
+        opened = _FENCE.match(line)
+        if fence:
+            if opened and opened[1][0] == fence[0] and len(opened[1]) >= len(fence):
+                fence = ""
+            continue
+        if opened:
+            fence = opened[1]
+            continue
+        if stripped == begin:
+            begins += 1
+            inside = True
+        elif stripped == end:
+            ends += 1
+            inside = False
+        elif inside and stripped.startswith("|"):
+            rows.append(line)
+    if begins != 1 or ends != 1:
+        raise SystemExit(
+            f"{contract}: generated block `{name}` in the 'Error codes' tables must "
+            f"appear exactly once, found {begins} begin and {ends} end markers"
+        )
+    return rows
+
 
 def _error_tables(
     contract: Path,
 ) -> tuple[list[tuple[str, str, str]], list[tuple[str, str]]]:
-    """Numeric error codes and host-only diagnostics, from the contract's tables."""
+    """Numeric error codes and host-only diagnostics, from the contract's two blocks."""
     if not contract.is_file():
         raise SystemExit(f"{contract}: protocol contract not found")
     body = contract.read_text()
-    match = re.search(
-        r"^## \d+\. Error codes\n(.*?)(?=^## |\Z)", body, re.MULTILINE | re.DOTALL
-    )
-    if not match:
-        raise SystemExit(f"{contract}: no 'Error codes' section")
     codes, diagnostics = [], []
-    for line in match[1].splitlines():
-        if not line.startswith("|"):
-            continue
-        if not line.rstrip().endswith("|"):
-            raise SystemExit(f"{contract}: malformed error table row: {line}")
-        # A pipe escaped as \| belongs to its cell. A split on bare pipes keeps it there.
-        cells = [
-            c.strip().replace("\\|", "|")
-            for c in re.split(r"(?<!\\)\|", line.strip()[1:-1])
-        ]
-        if all(re.fullmatch(r":?-+:?", c) for c in cells) or cells in _TABLE_HEADERS:
-            continue
-        if len(cells) == 3 and re.fullmatch(r"-\d+", cells[0]):
-            codes.append((cells[0], cells[1].strip("`"), cells[2]))
-        elif len(cells) == 2 and re.fullmatch(r"`[a-z][a-z0-9-]*`", cells[0]):
-            diagnostics.append((cells[0].strip("`"), cells[1]))
-        else:
-            raise SystemExit(f"{contract}: malformed error table row: {line}")
+    for name in ERROR_BLOCKS:
+        for line in _block_rows(contract, body, name):
+            if not line.rstrip().endswith("|"):
+                raise SystemExit(f"{contract}: malformed error table row: {line}")
+            # A pipe escaped as \| belongs to its cell. A split on bare pipes keeps it there.
+            cells = [
+                c.strip().replace("\\|", "|")
+                for c in re.split(r"(?<!\\)\|", line.strip()[1:-1])
+            ]
+            if (
+                all(re.fullmatch(r":?-+:?", c) for c in cells)
+                or cells in _TABLE_HEADERS
+            ):
+                continue
+            if (
+                name == "rpc-codes"
+                and len(cells) == 3
+                and re.fullmatch(r"-\d+", cells[0])
+            ):
+                codes.append((cells[0], cells[1].strip("`"), cells[2]))
+            elif (
+                name == "host-codes"
+                and len(cells) == 2
+                and re.fullmatch(r"`[a-z][a-z0-9-]*`", cells[0])
+            ):
+                diagnostics.append((cells[0].strip("`"), cells[1]))
+            else:
+                raise SystemExit(f"{contract}: malformed error table row: {line}")
     if not codes or not diagnostics:
         raise SystemExit(f"{contract}: error tables not found in 'Error codes'")
     return codes, diagnostics
