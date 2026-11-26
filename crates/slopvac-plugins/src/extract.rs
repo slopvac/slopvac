@@ -1367,6 +1367,13 @@ struct Capture<'a, R: Read> {
 /// list has its own bound, the size of the tree, so a valid list over this still verifies.
 const MAX_CAPTURE_BYTES: u64 = 1 << 20;
 
+/// Most bytes read past a tree budget failure to find out whether a captured file also crossed
+/// its capture cap. It is one hash chunk: the budget check already lets a read overshoot by that
+/// much, so the probe at most doubles an overshoot that was already allowed. It is fixed, and
+/// does not depend on the caller's cap, so a file that keeps growing costs a bounded read and a
+/// bounded buffer however large the cap is.
+const PROBE_ALLOWANCE: u64 = 64 * 1024;
+
 /// What a hash pass keeps besides the executable list.
 enum Keep<'a> {
     /// Nothing.
@@ -1671,10 +1678,18 @@ fn hash_walk_with(
                     let hashed = hash_stream(&mut tee, None, &rel, Some(budget));
                     if hashed.is_err() && wanted && !tee.over {
                         // The tree budget ran out before the capture cap was seen to be
-                        // crossed. Read on, through the same reader, which stops at the cap
-                        // plus one byte, to find out whether the cap was crossed too.
-                        let mut rest = [0u8; 16 * 1024];
-                        while !tee.over && matches!(tee.read(&mut rest), Ok(n) if n > 0) {}
+                        // crossed. Read on for at most `PROBE_ALLOWANCE` bytes, through the
+                        // same reader, to find out whether the cap was crossed too. A probe
+                        // that cannot show it leaves the budget refusal as it was.
+                        let mut rest = [0u8; 4096];
+                        let mut left = PROBE_ALLOWANCE;
+                        while !tee.over && left > 0 {
+                            let want = rest.len().min(usize::try_from(left).unwrap_or(rest.len()));
+                            match tee.read(&mut rest[..want]) {
+                                Ok(n) if n > 0 => left -= n as u64,
+                                _ => break,
+                            }
+                        }
                     }
                     after_read(tee.seen);
                     // The capture cap decides first: a file that outgrew it is a capture limit,
