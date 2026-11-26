@@ -1214,12 +1214,15 @@ fn a_category_only_collision_is_refused_with_the_category_code_and_text() {
     );
 }
 
-// One plugin trips both guards: its first category shares only an id with a core category, and
-// its second category holds a rule with the id of a core rule. The plugin is refused and nothing
-// from it loads. Which of the two codes the refusal carries is not asserted: the order of the
-// two checks is settled by slopvac-8l4.3.77.
-#[test]
-fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_whole() {
+// One plugin supplies a category that shares only an id with a core category, and a category
+// that holds a rule with the id of a core rule. The rule clash decides the refusal, whichever
+// category the plugin lists first.
+#[rstest]
+#[case::clash_first(true)]
+#[case::clash_last(false)]
+fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_for_the_rule_in_either_order(
+    #[case] rule_clash_first: bool,
+) {
     let core = Packs::core().unwrap();
     let locals: Vec<String> = core
         .rule_sets()
@@ -1236,16 +1239,23 @@ fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_whole() {
             r#"{{"schema_version":3,"id":"{id}","title":"T","description":"D","rules":[{{"id":"{rule}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"a"}},"citation":{{"source":"s"}}}}]}}"#
         )
     };
-    let mut spec = Spec::new("acme");
-    spec.provides = "categories = [\"categories/a.json\", \"categories/b.json\"]".into();
-    spec.files.push((
-        "categories/a.json",
-        category(category_only, "zz-fresh-rule"),
-    ));
-    spec.files.push((
-        "categories/b.json",
+    let clash = (
+        "categories/rule-clash.json",
         category(shared_rule_category, shared_rule),
-    ));
+    );
+    let only = (
+        "categories/category-only.json",
+        category(category_only, "zz-fresh-rule"),
+    );
+    let (first, second) = if rule_clash_first {
+        (clash, only)
+    } else {
+        (only, clash)
+    };
+    let mut spec = Spec::new("acme");
+    spec.provides = format!("categories = [\"{}\", \"{}\"]", first.0, second.0);
+    spec.files.push(first);
+    spec.files.push(second);
     let mut w = World::new();
     w.install(&spec);
 
@@ -1253,15 +1263,13 @@ fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_whole() {
 
     assert!(
         matches!(
-            err.code(),
-            Some("plugin-rule-id-collision" | "plugin-category-id-collision")
+            &err,
+            SyncedError::Pack(PackError::RuleIdCollision { plugin, rule })
+                if plugin == "acme" && *rule == locals[0]
         ),
-        "{err}"
+        "{err:?}"
     );
-    assert!(
-        err.to_string().contains("nothing from the plugin loads"),
-        "{err}"
-    );
+    assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
 }
 
 #[test]
