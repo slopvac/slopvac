@@ -313,18 +313,26 @@ def _stderr_file(root):
     return (root / "runner-temp" / "markdown-audit.stderr").read_text()
 
 
-def test_a_startup_failure_before_the_hook_prints_one_fixed_line(tmp_path) -> None:
-    # The import of `markdown_it` runs before the script installs its exception hook, and
-    # the module here raises with a payload, so Python itself would print a traceback.
+def test_a_checkout_module_cannot_shadow_an_import(tmp_path) -> None:
+    # The interpreter runs isolated, so a `markdown_it.py` at the checkout root is not
+    # imported and the audit's outcome is the same as without it.
     done = run_audit(tmp_path, {"shadow-markdown-it": True})
+    assert_output_contract(done, tmp_path)
+    assert not (tmp_path / "shadow-imported").exists()
+    assert "SHADOW-IMPORTED" not in done.stdout
+
+
+def test_a_failure_to_start_the_interpreter_prints_one_fixed_line(tmp_path) -> None:
+    case = {"env": {"UV_FAIL": "1", "UV_STDERR": "::error::pwned\n##[group]x"}}
+    done = run_audit(tmp_path, case)
     assert_output_contract(done, tmp_path, "Audit failed (exit 1)", payload_free=True)
     assert done.stdout.strip() == "Audit failed (exit 1)"
-    # The traceback went to the private file, which nothing prints.
-    assert "Traceback" in _stderr_file(tmp_path)
+    # What the launcher printed went to the private file, which nothing prints.
+    assert "pwned" in _stderr_file(tmp_path)
 
 
-def test_a_python_warning_with_a_payload_reaches_no_stream(tmp_path) -> None:
-    done = run_audit(tmp_path, {"warn": True})
-    assert_output_contract(done, tmp_path, payload_free=False)
+def test_a_launcher_warning_with_a_payload_reaches_no_stream(tmp_path) -> None:
+    done = run_audit(tmp_path, {"env": {"UV_STDERR": "::error::WARNPAYLOAD ##[group]x"}})
+    assert_output_contract(done, tmp_path)
     assert "WARNPAYLOAD" not in done.stdout + done.stderr
     assert "WARNPAYLOAD" in _stderr_file(tmp_path)

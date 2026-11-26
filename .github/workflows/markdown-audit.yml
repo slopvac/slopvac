@@ -40,9 +40,12 @@ jobs:
           # The audit's whole stderr goes to a private file that nothing prints: an import
           # error, a warning or a startup failure can carry file names and report text from
           # the repository. The script prints its fixed diagnostics on stdout.
+          # `-I` runs the interpreter isolated: no working directory or script directory on
+          # `sys.path`, and no `PYTHON*` variables or user site. A file in the checkout cannot
+          # shadow an import. `-P` alone would leave the environment and user site in play.
           set -uo pipefail
           status=0
-          uv run --project packages/slopvac-lint python - 2>"$RUNNER_TEMP/markdown-audit.stderr" <<'PY' || status=$?
+          uv run --project packages/slopvac-lint python -I - 2>"$RUNNER_TEMP/markdown-audit.stderr" <<'PY' || status=$?
           import collections
           import json
           import os
@@ -71,8 +74,10 @@ jobs:
               print(f"Audit failed: internal error ({kind.__name__})", flush=True)
 
           sys.excepthook = fail_with_one_line
-          sys.path.insert(0, "scripts")
-          sys.path.insert(0, "scripts/ci")
+          # Isolated mode (`-I`) keeps the working directory off `sys.path`, so these two
+          # entries are absolute.
+          sys.path.insert(0, str(Path.cwd() / "scripts"))
+          sys.path.insert(0, str(Path.cwd() / "scripts" / "ci"))
           from workflow_escape import escape_workflow_data as escape
           from markdown_audit_reports import (
               configured_problems,

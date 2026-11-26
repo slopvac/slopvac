@@ -61,10 +61,14 @@ print(case.get(scan + "-stdout", ""), end="")
 sys.exit(case.get(scan + "-exit", 0))
 """
 
-_STUB_UV = f"""#!/bin/sh
-shift 4
-exec {sys.executable} "$@"
-"""
+_STUB_UV = (
+    "#!/bin/sh\n"
+    # A harness-only way to put text on stderr before the audit starts, or to fail to start.
+    'if [ -n "${UV_STDERR:-}" ]; then printf \'%s\\n\' "$UV_STDERR" >&2; fi\n'
+    'if [ -n "${UV_FAIL:-}" ]; then exit 1; fi\n'
+    "shift 4\n"
+    f'exec {sys.executable} "$@"\n'
+)
 
 
 def audit_script() -> str:
@@ -154,16 +158,12 @@ def run_audit(root: Path, case: dict) -> subprocess.CompletedProcess[str]:
     scratch.mkdir()
     (root / "runner-temp").mkdir()
     if case.get("shadow-markdown-it"):
-        # `python -` puts the working directory first on `sys.path`, so this module is
-        # imported before the script installs its exception hook.
-        (repo / "markdown_it.py").write_text('raise RuntimeError("::error::pwned")\n')
-    if case.get("warn"):
-        site = root / "site"
-        site.mkdir()
-        (site / "sitecustomize.py").write_text(
-            'import warnings\nwarnings.warn("::error::WARNPAYLOAD ##[group]x")\n'
+        # A module at the checkout root that must never be imported: the audit runs the
+        # interpreter in isolated mode. Importing it would leave a marker and print.
+        (repo / "markdown_it.py").write_text(
+            f'from pathlib import Path\nPath({str(root / "shadow-imported")!r}).write_text("x")\n'
+            'print("SHADOW-IMPORTED")\nraise RuntimeError("::error::pwned")\n'
         )
-        case = {**case, "env": {**case.get("env", {}), "PYTHONPATH": str(site)}}
     case_file = root / "case.json"
     case_file.write_text(json.dumps(case), encoding="utf-8")
     env = {
