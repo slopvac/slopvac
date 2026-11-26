@@ -35,7 +35,16 @@ The `reporter` input takes `auto`, `review`, `annotations` or `none`. With `auto
 
 A separate `Sync plugins` step runs before the lint. When the working directory has a `.slopvac/plugins.lock` lockfile, the step runs `slopvac plugins sync`, which installs what the lockfile pins and checks each digest. Without a lockfile, the step prints a notice and passes. The notice does not show that the project needs no plugins. A project that depends on plugins must commit `.slopvac/plugins.lock`, so the step syncs them before the lint, which runs with `--offline`.
 
-The sync is incomplete, and fails the action, on any nonzero exit or a crash from a signal. The binary exits 2 for a lockfile it cannot read or accept, a failed download and a digest mismatch. The step prints the binary's error line, then `plugins sync failed (status <n>)`. The lint step does not run after a failed sync, and `fail-on-findings: false` does not soften it.
+The sync is incomplete, and fails the action, on any nonzero exit or a crash from a signal. The binary exits 2 in these cases:
+
+- It cannot read or accept the lockfile.
+- A download fails.
+- A digest does not match.
+- The config and the lockfile list different plugin ids (`lock-mismatch`). A configured plugin has no lock entry, or a lock entry is no longer needed.
+
+To fix a `lock-mismatch`, run `slopvac plugins sync` outside CI. It updates `.slopvac/plugins.lock`. Commit the updated file.
+
+The step prints the binary's error line, then `plugins sync failed (status <n>)`. The lint step does not run after a failed sync, and `fail-on-findings: false` does not soften it.
 
 The lint steps always run with `--offline`, so they never reach the network. Installing slopvac and syncing plugins still do.
 

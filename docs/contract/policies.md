@@ -81,6 +81,7 @@ Owners: `slopvac-8l4.12.1` for the global flag and environment, `slopvac-8l4.4.2
 - In CI the update check stays off.
 - No code path prompts, in CI or anywhere else.
 - `plugins sync` in CI runs from the lockfile. It fails with exit 2 when the lockfile is missing or a digest differs, and it leaves the lockfile as it found it.
+- In CI, `plugins sync` also compares the plugin ids in the config with a lockfile that it can read. Two cases fail with `lock-mismatch` and exit 2, and the lockfile stays as it was. In the first case, a configured plugin has no lock entry. In the second case, a lock entry belongs to no configured plugin and to no plugin that a configured plugin requires. The comparison checks ids only. Outside CI, `plugins sync` does not make this comparison.
 - A GitHub Action run that needs plugins runs `plugins sync` as a separate, named step. The lint step runs with `--offline`.
 
 Owners: `slopvac-8l4.9.3` for lockfile behavior, `slopvac-8l4.13.6` for the Action.
@@ -467,7 +468,7 @@ The binary runs the `plugins` group. The subcommands `search`, `pin`, `rotate`, 
 | Code | Meaning | Raised by |
 | --- | --- | --- |
 | `offline-plugin-missing` | Offline, a locked plugin is not in the cache. The message names the plugin and its digest (section 1.3). | `plugins sync` |
-| `lock-mismatch` | The resolved plugins differ from the lockfile. The message lists each difference. The lockfile is not changed (section 1.4). | `plugins sync` in CI |
+| `lock-mismatch` | The resolved plugins differ from the lockfile. Or the configured plugin ids differ from the ids of a valid lockfile: a configured plugin has no lock entry, or a lock entry is no longer needed. The message lists each difference. The lockfile is not changed (section 1.4). | `plugins sync` in CI |
 | `digest-mismatch` | Fetched or read content does not hash to the digest that the lockfile pins. | `plugins sync` |
 | `cache-tampered` | An installed tree differs from its recorded hash and the run is offline, so slopvac cannot fetch it again. Slopvac removes the tree. Online, `plugins sync` installs it again. | `plugins sync` while offline |
 | `signature-invalid` | The signature check refused an OCI artifact. The artifact has no signature although its lockfile entry records one, the signature is invalid or from a key that is not allowed, or it differs from the one the lockfile records. In `plugins update` it also covers the candidate artifact that update checks. The update reports the refusal for that plugin and still exits 2. | `plugins sync`, `plugins update` |
