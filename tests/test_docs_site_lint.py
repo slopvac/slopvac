@@ -24,7 +24,9 @@ NO_PAGES = "Docs site lint: no generated pages found"
 
 
 def _steps() -> list[dict]:
-    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
+    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["build"][
+        "steps"
+    ]
 
 
 def _step(name: str) -> dict:
@@ -32,7 +34,9 @@ def _step(name: str) -> dict:
     return step
 
 
-def _run_lint_step(tmp_path: Path, code: int, pages: str) -> subprocess.CompletedProcess:
+def _run_lint_step(
+    tmp_path: Path, code: int, pages: str
+) -> subprocess.CompletedProcess:
     """Run the lint step's script with a stub binary that records its arguments.
 
     `pages` is "page" (one generated page), "empty" (a directory without pages) or
@@ -101,7 +105,9 @@ def test_the_site_config_is_a_3x_config() -> None:
     assert config["profile"] == "relaxed"
     assert config["styles"] == ["core:legacy-relaxed"]
     assert config["thresholds"] == {"max_unicode_dashes": 1}
-    code = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+    code = [
+        ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
+    ]
     assert code[0] == "schema_version = 3"
 
 
@@ -118,4 +124,9 @@ def test_the_lint_step_prints_the_real_exit_code(tmp_path, code) -> None:
 def test_the_binary_gets_the_page_directory_and_the_site_config(tmp_path) -> None:
     _run_lint_step(tmp_path, 0, "page")
     args = (tmp_path / "args").read_text(encoding="utf-8").splitlines()
-    assert args == ["lint", str(tmp_path / "site-src"), "--config", "docs/site-lint.toml"]
+    assert args == [
+        "lint",
+        str(tmp_path / "site-src"),
+        "--config",
+        "docs/site-lint.toml",
+    ]
