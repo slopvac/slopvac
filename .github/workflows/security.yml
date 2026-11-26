@@ -259,30 +259,41 @@ jobs:
       contents: read
       security-events: write
     steps:
+      # Trivy runs here and not through trivy-action, so its output goes to files
+      # and never raw to the job log. The setup action is the one trivy-action
+      # calls (v0.36.0 action.yaml, step Install Trivy), at the same Trivy version.
+      # It checks the Trivy repository out into ./trivy and then removes that
+      # directory, with no input to move it. It runs before the repository checkout,
+      # so a ./trivy in the scanned change is never touched.
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.76.0
+          cache: false
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Scan filesystem
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          version: v0.76.0
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln,misconfig,secret
-          severity: HIGH,CRITICAL
-          format: sarif
-          output: trivy-results.sarif
-          exit-code: "1"
-          trivyignores: .trivyignore.yaml
-      - name: Print Trivy findings
-        if: failure()
+      # Trivy reads ./trivy.yaml and ./trivy-secret.yaml from the checkout unless
+      # told otherwise, so a change under review could plant either file.
+      # This step writes both from fixed text to a path outside the checkout.
+      - name: Write trusted Trivy config
         run: |
-          jq -r '
-            .runs[].results[]?
-            | "\(.ruleId) [\(.level)] \(.message.text | split("\n")[0])"
-              + " @ \(.locations[0].physicalLocation.artifactLocation.uri // "?")"
-          ' trivy-results.sarif
+          bash scripts/ci/trivy_trusted_config.sh UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+      # The database cache sits outside the checkout, where a change under review
+      # cannot plant a database that hides findings.
+      - name: Restore Trivy database
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/trivy-cache
+          key: cache-trivy-${{ steps.date.outputs.date }}
+          restore-keys: cache-trivy-
+      - name: Scan filesystem
+        run: |
+          bash scripts/ci/run_trivy.sh vuln,misconfig,secret UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL trivy-results.sarif
       - name: Upload Trivy SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
@@ -299,23 +310,41 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Trivy runs here and not through trivy-action, so its output goes to files
+      # and never raw to the job log. The setup action is the one trivy-action
+      # calls (v0.36.0 action.yaml, step Install Trivy), at the same Trivy version.
+      # It checks the Trivy repository out into ./trivy and then removes that
+      # directory, with no input to move it. It runs before the repository checkout,
+      # so a ./trivy in the scanned change is never touched.
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.76.0
+          cache: false
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The table format prints each finding in the job log, so a failure names
-      # the file and rule without a SARIF upload (which needs security-events).
-      - name: Scan filesystem for secrets
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      # Trivy reads ./trivy.yaml and ./trivy-secret.yaml from the checkout unless
+      # told otherwise, so a change under review could plant either file.
+      # This step writes both from fixed text to a path outside the checkout.
+      - name: Write trusted Trivy config
+        run: |
+          bash scripts/ci/trivy_trusted_config.sh HIGH,CRITICAL
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+      # The database cache sits outside the checkout, where a change under review
+      # cannot plant a database that hides findings.
+      - name: Restore Trivy database
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          version: v0.76.0
-          scan-type: fs
-          scan-ref: .
-          scanners: secret
-          severity: HIGH,CRITICAL
-          format: table
-          exit-code: "1"
-          trivyignores: .trivyignore.yaml
+          path: ${{ runner.temp }}/trivy-cache
+          key: cache-trivy-${{ steps.date.outputs.date }}
+          restore-keys: cache-trivy-
+      - name: Scan filesystem for secrets
+        run: |
+          bash scripts/ci/run_trivy.sh secret HIGH,CRITICAL "$RUNNER_TEMP/trivy-secret-results.sarif"
 
   security-gate:
     runs-on: ubuntu-latest
