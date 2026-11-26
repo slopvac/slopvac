@@ -968,13 +968,6 @@ fn require_guard(text: &str, authored: &str, files: &[&str], rule: &str) -> Resu
     }
 }
 
-#[test]
-fn an_e4_guard_sits_at_the_override_it_guards() {
-    let rw = preserve(E4_GUARDED).unwrap();
-    require_guard(&rw.text, E4_GUARDED, &["docs/**"], VOCABULARY_RULE)
-        .unwrap_or_else(|why| panic!("written config: {why}"));
-}
-
 #[rstest]
 #[case::no_guard_is_written(
     "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n"

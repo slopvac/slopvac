@@ -124,10 +124,12 @@ fn has_blocklist(t: &dyn TableLike) -> bool {
 /// - L2: a later category sets no `severity` after an earlier layer turned that category off
 ///   (`ReasonBlocklistCategoryOverOff`).
 /// - Widened L2: a later category sets no `severity` after an earlier layer set a rule of that
-///   category (`ReasonBlocklistCategoryNoSeverityOverRule`).
+///   category at any level, or set the category itself
+///   (`ReasonBlocklistCategoryNoSeverityOverRule`).
 ///
-/// A later category with no `severity` can follow both an earlier `off` category and an
-/// earlier rule. L2 wins then, because it names the more specific cause.
+/// The checks run in this order: L1, then L2, then widened L2. The first match decides the
+/// reason. An earlier `off` category therefore gets the L2 reason, whether or not an earlier
+/// layer also set a rule or the category. L2 names the more specific cause.
 ///
 /// The category checks treat every earlier override as one that can merge with the later one.
 /// 2.x merges only the overrides whose `files` match a file. A disjoint pair, such as one
