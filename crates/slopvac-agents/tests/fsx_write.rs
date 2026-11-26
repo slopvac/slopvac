@@ -64,13 +64,15 @@ fn a_write_of_unchanged_bytes_reports_no_change() {
     assert_eq!(names(tmp.path()), ["a.md"]);
 }
 
-#[test]
-fn a_write_refuses_a_file_that_changed_since_the_caller_read_it() {
+#[rstest::rstest]
+#[case::stale_bytes(Some(&b"stale"[..]))]
+#[case::expected_absence(None)]
+fn a_write_refuses_a_file_that_is_not_what_the_caller_saw(#[case] expected: Option<&[u8]>) {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(tmp.path().join("a.md"), "theirs").unwrap();
     let project = Project::open(tmp.path()).unwrap();
 
-    let got = project.write_atomic(Path::new("a.md"), Some(b"stale"), b"ours");
+    let got = project.write_atomic(Path::new("a.md"), expected, b"ours");
 
     assert!(matches!(got, Err(AgentsError::Conflict(p)) if p == Path::new("a.md")));
     assert_eq!(
@@ -78,21 +80,6 @@ fn a_write_refuses_a_file_that_changed_since_the_caller_read_it() {
         "theirs"
     );
     assert_eq!(names(tmp.path()), ["a.md"]);
-}
-
-#[test]
-fn a_create_refuses_a_file_that_appeared_since_the_caller_looked() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("a.md"), "theirs").unwrap();
-    let project = Project::open(tmp.path()).unwrap();
-
-    let got = project.write_atomic(Path::new("a.md"), None, b"ours");
-
-    assert!(matches!(got, Err(AgentsError::Conflict(_))));
-    assert_eq!(
-        std::fs::read_to_string(tmp.path().join("a.md")).unwrap(),
-        "theirs"
-    );
 }
 
 #[test]
@@ -111,14 +98,25 @@ fn a_write_to_a_directory_is_an_unsafe_target_and_leaves_no_temporary_file() {
 mod special_files {
     use super::*;
 
-    /// A write over the entry made by `make` must be an unsafe target and leave no file.
-    fn refuses(make: impl FnOnce(&Path)) {
-        let tmp = tempfile::tempdir().unwrap();
+    /// A write over the entry made by the closure must be an unsafe target and leave no file.
+    ///
+    /// The write runs on a thread with a bounded wait, so a write that blocks on a FIFO
+    /// fails the test instead of hanging it.
+    fn refuses(tmp: &tempfile::TempDir, make: impl FnOnce(&Path)) {
         make(&tmp.path().join("a.md"));
         let before = names(tmp.path());
-        let project = Project::open(tmp.path()).unwrap();
+        let base = tmp.path().to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let project = Project::open(&base).unwrap();
+            let outcome = project.write_atomic(Path::new("a.md"), None, b"ours");
+            // The receiver may have timed out and gone; the send result does not matter.
+            let _ = tx.send(outcome);
+        });
 
-        let got = project.write_atomic(Path::new("a.md"), None, b"ours");
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the write blocked on the destination");
 
         assert!(
             matches!(got, Err(AgentsError::UnsafeTarget(_))),
@@ -129,7 +127,8 @@ mod special_files {
 
     #[test]
     fn a_fifo_destination_is_refused_without_blocking() {
-        refuses(|path| {
+        let tmp = tempfile::tempdir().unwrap();
+        refuses(&tmp, |path| {
             let made = std::process::Command::new("mkfifo")
                 .arg(path)
                 .status()
@@ -140,9 +139,14 @@ mod special_files {
 
     #[test]
     fn a_socket_destination_is_refused() {
+        // A socket path is limited to about 100 bytes, so a long TMPDIR must not set the base.
+        let tmp = tempfile::Builder::new()
+            .prefix("sv")
+            .tempdir_in("/tmp")
+            .unwrap();
         // Keep the listener bound until the write returns.
         let listener = std::cell::RefCell::new(None);
-        refuses(|path| {
+        refuses(&tmp, |path| {
             *listener.borrow_mut() = Some(std::os::unix::net::UnixListener::bind(path).unwrap());
         });
     }

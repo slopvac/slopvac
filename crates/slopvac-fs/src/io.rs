@@ -213,6 +213,7 @@ pub fn write_atomic_if(
             ));
         }
         Err(e) => {
+            // Best effort: the verification error is the one to report.
             let _ = parent.remove_file(&temp);
             return Err(io(Op::VerifyStaged, e));
         }
@@ -225,11 +226,13 @@ pub fn write_atomic_if(
             return Err(Error::precondition(rel));
         }
         Err(e) => {
+            // Best effort: the guard's error is the one to report.
             let _ = parent.remove_file(&temp);
             return Err(io(Op::Precondition, e));
         }
     }
     if let Err(e) = parent.rename(&temp, &parent, name) {
+        // Best effort: the rename error is the one to report.
         let _ = parent.remove_file(&temp);
         return Err(io(Op::Replace, e));
     }

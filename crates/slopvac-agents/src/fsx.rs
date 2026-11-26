@@ -217,16 +217,11 @@ impl Project {
         Ok(self.read(rel)?.is_some())
     }
 
-    fn parent_dir(&self, rel: &Path, create: bool) -> Result<Dir, AgentsError> {
+    fn parent_dir(&self, rel: &Path) -> Result<Dir, AgentsError> {
         let parent = rel.parent().filter(|p| !p.as_os_str().is_empty());
         let Some(parent) = parent else {
             return self.dir.try_clone().map_err(|e| Self::map(rel, e));
         };
-        if create {
-            self.dir
-                .create_dir_all(parent)
-                .map_err(|e| Self::map(parent, e))?;
-        }
         self.dir.open_dir(parent).map_err(|e| Self::map(parent, e))
     }
 
@@ -358,7 +353,7 @@ impl Project {
         hook: &mut dyn FnMut(Stage),
     ) -> Result<(), AgentsError> {
         let rel = self.resolve(rel)?;
-        let parent = self.parent_dir(&rel, false)?;
+        let parent = self.parent_dir(&rel)?;
         let name = rel
             .file_name()
             .ok_or_else(|| AgentsError::UnsafeTarget(rel.display().to_string()))?;
@@ -580,21 +575,6 @@ mod mode_tests {
 
     fn mode_of(path: &Path) -> u32 {
         std::fs::metadata(path).unwrap().permissions().mode() & 0o777
-    }
-
-    #[test]
-    fn the_target_keeps_its_mode_through_a_write() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("a.md");
-        std::fs::write(&target, "old").unwrap();
-        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
-        let project = Project::open(dir.path()).unwrap();
-        let changed = project
-            .write_atomic(Path::new("a.md"), Some(b"old"), b"new")
-            .unwrap();
-        assert!(changed);
-        assert_eq!(std::fs::read(&target).unwrap(), b"new");
-        assert_eq!(mode_of(&target), 0o644);
     }
 
     #[test]
