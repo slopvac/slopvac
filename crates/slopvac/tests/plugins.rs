@@ -489,10 +489,55 @@ fn a_command_not_wired_yet_reports_its_code_and_exits_2(#[case] args: &[&str]) {
         .stderr(predicate::str::starts_with("error[command-not-wired]: "));
 }
 
-/// Pins today's behaviour: the binary gives `plugins trust` no loader for code plugin files,
-/// so trust is refused with its own code. Change this test when the loader is wired.
+/// A code plugin in the project at `plugins/fmt`, locked by its tree hash.
+fn lock_code_plugin(sandbox: &Sandbox) {
+    let plugin = sandbox.project().join("plugins/fmt");
+    fs::create_dir_all(plugin.join("bin")).unwrap();
+    fs::write(
+        plugin.join("slopvac-plugin.toml"),
+        "schema_version = 3\nid = \"fmt\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\
+         [provides]\n[plugin]\ncommand = \"bin/fmt\"\nnetwork = false\nhooks = []\n\
+         features = { required = [], optional = [] }\n",
+    )
+    .unwrap();
+    fs::write(plugin.join("bin/fmt"), "#!/bin/sh\nexit 0\n").unwrap();
+    let digest = slopvac_plugins::extract::tree_hash(&plugin).unwrap();
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"plugins/fmt\"\ndigest = \"{digest}\"\n"
+    ));
+}
+
+/// Once sync has installed a code plugin, `plugins trust` records trust from the installed
+/// files, and `plugins status` then reports the plugin as trusted.
 #[test]
-fn trust_of_a_locked_code_plugin_exits_2_because_no_loader_is_wired() {
+fn trust_of_a_synced_code_plugin_records_trust_and_exits_0() {
+    let sandbox = Sandbox::new();
+    lock_code_plugin(&sandbox);
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with(
+            "trusted `fmt` with content hash sha256:",
+        ));
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "status"])
+        .assert()
+        .stdout(predicate::str::contains("trusted"))
+        .stdout(predicate::str::contains("not trusted").not());
+}
+
+/// A locked code plugin with no installed tree fails for that reason, not for a missing loader.
+#[test]
+fn trust_of_a_locked_code_plugin_that_is_not_synced_exits_2() {
     let sandbox = Sandbox::new();
     sandbox.write_lock(
         "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
@@ -506,5 +551,6 @@ fn trust_of_a_locked_code_plugin_exits_2_because_no_loader_is_wired() {
         .code(2)
         .stderr(predicate::str::starts_with(
             "error[plugins-trust-inputs-failed]: ",
-        ));
+        ))
+        .stderr(predicate::str::contains("the plugin files are not loaded").not());
 }
