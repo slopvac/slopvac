@@ -529,9 +529,13 @@ fn bytes_select_the_same_runtime_as_the_file_that_holds_them() {
     let from_bytes = PythonRuntime::from_manifest(Path::new("tree"), m.as_bytes())
         .unwrap()
         .unwrap();
-    assert_eq!(from_bytes.python, from_file.python);
-    assert_eq!(from_bytes.command, from_file.command);
-    assert_eq!(from_bytes.args, from_file.args);
+    // The expected values are the ones written into the fixture above, not read back through the
+    // parser under test.
+    for runtime in [&from_file, &from_bytes] {
+        assert_eq!(runtime.python, "3.12");
+        assert_eq!(runtime.command, "bin/tagger.py");
+        assert_eq!(runtime.args, ["--stdio"]);
+    }
 }
 
 #[test]

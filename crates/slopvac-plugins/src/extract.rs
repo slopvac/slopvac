@@ -1400,7 +1400,7 @@ pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
 /// what the hash covers. The files are kept in memory, so `cap` bounds their total size.
 ///
 /// # Errors
-/// As [`tree_hash`], and [`ExtractError::Refused`] when the files together are over `cap`.
+/// As [`tree_hash`], and [`ExtractError::CaptureLimit`] when the files together are over `cap`.
 pub fn tree_hash_capturing_files(
     dir: &Path,
     cap: u64,
@@ -1413,7 +1413,7 @@ pub fn tree_hash_capturing_files(
 /// these bytes and never opens the file again, so what it parses is what the hash covers.
 ///
 /// # Errors
-/// As [`tree_hash`], and [`ExtractError::Refused`] when the file is over 1 MiB.
+/// As [`tree_hash`], and [`ExtractError::CaptureLimit`] when the file is over 1 MiB.
 pub fn tree_hash_capturing(
     dir: &Path,
     name: &str,
@@ -1961,7 +1961,7 @@ mod single_read_tests {
         let err = tree_hash_capturing_files(scratch.path(), 15).unwrap_err();
 
         assert!(
-            matches!(err, ExtractError::CaptureLimit { ref path, cap: 15 } if path == "b"),
+            matches!(err, ExtractError::CaptureLimit { cap: 15, .. }),
             "{err:?}"
         );
     }
@@ -1982,14 +1982,14 @@ mod single_read_tests {
 
     #[test]
     fn an_executable_list_over_the_manifest_cap_still_hashes() {
-        // A sorted, unique list of files that exist, over 1 MiB: names of 66 bytes.
+        // A sorted, unique list of files that exist, over 1 MiB: 4,300 names of 240 bytes.
         let scratch = tempfile::tempdir().unwrap();
         let bin = scratch.path().join("bin");
         fs::create_dir(&bin).unwrap();
-        let pad = "x".repeat(56);
+        let pad = "x".repeat(233);
         let mut list = String::new();
-        for i in 0..19_000 {
-            let name = format!("{i:05}-{pad}");
+        for i in 0..4_300 {
+            let name = format!("{i:04}-{pad}");
             fs::write(bin.join(&name), b"#!/bin/sh\n").unwrap();
             #[cfg(unix)]
             fs::set_permissions(

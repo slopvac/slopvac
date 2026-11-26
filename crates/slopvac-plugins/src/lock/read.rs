@@ -43,16 +43,24 @@ impl std::error::Error for LockReadError {
 }
 
 #[cfg(feature = "test-support")]
+/// What a test hung on the lock reader of this thread: a call as each read starts, and one after
+/// each read ends.
+#[cfg(feature = "test-support")]
+struct Observer {
+    on_entry: Rc<dyn Fn()>,
+    after_read: Rc<dyn Fn()>,
+}
+
+#[cfg(feature = "test-support")]
 thread_local! {
-    /// What a test hung on the lock reader of this thread.
-    static OBSERVER: RefCell<Option<Rc<dyn Fn()>>> = const { RefCell::new(None) };
+    static OBSERVER: RefCell<Option<Observer>> = const { RefCell::new(None) };
 }
 
 /// Ends the observation that [`observe_lock_reads`] started, when dropped.
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 #[must_use]
-pub struct LockReadObservation(());
+pub struct LockReadObservation(std::marker::PhantomData<*const ()>);
 
 #[cfg(feature = "test-support")]
 impl Drop for LockReadObservation {
@@ -61,14 +69,24 @@ impl Drop for LockReadObservation {
     }
 }
 
-/// Call `observer` after every read of a lock file on this thread, however the read is reached,
-/// until the returned guard is dropped. A test counts the reads of one command with it, and
-/// changes the file between two of them.
+/// Call `on_entry` as every read of a lock file on this thread starts, before any I/O and
+/// whether or not the read is later refused, and `after_read` once the read has ended, however
+/// the read is reached, until the returned guard is dropped. A test counts the reads of one
+/// command with the first and changes the file between two of them with the second. The guard
+/// is not `Send`: it ends the observation of the thread that made it.
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
-pub fn observe_lock_reads(observer: impl Fn() + 'static) -> LockReadObservation {
-    OBSERVER.with(|slot| *slot.borrow_mut() = Some(Rc::new(observer)));
-    LockReadObservation(())
+pub fn observe_lock_reads(
+    on_entry: impl Fn() + 'static,
+    after_read: impl Fn() + 'static,
+) -> LockReadObservation {
+    OBSERVER.with(|slot| {
+        *slot.borrow_mut() = Some(Observer {
+            on_entry: Rc::new(on_entry),
+            after_read: Rc::new(after_read),
+        });
+    });
+    LockReadObservation(std::marker::PhantomData)
 }
 
 /// Read and parse `<project_root>/.slopvac/plugins.lock`, refusing a file over
@@ -79,13 +97,20 @@ pub fn observe_lock_reads(observer: impl Fn() + 'static) -> LockReadObservation 
 /// missing and `required`), and `plugins-lock-invalid` when it is not a valid lock. The cause of
 /// the second keeps the location only, never the rejected text.
 pub fn read_project_lock(project_root: &Path, required: bool) -> Result<Lockfile, LockReadError> {
+    #[cfg(feature = "test-support")]
+    let hooks = OBSERVER.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|o| (Rc::clone(&o.on_entry), Rc::clone(&o.after_read)))
+    });
+    #[cfg(feature = "test-support")]
+    if let Some((on_entry, _)) = &hooks {
+        on_entry();
+    }
     let read = read_lock_file(project_root, required);
     #[cfg(feature = "test-support")]
-    {
-        let observer = OBSERVER.with(|slot| slot.borrow().clone());
-        if let Some(observer) = observer {
-            observer();
-        }
+    if let Some((_, after_read)) = &hooks {
+        after_read();
     }
     read
 }

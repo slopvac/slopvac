@@ -1838,10 +1838,10 @@ fn trust_reads_the_lock_once_and_everything_uses_that_read() {
     let counted = std::rc::Rc::clone(&reads);
     // The reader itself reports every read, so a read that does not go through `Runner` is
     // counted too.
-    let _observing = slopvac_plugins::lock::observe_lock_reads(move || {
-        counted.set(counted.get() + 1);
-        fs::write(&lock, format!("schema_version = 3\n{swapped}")).unwrap();
-    });
+    let _observing = slopvac_plugins::lock::observe_lock_reads(
+        move || counted.set(counted.get() + 1),
+        move || fs::write(&lock, format!("schema_version = 3\n{swapped}")).unwrap(),
+    );
     let ran = f.run(&["trust", "fake"], false, |s| s.loader(loader));
     assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
     assert_eq!(reads.get(), 1, "the lock was read more than once");
@@ -1851,6 +1851,25 @@ fn trust_reads_the_lock_once_and_everything_uses_that_read() {
         "{}",
         ran.out
     );
+}
+
+/// A read that is refused still counts: the observer sees every read as it starts.
+#[test]
+fn a_refused_lock_read_is_counted_as_a_read() {
+    let f = Fixture::new();
+    fs::create_dir_all(f.project().join(".slopvac/plugins.lock")).unwrap();
+    let reads = std::rc::Rc::new(std::cell::Cell::new(0_u32));
+    let counted = std::rc::Rc::clone(&reads);
+    let _observing =
+        slopvac_plugins::lock::observe_lock_reads(move || counted.set(counted.get() + 1), || {});
+
+    let err = f
+        .run(&["trust", "fake"], false, with_loader(&f))
+        .result
+        .unwrap_err();
+
+    assert_eq!(err.code(), "plugins-lock-unreadable");
+    assert_eq!(reads.get(), 1);
 }
 
 /// An existing lock that cannot be read is not an empty lock. A directory in its place cannot

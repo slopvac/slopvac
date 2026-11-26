@@ -32,10 +32,10 @@ toml.workspace = true
 test-support = ["slopvac-plugins/test-support"]
 
 [dev-dependencies]
-slopvac-packs = { workspace = true, features = ["test-support"] }
 flate2.workspace = true
 proptest.workspace = true
 rstest.workspace = true
+slopvac-packs = { workspace = true, features = ["test-support"] }
 tar.workspace = true
 tempfile.workspace = true
 
