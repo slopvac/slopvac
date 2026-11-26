@@ -1,18 +1,21 @@
 //! The loader that gives `plugins trust` and `plugins status` the files of a code plugin.
 //!
 //! It reads the lock entry, finds where sync left the tree (the store, or the project directory
-//! for a path source) and pins the load to the hash sync recorded for it. The trusted tree hash
-//! is that recorded hash, never one computed here: a tree that hashes to anything else, before
-//! or after the manifest is read, is a refusal.
+//! for a path source) and pins the load to a hash derived from the lock: the locked digest, or
+//! the hash of the cached archive that the digest names. The cache is not trusted (threat model
+//! E8), so no record in the store sets that hash. One pass hashes the tree and keeps the
+//! manifest bytes it read, and the load parses only those bytes: a tree that hashes to anything
+//! else is a refusal before any parse.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use slopvac_packs::{CodePluginContext, CodePluginError, SyncedError, load_code_plugin};
-use slopvac_plugins::extract::{TreeHash, tree_hash};
+use slopvac_plugins::extract::{ExtractError, Limits, TreeHash, tree_hash_capturing};
 use slopvac_plugins::host::PluginSpec;
 use slopvac_plugins::lock::{LockedPack, PackId, SourceKind, read_project_lock};
 use slopvac_plugins::sign::{KeyPolicy, PublicKey};
-use slopvac_plugins::sync::{Store, TreeState};
+use slopvac_plugins::sync::{Store, SyncError};
 use slopvac_plugins::trust::VerifiedPlugin;
 use slopvac_plugins::{PluginLoader, RunError};
 
@@ -73,8 +76,9 @@ impl<'a> InstalledPlugins<'a> {
             .map(PublicKey::fingerprint)
     }
 
-    /// The directory sync left for `locked` and the tree hash it recorded. A path source that
-    /// sync used in place has no record of its own: the lock pins its hash.
+    /// The directory sync left for `locked` and the tree hash the lock pins for it. A path
+    /// source that sync used in place has the hash in the lock; any other source has it derived
+    /// from the lock and the cached archive.
     fn synced_tree(&self, locked: &LockedPack) -> Result<(PathBuf, TreeHash), LoadRefusal> {
         let id = locked.id.to_string();
         if let SourceKind::Path(rel) = locked.source.kind() {
@@ -85,14 +89,14 @@ impl<'a> InstalledPlugins<'a> {
                 return Ok((dir, pinned));
             }
         }
-        match self.store.inspect(&locked.digest) {
-            Ok(TreeState::Intact(dir)) => self
-                .store
-                .recorded(&locked.digest)
-                .map(|recorded| (dir, recorded))
-                .ok_or_else(|| SyncedError::NotInstalled { id }.into()),
-            Ok(TreeState::Absent) => Err(SyncedError::NotInstalled { id }.into()),
-            Ok(TreeState::Tampered(_)) => Err(SyncedError::Tampered { id }.into()),
+        // STUB(slopvac-8l4.9.28): no executable set is configured yet, so sync and the loader
+        // both use the empty one.
+        match self
+            .store
+            .verified_tree(locked, &HashSet::new(), Limits::default())
+        {
+            Ok(Some(tree)) => Ok((tree.dir, tree.hash)),
+            Ok(None) => Err(SyncedError::NotInstalled { id }.into()),
             Err(source) => Err(SyncedError::StoreUnreadable {
                 id,
                 source: Box::new(source),
@@ -111,18 +115,36 @@ impl<'a> InstalledPlugins<'a> {
         let locked = lock
             .get(id)
             .ok_or_else(|| SyncedError::NotLocked { id: name.clone() })?;
-        let (root, recorded) = self.synced_tree(locked)?;
-        let mut context = CodePluginContext::new(recorded.clone(), PLUGIN_PATH);
+        let (root, expected) = self.synced_tree(locked)?;
+        // One pass hashes the tree and keeps the manifest bytes it read. The hash is checked
+        // before anything is parsed, and the parse reads only the kept bytes.
+        let (hash, manifest) = match tree_hash_capturing(&root, "slopvac-plugin.toml") {
+            Ok(done) => done,
+            Err(source @ ExtractError::Io { .. }) => {
+                return Err(SyncedError::StoreUnreadable {
+                    id: name,
+                    source: Box::new(SyncError::Extract {
+                        id: locked.id.clone(),
+                        source,
+                    }),
+                }
+                .into());
+            }
+            Err(_) => return Err(SyncedError::Tampered { id: name }.into()),
+        };
+        if hash != expected {
+            return Err(SyncedError::Tampered { id: name }.into());
+        }
+        let mut context = CodePluginContext::new(expected, PLUGIN_PATH);
         if let Some(fingerprint) = self.fingerprint(locked) {
             context = context.with_key_fingerprint(fingerprint);
         }
-        let loaded = load_code_plugin(locked, &root, &context)?;
-        // Hash after the manifest was read: the files the load saw are the files that were
-        // recorded, so trust is never pinned to a tree that changed under the loader.
-        match tree_hash(&root) {
-            Ok(fresh) if fresh == recorded => Ok(loaded),
-            _ => Err(SyncedError::Tampered { id: name }.into()),
-        }
+        Ok(load_code_plugin(
+            locked,
+            &root,
+            manifest.as_deref(),
+            &context,
+        )?)
     }
 }
 

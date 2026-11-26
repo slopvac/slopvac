@@ -827,13 +827,12 @@ impl StagedTree {
     clippy::too_many_lines,
     reason = "the catalog calls take more lines than the former literals; the body is unchanged"
 )]
-fn unpack<S: std::hash::BuildHasher>(
+fn scan_archive<S: std::hash::BuildHasher>(
     archive: impl Read,
-    root: &Path,
-    store: &Path,
+    root: Option<&Path>,
     executable: &HashSet<String, S>,
     limits: Limits,
-) -> Result<Extracted, ExtractError> {
+) -> Result<Scanned, ExtractError> {
     let seen = Arc::new(AtomicU64::new(0));
     let counted = Counting {
         inner: archive,
@@ -937,21 +936,60 @@ fn unpack<S: std::hash::BuildHasher>(
         files.push(rec);
     }
 
-    let hash = tree_hash_of(files);
-    let exec_set: HashSet<&str> = exec_paths.iter().map(String::as_str).collect();
-    let (final_dir, quarantined) = install(root, store, &hash, &exec_set)?;
-    Ok(Extracted {
-        quarantined,
-        root: final_dir,
-        hash,
+    Ok(Scanned {
+        hash: tree_hash_of(files),
+        exec_paths,
         files: file_count,
         bytes,
     })
 }
 
+/// What one pass over an archive found.
+struct Scanned {
+    hash: TreeHash,
+    exec_paths: Vec<String>,
+    files: usize,
+    bytes: u64,
+}
+
+fn unpack<S: std::hash::BuildHasher>(
+    archive: impl Read,
+    root: &Path,
+    store: &Path,
+    executable: &HashSet<String, S>,
+    limits: Limits,
+) -> Result<Extracted, ExtractError> {
+    let scanned = scan_archive(archive, Some(root), executable, limits)?;
+    let exec_set: HashSet<&str> = scanned.exec_paths.iter().map(String::as_str).collect();
+    let (final_dir, quarantined) = install(root, store, &scanned.hash, &exec_set)?;
+    Ok(Extracted {
+        quarantined,
+        root: final_dir,
+        hash: scanned.hash,
+        files: scanned.files,
+        bytes: scanned.bytes,
+    })
+}
+
+/// The tree hash that extracting `archive` would give, with the same rules, limits and
+/// executable set as [`extract_targz`] and nothing written to disk.
+///
+/// This is how a loader derives the hash of a cached artifact without trusting the tree that
+/// the store holds for it.
+///
+/// # Errors
+/// As [`extract_targz`], except for failures of the file system.
+pub fn hash_targz<S: std::hash::BuildHasher>(
+    archive: impl Read,
+    executable: &HashSet<String, S>,
+    limits: Limits,
+) -> Result<TreeHash, ExtractError> {
+    scan_archive(archive, None, executable, limits).map(|scanned| scanned.hash)
+}
+
 /// Write the executable list into the staged tree and return its record.
 fn write_sidecar(
-    root: &Path,
+    root: Option<&Path>,
     exec_paths: &mut [String],
 ) -> Result<Option<FileRecord>, ExtractError> {
     if exec_paths.is_empty() {
@@ -959,12 +997,14 @@ fn write_sidecar(
     }
     exec_paths.sort();
     let sidecar = sidecar_bytes(exec_paths);
-    let mut out = create_file(&root.join(EXEC_SIDECAR), false).map_err(io_err(
-        TransportPhrase::ExtractCreateExecutableList.as_static(),
-    ))?;
-    out.write_all(&sidecar).map_err(io_err(
-        TransportPhrase::ExtractWriteExecutableList.as_static(),
-    ))?;
+    if let Some(root) = root {
+        let mut out = create_file(&root.join(EXEC_SIDECAR), false).map_err(io_err(
+            TransportPhrase::ExtractCreateExecutableList.as_static(),
+        ))?;
+        out.write_all(&sidecar).map_err(io_err(
+            TransportPhrase::ExtractWriteExecutableList.as_static(),
+        ))?;
+    }
     Ok(Some(FileRecord {
         path: EXEC_SIDECAR.to_owned(),
         executable: false,
@@ -999,23 +1039,27 @@ fn pax_paths(block: &[u8]) -> Result<Vec<Vec<u8>>, ExtractError> {
 /// Write one regular file into the staged tree and record its digest.
 fn write_entry(
     entry: &mut tar::Entry<'_, impl Read>,
-    root: &Path,
+    root: Option<&Path>,
     rel: String,
     exec: bool,
 ) -> Result<FileRecord, ExtractError> {
-    let target = root.join(&rel);
-    if let Some(dir) = target.parent() {
-        fs::create_dir_all(dir)
-            .map_err(io_err(TransportPhrase::ExtractCreateDirectory.as_static()))?;
+    // With no root the entry is only hashed.
+    let mut out = None;
+    if let Some(root) = root {
+        let target = root.join(&rel);
+        if let Some(dir) = target.parent() {
+            fs::create_dir_all(dir)
+                .map_err(io_err(TransportPhrase::ExtractCreateDirectory.as_static()))?;
+        }
+        out = Some(create_file(&target, exec).map_err(io_err(
+            TransportText::ExtractCreatingFile { path: rel.clone() }.to_string(),
+        ))?);
     }
-    let mut out = create_file(&target, exec).map_err(io_err(
-        TransportText::ExtractCreatingFile { path: rel.clone() }.to_string(),
-    ))?;
     let declared = entry
         .header()
         .size()
         .map_err(|e| ExtractError::Malformed(e.to_string()))?;
-    let (sha, len) = hash_stream(entry, Some(&mut out), &rel, None)?;
+    let (sha, len) = hash_stream(entry, out.as_mut(), &rel, None)?;
     if len != declared {
         return Err(ExtractError::Malformed(
             TransportText::ExtractShortEntry { path: rel.clone() }.to_string(),
@@ -1228,12 +1272,20 @@ pub(crate) fn open_regular(path: &Path) -> io::Result<File> {
 struct Capture<'a> {
     inner: &'a mut File,
     kept: Vec<u8>,
+    over: bool,
 }
+
+/// Most bytes a hash pass keeps of one file it is asked to capture.
+const MAX_CAPTURE_BYTES: usize = 1 << 20;
 
 impl Read for Capture<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
-        self.kept.extend_from_slice(&buf[..n]);
+        if self.kept.len() + n <= MAX_CAPTURE_BYTES {
+            self.kept.extend_from_slice(&buf[..n]);
+        } else {
+            self.over = true;
+        }
         Ok(n)
     }
 }
@@ -1253,18 +1305,41 @@ pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
     tree_hash_observed(dir, &mut |_, _| {})
 }
 
+/// [`tree_hash`], and the bytes of the file `name` at the root of the tree as the same pass
+/// hashed them, or `None` when the tree has no such file. A caller that parses the file reads
+/// these bytes and never opens the file again, so what it parses is what the hash covers.
+///
+/// # Errors
+/// As [`tree_hash`], and [`ExtractError::Refused`] when the file is over 1 MiB.
+pub fn tree_hash_capturing(
+    dir: &Path,
+    name: &str,
+) -> Result<(TreeHash, Option<Vec<u8>>), ExtractError> {
+    hash_walk(dir, Some(name), &mut |_, _| {})
+}
+
 /// [`tree_hash`] with a callback after each file is hashed, given its relative name and path.
 ///
 /// The callback is the test seam for the single-read guarantee: a test rewrites the sidecar from
 /// it, and the result must still come from the bytes that were hashed.
-#[expect(
-    clippy::too_many_lines,
-    reason = "the catalog calls take more lines than the former literals; the body is unchanged"
-)]
 fn tree_hash_observed(
     dir: &Path,
     after_hash: &mut dyn FnMut(&str, &Path),
 ) -> Result<TreeHash, ExtractError> {
+    hash_walk(dir, None, after_hash).map(|(hash, _)| hash)
+}
+
+/// The walk behind [`tree_hash`] and [`tree_hash_capturing`]: one pass that hashes every file
+/// and keeps the executable list and, when `capture` names one, that file.
+#[expect(
+    clippy::too_many_lines,
+    reason = "the catalog calls take more lines than the former literals; the body is unchanged"
+)]
+fn hash_walk(
+    dir: &Path,
+    capture: Option<&str>,
+    after_hash: &mut dyn FnMut(&str, &Path),
+) -> Result<(TreeHash, Option<Vec<u8>>), ExtractError> {
     let dir = normalised(dir);
     let dir = dir.as_path();
     let root_meta = fs::symlink_metadata(dir)
@@ -1278,6 +1353,7 @@ fn tree_hash_observed(
     let mut nodes = NodeBudget::new(MAX_TREE_NODES);
     let mut budget = MAX_TREE_BYTES;
     let mut sidecar: Option<Vec<u8>> = None;
+    let mut captured: Option<Vec<u8>> = None;
     let mut on_disk_exec: HashSet<String> = HashSet::new();
     while let Some((path, prefix)) = stack.pop() {
         for entry in fs::read_dir(&path)
@@ -1328,13 +1404,23 @@ fn tree_hash_observed(
                         )
                     }
                 })?;
-                let (sha, len) = if rel == EXEC_SIDECAR {
+                let (sha, len) = if rel == EXEC_SIDECAR || capture == Some(rel.as_str()) {
                     let mut tee = Capture {
                         inner: &mut f,
                         kept: Vec::new(),
+                        over: false,
                     };
                     let hashed = hash_stream(&mut tee, None, &rel, Some(budget))?;
-                    sidecar = Some(tee.kept);
+                    if tee.over {
+                        return Err(refused(
+                            TransportText::ExtractTreeSize { path: rel.clone() }.to_string(),
+                        ));
+                    }
+                    if rel == EXEC_SIDECAR {
+                        sidecar = Some(tee.kept);
+                    } else {
+                        captured = Some(tee.kept);
+                    }
                     hashed
                 } else {
                     hash_stream(&mut f, None, &rel, Some(budget))?
@@ -1371,7 +1457,7 @@ fn tree_hash_observed(
             }
         }
     }
-    Ok(tree_hash_of(files))
+    Ok((tree_hash_of(files), captured))
 }
 
 /// Parse the sidecar bytes (read once while the tree was hashed) and flag the files it lists.

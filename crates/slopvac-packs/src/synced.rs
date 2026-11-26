@@ -9,9 +9,10 @@ use std::collections::HashSet;
 
 use semver::Version;
 use slopvac_model::{ApiVersion, PackId};
+use slopvac_plugins::extract::{ExtractError, Limits as ExtractLimits, tree_hash};
 use slopvac_plugins::lock::{LockedPack, Lockfile, PackId as LockPackId, PackKind as LockKind};
 use slopvac_plugins::sign::RESERVED_ID;
-use slopvac_plugins::sync::{Store, SyncError, TreeState};
+use slopvac_plugins::sync::{Store, SyncError};
 
 use crate::messages::PackMessage;
 use crate::{
@@ -261,10 +262,12 @@ pub fn load_synced_within(
                 api: locked.slopvac_api,
             });
         }
-        let dir = match store.inspect(&locked.digest) {
-            Ok(TreeState::Intact(dir)) => dir,
-            Ok(TreeState::Absent) => return Err(SyncedError::NotInstalled { id }),
-            Ok(TreeState::Tampered(_)) => return Err(SyncedError::Tampered { id }),
+        // The hash comes from the lock and the cached archive, never from a store record, and
+        // the tree must hash to it before any file is read (threat model E8).
+        // STUB(slopvac-8l4.9.28): the executable set is empty until config supplies it.
+        let tree = match store.verified_tree(&locked, &HashSet::new(), ExtractLimits::default()) {
+            Ok(Some(tree)) => tree,
+            Ok(None) => return Err(SyncedError::NotInstalled { id }),
             Err(source) => {
                 return Err(SyncedError::StoreUnreadable {
                     id,
@@ -272,6 +275,20 @@ pub fn load_synced_within(
                 });
             }
         };
+        match tree_hash(&tree.dir) {
+            Ok(hash) if hash == tree.hash => {}
+            Err(ExtractError::Io { what, source }) => {
+                return Err(SyncedError::StoreUnreadable {
+                    id,
+                    source: Box::new(SyncError::Extract {
+                        id: locked.id.clone(),
+                        source: ExtractError::Io { what, source },
+                    }),
+                });
+            }
+            _ => return Err(SyncedError::Tampered { id }),
+        }
+        let dir = tree.dir;
         let origin = match locked.kind {
             LockKind::Data => Source::Pack,
             LockKind::Code => Source::Plugin,

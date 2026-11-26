@@ -55,6 +55,7 @@
 mod cache;
 mod error;
 mod git;
+mod verified;
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
@@ -66,6 +67,7 @@ use semver::{Version, VersionReq};
 
 pub use cache::{Store, StoreLock, TreeState};
 pub use error::SyncError;
+pub use verified::VerifiedTree;
 
 use crate::extract::{
     ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash, verify_tree,
@@ -94,6 +96,25 @@ pub const MEDIA_PACK_LAYER: &str = "application/vnd.slopvac.pack.layer.v1.tar+gz
 const MAX_MINISIG_BYTES: u64 = 4 * 1024;
 /// Longest the git commands of one pack may take together.
 const GIT_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// The one layer of a pack manifest that holds the pack, or the sentence that says why it has
+/// none. The signature layers do not count.
+fn payload_layer<'m>(manifest: &'m Manifest, limits: &Limits) -> Result<&'m Descriptor, &'static str> {
+    let mut payload = manifest
+        .layers
+        .iter()
+        .filter(|l| l.media_type != MEDIA_STATEMENT && l.media_type != MEDIA_MINISIG);
+    let (Some(layer), None) = (payload.next(), payload.next()) else {
+        return Err(SyncPhrase::OneLayer.as_static());
+    };
+    if layer.media_type != MEDIA_PACK_LAYER {
+        return Err(SyncPhrase::LayerNotArchive.as_static());
+    }
+    if layer.size > limits.compressed_bytes {
+        return Err(SyncPhrase::LayerTooLarge.as_static());
+    }
+    Ok(layer)
+}
 
 /// Whether sync may use the network.
 #[derive(Clone, Copy)]
@@ -456,12 +477,13 @@ impl<'a> Syncer<'a> {
         })
     }
 
-    fn acquire_oci(
+    /// The reference, the manifest and the namespace of an OCI entry: the manifest comes by the
+    /// locked digest, from the cache when it holds it. An unsigned entry costs no request.
+    fn oci_manifest(
         &self,
         pack: &LockedPack,
         text: &str,
-        revoked: &RevocationList,
-    ) -> Result<Acquired, SyncError> {
+    ) -> Result<(Reference, Manifest, String), SyncError> {
         let id = &pack.id;
         let layout = |why: &str| SyncError::Layout {
             id: id.clone(),
@@ -506,6 +528,44 @@ impl<'a> Syncer<'a> {
             return Err(layout(SyncPhrase::ManifestNotImage.as_static()));
         }
 
+        Ok((reference, manifest, namespace))
+    }
+
+    /// Check the signature of a cached OCI entry again, without the network. The cache is not
+    /// trusted (threat model E8), so `plugins trust` calls this before it records trust: a lock
+    /// edited to name a planted artifact has no signature that sync ever checked. An entry from
+    /// another kind of source has no signature to check.
+    ///
+    /// # Errors
+    /// [`SyncError::Unsigned`] when the lock records no signature, [`SyncError::OfflinePackMissing`]
+    /// when the cache lacks the manifest or a signature file, and [`SyncError::Sign`] or
+    /// [`SyncError::SignatureDiffersFromLock`] when the signature does not verify.
+    pub fn verify_cached_signature(&self, pack: &LockedPack) -> Result<(), SyncError> {
+        let SourceKind::Oci(text) = pack.source.kind() else {
+            return Ok(());
+        };
+        let (reference, manifest, namespace) = self.oci_manifest(pack, text)?;
+        self.verify_signature(pack, &reference, &manifest, &namespace)
+            .map(drop)
+    }
+
+    fn acquire_oci(
+        &self,
+        pack: &LockedPack,
+        text: &str,
+        revoked: &RevocationList,
+    ) -> Result<Acquired, SyncError> {
+        let id = &pack.id;
+        let layout = |why: &str| SyncError::Layout {
+            id: id.clone(),
+            why: why.to_owned(),
+        };
+        let fetch = |source| SyncError::Fetch {
+            id: id.clone(),
+            source,
+        };
+        let (reference, manifest, namespace) = self.oci_manifest(pack, text)?;
+
         let key_id = self.verify_signature(pack, &reference, &manifest, &namespace)?;
         if revoked.revokes_key(&key_id) {
             return Err(SyncError::Revoked {
@@ -514,19 +574,7 @@ impl<'a> Syncer<'a> {
             });
         }
 
-        let mut payload = manifest
-            .layers
-            .iter()
-            .filter(|l| l.media_type != MEDIA_STATEMENT && l.media_type != MEDIA_MINISIG);
-        let (Some(layer), None) = (payload.next(), payload.next()) else {
-            return Err(layout(SyncPhrase::OneLayer.as_static()));
-        };
-        if layer.media_type != MEDIA_PACK_LAYER {
-            return Err(layout(SyncPhrase::LayerNotArchive.as_static()));
-        }
-        if layer.size > self.limits.compressed_bytes {
-            return Err(layout(SyncPhrase::LayerTooLarge.as_static()));
-        }
+        let layer = payload_layer(&manifest, &self.limits).map_err(layout)?;
         if let Some(path) = self.store.blob(&layer.digest, layer.size) {
             return Ok(Acquired::Archive(path));
         }

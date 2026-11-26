@@ -14,7 +14,7 @@ use slopvac_plugins::protocol::{self, FeatureSet, PluginDeclaration};
 use slopvac_plugins::trust::VerifiedPlugin;
 
 use crate::messages::{PackMessage, code_of};
-use crate::{DirSource, Manifest, ManifestError, PackKind, PackPath, PackSource, SourceError};
+use crate::{Manifest, ManifestError, PackKind, PackPath};
 
 /// What the caller knows about an installed tree and the child it will start.
 #[derive(Debug, Clone)]
@@ -73,16 +73,11 @@ pub enum CodePluginError {
         /// The plugin id.
         id: String,
     },
-    /// The manifest could not be read.
+    /// The tree has no manifest.
     #[error("{}", PackMessage::LoaderManifestUnreadable { id: slopvac_sanitize::line(.id) })]
     Unreadable {
         /// The plugin id.
         id: String,
-        /// The read failure. TODO(slopvac-8l4.12.82): its `Display` is not catalog text, so the
-        /// chain a caller walks can show it; render the source through the catalog with the
-        /// source types of this crate.
-        #[source]
-        source: SourceError,
     },
     /// The manifest breaks the contract.
     #[error("{}", PackMessage::LoaderManifestInvalid { id: slopvac_sanitize::line(.id) })]
@@ -111,34 +106,33 @@ impl CodePluginError {
 type Result<T> = std::result::Result<T, CodePluginError>;
 
 /// The verified plugin and the spec to start it, from the lock entry and the installed tree at
-/// `root`. The caller owns the tree hash in `context` and checks `root` against it; this
+/// `root`. The caller owns the tree hash in `context` and has checked `root` against it; this
 /// function takes the hash as given.
+///
+/// `manifest` is the content of `slopvac-plugin.toml` as the pass that hashed the tree read it,
+/// or `None` when the tree has none. The function opens no file, so what it parses is what the
+/// hash covers and a file that changes after the hash cannot change the result.
 ///
 /// The program is the manifest `command` under `root`, the working directory is `root`, and
 /// the declaration is read from the same manifest bytes that the tree hash covers. For
 /// `runtime = "python"` the caller swaps in the interpreter of the managed environment.
 ///
 /// # Errors
-/// [`CodePluginError`] for a data plugin, a manifest that cannot be read or breaks the
+/// [`CodePluginError`] for a data plugin, a missing manifest, a manifest that breaks the
 /// contract (this includes a `command` that leaves the tree), and a manifest whose id, version
 /// or kind differs from the lock entry.
 pub fn load_code_plugin(
     locked: &LockedPack,
     root: &Path,
+    manifest: Option<&[u8]>,
     context: &CodePluginContext,
 ) -> Result<(VerifiedPlugin, PluginSpec)> {
     let id = locked.id.to_string();
     if locked.kind != LockKind::Code {
         return Err(CodePluginError::NotCode { id });
     }
-    let text =
-        DirSource::new(root)
-            .manifest_text()
-            .map_err(|source| CodePluginError::Unreadable {
-                id: id.clone(),
-                source,
-            })?;
-    let manifest = Manifest::parse(&text).map_err(|source| CodePluginError::Manifest {
+    let bytes = manifest.ok_or_else(|| CodePluginError::Unreadable { id: id.clone() })?;
+    let manifest = Manifest::from_reader(bytes).map_err(|source| CodePluginError::Manifest {
         id: id.clone(),
         source,
     })?;

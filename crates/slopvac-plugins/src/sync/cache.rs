@@ -18,7 +18,9 @@ use crate::oci::Digest;
 pub enum TreeState {
     /// Nothing recorded, or the recorded tree is gone.
     Absent,
-    /// The recorded tree exists and hashes to its record.
+    /// The recorded tree exists and hashes to its record. This is "intact against its record",
+    /// and the record is only a hint: it does not mean the tree is the one the lock pins.
+    /// Trust and loading use [`Store::verified_tree`] instead.
     Intact(PathBuf),
     /// The recorded tree exists and differs from its record.
     Tampered(PathBuf),
@@ -69,6 +71,11 @@ impl Store {
 
     fn blobs(&self) -> PathBuf {
         self.root.join("blobs")
+    }
+
+    /// Where the cached blob `digest` lives. The file is not read or checked.
+    pub(super) fn blob_path(&self, digest: &Digest) -> PathBuf {
+        self.blobs().join(digest.hex())
     }
 
     fn refs(&self) -> PathBuf {
@@ -185,9 +192,13 @@ impl Store {
         Ok(())
     }
 
-    /// The tree hash that the store recorded for a locked digest, or `None` when it recorded none.
-    #[must_use]
-    pub fn recorded(&self, locked: &LockDigest) -> Option<TreeHash> {
+    /// The tree hash that a record names for a locked digest. `None` means the record is missing,
+    /// unreadable, not a regular file or malformed, which this call does not tell apart.
+    ///
+    /// A record is a hint for sync and status, never an authority (threat model E8): whoever
+    /// can write the store can write one. Nothing that grants trust or loads a plugin may take
+    /// a hash from it; [`Store::verified_tree`] derives the hash from the lock.
+    fn recorded(&self, locked: &LockDigest) -> Option<TreeHash> {
         let path = self.refs().join(&locked.as_str()[7..]);
         // The handle is checked, not the name: a ref swapped for a FIFO cannot hang the read.
         let mut text = String::new();
@@ -202,7 +213,8 @@ impl Store {
         TreeHash::from_hex(text.trim())
     }
 
-    /// What the store holds for a locked digest. Reads the tree again.
+    /// What the store holds for a locked digest, judged against its own record, which is a hint.
+    /// Reads the tree again.
     ///
     /// # Errors
     /// [`SyncError::Store`] when the tree cannot be read.

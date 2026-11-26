@@ -14,7 +14,7 @@ use crate::PluginSpec;
 use crate::cause::{self, withheld};
 use crate::lock::{
     LockedPack, Lockfile, PackId, PackKind, VersionReq, config_drift, outdated as lock_outdated,
-    read_project_lock,
+    LockReadError, read_project_lock,
 };
 use crate::messages::cli::{CliText, Redacted, RunError};
 use crate::oci::Digest;
@@ -394,7 +394,7 @@ fn notices(out: &mut dyn Write, list: &[RevocationNotice]) -> Result<(), RunErro
 }
 
 fn read_lock(runner: &Runner<'_>, required: bool) -> Result<Lockfile, RunError> {
-    read_project_lock(&runner.dirs.project_root, required)
+    read_project_lock(&runner.dirs.project_root, required).map_err(LockReadError::into_run_error)
 }
 
 fn kind_name(kind: PackKind) -> String {
@@ -732,6 +732,22 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         .is_some_and(|pack| revoked(runner, pack, &current.list))
     {
         return Err(RunError::Revoked { id: line(id) });
+    }
+    // The cache is not trusted (threat model E8), so the signature is checked again here, from
+    // the cached files and offline, before a person's trust is recorded for what they hold.
+    if let Some(pack) = lock.get(&pack_id) {
+        let store = Store::new(&runner.dirs.cache_dir);
+        Syncer::new(
+            &store,
+            Network::Offline,
+            runner.policy,
+            &runner.dirs.project_root,
+            runner.revocations,
+        )
+        .verify_cached_signature(pack)
+        .map_err(|e| RunError::Failed {
+            source: cause::sync(&runner.dirs.project_root, &e),
+        })?;
     }
     let (vp, spec) = loader
         .load(&pack_id)

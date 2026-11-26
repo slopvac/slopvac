@@ -32,5 +32,5 @@ pub use model::{
 };
 pub use outdated::{OutdatedPack, outdated, parse_version_req};
 pub use parse::LOCK_SCHEMA_VERSION;
-pub use read::read_project_lock;
+pub use read::{LockReadError, read_project_lock};
 pub use semver::{Version, VersionReq};
