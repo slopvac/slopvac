@@ -444,7 +444,7 @@ fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
 /// plugin with a core rule id would overwrite or switch off the core's. A category is keyed by
 /// plugin and id, so a plugin category that shares an id with a core category is legal. Every
 /// core clash is checked before any qualified duplicate, over all categories, so the refusal does
-/// not depend on the order of the categories. Nothing from the plugin loads.
+/// not depend on the order of the categories. A plugin with several core clashes is refused for the lowest rule id, so the error names one rule whatever the order. Nothing from the plugin loads.
 fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
     // The core's ids first, wherever the core sits in the list, so no plugin escapes the check
     // by coming before it.
@@ -462,7 +462,8 @@ fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
             .iter()
             .flat_map(slopvac_rules::LoadedCategory::rules)
             .map(|r| r.id().local())
-            .find(|local| core_rules.contains(local));
+            .filter(|local| core_rules.contains(local))
+            .min();
         if let Some(rule) = clash {
             return Err(PackError::RuleIdCollision {
                 plugin: pack.manifest.id.to_string(),
