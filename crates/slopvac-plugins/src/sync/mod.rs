@@ -452,7 +452,7 @@ impl<'a> Syncer<'a> {
                 // The tree is hashed again to seal it. That hash must be the accepted one, and
                 // the manifest is the one the accepting pass read.
                 let done = staged
-                    .install_accepted(&self.store.trees(), &accepted.hash)
+                    .install(&self.store.trees(), &accepted.hash)
                     .map_err(extract)?;
                 self.store.record(&pack.digest, &done.hash)?;
                 let change = match before {
@@ -832,7 +832,8 @@ impl<'a> Syncer<'a> {
             self.store.observe(&dir);
             match verified {
                 Ok(manifest) => return Ok(Acquired::Stored(dir, manifest)),
-                Err(ExtractError::Tampered { .. }) => {
+                // A stored tree the walk refuses is repaired like one that changed.
+                Err(ExtractError::Tampered { .. } | ExtractError::Refused(_)) => {
                     if matches!(self.network, Network::Offline) {
                         let aside = cache::evict_tree(&dir)?;
                         return Err(SyncError::CacheTampered {
@@ -1054,7 +1055,9 @@ impl PackStatus {
 /// What is installed against `lock`, sorted by id. Reads trees; never writes.
 ///
 /// # Errors
-/// [`SyncError::Store`] when a tree cannot be read.
+/// [`SyncError::Extract`] with the typed cause when a tree cannot be read or hashed: a walk that
+/// is refused, a manifest over the capture limit or a failed read. A tree whose finished hash
+/// differs from the lock or its record is reported in the state, not as an error.
 pub fn status(
     store: &Store,
     project_root: &Path,
@@ -1071,7 +1074,8 @@ pub fn status(
 /// that no pack uses are listed by [`EnvStore::list`].
 ///
 /// # Errors
-/// [`SyncError::Store`] when a tree cannot be read.
+/// As [`status`]: [`SyncError::Extract`] with the typed cause when a tree cannot be read or
+/// hashed.
 pub fn status_with_python(
     store: &Store,
     envs: &EnvStore,

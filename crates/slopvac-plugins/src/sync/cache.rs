@@ -270,9 +270,18 @@ impl Store {
     /// # Errors
     /// [`SyncError::Store`] when the tree cannot be read.
     pub fn inspect(&self, locked: &LockDigest) -> Result<TreeState, SyncError> {
-        self.inspect_accepted(locked)
-            .map(|(state, _)| state)
-            .map_err(|e| SyncError::Store(e.unescaped()))
+        match self.inspect_accepted(locked) {
+            Ok((state, _)) => Ok(state),
+            // Sync repairs a recorded tree that the walk refuses as it repairs one that changed.
+            Err(ExtractError::Refused(_)) => {
+                let dir = self
+                    .recorded(locked)
+                    .map(|hash| self.tree_dir(&hash))
+                    .unwrap_or_default();
+                Ok(TreeState::Tampered(dir))
+            }
+            Err(e) => Err(SyncError::Store(e.unescaped())),
+        }
     }
 
     /// [`Self::inspect`], and for an intact tree the hash the pass accepted and the manifest as

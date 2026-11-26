@@ -708,10 +708,10 @@ pub fn extract_targz<S: std::hash::BuildHasher>(
 }
 
 /// A tree built file by file in a private staging directory, for sources that
-/// are not a `.tar.gz` (a pinned git commit). Nothing reaches the store until
-/// [`StagedTree::install`], so the caller can hash the tree, compare it with the
-/// lock and drop it without a trace. Dropping the value removes the staging
-/// directory.
+/// are not a `.tar.gz` (a pinned git commit). Nothing reaches the store until the
+/// caller installs it under a hash it has accepted, so the caller can hash the
+/// tree, compare it with the lock and drop it without a trace. Dropping the value
+/// removes the staging directory.
 ///
 /// Files are created exclusively with a plain name, so a second spelling of one
 /// name or a path through a link fails instead of replacing anything. The
@@ -819,27 +819,21 @@ impl StagedTree {
         tree_hash_capturing(&self.root, MANIFEST_FILE)
     }
 
-    /// Seal the tree and move it into `store` under its hash. The hash is
-    /// computed again here, so what is stored is what was hashed last.
+    /// Seal a tree that a pass has accepted under `accepted`, and move it into `store` under that
+    /// hash. The tree is hashed again to seal it, and a hash that differs from `accepted` is
+    /// refused with [`ExtractError::Tampered`] before anything is moved, so no tree is published
+    /// under a hash nobody compared. The caller keeps the manifest of the accepting pass; the one
+    /// in the returned [`Extracted`] is that of the second pass, and equal to it whenever the
+    /// hashes agree.
+    ///
+    /// The only caller is the git source of `sync`.
     ///
     /// # Errors
     /// As [`tree_hash`], [`ExtractError::CaptureLimit`] when the manifest at the root is over
-    /// 1 MiB, and [`ExtractError::Io`] when the move fails.
-    pub fn install(self, store: &Path) -> Result<Extracted, ExtractError> {
-        let (hash, manifest) = hash_walk(&self.root, &Keep::File(MANIFEST_FILE), &mut |_, _| {})?;
-        let manifest = manifest.into_iter().next().map(|(_, bytes)| bytes);
-        self.install_hashed(store, hash, manifest)
-    }
-
-    /// [`Self::install`] for a tree that a pass has already accepted under `accepted`. The tree
-    /// is hashed again to seal it, and a hash that differs from `accepted` is refused with
-    /// [`ExtractError::Tampered`] before anything is moved. The caller keeps the manifest of
-    /// the accepting pass; the one in the returned [`Extracted`] is that of the second pass.
-    ///
-    /// # Errors
-    /// As [`Self::install`], and [`ExtractError::Tampered`] when the tree no longer hashes to
-    /// `accepted`.
-    pub fn install_accepted(
+    /// 1 MiB, [`ExtractError::Tampered`] when the tree no longer hashes to `accepted` (the path
+    /// in it is redacted, as the staging directory is private), and [`ExtractError::Io`] when
+    /// the move fails.
+    pub(crate) fn install(
         self,
         store: &Path,
         accepted: &TreeHash,
@@ -847,7 +841,8 @@ impl StagedTree {
         let (hash, manifest) = hash_walk(&self.root, &Keep::File(MANIFEST_FILE), &mut |_, _| {})?;
         if hash != *accepted {
             return Err(ExtractError::Tampered {
-                path: self.root.clone(),
+                // The staging directory is private to this run; only its shape is shown.
+                path: PathBuf::from(slopvac_fs::display_under_root(&self.root, Path::new("."))),
             });
         }
         let manifest = manifest.into_iter().next().map(|(_, bytes)| bytes);
@@ -1412,16 +1407,20 @@ pub fn tree_hash_capturing_files_observed(
 /// manifest from these bytes and never reads the file again.
 ///
 /// # Errors
-/// As [`verify_tree`], and [`ExtractError::CaptureLimit`] when the manifest is over 1 MiB.
+/// [`ExtractError::Tampered`] only when a hash finished and differs from `expected`. A walk that
+/// is refused ends in [`ExtractError::Refused`] (this differs from [`verify_tree`], which reports
+/// it as tampering), and [`ExtractError::CaptureLimit`] when the manifest is over 1 MiB.
 pub fn verify_tree_capturing(
     dir: &Path,
     expected: &TreeHash,
 ) -> Result<Option<Vec<u8>>, ExtractError> {
     match hash_walk(dir, &Keep::File(MANIFEST_FILE), &mut |_, _| {}) {
         Ok((actual, mut kept)) if actual == *expected => Ok(kept.remove(MANIFEST_FILE)),
-        Ok(_) | Err(ExtractError::Refused(_)) => Err(ExtractError::Tampered {
+        Ok(_) => Err(ExtractError::Tampered {
             path: dir.to_owned(),
         }),
+        // A walk that refused did not finish a hash, so nothing was compared: the refusal is
+        // reported as it is.
         Err(e) => Err(e),
     }
 }
@@ -1608,6 +1607,13 @@ fn hash_walk_with(
                         over: false,
                     };
                     let hashed = hash_stream(&mut tee, None, &rel, Some(budget));
+                    if hashed.is_err() && wanted && !tee.over {
+                        // The tree budget ran out before the capture cap was seen to be
+                        // crossed. Read on, through the same reader, which stops at the cap
+                        // plus one byte, to find out whether the cap was crossed too.
+                        let mut rest = [0u8; 16 * 1024];
+                        while !tee.over && matches!(tee.read(&mut rest), Ok(n) if n > 0) {}
+                    }
                     // The capture cap decides first: a file that outgrew it is a capture limit,
                     // whether or not the tree budget ran out in the same read.
                     if tee.over {
@@ -2047,7 +2053,7 @@ mod single_read_tests {
         fs::write(other.join("a"), b"y").unwrap();
         let wrong = tree_hash(&other).unwrap();
 
-        let err = staged.install_accepted(&store, &wrong).unwrap_err();
+        let err = staged.install(&store, &wrong).unwrap_err();
 
         assert!(matches!(err, ExtractError::Tampered { .. }), "{err:?}");
         let text = err.to_string();
