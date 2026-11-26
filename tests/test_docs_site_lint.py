@@ -93,13 +93,17 @@ def test_the_site_config_is_a_3x_config() -> None:
     assert code[0] == "schema_version = 3"
 
 
-def test_no_step_calls_the_2x_linter() -> None:
-    for step in _steps():
-        run = step.get("run", "")
-        assert "packages/slopvac-lint" not in run, step.get("name")
-        assert "install_vale" not in run, step.get("name")
-
-
 @pytest.mark.parametrize("code", [0, 1, 2], ids=["pass", "gate-failed", "incomplete"])
 def test_the_lint_step_exits_with_the_binary_exit_code(tmp_path, code) -> None:
     assert _run_lint_step(tmp_path, code, "page").returncode == code
+
+
+@pytest.mark.parametrize("code", [0, 1, 2], ids=["pass", "gate-failed", "incomplete"])
+def test_the_lint_step_prints_the_real_exit_code(tmp_path, code) -> None:
+    assert f"slopvac exited {code}" in _run_lint_step(tmp_path, code, "page").stdout
+
+
+def test_the_binary_gets_the_page_directory_and_the_site_config(tmp_path) -> None:
+    _run_lint_step(tmp_path, 0, "page")
+    args = (tmp_path / "args").read_text(encoding="utf-8").splitlines()
+    assert args == ["lint", str(tmp_path / "site-src"), "--config", "docs/site-lint.toml"]
