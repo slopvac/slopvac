@@ -87,11 +87,13 @@ def test_secret_job_keeps_read_only_permissions() -> None:
 def test_trivy_comes_from_the_pinned_setup_action_at_the_main_version(
     job: str,
 ) -> None:
-    (setup,) = [
+    found = [
         s
         for s in steps_of(job)
         if str(s.get("uses", "")).startswith("aquasecurity/setup-trivy@")
     ]
+    assert len(found) == 1, f"{job}: expected one setup-trivy step"
+    setup = found[0]
     ref = setup["uses"].split("@")[1].split()[0]
     assert len(ref) == 40 and set(ref) <= set("0123456789abcdef")
     assert setup["with"]["version"] == MAIN_POLICY[job]["version"]
