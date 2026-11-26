@@ -771,15 +771,16 @@ mod tests {
     }
 
     #[test]
-    fn a_guard_sees_the_destination_unreplaced_through_the_same_handle() {
+    fn a_guard_reads_the_destination_by_name_through_the_handle_it_is_given() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join("sub_f"), b"old").unwrap();
+        std::fs::create_dir(tmp.path().join("sub")).unwrap();
+        std::fs::write(tmp.path().join("sub/f"), b"old").unwrap();
         let handle = root(tmp.path());
         let mut seen = None;
 
         write_atomic_if(
             &handle,
-            Path::new("sub_f"),
+            Path::new("sub/f"),
             b"new",
             WriteOptions::new(),
             |dir, name| {
@@ -789,8 +790,111 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(seen, Some((OsString::from("sub_f"), b"old".to_vec())));
-        assert_eq!(std::fs::read(tmp.path().join("sub_f")).unwrap(), b"new");
+        assert_eq!(seen, Some((OsString::from("f"), b"old".to_vec())));
+        assert_eq!(std::fs::read(tmp.path().join("sub/f")).unwrap(), b"new");
+    }
+
+    /// The staged file for destination `f` in `dir`, if there is exactly one.
+    fn staged_for_f(dir: &Path) -> PathBuf {
+        let mut found: Vec<_> = names(dir)
+            .into_iter()
+            .filter(|n| n.to_string_lossy().starts_with(".f.slopvac-"))
+            .collect();
+        assert_eq!(found.len(), 1, "{found:?}");
+        dir.join(found.remove(0))
+    }
+
+    #[test]
+    fn the_staged_file_is_complete_when_the_guard_runs() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("f"), b"old").unwrap();
+        let handle = root(tmp.path());
+        let mut staged = None;
+
+        write_atomic_if(
+            &handle,
+            Path::new("f"),
+            b"the full new bytes",
+            WriteOptions::new(),
+            |_, _| {
+                staged = Some(std::fs::read(staged_for_f(tmp.path()))?);
+                Ok(true)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(staged.as_deref(), Some(&b"the full new bytes"[..]));
+    }
+
+    #[test]
+    fn a_change_made_while_the_file_is_staged_is_seen_by_the_guard_and_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("f"), b"old").unwrap();
+        let handle = root(tmp.path());
+        let base = tmp.path().to_path_buf();
+        // Another writer lands between staging and the guard.
+        BEFORE_VERIFY.set(Some(Box::new(move |_| {
+            std::fs::write(base.join("f"), b"newer").unwrap();
+        })));
+
+        let result = write_atomic_if(
+            &handle,
+            Path::new("f"),
+            b"ours",
+            WriteOptions::new(),
+            |dir, name| Ok(dir.read(name)? == b"old"),
+        );
+        BEFORE_VERIFY.set(None);
+
+        assert!(
+            matches!(result, Err(Error::Precondition { .. })),
+            "{result:?}"
+        );
+        assert_eq!(std::fs::read(tmp.path().join("f")).unwrap(), b"newer");
+        assert_eq!(names(tmp.path()), [OsString::from("f")]);
+    }
+
+    #[test]
+    fn the_staged_file_is_private_and_a_new_file_ends_private() {
+        let tmp = tempfile::tempdir().unwrap();
+        let handle = root(tmp.path());
+        let mut staged_mode = None;
+
+        write_atomic_if(
+            &handle,
+            Path::new("f"),
+            b"x",
+            WriteOptions::new(),
+            |_, _| {
+                staged_mode = Some(mode(&staged_for_f(tmp.path())));
+                Ok(true)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(staged_mode, Some(0o600));
+        assert_eq!(mode(&tmp.path().join("f")), 0o600);
+    }
+
+    #[test]
+    fn an_existing_file_keeps_its_mode_through_a_guarded_write() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("f");
+        std::fs::write(&target, b"old").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let handle = root(tmp.path());
+
+        write_atomic_if(
+            &handle,
+            Path::new("f"),
+            b"new",
+            WriteOptions::new(),
+            |_, _| Ok(true),
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
+        assert_eq!(mode(&target), 0o644);
     }
 
     #[test]
@@ -817,7 +921,7 @@ mod tests {
     }
 
     #[test]
-    fn temporary_names_are_random_and_not_derived_from_the_process_or_the_clock() {
+    fn each_write_stages_under_a_distinct_name_of_sixteen_hex_digits() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("f"), b"x").unwrap();
         let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
