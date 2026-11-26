@@ -32,12 +32,10 @@ use slopvac_plugins::oci::{
     Anonymous, Client, Digest, MEDIA_MANIFEST, Manifest, OciError, Reference,
 };
 use slopvac_plugins::revoke::{RevocationError, RevocationNotice, Revocations};
-use slopvac_plugins::sign::{
-    KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, SignError,
-};
+use slopvac_plugins::sign::{KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, SignError};
 use slopvac_plugins::sync::{
-    Change, Network, PackState, Store, SyncError, Syncer,
-    available_versions, check_lock, status, update_notices,
+    Change, Network, PackState, Store, SyncError, Syncer, available_versions, check_lock, status,
+    update_notices,
 };
 
 const NOT_BEFORE: &str = "2026-11-01T00:00:00Z";

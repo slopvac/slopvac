@@ -11,11 +11,11 @@ use std::fs;
 use std::io::{Cursor, Write};
 use std::path::Path;
 
-use flate2::write::GzEncoder;
 use flate2::Compression;
-use slopvac_plugins::oci::{Descriptor, Digest, Manifest, MEDIA_MANIFEST};
+use flate2::write::GzEncoder;
+use slopvac_plugins::oci::{Descriptor, Digest, MEDIA_MANIFEST, Manifest};
 use slopvac_plugins::sign::{
-    PublicKey, Statement, ANNOTATION_ID, ANNOTATION_VERSION, MEDIA_MINISIG, MEDIA_STATEMENT,
+    ANNOTATION_ID, ANNOTATION_VERSION, MEDIA_MINISIG, MEDIA_STATEMENT, PublicKey, Statement,
 };
 use slopvac_plugins::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER};
 
@@ -38,7 +38,7 @@ impl Key {
             pk: minisign::PublicKey::from_base64(public).unwrap(),
             sk: minisign::SecretKeyBox::from_string(secret)
                 .unwrap()
-                .into_secret_key(None)
+                .into_unencrypted_secret_key()
                 .unwrap(),
         }
     }

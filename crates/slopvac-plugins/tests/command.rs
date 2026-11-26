@@ -1843,7 +1843,11 @@ fn trust_with_an_unreadable_lock_exits_2_with_its_code_and_records_nothing() {
 #[test]
 fn trust_with_an_invalid_lock_exits_2_with_its_code_and_records_nothing() {
     let f = Fixture::new();
-    fs::write(f.project().join(".slopvac/plugins.lock"), "schema_version = [\n").unwrap();
+    fs::write(
+        f.project().join(".slopvac/plugins.lock"),
+        "schema_version = [\n",
+    )
+    .unwrap();
     let err = f
         .run(&["trust", "fake"], false, with_loader(&f))
         .result
