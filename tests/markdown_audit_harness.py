@@ -124,7 +124,7 @@ def assert_output_contract(
 
     The launcher sends the audit's whole stderr to a private file under `RUNNER_TEMP`, so
     the step's own stderr is always empty. The script's fixed diagnostics go to stdout. On
-    a failure the shell then prints `Audit failed (exit N)` as the last line, with the real
+    a failure the shell then prints `Audit failed (exit 1)` as the last line, with the real
     code. No stream carries a traceback or a raw workflow command. `expect` is the fixed
     line a failing case must print, as the whole line or, with `prefix`, its start.
     """
@@ -138,9 +138,10 @@ def assert_output_contract(
         assert done.returncode == 0, done.stdout
         assert "Audit failed" not in done.stdout
         return
-    assert done.returncode != 0
+    # `stop()` and the exception hook both end the run with 1, and the shell passes it on.
+    assert done.returncode == 1
     lines = done.stdout.splitlines()
-    assert lines[-1] == f"Audit failed (exit {done.returncode})"
+    assert lines[-1] == "Audit failed (exit 1)"
     assert any(line.startswith(expect) if prefix else line == expect for line in lines), done.stdout
     if payload_free:
         assert "pwned" not in done.stdout
