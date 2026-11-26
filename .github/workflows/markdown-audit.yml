@@ -44,11 +44,15 @@ jobs:
           import os
           import re
           import subprocess
+          import sys
           import tempfile
           import tomllib
           from pathlib import Path
           from urllib.parse import unquote, urlsplit
           from markdown_it import MarkdownIt
+
+          sys.path.insert(0, "scripts/ci")
+          from markdown_audit_reports import gate_problems
 
           root = Path.cwd()
           binary = os.environ["SLOPVAC_BIN"]
@@ -130,6 +134,13 @@ jobs:
                       detail = result.stdout[-2000:] + result.stderr[-2000:]
                       raise RuntimeError(name + " did not produce a report: " + detail)
                   reports[name] = json.loads(target.read_text())
+                  # Every document needs a boolean gate verdict. `false` is allowed in the
+                  # diagnostic scans, which may fail, and not in the authored scan.
+                  bad = gate_problems(
+                      name, reports[name], allow_false=name != "authored"
+                  )
+                  if bad:
+                      raise SystemExit("\n".join(bad))
                   summary = {k: reports[name]["summary"][k] for k in fields}
                   print("SUMMARY", name, json.dumps(summary), flush=True)
           finally:
