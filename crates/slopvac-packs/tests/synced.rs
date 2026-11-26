@@ -1437,6 +1437,69 @@ fn duplicate_ids_name_the_lowest_qualified_id_in_any_order(#[case] order: &[&'st
     );
 }
 
+// The order is byte order on the whole qualified id, not a comparison of plugin, category and
+// rule in turn. `acme-extra:...` sorts before `acme:...` because `-` (0x2d) is below `:` (0x3a),
+// so the plugin `acme-extra` is named although `acme` is the shorter id.
+#[rstest]
+#[case::prefix_first(&["acme", "acme-extra", "acme", "acme-extra"])]
+#[case::prefix_last(&["acme-extra", "acme", "acme-extra", "acme"])]
+fn core_clashes_of_a_prefix_plugin_pair_follow_byte_order_of_the_whole_id(
+    #[case] order: &[&'static str],
+) {
+    let core = Packs::core().unwrap();
+    let locals: Vec<String> = core
+        .rule_sets()
+        .flat_map(|s| s.rules().map(|r| r.id().local().to_owned()))
+        .collect();
+    let mut w = World::new();
+    let (acme, _) = colliding_with("acme", &locals[0]);
+    let (extra, expected) = colliding_with("acme-extra", &locals[1]);
+    w.install(&acme);
+    w.install(&extra);
+    let mut loaded = Vec::new();
+    for name in order {
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+    }
+    loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
+
+    let err = Packs::new(loaded).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            PackError::RuleIdCollision { plugin, rule }
+                if plugin == "acme-extra" && *rule == expected
+        ),
+        "{err:?}"
+    );
+}
+
+#[rstest]
+#[case::prefix_first(&["acme", "acme-extra", "acme", "acme-extra"])]
+#[case::prefix_last(&["acme-extra", "acme", "acme-extra", "acme"])]
+fn duplicates_of_a_prefix_plugin_pair_follow_byte_order_of_the_whole_id(
+    #[case] order: &[&'static str],
+) {
+    let mut w = World::new();
+    w.install(&Spec::new("acme").rules(&["a"]));
+    w.install(&Spec::new("acme-extra").rules(&["a"]));
+    let mut loaded = Vec::new();
+    for name in order {
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+    }
+
+    let err = Packs::new(loaded).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            PackError::RuleIdCollision { plugin, rule }
+                if plugin == "acme-extra" && rule == "c.r0"
+        ),
+        "{err:?}"
+    );
+}
+
 #[test]
 fn the_same_qualified_rule_id_supplied_twice_is_refused() {
     let mut w = World::new();
