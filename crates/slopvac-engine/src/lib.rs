@@ -81,8 +81,7 @@ mod terms;
 
 pub use commit::{AclCheckFailed, MAX_FILE_BYTES, Refusal, Root, RootChanged, Step};
 pub use diagrams::{
-    DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker,
-    diagram_rule_set,
+    DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker, diagram_rule_set,
 };
 pub use exceptions::{Detector, Detectors, DuplicateDetector, MatchSite, TextOrigin};
 pub use file::{FileContext, FileFix, FileResult, fix_file, fix_file_hooked, fix_file_in};
@@ -101,4 +100,8 @@ pub use skip::{SkipRanges, skip_ranges};
 #[cfg(feature = "test-counters")]
 #[doc(hidden)]
 pub use tagging::take_split_visits;
-pub use terms::{TERMS_PACK, terms_rule_set};
+pub use terms::terms_rule_set;
+
+/// The pack id of the built-in core rules, the prefix of every built-in rule id: the term-casing
+/// and diagram rule sets take it, so their rules read `core:terms.casing` and `core:diagram.*`.
+pub const CORE_PACK: &str = "core";

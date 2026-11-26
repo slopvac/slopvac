@@ -16,7 +16,7 @@ use std::time::Duration;
 use lsp_server::{Connection, Message, Notification, Request, RequestId};
 use serde_json::{Value, json};
 use slopvac_config::frontmatter::Policy;
-use slopvac_engine::{DIAGRAM_PACK, Settings, TERMS_PACK, diagram_rule_set, terms_rule_set};
+use slopvac_engine::{CORE_PACK, Settings, diagram_rule_set, terms_rule_set};
 use slopvac_lsp::{
     Check, ConfigFailure, EngineLinter, Exit, FrontMatterCheck, LintError, Linted, Linter, Problem,
     Reloaded, Server, ServerError,
@@ -492,7 +492,7 @@ fn a_registered_check_adds_diagnostics_next_to_the_findings() {
 
 /// A client with front-matter validation, over an engine with the built-in term casing rules.
 fn client_with_real_checks() -> Client {
-    let terms = terms_rule_set(&PackId::new(TERMS_PACK).unwrap()).unwrap();
+    let terms = terms_rule_set(&PackId::new(CORE_PACK).unwrap()).unwrap();
     let linter =
         EngineLinter::new(vec![core_rule_set(Vec::new()), terms], engine_settings()).unwrap();
     let server =
@@ -528,7 +528,7 @@ fn the_engine_reports_a_misspelled_term_once_with_its_terms_code_at_the_term() {
     let published = client.open("We use github daily.\n");
     assert_eq!(
         codes_and_ranges(&published),
-        [("terms:terms.casing".to_owned(), [0, 7, 0, 13])]
+        [("core:terms.casing".to_owned(), [0, 7, 0, 13])]
     );
     client.finish().unwrap();
 }
@@ -696,7 +696,7 @@ fn what_the_engine_did_not_check_shows_as_a_diagnostic() {
 
 /// The engine with the built-in diagram checkers next to the `swap` rule.
 fn diagram_engine_linter() -> EngineLinter {
-    let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    let pack = diagram_rule_set(&PackId::new(CORE_PACK).unwrap()).unwrap();
     EngineLinter::new(vec![core_rule_set(Vec::new()), pack], engine_settings()).unwrap()
 }
 

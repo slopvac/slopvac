@@ -17,12 +17,12 @@
 mod common;
 
 use common::{matched, places, settings};
-use slopvac_engine::{Engine, Input, TERMS_PACK, terms_rule_set};
+use slopvac_engine::{CORE_PACK, Engine, Input, terms_rule_set};
 use slopvac_model::{Document, PackId};
 use slopvac_terms::TermSet;
 
 fn engine_with(allowed: &[&str]) -> Engine {
-    let set = terms_rule_set(&PackId::new(TERMS_PACK).unwrap()).unwrap_or_else(|e| panic!("{e}"));
+    let set = terms_rule_set(&PackId::new(CORE_PACK).unwrap()).unwrap_or_else(|e| panic!("{e}"));
     let mut settings = settings();
     settings.allowed_words = allowed.iter().map(|w| (*w).to_owned()).collect();
     Engine::new(vec![set], settings).unwrap()
@@ -39,7 +39,7 @@ fn a_miscased_term_is_a_finding_with_the_canonical_fix() {
     let doc = lint("Open the repository on Github.\n");
     assert_eq!(
         places(&doc),
-        [("terms:terms.casing".to_owned(), 1, 24)],
+        [("core:terms.casing".to_owned(), 1, 24)],
         "{doc:?}"
     );
     let finding = &doc.findings[0];
@@ -65,7 +65,7 @@ fn the_canonical_spelling_is_not_a_finding() {
 
 #[test]
 fn the_rule_examples_flag_bad_text_with_the_good_text_as_its_fix() {
-    let set = terms_rule_set(&PackId::new(TERMS_PACK).unwrap()).unwrap();
+    let set = terms_rule_set(&PackId::new(CORE_PACK).unwrap()).unwrap();
     let rule = set.rules().next().unwrap();
     assert!(!rule.rule().examples().is_empty());
     let engine = engine_with(&[]);
@@ -151,14 +151,14 @@ fn the_finding_is_in_the_serialized_report() {
     let json = serde_json::to_value(&doc).unwrap();
     let findings = json["findings"].as_array().unwrap();
     assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0]["rule_id"], "terms:terms.casing");
+    assert_eq!(findings[0]["rule_id"], "core:terms.casing");
     assert_eq!(findings[0]["matched_text"], "Github");
 }
 
 #[test]
 fn the_rule_is_executed_by_the_engine() {
     let engine = engine_with(&[]);
-    let set = terms_rule_set(&PackId::new(TERMS_PACK).unwrap()).unwrap();
+    let set = terms_rule_set(&PackId::new(CORE_PACK).unwrap()).unwrap();
     let rule = set.rules().next().unwrap();
     assert_eq!(engine.unexecuted(rule), None);
 }

@@ -877,5 +877,5 @@ fn lsp_reports_a_misspelled_term_exactly_once() {
         .stdout
         .clone();
     let stdout = String::from_utf8(output).expect("utf-8");
-    assert_eq!(stdout.matches(r#""code":"terms:terms.casing""#).count(), 1);
+    assert_eq!(stdout.matches(r#""code":"core:terms.casing""#).count(), 1);
 }

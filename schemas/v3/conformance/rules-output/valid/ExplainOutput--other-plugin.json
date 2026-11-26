@@ -19,7 +19,7 @@
     }
   ],
   "fix": "Delete the artifact, then re-read the surrounding paragraphs, which came from the same session.",
-  "id": "terms:terms.casing",
+  "id": "acme:style.casing",
   "kind": "pattern",
   "match": {
     "kind": "pattern",
@@ -27,7 +27,7 @@
   },
   "message": "chat-session leakage: {match} -- delete it, then audit the surrounding prose",
   "name": "Delete chat-session leakage",
-  "plugin": "terms",
+  "plugin": "acme",
   "scope": "prose",
   "severity": "error",
   "text_type": "any",

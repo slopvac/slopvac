@@ -62,9 +62,6 @@ pub trait DiagramChecker: Send + Sync {
     fn check(&self, input: &DiagramInput<'_>) -> Vec<DiagramHit>;
 }
 
-/// The pack id to give [`diagram_rule_set`] when a caller has no other.
-pub const DIAGRAM_PACK: &str = "diagrams";
-
 /// The diagram rule pack that ships with `slopvac-diagrams` as a rule set under `pack`:
 /// `diagram.label-run-on`, `diagram.label-title-plus-gloss`, `diagram.note-long`,
 /// `diagram.meta-reference` and `diagram.prose-restates-labels`, plus three judgement rules.

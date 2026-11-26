@@ -15,7 +15,7 @@ use std::process::ExitCode;
 
 use serde_json::json;
 use slopvac_diagrams::Format;
-use slopvac_engine::{DIAGRAM_PACK, Engine, Input, Settings, diagram_rule_set};
+use slopvac_engine::{CORE_PACK, Engine, Input, Settings, diagram_rule_set};
 use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString, PackId};
 
 fn settings() -> Settings {
@@ -30,7 +30,7 @@ fn settings() -> Settings {
 }
 
 fn main() -> ExitCode {
-    let pack = PackId::new(DIAGRAM_PACK).expect("pack id");
+    let pack = PackId::new(CORE_PACK).expect("pack id");
     let set = match diagram_rule_set(&pack) {
         Ok(set) => set,
         Err(e) => {

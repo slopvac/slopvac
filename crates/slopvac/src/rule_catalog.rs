@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 
+use slopvac_engine::CORE_PACK;
 use slopvac_model::PackId;
 use slopvac_model::RuleId;
 use slopvac_rules::{CompileOptions, LoadedCategory, LoadedRule, RuleSet};
@@ -124,7 +125,7 @@ const FILES: [(&str, &str); 26] = [
 /// # Errors
 /// `rules-unavailable` when an embedded file fails to load.
 pub fn core() -> Result<RuleSet, CliError> {
-    let pack = PackId::new("core").expect("core is a valid plugin id");
+    let pack = PackId::new(CORE_PACK).expect("core is a valid plugin id");
     let sources = FILES
         .iter()
         .map(|(name, text)| (PathBuf::from(name), (*text).to_owned()));

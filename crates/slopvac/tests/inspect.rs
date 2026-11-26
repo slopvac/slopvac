@@ -858,22 +858,22 @@ fn an_extends_cycle_through_an_external_file_hides_its_directories() {
     }
 }
 
-const TERM_CASING: &str = "terms:terms.casing";
+const TERM_CASING: &str = "core:terms.casing";
 
 #[test]
-fn a_terms_only_listing_names_the_terms_plugin() {
+fn a_terms_only_listing_names_the_core_plugin() {
     let v = json(&["rules", "--category", "terms", "--format", "json"]);
-    assert_eq!(v["plugin"], "terms");
-    assert_eq!(v["plugins"], serde_json::json!(["terms"]));
+    assert_eq!(v["plugin"], "core");
+    assert_eq!(v["plugins"], serde_json::json!(["core"]));
     let rules = v["rules"].as_array().unwrap();
     assert_eq!(rules.len(), 1);
-    assert_eq!(rules[0]["plugin"], "terms");
+    assert_eq!(rules[0]["plugin"], "core");
 }
 
 #[test]
-fn a_mixed_listing_names_every_plugin_and_each_entry_its_own() {
+fn the_full_listing_names_core_once_and_each_entry_its_own() {
     let v = json(&["rules", "--format", "json"]);
-    assert_eq!(v["plugins"], serde_json::json!(["core", "terms"]));
+    assert_eq!(v["plugins"], serde_json::json!(["core"]));
     let plugin_of = |list: &str, id: &str| {
         v[list]
             .as_array()
@@ -884,9 +884,9 @@ fn a_mixed_listing_names_every_plugin_and_each_entry_its_own() {
             .clone()
     };
     assert_eq!(plugin_of("rules", CHAT_LEAKAGE), "core");
-    assert_eq!(plugin_of("rules", TERM_CASING), "terms");
+    assert_eq!(plugin_of("rules", TERM_CASING), "core");
     assert_eq!(plugin_of("categories", "ai-residue"), "core");
-    assert_eq!(plugin_of("categories", "terms"), "terms");
+    assert_eq!(plugin_of("categories", "terms"), "core");
 }
 
 #[test]

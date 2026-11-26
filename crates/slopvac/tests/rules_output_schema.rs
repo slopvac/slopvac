@@ -105,7 +105,7 @@ fn the_rules_listing_validates() {
 #[rstest]
 #[case::pattern_with_an_exception_and_a_suppression(CHAT_LEAKAGE)]
 #[case::judgement("core:ai-tells-content-shape.fabricated-citations-remainder")]
-#[case::terms_plugin("terms:terms.casing")]
+#[case::term_casing("core:terms.casing")]
 fn explain_validates(#[case] id: &str) {
     let rule = run(&["explain", id, "--format", "json"]);
     assert_eq!(errors(&explain_validator(), &rule), Vec::<String>::new());
