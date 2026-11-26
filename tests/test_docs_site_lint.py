@@ -7,6 +7,7 @@ exit-code contract (0 pass, 1 gate failed, 2 incomplete) and from the 3.x config
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 import tomllib
 from pathlib import Path
@@ -76,10 +77,21 @@ def test_a_run_with_a_page_runs_the_linter(tmp_path) -> None:
     assert (tmp_path / "args").exists()
 
 
-def test_the_binary_is_built_before_the_lint_step() -> None:
+def _build_output_path(run: str) -> str:
+    """Return the binary path that a `cargo build -p slopvac` step produces."""
+    words = shlex.split(run)
+    assert words[:2] == ["cargo", "build"]
+    assert words[words.index("-p") + 1] == "slopvac"
+    profile = "release" if "--release" in words else "debug"
+    assert "--target" not in words, "a target flag moves the output directory"
+    return f"target/{profile}/slopvac"
+
+
+def test_the_lint_step_runs_the_binary_that_the_build_step_produces() -> None:
     names = [s.get("name") for s in _steps()]
     assert names.index(BUILD) < names.index(LINT)
-    assert _step(BUILD)["run"].strip() == "cargo build --locked -p slopvac"
+    built = _build_output_path(_step(BUILD)["run"])
+    assert built in shlex.split(_step(LINT)["run"])
 
 
 def test_the_site_config_is_a_3x_config() -> None:
