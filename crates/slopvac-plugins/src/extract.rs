@@ -1130,6 +1130,7 @@ fn write_entry(
         kept: Vec::new(),
         cap: if keep { MAX_CAPTURE_BYTES } else { 0 },
         over: false,
+        #[cfg(feature = "test-support")]
         seen: 0,
     };
     let hashed = hash_stream(&mut tee, out.as_mut(), &rel, None);
@@ -1359,7 +1360,9 @@ struct Capture<'a, R: Read> {
     /// Most bytes to keep. A file over it is still hashed, and `over` says it did not fit.
     cap: u64,
     over: bool,
-    /// Bytes pulled through the reader, kept or not.
+    /// Bytes pulled through the reader, kept or not. A test hook: it exists only with the
+    /// `test-support` feature, so a release build has no such state on the read path.
+    #[cfg(feature = "test-support")]
     seen: u64,
 }
 
@@ -1384,10 +1387,103 @@ enum Keep<'a> {
     All(u64),
 }
 
+/// What one captured read left behind.
+struct Captured {
+    hashed: Result<([u8; 32], u64), ExtractError>,
+    kept: Vec<u8>,
+    over: bool,
+    #[cfg(feature = "test-support")]
+    seen: u64,
+}
+
+/// Hash `src` through a [`Capture`] that keeps up to `cap` bytes, reading at most `bound` bytes
+/// of it, and stops with a refusal when the file passes `budget`. When `probe` is set and the
+/// budget ran out before the cap was seen to be crossed, it reads on for at most
+/// [`PROBE_ALLOWANCE`] bytes to find out whether the cap was crossed too. A probe that cannot
+/// show it leaves the budget refusal as it was.
+fn hash_captured<R: Read>(
+    src: &mut R,
+    cap: u64,
+    bound: u64,
+    budget: u64,
+    probe: bool,
+    rel: &str,
+) -> Captured {
+    let mut limited = src.take(bound);
+    let mut tee = Capture {
+        inner: &mut limited,
+        kept: Vec::new(),
+        cap,
+        over: false,
+        #[cfg(feature = "test-support")]
+        seen: 0,
+    };
+    let hashed = hash_stream(&mut tee, None, rel, Some(budget));
+    if probe && hashed.is_err() && !tee.over {
+        let mut rest = [0u8; 4096];
+        let mut left = PROBE_ALLOWANCE;
+        while !tee.over && left > 0 {
+            let want = rest.len().min(usize::try_from(left).unwrap_or(rest.len()));
+            match tee.read(&mut rest[..want]) {
+                Ok(n) if n > 0 => left -= n as u64,
+                _ => break,
+            }
+        }
+    }
+    Captured {
+        hashed,
+        kept: tee.kept,
+        over: tee.over,
+        #[cfg(feature = "test-support")]
+        seen: tee.seen,
+    }
+}
+
+/// Test hooks of a walk. With the `test-support` feature they hold the callbacks a test hangs on
+/// the walk. Without it the type is zero-sized and its methods are empty, so a release build
+/// compiles the hooks, the byte counter they report and the calls to them out.
+#[cfg(feature = "test-support")]
+#[derive(Default)]
+struct Hooks<'a> {
+    before_read: Option<&'a mut dyn FnMut(&str, &Path)>,
+    after_read: Option<&'a mut dyn FnMut(u64, usize)>,
+}
+
+#[cfg(feature = "test-support")]
+impl Hooks<'_> {
+    fn before_read(&mut self, rel: &str, path: &Path) {
+        if let Some(f) = self.before_read.as_mut() {
+            f(rel, path);
+        }
+    }
+
+    /// Report the bytes pulled from a captured file and the capacity of its buffer.
+    fn after_read(&mut self, c: &Captured) {
+        if let Some(f) = self.after_read.as_mut() {
+            f(c.seen, c.kept.capacity());
+        }
+    }
+}
+
+#[cfg(not(feature = "test-support"))]
+#[derive(Default)]
+struct Hooks<'a>(std::marker::PhantomData<&'a ()>);
+
+#[cfg(not(feature = "test-support"))]
+#[expect(clippy::unused_self, reason = "the release hooks do nothing")]
+impl Hooks<'_> {
+    fn before_read(&mut self, _rel: &str, _path: &Path) {}
+
+    fn after_read(&mut self, _captured: &Captured) {}
+}
+
 impl<R: Read> Read for Capture<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
-        self.seen += n as u64;
+        #[cfg(feature = "test-support")]
+        {
+            self.seen += n as u64;
+        }
         // `usize` widens to `u64` without loss on every supported target.
         if self.kept.len() as u64 + n as u64 <= self.cap {
             self.kept.extend_from_slice(&buf[..n]);
@@ -1415,7 +1511,7 @@ pub fn tree_hash_capturing_files_observed(
 
 /// Test seam: [`tree_hash_capturing`] with the tree byte budget given, `before_read` called with
 /// each file's path after its metadata was checked and before it is read, and `after_read` called
-/// with the bytes pulled from each captured file.
+/// with the bytes pulled from each captured file and the capacity of the buffer that kept them.
 ///
 /// # Errors
 /// As [`tree_hash_capturing`].
@@ -1426,14 +1522,17 @@ pub fn tree_hash_capturing_probed(
     name: &str,
     tree_budget: u64,
     before_read: &mut dyn FnMut(&Path),
-    after_read: &mut dyn FnMut(u64),
+    after_read: &mut dyn FnMut(u64, usize),
 ) -> Result<(TreeHash, Option<Vec<u8>>), ExtractError> {
+    let mut before = |_: &str, p: &Path| before_read(p);
     let (hash, mut kept) = hash_walk_with(
         dir,
         &Keep::File(name),
         &mut |_, _| {},
-        &mut |_, p| before_read(p),
-        after_read,
+        &mut Hooks {
+            before_read: Some(&mut before),
+            after_read: Some(after_read),
+        },
         tree_budget,
     )?;
     Ok((hash, kept.remove(name)))
@@ -1450,14 +1549,17 @@ pub fn tree_hash_capturing_files_probed(
     cap: u64,
     tree_budget: u64,
     before_read: &mut dyn FnMut(&Path),
-    after_read: &mut dyn FnMut(u64),
+    after_read: &mut dyn FnMut(u64, usize),
 ) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
+    let mut before = |_: &str, p: &Path| before_read(p);
     hash_walk_with(
         dir,
         &Keep::All(cap),
         &mut |_, _| {},
-        &mut |_, p| before_read(p),
-        after_read,
+        &mut Hooks {
+            before_read: Some(&mut before),
+            after_read: Some(after_read),
+        },
         tree_budget,
     )
 }
@@ -1549,8 +1651,7 @@ fn hash_walk(
         dir,
         keep,
         after_hash,
-        &mut |_, _| {},
-        &mut |_| {},
+        &mut Hooks::default(),
         MAX_TREE_BYTES,
     )
 }
@@ -1566,8 +1667,7 @@ fn hash_walk_with(
     dir: &Path,
     keep: &Keep<'_>,
     after_hash: &mut dyn FnMut(&str, &Path),
-    before_read: &mut dyn FnMut(&str, &Path),
-    after_read: &mut dyn FnMut(u64),
+    hooks: &mut Hooks<'_>,
     tree_budget: u64,
 ) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
     let dir = normalised(dir);
@@ -1646,7 +1746,7 @@ fn hash_walk_with(
                 if is_executable(&child) {
                     on_disk_exec.insert(rel.clone());
                 }
-                before_read(&rel, &child);
+                hooks.before_read(&rel, &child);
                 let mut f = open_regular(&child).map_err(|e| {
                     if e.kind() == io::ErrorKind::InvalidInput {
                         refused(TransportText::ExtractFileType { path: rel.clone() }.to_string())
@@ -1667,34 +1767,17 @@ fn hash_walk_with(
                     } else {
                         u64::MAX
                     };
-                    let mut limited = (&mut f).take(bound);
-                    let mut tee = Capture {
-                        inner: &mut limited,
-                        kept: Vec::new(),
-                        cap,
-                        over: false,
-                        seen: 0,
-                    };
-                    let hashed = hash_stream(&mut tee, None, &rel, Some(budget));
-                    if hashed.is_err() && wanted && !tee.over {
-                        // The tree budget ran out before the capture cap was seen to be
-                        // crossed. Read on for at most `PROBE_ALLOWANCE` bytes, through the
-                        // same reader, to find out whether the cap was crossed too. A probe
-                        // that cannot show it leaves the budget refusal as it was.
-                        let mut rest = [0u8; 4096];
-                        let mut left = PROBE_ALLOWANCE;
-                        while !tee.over && left > 0 {
-                            let want = rest.len().min(usize::try_from(left).unwrap_or(rest.len()));
-                            match tee.read(&mut rest[..want]) {
-                                Ok(n) if n > 0 => left -= n as u64,
-                                _ => break,
-                            }
-                        }
-                    }
-                    after_read(tee.seen);
+                    let tee = hash_captured(&mut f, cap, bound, budget, wanted, &rel);
+                    hooks.after_read(&tee);
+                    let Captured {
+                        hashed,
+                        kept,
+                        over,
+                        ..
+                    } = tee;
                     // The capture cap decides first: a file that outgrew it is a capture limit,
                     // whether or not the tree budget ran out in the same read.
-                    if tee.over {
+                    if over {
                         // A file kept for the caller over its cap is a limit of its own. The
                         // executable list over the tree budget is a tree size violation.
                         return Err(if wanted {
@@ -1712,14 +1795,14 @@ fn hash_walk_with(
                     if wanted {
                         // The capture held at most `keep_left` bytes, so this cannot underflow.
                         if matches!(keep, Keep::All(_)) {
-                            keep_left -= tee.kept.len() as u64;
+                            keep_left -= kept.len() as u64;
                         }
                         if rel == EXEC_SIDECAR {
-                            sidecar = Some(tee.kept.clone());
+                            sidecar = Some(kept.clone());
                         }
-                        captured.insert(rel.clone(), tee.kept);
+                        captured.insert(rel.clone(), kept);
                     } else {
-                        sidecar = Some(tee.kept);
+                        sidecar = Some(kept);
                     }
                     hashed
                 } else {
@@ -2139,6 +2222,11 @@ mod single_read_tests {
             !text.contains(scratch.path().to_str().unwrap()),
             "the text names the staging path: {text}"
         );
+        assert_eq!(
+            absolute_path_in(&text),
+            None,
+            "the text holds an absolute path: {text}"
+        );
         assert!(
             text.contains("<external>/tree"),
             "the staging directory is not shown in its redacted form: {text}"
@@ -2165,7 +2253,7 @@ mod single_read_tests {
             "m.toml",
             MAX_CAPTURE_BYTES - 1024,
             &mut |_| grow(&manifest, 3 << 20),
-            &mut |_| {},
+            &mut |_, _| {},
         )
         .unwrap_err();
 
@@ -2182,6 +2270,7 @@ mod single_read_tests {
         fs::write(&big, b"x").unwrap();
         let budget: u64 = 256 << 10;
         let mut seen = Vec::new();
+        let mut capacity = Vec::new();
 
         // The caller's cap is 64 MiB, far above the budget. The file grows to 3 MiB, so the
         // budget trips and the cap cannot be shown crossed: the original refusal stands, and the
@@ -2192,7 +2281,10 @@ mod single_read_tests {
             64 << 20,
             budget,
             &mut |_| grow(&big, 3 << 20),
-            &mut |n| seen.push(n),
+            &mut |n, cap| {
+                seen.push(n);
+                capacity.push(cap);
+            },
         )
         .unwrap_err();
 
@@ -2203,6 +2295,79 @@ mod single_read_tests {
             "{} bytes pulled from a file over a {budget} byte budget",
             seen[0]
         );
+        // The buffer that kept the bytes is bounded the same way, not rounded up by doubling.
+        assert!(
+            capacity[0] as u64 <= budget + 2 * (64 << 10),
+            "a buffer of {} bytes for a file over a {budget} byte budget",
+            capacity[0]
+        );
+    }
+
+    /// A reader that yields 16 bytes, fails once, and then yields bytes without end.
+    struct FailsOnce(u8);
+
+    impl Read for FailsOnce {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.0 += 1;
+            match self.0 {
+                1 => {
+                    buf[..16].fill(b'x');
+                    Ok(16)
+                }
+                2 => Err(io::Error::other("injected")),
+                _ => {
+                    buf.fill(b'x');
+                    Ok(buf.len())
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_read_error_during_capture_is_kept_and_never_turned_into_a_capture_limit() {
+        // The cap is 20 bytes and the reader would cross it right after the error: a probe that
+        // ran after the error would report a capture limit for a file that failed to read.
+        let captured = hash_captured(&mut FailsOnce(0), 20, 1 << 20, 1 << 20, true, "m.toml");
+
+        assert!(!captured.over, "the cap was not crossed before the failure");
+        assert!(
+            matches!(captured.hashed, Err(ExtractError::Malformed(_))),
+            "{:?}",
+            captured.hashed
+        );
+    }
+
+    /// The first absolute path in `text`: a `/` that starts a path segment, that is one at the
+    /// start of the text or right after white space or an opening or quoting character. The `/`
+    /// of `<external>/name` follows `>` and a relative `a/b` follows a letter, so neither counts.
+    fn absolute_path_in(text: &str) -> Option<&str> {
+        let mut prev: Option<char> = None;
+        for (i, c) in text.char_indices() {
+            if c == '/'
+                && prev.is_none_or(|p| p.is_whitespace() || "'\"`([{=:,;".contains(p))
+            {
+                return Some(&text[i..]);
+            }
+            prev = Some(c);
+        }
+        None
+    }
+
+    #[test]
+    fn the_absolute_path_check_catches_quoted_and_bracketed_paths() {
+        for bad in [
+            "at /abs/path",
+            "`/abs/path`",
+            "(/abs/path)",
+            "\"/abs/path\"",
+            "[/abs/path]",
+            "/abs/path",
+        ] {
+            assert!(absolute_path_in(bad).is_some(), "missed in {bad}");
+        }
+        for good in ["cached tree <external>/tree does not match", "see a/b", ""] {
+            assert!(absolute_path_in(good).is_none(), "false hit in {good}");
+        }
     }
 
     #[test]
