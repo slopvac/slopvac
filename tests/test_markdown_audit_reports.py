@@ -55,7 +55,7 @@ _PASS = {"passed": True, "reasons": []}
 def test_gate_verdicts(gates, allow_false, failing) -> None:
     problems = audit.gate_problems("scan", _report(*gates), allow_false=allow_false)
     assert len(problems) == failing
-    assert all("scan" in p and "doc1.md" in p for p in problems)
+    assert all(p.startswith("scan: document 1 ") for p in problems)
 
 
 @pytest.mark.parametrize("report", [None, [], {}, {"documents": None}], ids=str)
@@ -105,3 +105,77 @@ _EXPECTED = {"README.md", "docs/a.md", "docs/b.md"}
 def test_the_authored_report_holds_exactly_the_authored_documents(reported, problems) -> None:
     found = audit.document_set_problems("authored", reported, _EXPECTED)
     assert len(found) == problems
+
+
+# ---- the audit step's real script, against a stub linter ---------------------------
+
+from markdown_audit_harness import HOSTILE_NAME, run_audit  # noqa: E402
+
+HOSTILE_PATH = "::error::pwned\n::add-mask::x"
+
+
+def _no_workflow_command(text: str) -> None:
+    assert "::" not in text
+    assert "##[" not in text
+
+
+def test_a_correct_audit_passes_and_prints_no_workflow_command(tmp_path) -> None:
+    done = run_audit(tmp_path, {})
+    assert done.returncode == 0, done.stderr
+    _no_workflow_command(done.stdout + done.stderr)
+    # The hostile file name still reaches the log, in escaped form.
+    assert "%3A%3Aerror%3A%3Apwned" in done.stdout
+
+
+# Each case makes one in-scope print carry the hostile text. The scan whose report holds it
+# and the print it reaches are named in the id.
+_PRINTS = {
+    "summary": {"configured": 'report["summary"]["errors"] = "::error::pwned"'},
+    "unchecked": {
+        "all-files": (
+            'report["documents"][0]["unchecked"] = '
+            '[{"level": "warning", "message": "::error::pwned\\n::add-mask::x"}]'
+        )
+    },
+    "configured-failure": {
+        "configured": (
+            'report["documents"][0]["gate"] = {"passed": False};'
+            'report["documents"][0]["findings"] = [{"message": "::error::pwned"}]'
+        )
+    },
+    "linter-output": {
+        "configured": "pass",
+        "configured-stdout": "::error::pwned\n##[group]x\n",
+        "configured-exit": 2,
+    },
+}
+
+
+@pytest.mark.parametrize("case", list(_PRINTS.values()), ids=list(_PRINTS))
+def test_untrusted_report_text_reaches_the_log_only_escaped(tmp_path, case) -> None:
+    done = run_audit(tmp_path, case)
+    _no_workflow_command(done.stdout + done.stderr)
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        pytest.param({"documents": [{"path": HOSTILE_PATH}]}, id="gate-missing"),
+        pytest.param({"documents": [{"path": HOSTILE_PATH, "gate": {"passed": "x::y"}}]}, id="value"),
+        pytest.param({"documents": [{"path": HOSTILE_PATH, "gate": {"passed": False}}]}, id="failed"),
+    ],
+)
+def test_the_helper_messages_carry_no_report_text(report) -> None:
+    messages = audit.gate_problems("authored", report, allow_false=False)
+    assert messages
+    for message in messages:
+        _no_workflow_command(message)
+        assert "pwned" not in message and "x::y" not in message
+
+
+def test_the_set_messages_carry_no_path() -> None:
+    messages = audit.document_set_problems("authored", [HOSTILE_PATH], {"README.md"})
+    assert messages
+    for message in messages:
+        _no_workflow_command(message)
+        assert "pwned" not in message

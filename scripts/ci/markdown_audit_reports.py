@@ -14,19 +14,23 @@ from __future__ import annotations
 
 
 def gate_problems(name: str, report: object, *, allow_false: bool) -> list[str]:
-    """Return one message per document of `report` whose gate verdict is unusable."""
+    """Return one message per document of `report` whose gate verdict is unusable.
+
+    The messages are fixed text: they name the scan by its fixed name and a document by its
+    index, and never print a path or a value from the report, which can carry text that the
+    Actions log would act on as a workflow command.
+    """
     documents = report.get("documents") if isinstance(report, dict) else None
     if not isinstance(documents, list):
         return [f"{name}: the report has no `documents` list"]
     problems = []
     for index, document in enumerate(documents):
-        path = document.get("path", f"#{index}") if isinstance(document, dict) else f"#{index}"
         gate = document.get("gate") if isinstance(document, dict) else None
         passed = gate.get("passed") if isinstance(gate, dict) else None
         if type(passed) is not bool:
-            problems.append(f"{name}: {path}: `gate.passed` is {passed!r}, not a boolean")
+            problems.append(f"{name}: document {index} has no boolean gate.passed")
         elif not passed and not allow_false:
-            problems.append(f"{name}: {path}: the document failed its gate")
+            problems.append(f"{name}: document {index} failed its gate")
     return problems
 
 

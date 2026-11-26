@@ -51,7 +51,9 @@ jobs:
           from urllib.parse import unquote, urlsplit
           from markdown_it import MarkdownIt
 
+          sys.path.insert(0, "scripts")
           sys.path.insert(0, "scripts/ci")
+          from workflow_escape import escape_workflow_data as escape
           from markdown_audit_reports import document_set_problems, gate_problems
 
           root = Path.cwd()
@@ -106,7 +108,7 @@ jobs:
               (out / (name + ".stderr")).write_text(result.stderr)
               print("COMMAND", name, "EXIT", result.returncode, flush=True)
               if result.returncode not in (0, 1):
-                  print(result.stdout[-4000:], result.stderr[-4000:], flush=True)
+                  print(escape(result.stdout[-4000:]), escape(result.stderr[-4000:]), flush=True)
               return result
 
           source = Path("slopvac.toml").read_text()
@@ -142,7 +144,7 @@ jobs:
                   if bad:
                       raise SystemExit("\n".join(bad))
                   summary = {k: reports[name]["summary"][k] for k in fields}
-                  print("SUMMARY", name, json.dumps(summary), flush=True)
+                  print("SUMMARY", name, escape(json.dumps(summary)), flush=True)
           finally:
               audit_config.unlink(missing_ok=True)
 
@@ -173,7 +175,7 @@ jobs:
           print("CONFIGURED_EXCLUSIONS", json.dumps(excluded), flush=True)
           print("MISSING_FROM_FULL_AUDIT", json.dumps(missing), flush=True)
           print("UNEXPECTED_DOCUMENTS", json.dumps(unexpected), flush=True)
-          print("UNCHECKED", json.dumps(unchecked), flush=True)
+          print("UNCHECKED", escape(json.dumps(unchecked)), flush=True)
           for path in files:
               target = canonical[path]
               document = scanned.get(target, {})
@@ -184,10 +186,11 @@ jobs:
                   "normally_excluded": target in excluded, "passed": document.get("gate", {}).get("passed"),
                   "findings": counts,
               }
-              print("FILE", json.dumps(entry), flush=True)
+              print("FILE", escape(json.dumps(entry)), flush=True)
           for path, document in configured.items():
               if not document.get("gate", {}).get("passed", False):
-                  print("CONFIGURED_FAILURE", json.dumps({"path": path, "details": document}), flush=True)
+                  counts = {k: document.get(k) for k in ("errors", "warnings", "suggestions")}
+                  print("CONFIGURED_FAILURE", escape(json.dumps({"path": path, **counts})), flush=True)
 
           parser = MarkdownIt("commonmark").enable("table")
           anchors = {}

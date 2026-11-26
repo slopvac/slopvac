@@ -1,6 +1,6 @@
 //! `workflow_data` against the vectors shared with the Action's Python escaper.
 //!
-//! `scripts/action_v3.py` mirrors `workflow_data`, because the Action cannot call
+//! `scripts/workflow_escape.py` mirrors `workflow_data`, because the Action cannot call
 //! it. Both sides read `tests/fixtures/workflow-escape-vectors.json`, so a change
 //! to either escaper fails the other side's test.
 

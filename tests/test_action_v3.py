@@ -30,6 +30,10 @@ action = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = action
 SPEC.loader.exec_module(action)
 
+# The escaper is one shared module that `action_v3.py` imports.
+sys.path.insert(0, str(ROOT / "scripts"))
+import workflow_escape  # noqa: E402
+
 PR = {
     "EVENT_NAME": "pull_request",
     "HEAD_REPO": "o/r",
@@ -362,7 +366,8 @@ VECTORS = json.loads(
     [pytest.param(v["input"], v["expected"], id=v["name"]) for v in VECTORS],
 )
 def test_the_escaper_agrees_with_slopvac_sanitize_on_the_shared_vectors(text, expected):
-    assert action.escape_workflow_data(text) == expected
+    assert workflow_escape.escape_workflow_data(text) == expected
+    assert action.escape_workflow_data is workflow_escape.escape_workflow_data
 
 
 def _assert_no_workflow_command(text):
