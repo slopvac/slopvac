@@ -12,7 +12,7 @@ use std::sync::Arc;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use slopvac_model::{ContextTag, NonEmptyString, SLUG, SchemaVersion, x_extensions};
-use slopvac_rules::{Pcre2Pattern, UniqueVec};
+use slopvac_rules::UniqueVec;
 
 use crate::pattern::Unlimited;
 use crate::schema::{Extensions, TAGGER_SCHEMA_VERSION, check_schema_version, is_name, present};
