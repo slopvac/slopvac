@@ -11,6 +11,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CONFIG = ROOT / ".github" / "ISSUE_TEMPLATE" / "config.yml"
+CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 
 TRACKER_KEY = "Bea" + "d"
 # CONTRIBUTING.md, "Rust workspace" and "Rust checks", plus the test suite.
@@ -49,10 +50,22 @@ def test_template_names_each_contributing_check(check):
     assert f"`{check}`" in _text(TEMPLATE)
 
 
-def test_template_names_prose_gate_and_engineering_doc():
-    text = _text(TEMPLATE)
-    assert "Prose gate" in text
-    assert "docs/engineering.md" in text
+def _contributing_gate_command() -> str:
+    section = _text(CONTRIBUTING).split("## Prose checks", 1)[1]
+    block = re.search(r"```sh\n(.+?)\n```", section, re.DOTALL)
+    assert block, "CONTRIBUTING.md Prose checks has no sh block"
+    return block.group(1).strip()
+
+
+def test_template_gate_row_names_the_contributing_command():
+    command = _contributing_gate_command()
+    rows = [line for line in _text(TEMPLATE).splitlines() if "Prose gate" in line]
+    assert len(rows) == 1
+    assert f"`{command}`" in rows[0]
+
+
+def test_template_names_engineering_doc():
+    assert "docs/engineering.md" in _text(TEMPLATE)
 
 
 @pytest.mark.parametrize("path", [TEMPLATE, CONFIG], ids=lambda p: p.name)

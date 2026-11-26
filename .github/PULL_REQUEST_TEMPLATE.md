@@ -19,7 +19,7 @@ Flag: none
 | `cargo test --doc --workspace` | |
 | `prek run --all-files` | |
 | `pytest` | |
-| Prose gate: `slopvac` on the changed prose (exit 2 means incomplete) | |
+| Prose gate: `cargo run -p slopvac -- lint <files>` (exit 1 fails, exit 2 is incomplete) | |
 
 ## Notes for reviewers
 
