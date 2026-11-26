@@ -71,7 +71,7 @@ pub use error::SyncError;
 pub use verified::VerifiedTree;
 
 use crate::extract::{
-    ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash, tree_hash_capturing,
+    ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash_capturing,
     verify_tree_capturing,
 };
 use crate::launch::Launcher;

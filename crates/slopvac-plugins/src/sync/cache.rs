@@ -7,7 +7,8 @@ use tempfile::NamedTempFile;
 
 use super::error::SyncError;
 use crate::extract::{
-    Evicted, ExtractError, TreeHash, ensure_private_child, ensure_private_dir, evict, verify_tree_capturing,
+    Evicted, ExtractError, TreeHash, ensure_private_child, ensure_private_dir, evict,
+    verify_tree_capturing,
 };
 use crate::lock::Digest as LockDigest;
 use crate::messages::sync as messages;

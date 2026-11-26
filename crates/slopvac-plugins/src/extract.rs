@@ -843,6 +843,10 @@ impl StagedTree {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass over the archive: the entry loop, the manifest capture and the sidecar share its state"
+)]
 fn scan_archive<S: std::hash::BuildHasher>(
     archive: impl Read,
     root: Option<&Path>,
