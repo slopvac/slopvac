@@ -108,6 +108,8 @@ def test_a_correct_audit_passes_and_prints_no_workflow_command(tmp_path) -> None
     done = run_audit(tmp_path, {})
     assert done.returncode == 0, done.stderr
     _no_workflow_command(done.stdout + done.stderr)
+    # The step wrote its report directory under the test directory, not the system one.
+    assert list((tmp_path / "tmp").glob("markdown-audit-*"))
     # The hostile file name still reaches the log, in escaped form.
     assert "%3A%3Aerror%3A%3Apwned" in done.stdout
 

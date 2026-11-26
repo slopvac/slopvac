@@ -112,12 +112,16 @@ def make_repo(root: Path) -> Path:
 
 def run_audit(root: Path, case: dict) -> subprocess.CompletedProcess[str]:
     repo = make_repo(root)
+    # The step calls `tempfile.mkdtemp`, so keep its files under the test directory.
+    scratch = root / "tmp"
+    scratch.mkdir()
     case_file = root / "case.json"
     case_file.write_text(json.dumps(case), encoding="utf-8")
     env = {
         **os.environ,
         "PATH": f"{root / 'bin'}{os.pathsep}{os.environ['PATH']}",
         "AUDIT_CASE": str(case_file),
+        "TMPDIR": str(scratch),
         "SLOPVAC_BIN": str(root / "bin" / "slopvac"),
         "GITHUB_STEP_SUMMARY": str(root / "summary.md"),
     }
