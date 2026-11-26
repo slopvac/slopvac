@@ -88,16 +88,20 @@ def run_printer(step: dict, tmp_path: Path, sarif: dict) -> subprocess.Completed
     )
 
 
-def printer_steps() -> list[dict]:
-    jobs = load_workflow()["jobs"]
-    return [
-        next(s for s in jobs[j]["steps"] if s.get("name") == "Print Trivy findings")
-        for j in ("trivy", "trivy-secret")
-    ]
+JOBS = ["trivy", "trivy-secret"]
 
 
-@pytest.mark.parametrize("step", printer_steps(), ids=["trivy", "trivy-secret"])
-def test_failed_scan_prints_findings(step: dict, tmp_path: Path) -> None:
+def printer_step(job: str) -> dict:
+    # Looked up inside the test, so a missing step fails an assertion.
+    steps = load_workflow()["jobs"][job]["steps"]
+    found = [s for s in steps if s.get("name") == "Print Trivy findings"]
+    assert len(found) == 1, f"{job}: expected one Print Trivy findings step"
+    return found[0]
+
+
+@pytest.mark.parametrize("job", JOBS)
+def test_failed_scan_prints_findings(job: str, tmp_path: Path) -> None:
+    step = printer_step(job)
     assert step["if"] == "failure()"
     done = run_printer(
         step,
@@ -111,11 +115,12 @@ def test_failed_scan_prints_findings(step: dict, tmp_path: Path) -> None:
     ]
 
 
-@pytest.mark.parametrize("step", printer_steps(), ids=["trivy", "trivy-secret"])
+@pytest.mark.parametrize("job", JOBS)
 @pytest.mark.parametrize("field", ["rule", "text", "uri"])
 def test_printed_findings_start_no_workflow_command(
-    step: dict, field: str, tmp_path: Path
+    job: str, field: str, tmp_path: Path
 ) -> None:
+    step = printer_step(job)
     # A scanned file name or a finding text can start a line of the job log.
     args = {"rule": "CVE-1", "text": "t", "uri": "a"}
     args[field] = HOSTILE
