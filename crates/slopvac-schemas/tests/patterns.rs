@@ -30,40 +30,40 @@ const PENDING: &[(&str, &str, &str)] = &[
     (
         "blocklist.schema.json",
         "/$defs/BlocklistEntry/properties/reason",
-        "slopvac-8l4.2.55",
+        "slopvac-8l4.8.14",
     ),
     (
         "blocklist.schema.json",
         "/$defs/BlocklistEntry/properties/word",
-        "slopvac-8l4.2.55",
+        "slopvac-8l4.8.14",
     ),
     // Pending only because of `\s` and `\S`, which the subset forbids. The end anchor is portable.
     (
         "config.schema.json",
         "/$defs/IndexExtraSource",
-        "slopvac-8l4.2.54",
+        "slopvac-8l4.4.18",
     ),
     (
         "plugin-protocol.schema.json",
         "/$defs/FeatureName",
-        "slopvac-8l4.2.53",
+        "slopvac-8l4.2.95",
     ),
     (
         "plugin-protocol.schema.json",
         "/$defs/BinaryDocument/properties/path",
-        "slopvac-8l4.2.53",
+        "slopvac-8l4.2.95",
     ),
     (
         "plugin-protocol.schema.json",
         "/$defs/PluginDocument/properties/path",
-        "slopvac-8l4.2.53",
+        "slopvac-8l4.2.95",
     ),
     (
         "plugin-protocol.schema.json",
         "/$defs/RecipeFile/properties/path",
-        "slopvac-8l4.2.53",
+        "slopvac-8l4.2.95",
     ),
-    ("style.schema.json", "/$defs/RelPath", "slopvac-8l4.2.54"),
+    ("style.schema.json", "/$defs/RelPath", "slopvac-8l4.8.14"),
 ];
 
 /// A construct outside the portable subset.
