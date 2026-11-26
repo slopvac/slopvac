@@ -1,5 +1,10 @@
 //! A signed pack artifact, and a cache filled the way a successful sync leaves it.
 
+#![allow(
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Cursor, Write};
