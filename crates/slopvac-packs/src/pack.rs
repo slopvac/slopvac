@@ -442,50 +442,51 @@ fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
 /// (`<plugin>:<category>.<rule>`, docs/contract/plugins.md, section 2), so two plugins may share
 /// a bare id. The core is different: a bare key reads as the first plugin with that rule, so a
 /// plugin with a core rule id would overwrite or switch off the core's. A category is keyed by
-/// plugin and id, so a plugin category that shares an id with a core category is legal. Every
-/// core clash is checked before any qualified duplicate, over all categories, so the refusal does
-/// not depend on the order of the categories. A plugin with several core clashes is refused for the lowest rule id, so the error names one rule whatever the order. Nothing from the plugin loads.
+/// plugin and id, so a plugin category that shares an id with a core category is legal.
+///
+/// A core clash outranks a duplicate qualified id. Within each class, the error names the
+/// lowest qualified id, compared as the whole `<plugin>:<category>.<rule>` text byte by byte, so
+/// the plugin and the rule it names depend on the set of plugins and never on the order of the
+/// plugins or of their categories. Nothing from the plugin loads.
 fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
+    // Each rule of each plugin or core, with the id of the plugin that supplies it.
+    let rules_of = |pack: &LoadedPack| -> Vec<(String, slopvac_model::RuleId)> {
+        pack.rules
+            .categories()
+            .iter()
+            .flat_map(slopvac_rules::LoadedCategory::rules)
+            .map(|r| (pack.manifest.id.to_string(), r.id().clone()))
+            .collect()
+    };
+    let refusal = |(plugin, id): &(String, slopvac_model::RuleId)| PackError::RuleIdCollision {
+        plugin: plugin.clone(),
+        rule: id.local().to_owned(),
+    };
     // The core's ids first, wherever the core sits in the list, so no plugin escapes the check
     // by coming before it.
-    let core_rules: HashSet<&str> = packs
+    let core_rules: HashSet<String> = packs
         .iter()
         .filter(|p| p.origin == Source::Core)
-        .flat_map(|p| p.rules.categories())
-        .flat_map(slopvac_rules::LoadedCategory::rules)
-        .map(|r| r.id().local())
+        .flat_map(rules_of)
+        .map(|(_, id)| id.local().to_owned())
         .collect();
-    for pack in packs.iter().filter(|p| p.origin != Source::Core) {
-        let clash = pack
-            .rules
-            .categories()
-            .iter()
-            .flat_map(slopvac_rules::LoadedCategory::rules)
-            .map(|r| r.id().local())
-            .filter(|local| core_rules.contains(local))
-            .min();
-        if let Some(rule) = clash {
-            return Err(PackError::RuleIdCollision {
-                plugin: pack.manifest.id.to_string(),
-                rule: rule.to_owned(),
-            });
-        }
+    let core_clash = packs
+        .iter()
+        .filter(|p| p.origin != Source::Core)
+        .flat_map(rules_of)
+        .filter(|(_, id)| core_rules.contains(id.local()))
+        .min_by(|(_, a), (_, b)| a.as_str().cmp(b.as_str()));
+    if let Some(found) = &core_clash {
+        return Err(refusal(found));
     }
-    let mut qualified: HashSet<&str> = HashSet::new();
-    for pack in packs {
-        let same_id = pack
-            .rules
-            .categories()
-            .iter()
-            .flat_map(slopvac_rules::LoadedCategory::rules)
-            .find(|r| !qualified.insert(r.id().as_str()))
-            .map(|r| r.id().local());
-        if let Some(rule) = same_id {
-            return Err(PackError::RuleIdCollision {
-                plugin: pack.manifest.id.to_string(),
-                rule: rule.to_owned(),
-            });
-        }
+    let all: Vec<(String, slopvac_model::RuleId)> = packs.iter().flat_map(rules_of).collect();
+    let mut seen: HashSet<&str> = HashSet::new();
+    let duplicate = all
+        .iter()
+        .filter(|(_, id)| !seen.insert(id.as_str()))
+        .min_by(|(_, a), (_, b)| a.as_str().cmp(b.as_str()));
+    if let Some(found) = duplicate {
+        return Err(refusal(found));
     }
     Ok(())
 }
