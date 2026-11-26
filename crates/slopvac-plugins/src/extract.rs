@@ -1865,7 +1865,7 @@ mod single_read_tests {
     #[test]
     fn an_executable_list_over_the_manifest_cap_still_hashes() {
         let scratch = tempfile::tempdir().unwrap();
-        let list = "bin/some-file-name\n".repeat(40_000);
+        let list = "bin/some-file-name\n".repeat(60_000);
         assert!(list.len() > MAX_CAPTURE_BYTES);
         fs::write(scratch.path().join(EXEC_SIDECAR), list).unwrap();
 
