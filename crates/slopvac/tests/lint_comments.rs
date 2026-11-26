@@ -22,8 +22,9 @@ const CLEAN: &str = "// Parse the input.\nfn main() {}\n";
 
 /// The default rules that read no comment, sorted: the rules of
 /// kind metric, structure and vocabulary in `crates/slopvac-rules/tests/fixtures/core-v3`
-/// and no capitalization rule that checks the sentence style.
-const NOT_RUN_BY_DEFAULT: [&str; 18] = [
+/// and no capitalization rule that checks the sentence style, and the vocabulary rule
+/// `core:terms.casing` of the terms rule set (`slopvac-engine/src/terms.rs`).
+const NOT_RUN_BY_DEFAULT: [&str; 19] = [
     "core:ai-tells-content-shape.adjective-per-noun-spray",
     "core:ai-tells-formatting.bold-spray",
     "core:ai-tells-formatting.em-dash-density",
@@ -42,6 +43,7 @@ const NOT_RUN_BY_DEFAULT: [&str; 18] = [
     "core:ste-words.verb-or-adjective-form-not-permitted",
     "core:ste-words.word-outside-controlled-vocabulary",
     "core:ste-words.word-used-in-wrong-part-of-speech",
+    "core:terms.casing",
 ];
 
 /// Lint `file` (relative to a fresh project with `config`) and return the exit code and report.
@@ -169,7 +171,10 @@ fn a_category_option_alone_names_no_rule() {
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     let report: Value = serde_json::from_slice(&out.stdout).expect("a JSON report");
     assert_eq!(
-        unchecked(&report).iter().map(|n| n.0.as_str()).collect::<Vec<_>>(),
+        unchecked(&report)
+            .iter()
+            .map(|n| n.0.as_str())
+            .collect::<Vec<_>>(),
         ["comment-rules-not-run"],
         "{report}"
     );

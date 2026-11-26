@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::lint_messages::{LintFixMessage, LintFixReason};
-use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_comments::Language;
+use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{
@@ -728,7 +728,10 @@ fn collect_targets(
             }
             let kind = match kind_of_file(
                 &file.kind,
-                file.path.file_name().and_then(|n| n.to_str()).unwrap_or_default(),
+                file.path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default(),
             ) {
                 Ok(kind) => kind,
                 Err(why) => {
