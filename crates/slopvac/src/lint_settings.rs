@@ -16,7 +16,9 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::Value as Json;
-use slopvac_config::{ConfigLevel, LevelFrom, LoadedConfig, Resolved, Setting, describe};
+use slopvac_config::{
+    ConfigLevel, GroupedKey, LevelFrom, LoadedConfig, Resolved, Setting, describe,
+};
 use slopvac_config::{Inputs, PackFile, Presets, UnknownRule, unknown_rules};
 use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Level, Settings};
@@ -420,23 +422,42 @@ pub fn genre_assignments(config: &LoadedConfig) -> Vec<GenreAssignment> {
 }
 
 /// Each key of `resolved` with its final value and the values it replaced, for
-/// `--explain-config`. A shipped preset's bare `categories` and `rules` keys load as
-/// `core:<key>` (see `qualified_to_core`). They are listed under the bare spelling that the
-/// preset's author wrote, so a bare key in a config file replaces them in the listing as it
-/// does in the run.
-#[must_use]
-pub fn explain(resolved: &Resolved) -> Vec<slopvac_config::Explained> {
-    resolved.explain_respelled(|path, contribution| {
-        let mut path = path.to_vec();
-        if let [head, key, ..] = path.as_mut_slice()
-            && (head == "categories" || head == "rules")
-            && is_inherited(contribution.source.layer)
-            && let Some(bare) = key.strip_prefix(&format!("{RESERVED_ID}:"))
+/// `--explain-config`. A `categories` or `rules` key is grouped under the catalogue entry it
+/// names, so `x`, `core:x` and a shipped preset's `core:x` are one entry with one history. A
+/// key that names no entry, or more than one, keeps its own spelling. The entry is shown under
+/// the spelling of the contribution that won. A shipped preset's bare keys load as
+/// `core:<key>` (see `qualified_to_core`), and are shown as the preset's author wrote them.
+pub(crate) fn explain(resolved: &Resolved, catalog: &Catalog) -> Vec<slopvac_config::Explained> {
+    resolved.explain_grouped(|path, contribution| {
+        let mut shown = path.to_vec();
+        let mut group = path.to_vec();
+        if let [head, key, ..] = shown.as_mut_slice()
+            && let Some(identity) = identity_of(catalog, head, key)
         {
-            *key = bare.to_owned();
+            if is_inherited(contribution.source.layer)
+                && let Some(bare) = key.strip_prefix(&format!("{RESERVED_ID}:"))
+            {
+                *key = bare.to_owned();
+            }
+            group[1] = identity;
         }
-        path
+        GroupedKey { group, shown }
     })
+}
+
+/// The `<plugin>:<id>` of the one category or rule that `key` names under `section`.
+fn identity_of(catalog: &Catalog, section: &str, key: &str) -> Option<String> {
+    match section {
+        "categories" => match catalog.categories_named(key).as_slice() {
+            [(plugin, category)] => Some(format!("{}:{}", plugin.as_str(), category.id().as_str())),
+            _ => None,
+        },
+        "rules" => match catalog.rules_named(key).as_slice() {
+            [rule] => Some(rule.id().as_str().to_owned()),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// The merged settings of the file at `rel`.
@@ -790,6 +811,44 @@ pub(crate) mod tests {
     /// A catalogue of two plugins, `alpha` and `beta`, that each ship a category `style`.
     fn two_plugins_with_one_category_id() -> Catalog {
         catalog_of(&[("alpha", "style"), ("beta", "style")])
+    }
+
+    /// The `explain` paths of `config` (the text of a `slopvac.toml`) over the catalogue `rules`.
+    fn explained_paths(rules: &Catalog, config: &str) -> Vec<String> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("slopvac.toml");
+        std::fs::write(&path, config).expect("write config");
+        let loaded = load(&path, &NoPresets).expect("the config loads");
+        let resolved = resolve(&loaded, Path::new("doc.md"));
+        explain(&resolved, rules)
+            .into_iter()
+            .map(|e| e.path)
+            .filter(|p| p.starts_with("categories"))
+            .collect()
+    }
+
+    #[test]
+    fn explain_keeps_categories_of_two_plugins_with_one_local_id_apart() {
+        let rules = catalog_of(&[("core", "style"), ("alpha", "style")]);
+        let config =
+            format!("{HEAD}\n[categories]\n\"core:style\" = \"off\"\n\"alpha:style\" = \"off\"\n");
+        assert_eq!(
+            explained_paths(&rules, &config),
+            [
+                "categories.\"alpha:style\".severity",
+                "categories.\"core:style\".severity",
+            ]
+        );
+    }
+
+    #[test]
+    fn explain_merges_the_bare_and_qualified_spellings_of_one_category() {
+        let rules = catalog_of(&[("core", "style"), ("alpha", "tone")]);
+        let config = format!("{HEAD}\n[categories]\n\"core:style\" = \"off\"\nstyle = \"error\"\n");
+        assert_eq!(
+            explained_paths(&rules, &config),
+            ["categories.style.severity"]
+        );
     }
 
     /// The settings that the command-line `cli` gives over `rules` and an empty config.

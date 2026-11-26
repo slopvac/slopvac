@@ -75,6 +75,15 @@ pub struct Contribution {
     scope: usize,
 }
 
+/// Where [`Resolved::explain_grouped`] files one contribution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupedKey {
+    /// The identity that contributions are merged under.
+    pub group: Vec<String>,
+    /// The spelling the entry shows when this contribution wins.
+    pub shown: Vec<String>,
+}
+
 /// The merged settings of one file, with the history of each key.
 #[derive(Debug, Clone, Default)]
 pub struct Resolved {
@@ -298,31 +307,38 @@ impl Resolved {
         Json::Object(root)
     }
 
-    /// As [`Resolved::explain`], with each contribution filed under the key that `respell`
-    /// gives it, so that contributions a caller knows to be spellings of one key merge into one
-    /// entry. The merged history runs in the order the layers apply, and the entry shows the
-    /// spelling of the contribution that won.
+    /// As [`Resolved::explain`], with contributions that a caller knows to be spellings of
+    /// one key merged into one entry. `identify` gives each contribution the identity it
+    /// is grouped under and the spelling it is shown under. The merged history runs in the
+    /// order the layers apply, and the entry shows the spelling of the contribution that won.
     #[must_use]
-    pub fn explain_respelled(
+    pub fn explain_grouped(
         &self,
-        respell: impl Fn(&[String], &Contribution) -> Vec<String>,
+        identify: impl Fn(&[String], &Contribution) -> GroupedKey,
     ) -> Vec<Explained> {
-        let mut grouped: BTreeMap<Vec<String>, Vec<Contribution>> = BTreeMap::new();
+        let mut grouped: BTreeMap<Vec<String>, Vec<(Vec<String>, Contribution)>> = BTreeMap::new();
         for (path, history) in &self.entries {
             for contribution in history {
+                let key = identify(path, contribution);
                 grouped
-                    .entry(respell(path, contribution))
+                    .entry(key.group)
                     .or_default()
-                    .push(contribution.clone());
+                    .push((key.shown, contribution.clone()));
             }
         }
         grouped
             .into_iter()
-            .filter_map(|(path, mut history)| {
-                history.sort_by_key(|c| c.scope);
+            .filter_map(|(path, mut members)| {
+                members.sort_by_key(|(_, c)| c.scope);
+                let history: Vec<Contribution> = members.iter().map(|(_, c)| c.clone()).collect();
                 let win = Self::winner(&path, &history)?;
+                let shown = members
+                    .iter()
+                    .zip(&history)
+                    .find(|(_, c)| std::ptr::eq(*c, win))
+                    .map(|((shown, _), _)| shown.clone())?;
                 Some(Explained {
-                    path: display_path(&path),
+                    path: display_path(&shown),
                     value: win.value.clone(),
                     source: win.source.clone(),
                     overridden: history

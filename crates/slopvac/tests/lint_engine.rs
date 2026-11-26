@@ -1385,10 +1385,16 @@ fn explain_project() -> tempfile::TempDir {
     dir
 }
 
-#[test]
-fn explain_config_shows_a_user_override_of_a_preset_rule_as_replacing_the_preset_value() {
+#[rstest]
+#[case::bare("ste-practices.latin-abbreviation")]
+#[case::qualified("core:ste-practices.latin-abbreviation")]
+fn explain_config_shows_a_user_override_of_a_preset_rule_as_replacing_the_preset_value(
+    #[case] spelling: &str,
+) {
     // The `ste` style turns this rule off by its bare name, and the project turns it on.
-    let config = "schema_version = 3\nstyles = [\"ste\"]\n\n[rules]\n\"ste-practices.latin-abbreviation\" = \"error\"\n";
+    let config =
+        format!("schema_version = 3\nstyles = [\"ste\"]\n\n[rules]\n\"{spelling}\" = \"error\"\n");
+    let config = config.as_str();
     let (dir, _) = project("a.md", SLOPPY, Some(config));
     let out = slopvac()
         .current_dir(dir.path())
@@ -1403,7 +1409,9 @@ fn explain_config_shows_a_user_override_of_a_preset_rule_as_replacing_the_preset
         .collect();
     assert_eq!(
         entries,
-        ["rules.\"ste-practices.latin-abbreviation\" = \"error\"  [project slopvac.toml:5:1]"],
+        [format!(
+            "rules.\"{spelling}\" = \"error\"  [project slopvac.toml:5:1]"
+        )],
         "{stdout}"
     );
     assert!(stdout.contains("    replaced \"off\"  [style"), "{stdout}");
