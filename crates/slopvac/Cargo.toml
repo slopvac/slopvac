@@ -64,6 +64,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 
 [dev-dependencies]
 assert_cmd = "2.2.2"
+flate2.workspace = true
 insta.workspace = true
 jsonschema.workspace = true
 minisign.workspace = true
@@ -73,6 +74,7 @@ roxmltree.workspace = true
 rstest.workspace = true
 slopvac-pcre2.workspace = true
 snapbox.workspace = true
+tar.workspace = true
 
 [lints]
 workspace = true

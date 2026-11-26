@@ -508,6 +508,82 @@ fn lock_code_plugin(sandbox: &Sandbox) {
     ));
 }
 
+/// The trust store that the sandbox's binary writes to.
+fn trust_records(sandbox: &Sandbox) -> usize {
+    slopvac_plugins::trust::TrustStore::open(sandbox.dir.path().join("home/state/slopvac"))
+        .records()
+        .unwrap()
+        .len()
+}
+
+/// The plugin store of the sandbox, which `plugins sync` fills.
+fn plugin_store(sandbox: &Sandbox) -> std::path::PathBuf {
+    sandbox.dir.path().join("home/data/slopvac")
+}
+
+const PLUGIN_MANIFEST: &str = "schema_version = 3\nid = \"fmt\"\nversion = \"1.0.0\"\n\
+    slopvac_api = 1\nkind = \"code\"\n[provides]\n[plugin]\ncommand = \"bin/fmt\"\n\
+    args = [\"--serve\"]\nnetwork = false\nhooks = []\n\
+    features = { required = [], optional = [] }\n";
+
+/// A `.tar.gz` of a code plugin with this manifest and an empty script.
+fn plugin_targz(manifest: &str) -> Vec<u8> {
+    use std::io::Write as _;
+    let mut tar = tar::Builder::new(Vec::new());
+    for (name, bytes) in [
+        ("bin/fmt", &b""[..]),
+        ("slopvac-plugin.toml", manifest.as_bytes()),
+    ] {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        tar.append_data(&mut header, name, bytes).unwrap();
+    }
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gz.write_all(&tar.into_inner().unwrap()).unwrap();
+    gz.finish().unwrap()
+}
+
+/// Extract `archive` into a new directory under `scratch` and return its tree hash and place.
+fn extract_plugin(archive: &[u8], store: &std::path::Path) -> slopvac_plugins::extract::Extracted {
+    slopvac_plugins::extract::extract_targz(
+        archive,
+        store,
+        &std::collections::HashSet::<String>::new(),
+        slopvac_plugins::extract::Limits::default(),
+    )
+    .unwrap()
+}
+
+/// Move the extracted tree `done` to the place that sync keeps the tree `name`.
+fn move_tree_to(
+    done: &slopvac_plugins::extract::Extracted,
+    trees: &std::path::Path,
+    name: &slopvac_plugins::extract::TreeHash,
+) {
+    use std::os::unix::fs::PermissionsExt;
+    // A rename to another directory needs write access to the moved directory.
+    fs::set_permissions(&done.root, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::rename(&done.root, trees.join(format!("tree-{}", name.hex()))).unwrap();
+}
+
+/// The line of the debug log that names `code` and the plugin `fmt`. It names nothing else:
+/// no refusal sentence and no path.
+fn assert_debug_line(stderr: &str, code: &str, sandbox: &Sandbox) {
+    let line = stderr
+        .lines()
+        .find(|l| l.contains(code) && l.contains("fmt"))
+        .unwrap_or_else(|| panic!("no debug line with `{code}` and `fmt`:\n{stderr}"));
+    for text in [
+        "differs from",
+        "locked but not installed",
+        "slopvac plugins sync",
+        sandbox.dir.path().to_str().unwrap(),
+    ] {
+        assert!(!line.contains(text), "`{text}` in the debug line: {line}");
+    }
+}
+
 /// Once sync has installed a code plugin, `plugins trust` records trust from the installed
 /// files, and `plugins status` then reports the plugin as trusted.
 #[test]
@@ -527,6 +603,7 @@ fn trust_of_a_synced_code_plugin_records_trust_and_exits_0() {
         .stdout(predicate::str::contains(
             "trusted `fmt` with content hash sha256:",
         ));
+    assert_eq!(trust_records(&sandbox), 1);
     sandbox
         .slopvac()
         .args(["--offline", "plugins", "status"])
@@ -552,7 +629,7 @@ fn trust_of_a_locked_code_plugin_that_is_not_synced_exits_2() {
          source = \"oci://registry.invalid/acme/fmt:1.0.0\"\n\
          digest = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n",
     );
-    sandbox
+    let out = sandbox
         .slopvac()
         .env("SLOPVAC_LOG", "debug")
         .args(["--offline", "plugins", "trust", "fmt"])
@@ -561,9 +638,9 @@ fn trust_of_a_locked_code_plugin_that_is_not_synced_exits_2() {
         .stderr(predicate::str::contains(
             "error[plugins-trust-inputs-failed]: ",
         ))
-        .stderr(predicate::str::contains("the plugin files are not loaded").not())
-        .stderr(predicate::str::contains("plugin-not-installed"))
-        .stderr(predicate::str::contains("fmt"));
+        .stderr(predicate::str::contains("the plugin files are not loaded").not());
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert_debug_line(&stderr, "plugin-not-installed", &sandbox);
 }
 
 /// Trust is pinned to the synced tree: a file changed after sync is refused, and nothing is
@@ -584,7 +661,7 @@ fn trust_of_a_code_plugin_changed_since_sync_exits_2_and_records_nothing() {
         original.replace("hooks = []", "args = [\"--extra\"]\nhooks = []"),
     )
     .unwrap();
-    sandbox
+    let out = sandbox
         .slopvac()
         .env("SLOPVAC_LOG", "debug")
         .args(["--offline", "plugins", "trust", "fmt"])
@@ -592,14 +669,109 @@ fn trust_of_a_code_plugin_changed_since_sync_exits_2_and_records_nothing() {
         .code(2)
         .stderr(predicate::str::contains(
             "error[plugins-trust-inputs-failed]: ",
-        ))
-        .stderr(predicate::str::contains("plugin-tampered"))
-        .stderr(predicate::str::contains("fmt"));
-    fs::write(&manifest, original).unwrap();
+        ));
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert_debug_line(&stderr, "plugin-tampered", &sandbox);
+    // Checked before the manifest is restored, and in the trust store itself.
+    assert_eq!(trust_records(&sandbox), 0);
+}
+
+/// An attacker who writes the cache can plant a tree and a record that points at it. The
+/// trusted hash comes from the lock and the cached archive, so the plant is refused.
+#[test]
+fn trust_of_an_archive_plugin_with_a_swapped_tree_and_a_forged_record_exits_2() {
+    let sandbox = Sandbox::new();
+    let honest = plugin_targz(PLUGIN_MANIFEST);
+    fs::create_dir_all(sandbox.project().join("plugins")).unwrap();
+    fs::write(sandbox.project().join("plugins/fmt.tar.gz"), &honest).unwrap();
+    let digest = slopvac_plugins::oci::Digest::of(&honest);
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"plugins/fmt.tar.gz\"\ndigest = \"{digest}\"\n"
+    ));
     sandbox
         .slopvac()
-        .args(["--offline", "plugins", "status"])
+        .args(["--offline", "plugins", "sync"])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("not trusted"));
+        .success();
+
+    let store = plugin_store(&sandbox);
+    let trees = store.join("trees");
+    let record = store.join("refs").join(digest.hex());
+    let honest_hash =
+        slopvac_plugins::extract::TreeHash::from_hex(fs::read_to_string(&record).unwrap().trim())
+            .unwrap();
+    // Put the evil tree where the honest one was, and point the record at a second copy.
+    let evil = plugin_targz(&PLUGIN_MANIFEST.replace("--serve", "--evil"));
+    let aside = sandbox.dir.path().join("aside");
+    let old = trees.join(format!("tree-{}", honest_hash.hex()));
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&old, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    fs::create_dir_all(&aside).unwrap();
+    fs::rename(&old, aside.join("honest")).unwrap();
+    let planted = extract_plugin(&evil, &aside.join("scratch"));
+    move_tree_to(&planted, &trees, &honest_hash);
+    let forged = extract_plugin(&evil, &trees);
+    fs::write(&record, forged.hash.hex()).unwrap();
+
+    let out = sandbox
+        .slopvac()
+        .env("SLOPVAC_LOG", "debug")
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error[plugins-trust-inputs-failed]: ",
+        ));
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert_debug_line(&stderr, "plugin-tampered", &sandbox);
+    assert_eq!(trust_records(&sandbox), 0);
+}
+
+/// A lock edited to name a planted artifact has no signature that sync ever checked. `trust` is
+/// the point where a person decides, so it checks the cached signature again.
+#[test]
+fn trust_of_a_planted_registry_plugin_without_a_valid_signature_exits_2() {
+    use slopvac_plugins::oci::{Descriptor, Digest, Manifest, MEDIA_EMPTY, MEDIA_MANIFEST};
+    use slopvac_plugins::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER};
+    let sandbox = Sandbox::new();
+    let archive = plugin_targz(PLUGIN_MANIFEST);
+    let manifest = Manifest {
+        schema_version: 2,
+        media_type: Some(MEDIA_MANIFEST.to_owned()),
+        artifact_type: Some(ARTIFACT_TYPE_PACK.to_owned()),
+        config: Descriptor::for_bytes(MEDIA_EMPTY, b"{}"),
+        layers: vec![Descriptor::for_bytes(MEDIA_PACK_LAYER, &archive)],
+        subject: None,
+        annotations: std::collections::BTreeMap::new(),
+    };
+    let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+    let digest = Digest::of(&manifest_bytes);
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"oci://registry.invalid/acme/fmt:1.0.0\"\ndigest = \"{digest}\"\n\
+         [plugins.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00Z\"\n"
+    ));
+    // The cache as a successful sync leaves it, without a signature layer.
+    let store = plugin_store(&sandbox);
+    fs::create_dir_all(store.join("blobs")).unwrap();
+    fs::write(store.join("blobs").join(digest.hex()), &manifest_bytes).unwrap();
+    fs::write(
+        store.join("blobs").join(Digest::of(&archive).hex()),
+        &archive,
+    )
+    .unwrap();
+    let done = extract_plugin(&archive, &store.join("trees"));
+    fs::create_dir_all(store.join("refs")).unwrap();
+    fs::write(store.join("refs").join(digest.hex()), done.hash.hex()).unwrap();
+
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[signature-invalid]: "));
+    assert_eq!(trust_records(&sandbox), 0);
 }

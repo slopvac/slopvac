@@ -2405,6 +2405,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "clap_mangen",
+ "flate2",
  "insta",
  "jsonschema",
  "minisign",
@@ -2441,6 +2442,7 @@ dependencies = [
  "slopvac-text",
  "slopvac-update",
  "snapbox",
+ "tar",
  "tempfile",
  "thiserror",
  "toml",
@@ -2698,6 +2700,7 @@ name = "slopvac-packs"
 version = "0.0.0"
 dependencies = [
  "cap-std",
+ "flate2",
  "globset",
  "proptest",
  "regex",
@@ -2714,6 +2717,7 @@ dependencies = [
  "slopvac-rules",
  "slopvac-sanitize",
  "slopvac-styles",
+ "tar",
  "tempfile",
  "thiserror",
  "toml",

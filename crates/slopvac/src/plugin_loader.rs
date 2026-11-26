@@ -145,7 +145,20 @@ impl PluginLoader for InstalledPlugins<'_> {
 )]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use std::fs;
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt;
+
+    use rstest::rstest;
+    use slopvac_plugins::extract::{Extracted, Limits, extract_targz};
+    use slopvac_plugins::oci::Digest;
+
+    /// The tree hash of the fixture below (`bin/fmt` empty, `PLUGIN_TOML` as the manifest),
+    /// worked out by hand from the hash format in the threat model and not by the code under
+    /// test.
+    const FMT_TREE: &str =
+        "sha256:d37e9bde3d46a84776306e32374fad0485d40b2f9bb885ebfe7de720dc91b34a";
 
     const PLUGIN_TOML: &str = "schema_version = 3\nid = \"fmt\"\nversion = \"1.0.0\"\n\
         slopvac_api = 1\nkind = \"code\"\n[provides]\n[plugin]\ncommand = \"bin/fmt\"\n\
@@ -182,16 +195,40 @@ mod tests {
             fs::create_dir_all(plugin.join("bin")).unwrap();
             fs::write(plugin.join("slopvac-plugin.toml"), PLUGIN_TOML).unwrap();
             fs::write(plugin.join("bin/fmt"), "").unwrap();
-            let digest = tree_hash(&plugin).unwrap().as_str().to_owned();
             fs::write(
                 self.lock_path(),
                 format!(
                     "schema_version = 3\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
-                     slopvac_api = 1\nsource = \"plugins/fmt\"\ndigest = \"{digest}\"\n"
+                     slopvac_api = 1\nsource = \"plugins/fmt\"\ndigest = \"{FMT_TREE}\"\n"
                 ),
             )
             .unwrap();
-            digest
+            FMT_TREE.to_owned()
+        }
+
+        fn store(&self) -> PathBuf {
+            self.dir.path().join("store")
+        }
+
+        /// A lock with one code plugin from `source` pinned to `digest`.
+        fn lock(&self, source: &str, digest: &str) {
+            fs::write(
+                self.lock_path(),
+                format!(
+                    "schema_version = 3\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
+                     slopvac_api = 1\nsource = \"{source}\"\ndigest = \"{digest}\"\n"
+                ),
+            )
+            .unwrap();
+        }
+
+        /// The files of `archive` as the tree that sync keeps under `name`.
+        fn install_as(&self, archive: &[u8], name: &TreeHash) {
+            let done = extract(archive, &self.dir.path().join("scratch"));
+            fs::set_permissions(&done.root, fs::Permissions::from_mode(0o755)).unwrap();
+            let trees = self.store().join("trees");
+            fs::create_dir_all(&trees).unwrap();
+            fs::rename(&done.root, trees.join(format!("tree-{}", name.hex()))).unwrap();
         }
 
         fn loader(&self) -> InstalledPlugins<'_> {
@@ -205,6 +242,110 @@ mod tests {
         fn fmt() -> PackId {
             "fmt".parse().unwrap()
         }
+    }
+
+    fn extract(archive: &[u8], store: &Path) -> Extracted {
+        extract_targz(archive, store, &HashSet::<String>::new(), Limits::default()).unwrap()
+    }
+
+    /// A `.tar.gz` of a plugin with this manifest and an empty script.
+    fn plugin_archive(manifest: &str) -> Vec<u8> {
+        let mut tar = tar::Builder::new(Vec::new());
+        for (name, bytes) in [
+            ("bin/fmt", &b""[..]),
+            ("slopvac-plugin.toml", manifest.as_bytes()),
+        ] {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            tar.append_data(&mut header, name, bytes).unwrap();
+        }
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gz.write_all(&tar.into_inner().unwrap()).unwrap();
+        gz.finish().unwrap()
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum Origin {
+        Git,
+        Archive,
+    }
+
+    /// An attacker who can write the store puts an evil tree where the locked one belongs and
+    /// writes a record that points at a second copy of it. Nothing the store holds may set the
+    /// hash that trust is pinned to.
+    #[rstest]
+    #[case::git(Origin::Git)]
+    #[case::archive(Origin::Archive)]
+    fn a_swapped_tree_with_a_forged_record_is_refused_as_tampered(#[case] origin: Origin) {
+        let world = World::new();
+        let honest = plugin_archive(PLUGIN_TOML);
+        let evil = plugin_archive(&PLUGIN_TOML.replace("--serve", "--evil"));
+        let honest_tree = extract(&honest, &world.dir.path().join("honest")).hash;
+        let (source, digest) = match origin {
+            Origin::Git => (
+                format!("git+https://example.invalid/acme/fmt.git@{}", "0".repeat(40)),
+                honest_tree.as_str().to_owned(),
+            ),
+            Origin::Archive => {
+                let digest = Digest::of(&honest);
+                let blobs = world.store().join("blobs");
+                fs::create_dir_all(&blobs).unwrap();
+                fs::write(blobs.join(digest.hex()), &honest).unwrap();
+                ("plugins/fmt.tar.gz".to_owned(), digest.to_string())
+            }
+        };
+        world.lock(&source, &digest);
+        world.install_as(&evil, &honest_tree);
+        let forged = extract(&evil, &world.store().join("trees")).hash;
+        let refs = world.store().join("refs");
+        fs::create_dir_all(&refs).unwrap();
+        fs::write(refs.join(&digest[7..]), forged.hex()).unwrap();
+
+        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+
+        assert!(
+            matches!(refusal, LoadRefusal::Synced(SyncedError::Tampered { .. })),
+            "{refusal:?}"
+        );
+    }
+
+    /// The hash comes before any parse, so a manifest broken after sync is tampering and not a
+    /// manifest error.
+    #[test]
+    fn a_manifest_broken_after_sync_is_refused_as_tampered_before_it_is_parsed() {
+        let world = World::new();
+        world.path_plugin();
+        fs::write(
+            world.project().join("plugins/fmt/slopvac-plugin.toml"),
+            "not toml [[[",
+        )
+        .unwrap();
+        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+        assert!(
+            matches!(refusal, LoadRefusal::Synced(SyncedError::Tampered { .. })),
+            "{refusal:?}"
+        );
+    }
+
+    /// A failed read is a failure of the store, not evidence of tampering.
+    #[test]
+    fn a_file_that_cannot_be_read_is_a_store_failure_and_not_tampering() {
+        let world = World::new();
+        world.path_plugin();
+        let script = world.project().join("plugins/fmt/bin/fmt");
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::File::open(&script).is_ok() {
+            return; // the test runs with rights that ignore modes
+        }
+        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+        assert!(
+            matches!(
+                refusal,
+                LoadRefusal::Synced(SyncedError::StoreUnreadable { .. })
+            ),
+            "{refusal:?}"
+        );
     }
 
     #[test]

@@ -1600,3 +1600,61 @@ fn a_three_mebibyte_config_from_an_embedded_source_loads() {
 
     assert!(loaded.is_ok(), "{:?}", loaded.err());
 }
+/// A `.tar.gz` of one file.
+fn targz_of(name: &str, bytes: &[u8]) -> Vec<u8> {
+    use std::io::Write as _;
+    let mut tar = tar::Builder::new(Vec::new());
+    let mut header = tar::Header::new_gnu();
+    header.set_size(bytes.len() as u64);
+    header.set_mode(0o644);
+    tar.append_data(&mut header, name, bytes).unwrap();
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gz.write_all(&tar.into_inner().unwrap()).unwrap();
+    gz.finish().unwrap()
+}
+
+/// The cache is untrusted: an attacker who writes a tree and a record that points at it must not
+/// get that tree loaded. The tree to load is the one the lock digest names, through the cached
+/// archive, so the swapped tree is refused.
+#[test]
+fn a_forged_record_and_a_swapped_tree_do_not_load_a_data_plugin() {
+    let w = World::new();
+    let honest_dir = w.write_tree(&Spec::new("acme"));
+    let honest_manifest = fs::read(honest_dir.join("slopvac-plugin.toml")).unwrap();
+    let honest_hash = tree_hash(&honest_dir).unwrap();
+    let archive = targz_of("slopvac-plugin.toml", &honest_manifest);
+    let digest = slopvac_plugins::oci::Digest::of(&archive);
+
+    // The same plugin plus a comment, installed twice: where the honest tree belongs, and where
+    // the forged record points.
+    let mut evil_manifest = honest_manifest;
+    evil_manifest.extend_from_slice(b"# evil\n");
+    let trees = w.tmp.path().join("store/trees");
+    let mut evil_hash = None;
+    for (i, name) in ["swapped", "forged"].into_iter().enumerate() {
+        let dir = w.tmp.path().join("stage").join(name);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("slopvac-plugin.toml"), &evil_manifest).unwrap();
+        let hash = tree_hash(&dir).unwrap();
+        let place = if i == 0 { &honest_hash } else { &hash };
+        fs::rename(&dir, trees.join(format!("tree-{}", place.hex()))).unwrap();
+        evil_hash = Some(hash);
+    }
+    let blobs = w.tmp.path().join("store/blobs");
+    fs::create_dir_all(&blobs).unwrap();
+    fs::write(blobs.join(digest.hex()), &archive).unwrap();
+    fs::write(
+        w.tmp.path().join("store/refs").join(digest.hex()),
+        evil_hash.unwrap().hex(),
+    )
+    .unwrap();
+    let lock = Lockfile::parse(&format!(
+        "schema_version = 3\n\n[[plugins]]\nid = \"acme\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
+         slopvac_api = 1\nsource = \"dist/acme.tar.gz\"\ndigest = \"{digest}\"\n"
+    ))
+    .unwrap();
+
+    let err = load_synced(&ids(&["acme"]), &lock, &w.store()).unwrap_err();
+
+    assert!(matches!(err, SyncedError::Tampered { .. }), "{err}");
+}
