@@ -22,6 +22,10 @@ use crate::messages::PackMessage;
 use crate::source::MemorySource;
 use crate::{Budget, Limits, LoadedPack, PackError, PackKind, Packs, Source, to_lock_id};
 
+/// What a test hangs on the hash pass of a load: called for each file right after it is read.
+#[cfg(feature = "test-support")]
+type HashObserver<'a> = &'a mut dyn FnMut(&str, &Path);
+
 /// Most bytes of one plugin tree a load keeps in memory.
 const PLUGIN_TREE_CAP: u64 = 32 << 20;
 
@@ -306,7 +310,7 @@ fn load_inner(
     lock: &Lockfile,
     store: &Store,
     budget: &mut Budget,
-    #[cfg(feature = "test-support")] mut after_hash: Option<&mut dyn FnMut(&str, &Path)>,
+    #[cfg(feature = "test-support")] mut after_hash: Option<HashObserver<'_>>,
 ) -> Result<Vec<LoadedPack>, SyncedError> {
     let mut loaded: Vec<LoadedPack> = Vec::new();
     for locked in dependency_order(requested, lock)? {
