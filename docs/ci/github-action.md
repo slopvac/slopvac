@@ -33,7 +33,7 @@ jobs:
 
 The `reporter` input takes `auto`, `review`, `annotations` or `none`. With `auto`, the action tries a review with suggestions on a pull request from the same repository that Dependabot did not open. The action cannot see the token's permissions, so if reviewdog fails to post the review, for example on a read-only token, it logs a warning and posts annotations instead. In every other pull request it uses annotations, which need no write permission. On pushes it uses a check run. A reviewdog install or post failure only warns; the slopvac exit code stays the gate.
 
-A separate `Sync plugins` step runs before the lint. When the working directory has a `.slopvac/plugins.lock` lockfile, the step runs `slopvac plugins sync`, which installs what the lockfile pins and checks each digest. Without a lockfile, the step prints a notice and passes.
+A separate `Sync plugins` step runs before the lint. When the working directory has a `.slopvac/plugins.lock` lockfile, the step runs `slopvac plugins sync`, which installs what the lockfile pins and checks each digest. Without a lockfile, the step prints a notice and passes. The notice does not show that the project needs no plugins. A project that depends on plugins must commit `.slopvac/plugins.lock`, so the step syncs them before the lint, which runs with `--offline`.
 
 The sync is incomplete, and fails the action, on any nonzero exit or a crash from a signal. The binary exits 2 for a lockfile it cannot read or accept, a failed download and a digest mismatch. The step prints the binary's error line, then `plugins sync failed (status <n>)`. The lint step does not run after a failed sync, and `fail-on-findings: false` does not soften it.
 
