@@ -790,6 +790,11 @@ fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[cas
     "",
     "no vocabulary content"
 )]
+#[case::a_category_only_override_is_dropped(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n",
+    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[categories]\nste-words = \"off\"\n",
+    "authored override [\"docs/**\"] is missing"
+)]
 #[case::an_entry_has_no_string_level(
     "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
     "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = { other = 1 }\n",
