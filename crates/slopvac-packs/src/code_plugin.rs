@@ -164,6 +164,8 @@ pub fn load_code_plugin(
         cwd: root.to_path_buf(),
         declaration,
         path_env: context.path_env.clone(),
+        // STUB(slopvac-8l4.12.80): no config key names the variables a user allows yet, so the
+        // plugin receives none. slopvac-p18 fills this from the config.
         env: Vec::new(),
     };
     let from_registry = matches!(locked.source.kind(), SourceKind::Oci(_));
