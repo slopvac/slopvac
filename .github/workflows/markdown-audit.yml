@@ -52,7 +52,7 @@ jobs:
           from markdown_it import MarkdownIt
 
           sys.path.insert(0, "scripts/ci")
-          from markdown_audit_reports import gate_problems
+          from markdown_audit_reports import document_set_problems, gate_problems
 
           root = Path.cwd()
           binary = os.environ["SLOPVAC_BIN"]
@@ -152,6 +152,15 @@ jobs:
           configured = {relative(d): d for d in reports["configured"]["documents"]}
           scanned = {relative(d): d for d in reports["all-files"]["documents"]}
           authored = {relative(d): d for d in reports["authored"]["documents"]}
+          # The authored report must hold exactly the authored documents. An empty or
+          # partial report is a failure, and the messages hold counts and no paths.
+          bad = document_set_problems(
+              "authored",
+              [relative(d) for d in reports["authored"]["documents"]],
+              {canonical[p] for p in authored_files},
+          )
+          if bad:
+              raise SystemExit("\n".join(bad))
           excluded = sorted(expected_paths - set(configured))
           missing = sorted(expected_paths - set(scanned))
           unexpected = sorted(set(scanned) - expected_paths)

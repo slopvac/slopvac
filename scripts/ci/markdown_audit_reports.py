@@ -28,3 +28,21 @@ def gate_problems(name: str, report: object, *, allow_false: bool) -> list[str]:
         elif not passed and not allow_false:
             problems.append(f"{name}: {path}: the document failed its gate")
     return problems
+
+
+def document_set_problems(name: str, reported: list[str], expected: set[str]) -> list[str]:
+    """Return one message per way the report's documents differ from the expected set.
+
+    `reported` holds the path of each report document, as the audit normalises it, and
+    `expected` the paths the audit classed for the scan. The messages hold counts only:
+    a path comes from the repository and can carry text the Actions log would act on.
+    """
+    problems = []
+    found = set(reported)
+    if missing := expected - found:
+        problems.append(f"{name}: the report omits {len(missing)} expected document(s)")
+    if extra := found - expected:
+        problems.append(f"{name}: the report holds {len(extra)} unexpected document(s)")
+    if duplicates := len(reported) - len(found):
+        problems.append(f"{name}: the report holds {duplicates} duplicate document(s)")
+    return problems

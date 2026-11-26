@@ -71,7 +71,7 @@ def _audit_script() -> str:
 
 def test_the_audit_step_checks_every_report() -> None:
     script = _audit_script()
-    assert "from markdown_audit_reports import gate_problems" in script
+    assert "from markdown_audit_reports import document_set_problems, gate_problems" in script
     # One call per report, with the authored scan the only one that rejects `false`.
     assert re.search(r"gate_problems\(\s*name,\s*reports\[name\],\s*allow_false=name != \"authored\"\s*\)", script)
     assert "raise SystemExit" in script.split("gate_problems", 1)[1]
@@ -85,3 +85,23 @@ def test_the_cargo_cache_is_saved_only_by_a_push_to_main() -> None:
     assert cache["with"]["save-if"] == (
         "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
     )
+
+
+_EXPECTED = {"README.md", "docs/a.md", "docs/b.md"}
+
+
+@pytest.mark.parametrize(
+    ("reported", "problems"),
+    [
+        pytest.param(["README.md", "docs/a.md", "docs/b.md"], 0, id="exact-set"),
+        pytest.param(["docs/b.md", "README.md", "docs/a.md"], 0, id="order-is-free"),
+        pytest.param([], 1, id="empty-report"),
+        pytest.param(["README.md", "docs/a.md"], 1, id="one-omitted"),
+        pytest.param(["README.md", "docs/a.md", "docs/b.md", "extra.md"], 1, id="one-extra"),
+        pytest.param(["README.md", "docs/a.md", "docs/a.md"], 2, id="duplicate-and-omitted"),
+        pytest.param(["README.md", "docs/a.md", "docs/b.md", "docs/b.md"], 1, id="duplicate"),
+    ],
+)
+def test_the_authored_report_holds_exactly_the_authored_documents(reported, problems) -> None:
+    found = audit.document_set_problems("authored", reported, _EXPECTED)
+    assert len(found) == problems
