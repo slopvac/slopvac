@@ -62,6 +62,24 @@
         "none"
       ]
     },
+    "BudgetNoticeData": {
+      "description": "The cap that stopped an extraction.",
+      "properties": {
+        "budget": {
+          "description": "Name of the cap that was reached.",
+          "type": "string"
+        },
+        "limit": {
+          "$ref": "#/$defs/Count",
+          "description": "Value of the cap: a count, or a number of bytes, as the cap name says."
+        }
+      },
+      "required": [
+        "budget",
+        "limit"
+      ],
+      "type": "object"
+    },
     "CategoryId": {
       "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
       "type": "string"
@@ -579,6 +597,141 @@
     },
     "Notice": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "rule-kind-not-implemented"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/RulesNoticeData"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "rule-style-not-implemented"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/RulesNoticeData"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "comment-rules-not-run"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/RulesNoticeData"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "comment-rule-named-not-run"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/RulesNoticeData"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "cases-rule-unchecked"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/RulesNoticeData"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "extract-unsupported"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/UnsupportedNoticeData"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "extract-budget"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/BudgetNoticeData"
+              }
+            }
+          }
+        }
+      ],
       "description": "A stable, machine-readable fact with a human message. Consumers branch on `code`, never on `message`.",
       "patternProperties": {
         "^x-": true
@@ -653,6 +806,22 @@
         "label",
         "segment",
         "range"
+      ],
+      "type": "object"
+    },
+    "RulesNoticeData": {
+      "description": "The rules a notice is about.",
+      "properties": {
+        "rules": {
+          "description": "Ids of the rules the notice names, in the order the notice lists them.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "rules"
       ],
       "type": "object"
     },
@@ -753,6 +922,24 @@
       "required": [
         "start",
         "end"
+      ],
+      "type": "object"
+    },
+    "UnsupportedNoticeData": {
+      "description": "The input that no extractor reads.",
+      "properties": {
+        "document": {
+          "description": "Path of the document that holds the unsupported content.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Name of the unsupported format or diagram type.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document",
+        "kind"
       ],
       "type": "object"
     }

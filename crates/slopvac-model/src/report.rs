@@ -7,8 +7,9 @@ use thiserror::Error;
 
 use crate::edit::{Edit, EditError, sorted_without_overlap};
 use crate::ids::{CategoryName, Contexts, PackId, RuleId, SchemaVersion, Severity};
+use crate::notice_data::{NoticeData, data_conditions, data_schema};
 use crate::origin::Origin;
-use crate::schema::{absent_not_null, dependent_required, if_then, open_object, x_extensions};
+use crate::schema::{absent_not_null, dependent_required, if_then, x_extensions};
 use crate::span::{LineCol, LineColError, Span};
 use crate::values::{
     Density, GenreId, KebabName, NonEmptyString, Score, present, required_nullable,
@@ -20,7 +21,7 @@ fn nullable_budget(_: &mut schemars::SchemaGenerator) -> Schema {
 }
 
 /// The schema of a count: a non-negative integer, shared as `$defs/Count`.
-struct Count;
+pub(crate) struct Count;
 
 impl JsonSchema for Count {
     fn schema_name() -> std::borrow::Cow<'static, str> {
@@ -58,7 +59,7 @@ pub enum NoticeLevel {
 /// A stable, machine-readable fact with a human message. Consumers branch on `code`, never on
 /// `message`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[schemars(transform = x_extensions)]
+#[schemars(transform = x_extensions, extend("allOf" = data_conditions()))]
 pub struct Notice {
     /// Stable kebab-case identifier. A code is never reused for a different meaning.
     pub code: KebabName,
@@ -78,7 +79,7 @@ pub struct Notice {
     /// array. Each notice code documents its own keys. Consumers must ignore keys they do
     /// not know. Omitted when the notice has none.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
-    #[schemars(transform = open_object)]
+    #[schemars(schema_with = "data_schema")]
     pub data: serde_json::Map<String, Value>,
 }
 
@@ -109,7 +110,24 @@ impl Notice {
             .map(|message| Self::from_catalog(level, message))
     }
 
-    /// Returns the notice with `data` attached.
+    /// Returns the notice with typed `data` attached. This is the setter for a code with a
+    /// typed shape; the published schema checks the shape per code.
+    #[must_use]
+    pub fn with(mut self, data: NoticeData) -> Self {
+        debug_assert!(
+            data.codes().contains(&self.code.as_str()),
+            "notice code {} does not carry this data shape",
+            self.code.as_str()
+        );
+        self.data = data.into_map();
+        self
+    }
+
+    /// Returns the notice with untyped `data` attached.
+    ///
+    /// The map is not checked against a shape. Use [`Notice::with`] for a code that has a
+    /// typed shape. The CLI and the agents still use this method, until their codes get
+    /// shapes.
     #[must_use]
     pub fn with_data(mut self, data: serde_json::Map<String, Value>) -> Self {
         self.data = data;

@@ -31,7 +31,7 @@ pub mod cli;
 use std::collections::BTreeMap;
 use std::fmt;
 
-use slopvac_model::{Notice, NoticeLevel, RuleId};
+use slopvac_model::{Notice, NoticeData, NoticeLevel, RuleId};
 use slopvac_rules::{Case, LoadedRule, MatchKind, Scope, Want};
 
 use crate::{Engine, EngineError, Input, Level};
@@ -139,19 +139,13 @@ impl CaseReport {
         if rules.is_empty() {
             return None;
         }
-        let data = serde_json::Map::from_iter([(
-            "rules".to_owned(),
-            rules
-                .iter()
-                .map(|id| serde_json::Value::String(id.to_string()))
-                .collect(),
-        )]);
+        let data = NoticeData::rules(rules.iter().map(ToString::to_string));
         Some(
             crate::lint::notice(
                 NoticeLevel::Warning,
                 &crate::messages::EngineNotice::CasesRuleUnchecked { count: rules.len() },
             )
-            .with_data(data),
+            .with(data),
         )
     }
 
