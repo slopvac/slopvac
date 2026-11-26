@@ -1729,12 +1729,16 @@ fn trust_of_a_signed_oci_plugin_prints_its_source_kind_and_the_verified_key_id()
         ..KeyPolicy::default()
     };
     let ran = f.run(&["trust", "fake"], false, |s| {
-        s.loader(TreeLoader::new(f.base.path(), "fake")).policy(policy)
+        s.loader(TreeLoader::new(f.base.path(), "fake"))
+            .policy(policy)
     });
     assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
     let line = provenance_line(&ran.out);
     assert!(line.starts_with("source: oci "), "{line}");
-    assert!(line.ends_with(&format!("; signed by {}", p.key_id)), "{line}");
+    assert!(
+        line.ends_with(&format!("; signed by {}", p.key_id)),
+        "{line}"
+    );
 }
 
 #[rstest::rstest]

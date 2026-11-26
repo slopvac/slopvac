@@ -439,6 +439,7 @@ const TRUST_UNKNOWN: &str = "plugins-part-trust-unknown";
 const TRUST_INPUTS: &str = "plugins-trust-inputs-failed";
 
 fn trust_part(runner: &Runner<'_>, pack: &LockedPack) -> CliText {
+    let id = pack.id.clone();
     let Some(loader) = runner.loader else {
         return CliText::PartTrustUnknown {
             why: render(&CliText::WhyNoLoader),
@@ -777,10 +778,13 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         &match signer {
             Some(key_id) => CliText::TrustedSigned {
                 kind,
-                source,
+                origin: source,
                 key_id: line(&key_id),
             },
-            None => CliText::TrustedUnsigned { kind, source },
+            None => CliText::TrustedUnsigned {
+                kind,
+                origin: source,
+            },
         },
     )?;
     say(out, &CliText::TrustNotContainment)?;

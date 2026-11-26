@@ -78,7 +78,10 @@ impl Store {
     /// second read of the same path would see other bytes.
     #[doc(hidden)]
     #[must_use]
-    pub fn with_read_observer(mut self, observer: std::sync::Arc<dyn Fn(&Path) + Send + Sync>) -> Self {
+    pub fn with_read_observer(
+        mut self,
+        observer: std::sync::Arc<dyn Fn(&Path) + Send + Sync>,
+    ) -> Self {
         self.observer = Some(ReadObserver(observer));
         self
     }

@@ -254,16 +254,16 @@ pub(crate) enum CliText {
     Trusted { id: String, hash: String },
     /// Where the trusted bytes of a signed plugin came from.
     #[code("plugins-trusted-signed")]
-    #[text("source: {kind} {source}; signed by {key_id}")]
+    #[text("source: {kind} {origin}; signed by {key_id}")]
     TrustedSigned {
         kind: String,
-        source: String,
+        origin: String,
         key_id: String,
     },
     /// Where the trusted bytes of an unsigned plugin came from.
     #[code("plugins-trusted-unsigned")]
-    #[text("source: {kind} {source}; unsigned")]
-    TrustedUnsigned { kind: String, source: String },
+    #[text("source: {kind} {origin}; unsigned")]
+    TrustedUnsigned { kind: String, origin: String },
     /// Residual risk R1, said at each `trust`.
     #[code("plugins-trust-not-containment")]
     #[text(
