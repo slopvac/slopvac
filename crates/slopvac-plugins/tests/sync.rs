@@ -14,123 +14,37 @@
 mod common;
 mod oci_server;
 mod revocations;
+mod signed_fixture;
 mod support;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
-use flate2::Compression;
-use flate2::write::GzEncoder;
 use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
 use rstest::rstest;
+use signed_fixture::{Key, Published, targz};
 use slopvac_plugins::lock::{
     Lockfile, PackId, ResolvedPack, Source, Version, VersionReq, parse_version_req,
 };
 use slopvac_plugins::oci::{
-    Anonymous, Client, Descriptor, Digest, MEDIA_MANIFEST, Manifest, OciError, Reference,
+    Anonymous, Client, Digest, MEDIA_MANIFEST, Manifest, OciError, Reference,
 };
 use slopvac_plugins::revoke::{RevocationError, RevocationNotice, Revocations};
 use slopvac_plugins::sign::{
-    ANNOTATION_ID, ANNOTATION_VERSION, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, PublicKey,
-    SignError, Statement,
+    KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, SignError,
 };
 use slopvac_plugins::sync::{
-    ARTIFACT_TYPE_PACK, Change, MEDIA_PACK_LAYER, Network, PackState, Store, SyncError, Syncer,
+    Change, Network, PackState, Store, SyncError, Syncer,
     available_versions, check_lock, status, update_notices,
 };
 
 const NOT_BEFORE: &str = "2026-11-01T00:00:00Z";
 const NOW: &str = "2026-11-14T00:00:00Z";
 
-struct Key {
-    pk: minisign::PublicKey,
-    sk: minisign::SecretKey,
-}
-
-impl Key {
-    fn new() -> Self {
-        let kp = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
-        Self {
-            pk: kp.pk,
-            sk: kp.sk,
-        }
-    }
-    fn public(&self) -> PublicKey {
-        PublicKey::from_base64(&self.pk.to_base64()).unwrap()
-    }
-    fn sign(&self, bytes: &[u8]) -> String {
-        minisign::sign(Some(&self.pk), &self.sk, Cursor::new(bytes), None, None)
-            .unwrap()
-            .to_string()
-    }
-}
-
-fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
-    let mut builder = tar::Builder::new(Vec::new());
-    for (name, data) in files {
-        let mut header = tar::Header::new_gnu();
-        header.set_size(data.len() as u64);
-        header.set_mode(0o644);
-        header.set_entry_type(tar::EntryType::Regular);
-        builder.append_data(&mut header, name, *data).unwrap();
-    }
-    let raw = builder.into_inner().unwrap();
-    let mut gz = GzEncoder::new(Vec::new(), Compression::default());
-    gz.write_all(&raw).unwrap();
-    gz.finish().unwrap()
-}
-
-/// A signed pack artifact, ready to serve.
-struct Published {
-    manifest: Vec<u8>,
-    digest: String,
-    blobs: HashMap<String, Vec<u8>>,
-    key_id: String,
-}
-
 fn publish(key: &Key, namespace: &str, files: &[(&str, &[u8])]) -> Published {
-    let layer = targz(files);
-    let mut manifest = Manifest {
-        schema_version: 2,
-        media_type: Some(MEDIA_MANIFEST.into()),
-        artifact_type: Some(ARTIFACT_TYPE_PACK.into()),
-        config: Descriptor::for_bytes("application/vnd.oci.empty.v1+json", b"{}"),
-        layers: vec![Descriptor::for_bytes(MEDIA_PACK_LAYER, &layer)],
-        subject: None,
-        annotations: BTreeMap::from([
-            (ANNOTATION_ID.to_owned(), "style".to_owned()),
-            (ANNOTATION_VERSION.to_owned(), "1.2.0".to_owned()),
-        ]),
-    };
-    let key_id = key.public().key_id();
-    let statement =
-        Statement::for_manifest(namespace, "style", "1.2.0", &key_id, NOT_BEFORE, &manifest)
-            .canonical_bytes();
-    let minisig = key.sign(&statement);
-    manifest
-        .layers
-        .push(Descriptor::for_bytes(MEDIA_STATEMENT, &statement));
-    manifest
-        .layers
-        .push(Descriptor::for_bytes(MEDIA_MINISIG, minisig.as_bytes()));
-    let body = serde_json::to_vec(&manifest).unwrap();
-    let mut blobs = HashMap::new();
-    blobs.insert(Digest::of(&layer).to_string(), layer);
-    blobs.insert(Digest::of(&statement).to_string(), statement);
-    blobs.insert(
-        Digest::of(minisig.as_bytes()).to_string(),
-        minisig.into_bytes(),
-    );
-    blobs.insert(Digest::of(b"{}").to_string(), b"{}".to_vec());
-    Published {
-        digest: Digest::of(&body).to_string(),
-        manifest: body,
-        blobs,
-        key_id,
-    }
+    signed_fixture::publish(key, namespace, "style", "1.2.0", NOT_BEFORE, files)
 }
 
 /// The artifact of [`publish`] with its statement and signature layers removed.
@@ -307,7 +221,7 @@ const FILES: &[(&str, &[u8])] = &[
 
 #[test]
 fn sync_installs_exactly_the_locked_pack() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -340,7 +254,7 @@ fn sync_installs_exactly_the_locked_pack() {
 
 #[test]
 fn a_registry_serving_other_content_for_the_locked_digest_installs_nothing() {
-    let key = Key::new();
+    let key = Key::primary();
     let locked_pack = publish(&key, "acme", FILES);
     let forged = publish(&key, "acme", &[("pack.toml", b"evil\n")]);
     let server = registry(&[&forged]);
@@ -365,7 +279,7 @@ fn a_registry_serving_other_content_for_the_locked_digest_installs_nothing() {
 
 #[test]
 fn a_fetch_failure_with_no_code_of_its_own_reports_sync_fetch() {
-    let key = Key::new();
+    let key = Key::primary();
     let good = publish(&key, "acme", FILES);
     let server = registry(&[&good]);
     let env = Env::new();
@@ -386,8 +300,8 @@ fn a_fetch_failure_with_no_code_of_its_own_reports_sync_fetch() {
 #[test]
 fn a_key_that_is_not_pinned_is_refused_and_nothing_is_extracted() {
     // TM-22: the artifact verifies against a key the user did not pin.
-    let signer = Key::new();
-    let pinned = Key::new();
+    let signer = Key::primary();
+    let pinned = Key::secondary();
     let p = publish(&signer, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -415,7 +329,7 @@ fn a_key_that_is_not_pinned_is_refused_and_nothing_is_extracted() {
 
 #[test]
 fn a_first_party_namespace_fails_closed_without_compiled_keys() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -444,7 +358,7 @@ fn a_first_party_namespace_fails_closed_without_compiled_keys() {
 
 #[test]
 fn a_lock_entry_without_a_signature_is_refused() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let mut entry = oci_entry("style", &server.registry(), &p.digest, &p.key_id);
@@ -464,7 +378,7 @@ fn a_lock_entry_without_a_signature_is_refused() {
 
 #[test]
 fn a_lock_entry_without_a_signature_reports_sync_unsigned() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let mut entry = oci_entry("style", &server.registry(), &p.digest, &p.key_id);
@@ -484,7 +398,7 @@ fn a_lock_entry_without_a_signature_reports_sync_unsigned() {
 
 #[test]
 fn an_artifact_without_the_signature_its_lock_entry_records_reports_signature_invalid() {
-    let key = Key::new();
+    let key = Key::primary();
     let stripped = publish_without_signature(&key, "acme", FILES);
     let server = registry(&[&stripped]);
     let env = Env::new();
@@ -508,8 +422,8 @@ fn an_artifact_without_the_signature_its_lock_entry_records_reports_signature_in
 
 #[test]
 fn a_signature_that_differs_from_the_lock_still_reports_signature_invalid() {
-    let locked_key = Key::new();
-    let other = Key::new();
+    let locked_key = Key::primary();
+    let other = Key::secondary();
     let p = publish(&other, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -536,8 +450,8 @@ fn a_signature_that_differs_from_the_lock_still_reports_signature_invalid() {
 
 #[test]
 fn a_signature_by_another_pinned_key_than_the_lock_records_is_refused() {
-    let locked_key = Key::new();
-    let other = Key::new();
+    let locked_key = Key::primary();
+    let other = Key::secondary();
     let p = publish(&other, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -564,7 +478,7 @@ fn a_signature_by_another_pinned_key_than_the_lock_records_is_refused() {
 
 #[test]
 fn one_bad_pack_leaves_the_store_without_any_tree() {
-    let key = Key::new();
+    let key = Key::primary();
     let good = publish(&key, "acme", FILES);
     let server = registry(&[&good]);
     let env = Env::new();
@@ -582,7 +496,7 @@ fn one_bad_pack_leaves_the_store_without_any_tree() {
 
 #[test]
 fn a_second_sync_changes_nothing_and_makes_no_request() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -599,7 +513,7 @@ fn a_second_sync_changes_nothing_and_makes_no_request() {
 
 #[test]
 fn offline_sync_from_a_warm_cache_succeeds_without_the_network() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let env = Env::new();
     let pol = policy("acme", &[&key]);
@@ -624,7 +538,7 @@ fn offline_sync_from_a_warm_cache_succeeds_without_the_network() {
 
 #[test]
 fn offline_sync_from_a_cold_cache_names_the_missing_pack_and_digest() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let env = Env::new();
     let lock = oci_lock("127.0.0.1:9", &p);
@@ -638,7 +552,7 @@ fn offline_sync_from_a_cold_cache_names_the_missing_pack_and_digest() {
 
 #[test]
 fn offline_sync_rechecks_a_cached_blob_and_refuses_a_swapped_one() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let env = Env::new();
     let pol = policy("acme", &[&key]);
@@ -682,7 +596,7 @@ fn tamper_add(tree: &Path) {
 fn a_tampered_tree_is_reinstalled_online() {
     // TM-46: edit a file; add a file.
     for tamper in [tamper_edit as fn(&Path), tamper_add] {
-        let key = Key::new();
+        let key = Key::primary();
         let p = publish(&key, "acme", FILES);
         let server = registry(&[&p]);
         let env = Env::new();
@@ -709,7 +623,7 @@ fn a_tampered_tree_is_reinstalled_online() {
 
 #[test]
 fn a_tampered_tree_is_refused_offline_and_removed() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -726,7 +640,7 @@ fn a_tampered_tree_is_refused_offline_and_removed() {
 
 #[test]
 fn status_reports_missing_then_installed() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -874,7 +788,7 @@ fn update_notices_separate_in_range_updates_from_out_of_range_releases() {
 
 #[test]
 fn available_versions_lists_semver_tags_in_order() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let c = client();
@@ -1117,7 +1031,7 @@ fn an_edited_record_cannot_make_sync_keep_another_tree() {
 #[test]
 fn a_tampered_tree_too_large_to_delete_is_reported_as_quarantined_online() {
     use std::os::unix::fs::PermissionsExt;
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1142,7 +1056,7 @@ fn a_tampered_tree_too_large_to_delete_is_reported_as_quarantined_online() {
 fn a_signature_newer_than_the_one_the_lock_records_is_refused() {
     // Valid, pinned and newer than the lock's floor, so the verifier accepts it;
     // sync still installs only the signature the lock recorded.
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1167,7 +1081,7 @@ fn a_signature_newer_than_the_one_the_lock_records_is_refused() {
 
 #[test]
 fn tm26_a_revoked_manifest_digest_fails_sync_before_any_request_for_it() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1189,7 +1103,7 @@ fn tm26_a_revoked_manifest_digest_fails_sync_before_any_request_for_it() {
 
 #[test]
 fn tm26_a_revoked_signing_key_fails_sync_and_extracts_nothing() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1209,7 +1123,7 @@ fn tm26_a_revoked_signing_key_fails_sync_and_extracts_nothing() {
 
 #[test]
 fn tm26_a_revocation_published_after_install_fails_the_next_sync() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1229,7 +1143,7 @@ fn tm26_a_revocation_published_after_install_fails_the_next_sync() {
 
 #[test]
 fn a_list_that_names_other_artifacts_installs_normally() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1249,7 +1163,7 @@ fn a_list_that_names_other_artifacts_installs_normally() {
 
 #[test]
 fn tm27_a_forged_list_fails_online_sync_with_exit_2() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1276,7 +1190,7 @@ fn tm27_a_forged_list_fails_online_sync_with_exit_2() {
 
 #[test]
 fn tm27_a_stale_cache_offline_prints_a_notice_and_the_sync_runs() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1359,7 +1273,7 @@ mod io_boundary {
     }
 
     fn installed() -> Installed {
-        let key = Key::new();
+        let key = Key::primary();
         let p = publish(&key, "acme", FILES);
         let server = registry(&[&p]);
         let env = Env::new();
@@ -1719,11 +1633,14 @@ fn locked_style(lock: &Lockfile) -> &slopvac_plugins::lock::LockedPack {
 
 #[test]
 fn an_online_syncer_with_a_cache_miss_checks_the_cache_only_and_makes_no_request() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
-    let c = client();
+    // The production client refuses every request it is asked to make: a syncer that reached
+    // for the network would fail with a fetch error instead of the cache miss below. The
+    // servers are watched as well.
+    let c = Client::with_credentials(Box::new(Anonymous));
     let pol = policy("acme", &[&key]);
     let lock = oci_lock(&server.registry(), &p);
     let store = env.store();
@@ -1736,6 +1653,10 @@ fn an_online_syncer_with_a_cache_miss_checks_the_cache_only_and_makes_no_request
     assert_eq!(err.code(), "offline-plugin-missing");
     assert!(server.requests().is_empty(), "{:?}", server.requests());
     assert!(
+        env.list.server.requests().is_empty(),
+        "the revocation source was asked"
+    );
+    assert!(
         !env.data.path().join("slopvac/blobs").exists(),
         "the check wrote into the cache"
     );
@@ -1743,7 +1664,7 @@ fn an_online_syncer_with_a_cache_miss_checks_the_cache_only_and_makes_no_request
 
 #[test]
 fn a_cached_manifest_swapped_after_its_digest_check_does_not_change_what_is_verified() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1771,4 +1692,6 @@ fn a_cached_manifest_swapped_after_its_digest_check_does_not_change_what_is_veri
         .verify_cached_signature(locked_style(&lock));
 
     assert!(verified.is_ok(), "{verified:?}");
+    // The observer ran: the file holds the replacement, so the test would fail if it never did.
+    assert_eq!(fs::read(&manifest).unwrap(), b"{}");
 }

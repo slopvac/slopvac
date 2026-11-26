@@ -156,6 +156,9 @@ impl Fixture {
         if let Some(python) = setup.python {
             runner = runner.with_python(python);
         }
+        if let Some(observer) = &setup.lock_read {
+            runner = runner.with_lock_read_observer(observer.as_ref());
+        }
         runner = runner
             .with_executables(setup.executables)
             .with_locked(setup.locked);
@@ -175,9 +178,16 @@ struct Setup<'a> {
     envs: Option<&'a EnvStore>,
     python: Option<PythonBuild<'a>>,
     locked: bool,
+    lock_read: Option<Box<dyn Fn() + 'a>>,
 }
 
 impl<'a> Setup<'a> {
+    /// Call `observer` after each read of the lock file.
+    fn lock_read(mut self, observer: impl Fn() + 'a) -> Self {
+        self.lock_read = Some(Box::new(observer));
+        self
+    }
+
     fn locked(mut self) -> Self {
         self.locked = true;
         self
@@ -1714,7 +1724,7 @@ fn signed_oci_entry(p: &signed_fixture::Published) -> String {
 #[test]
 fn trust_of_a_signed_oci_plugin_prints_its_source_kind_and_the_verified_key_id() {
     let f = Fixture::new();
-    let key = signed_fixture::Key::new();
+    let key = signed_fixture::Key::primary();
     let p = signed_fixture::publish(
         &key,
         "slopvac",
@@ -1767,43 +1777,78 @@ fn trust_of_an_unsigned_oci_entry_reports_sync_unsigned_and_records_nothing() {
     assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
 }
 
-/// A loader that records the entry it was given, then rewrites the lock under the command, as
-/// another process could between the command's read and the load.
-struct SwappingLoader {
+/// A loader that records the entry it was given.
+struct RecordingLoader {
     inner: TreeLoader,
-    lock: PathBuf,
     seen: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
 }
 
-impl PluginLoader for SwappingLoader {
+impl PluginLoader for RecordingLoader {
     fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
         self.seen.borrow_mut().push(locked.digest.to_string());
-        let swapped = code_path_entry(
-            "fake",
-            &format!("git+https://example.invalid/acme/fake.git@{GIT_PIN}"),
-            HASH,
-        );
-        fs::write(&self.lock, format!("schema_version = 3\n{swapped}")).unwrap();
         self.inner.load(locked)
     }
 }
 
+/// `trust` reads the lock once. After each read the lock file changes, so a second read, for
+/// any reason and at any point before the load, would see another entry.
 #[test]
-fn the_entry_the_loader_gets_is_the_entry_the_command_read_and_reports() {
+fn trust_reads_the_lock_once_and_everything_uses_that_read() {
     let f = Fixture::new();
     f.write_lock(&[fake_code_entry()]);
+    let reads = std::rc::Rc::new(std::cell::Cell::new(0_u32));
     let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-    let loader = SwappingLoader {
+    let lock = f.project().join(".slopvac/plugins.lock");
+    let swapped = code_path_entry(
+        "fake",
+        &format!("git+https://example.invalid/acme/fake.git@{GIT_PIN}"),
+        HASH,
+    );
+    let loader = RecordingLoader {
         inner: TreeLoader::new(f.base.path(), "fake"),
-        lock: f.project().join(".slopvac/plugins.lock"),
         seen: std::rc::Rc::clone(&seen),
     };
-    let ran = f.run(&["trust", "fake"], false, |s| s.loader(loader));
+    let counted = std::rc::Rc::clone(&reads);
+    let ran = f.run(&["trust", "fake"], false, |s| {
+        s.loader(loader).lock_read(move || {
+            counted.set(counted.get() + 1);
+            fs::write(&lock, format!("schema_version = 3\n{swapped}")).unwrap();
+        })
+    });
     assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
+    assert_eq!(reads.get(), 1, "the lock was read more than once");
     assert_eq!(*seen.borrow(), [OTHER_HASH]);
     assert!(
         provenance_line(&ran.out).starts_with("source: path plugins/fake;"),
         "{}",
         ran.out
     );
+}
+
+/// An existing lock that cannot be read is not an empty lock. A directory in its place cannot
+/// be read for any user, so no mode bits are involved.
+#[test]
+fn trust_with_an_unreadable_lock_exits_2_with_its_code_and_records_nothing() {
+    let f = Fixture::new();
+    fs::create_dir_all(f.project().join(".slopvac/plugins.lock")).unwrap();
+    let err = f
+        .run(&["trust", "fake"], false, with_loader(&f))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugins-lock-unreadable");
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
+}
+
+#[test]
+fn trust_with_an_invalid_lock_exits_2_with_its_code_and_records_nothing() {
+    let f = Fixture::new();
+    fs::write(f.project().join(".slopvac/plugins.lock"), "schema_version = [\n").unwrap();
+    let err = f
+        .run(&["trust", "fake"], false, with_loader(&f))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugins-lock-invalid");
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
 }

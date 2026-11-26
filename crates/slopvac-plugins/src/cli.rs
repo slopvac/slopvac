@@ -110,6 +110,7 @@ pub struct Runner<'a> {
     envs: Option<&'a EnvStore>,
     executables: BTreeMap<PackId, HashSet<String>>,
     locked: bool,
+    lock_read: Option<&'a dyn Fn()>,
 }
 
 impl<'a> Runner<'a> {
@@ -138,6 +139,7 @@ impl<'a> Runner<'a> {
             envs: None,
             executables: BTreeMap::new(),
             locked: false,
+            lock_read: None,
         }
     }
 
@@ -204,6 +206,15 @@ impl<'a> Runner<'a> {
     #[must_use]
     pub fn with_locked(mut self, locked: bool) -> Self {
         self.locked = locked;
+        self
+    }
+
+    /// Call `observer` each time a command reads the lock file, right after the read. A test
+    /// uses it to count the reads of one command and to change the file between two of them.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_lock_read_observer(mut self, observer: &'a dyn Fn()) -> Self {
+        self.lock_read = Some(observer);
         self
     }
 
@@ -399,7 +410,11 @@ fn notices(out: &mut dyn Write, list: &[RevocationNotice]) -> Result<(), RunErro
 }
 
 fn read_lock(runner: &Runner<'_>, required: bool) -> Result<Lockfile, RunError> {
-    read_project_lock(&runner.dirs.project_root, required).map_err(LockReadError::into_run_error)
+    let read = read_project_lock(&runner.dirs.project_root, required);
+    if let Some(observer) = runner.lock_read {
+        observer();
+    }
+    read.map_err(LockReadError::into_run_error)
 }
 
 fn kind_name(kind: PackKind) -> String {
