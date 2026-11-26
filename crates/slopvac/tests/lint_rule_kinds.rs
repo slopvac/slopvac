@@ -1,6 +1,5 @@
 //! A default prose run never reports a rule kind or capitalization style that the engine
 //! does not run. Both notices are warnings, so one would make every run incomplete.
-#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 

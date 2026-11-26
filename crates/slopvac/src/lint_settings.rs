@@ -1452,18 +1452,41 @@ pub(crate) mod tests {
         );
     }
 
+    const NAMED_RULE: &str = "core:prose-craft.sentence-length";
+    const NAMED_IN_CONFIG: &str =
+        "schema_version = 3\n[rules]\n\"core:prose-craft.sentence-length\" = \"warning\"\n";
+
     #[test]
-    fn a_rule_selected_by_id_on_the_command_line_is_named_and_a_disabled_one_is_not() {
-        let rule = "core:prose-craft.sentence-length".to_owned();
+    fn a_rule_selected_by_id_on_the_command_line_is_named() {
         let only = Overrides {
-            only_categories: vec![rule.clone()],
+            only_categories: vec![NAMED_RULE.to_owned()],
             ..Overrides::default()
         };
-        assert_eq!(named(HEAD, &only), std::slice::from_ref(&rule));
-        let disabled = Overrides {
-            disable: vec![rule],
+        assert_eq!(named(HEAD, &only), [NAMED_RULE]);
+    }
+
+    #[test]
+    fn disabling_a_rule_that_the_config_names_removes_it_from_the_named_set() {
+        assert_eq!(named(NAMED_IN_CONFIG, &Overrides::default()), [NAMED_RULE]);
+        for disable in [NAMED_RULE, "prose-craft"] {
+            let overrides = Overrides {
+                disable: vec![disable.to_owned()],
+                ..Overrides::default()
+            };
+            assert_eq!(
+                named(NAMED_IN_CONFIG, &overrides),
+                Vec::<String>::new(),
+                "--disable {disable}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_category_on_the_command_line_does_not_name_its_rules() {
+        let overrides = Overrides {
+            only_categories: vec!["prose-craft".to_owned()],
             ..Overrides::default()
         };
-        assert_eq!(named(HEAD, &disabled), Vec::<String>::new());
+        assert_eq!(named(HEAD, &overrides), Vec::<String>::new());
     }
 }

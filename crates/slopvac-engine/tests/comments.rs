@@ -382,3 +382,90 @@ fn a_prose_only_rule_is_info_by_default_and_a_warning_when_the_user_named_it(
     // A warning notice makes the run incomplete, which fails the gate.
     assert_eq!(doc.gate.is_passed(), !named);
 }
+
+/// An engine with the per-document genre choice, so `applies_to` genres decide per file.
+fn per_document(rules: &[Value], named: &[&str]) -> Engine {
+    let mut s = settings();
+    s.genre_assignments = Some(Vec::new());
+    s.named_rules.extend(named.iter().map(|n| id(n)));
+    Engine::new(vec![ruleset(vec![category("cat", rules)])], s).unwrap()
+}
+
+fn reference_only_long() -> Value {
+    let mut r = long_rule();
+    r["applies_to"] = json!({"genres": ["reference"]});
+    r
+}
+
+#[rstest]
+#[case::matching_genre("reference", 1, false)]
+#[case::other_genre("consumer", 0, true)]
+fn a_named_rule_limited_to_another_genre_is_not_applicable_and_silent(
+    #[case] genre: &str,
+    #[case] notices: usize,
+    #[case] complete: bool,
+) {
+    let e = per_document(&[reference_only_long()], &["core:cat.long"]);
+    let doc = e
+        .lint(&Input::comments("f", "# a b c d e\n", Language::Shell).with_declared_genre(genre))
+        .unwrap();
+    assert_eq!(doc.genre.id.as_str(), genre);
+    assert_eq!(doc.unchecked.len(), notices, "{:?}", doc.unchecked);
+    assert_eq!(doc.gate.is_passed(), complete);
+}
+
+#[test]
+fn both_comment_notices_list_their_ids_in_sorted_order() {
+    let mut zeta = long_rule();
+    zeta["id"] = json!("zeta");
+    let mut alpha = long_rule();
+    alpha["id"] = json!("alpha");
+    let mut mid = long_rule();
+    mid["id"] = json!("mid");
+    let mut beta = long_rule();
+    beta["id"] = json!("beta");
+    let e = per_document(
+        &[zeta, alpha, mid, beta],
+        &["core:cat.zeta", "core:cat.beta"],
+    );
+    let doc = e
+        .lint(&Input::comments("f", "# fine\n", Language::Shell))
+        .unwrap();
+    let got: Vec<(&str, &Value)> = doc
+        .unchecked
+        .iter()
+        .map(|n| (n.code.as_str(), &n.data["rules"]))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            (
+                "comment-rules-not-run",
+                &json!(["core:cat.alpha", "core:cat.mid"])
+            ),
+            (
+                "comment-rule-named-not-run",
+                &json!(["core:cat.beta", "core:cat.zeta"])
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_standalone_diagram_has_no_not_run_warning_for_prose_checkers() {
+    // `syllables_per_word` is a metric the engine does not run, and no metric reads a diagram.
+    let unrun = rule(
+        "unrun",
+        &json!({"kind": "metric", "metric": "syllables_per_word", "threshold": 2, "comparison": "gt"}),
+        &json!({"scope": "sentence"}),
+    );
+    let doc = engine(&[unrun])
+        .lint(&Input::diagram(
+            "d.mmd",
+            "flowchart TD\n  A --> B\n",
+            slopvac_diagrams::Format::Mermaid,
+        ))
+        .unwrap();
+    assert!(doc.unchecked.is_empty(), "{:?}", doc.unchecked);
+    assert!(doc.gate.is_passed());
+}

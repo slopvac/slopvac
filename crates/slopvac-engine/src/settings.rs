@@ -160,7 +160,7 @@ pub struct Settings {
     pub mode: Mode,
     /// Levels set for single rules. These win over a category level.
     pub rule_levels: BTreeMap<RuleId, Level>,
-    /// Rules the user turned on by name: a config `rules` entry or `--only`, not a category,
+    /// Rules the user turned on by name: a config `rules` entry or an id given to `--category`, not a category,
     /// preset, style or genre. In code-comment mode, one of these that cannot read comments
     /// makes the run incomplete instead of joining the info notice.
     pub named_rules: BTreeSet<RuleId>,

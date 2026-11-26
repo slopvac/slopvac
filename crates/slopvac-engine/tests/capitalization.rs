@@ -252,6 +252,7 @@ fn styles_other_than_sentence_leave_the_check_incomplete() {
             .as_str()
             .starts_with("1 active capitalization rule(s) did not run")
     );
+    assert_eq!(n.data["rules"], json!(["core:cat.title"]));
     assert!(!doc.gate.is_passed());
     assert_eq!(doc.gate.reasons().len(), 1);
     assert!(doc.gate.reasons()[0].starts_with("incomplete check:"));
