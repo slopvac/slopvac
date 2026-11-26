@@ -230,12 +230,13 @@ fn kind_of_file(kind: &FileKind, file_name: &str) -> Result<Kind, &'static str> 
 
 /// [`kind_of_file`] for the file at `path`, which names the dialect.
 fn kind_of_path(kind: &FileKind, path: &Path) -> Result<Kind, &'static str> {
-    kind_of_file(
-        kind,
-        path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_default(),
-    )
+    // The same lossy conversion as discovery (`discover::file_name`): invalid bytes become
+    // U+FFFD and the extension survives.
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    kind_of_file(kind, &name)
 }
 
 fn kind_of_language(plan: &StdinPlan) -> Result<Kind, &'static str> {
