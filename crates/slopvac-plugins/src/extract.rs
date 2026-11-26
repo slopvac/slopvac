@@ -1847,7 +1847,10 @@ mod single_read_tests {
 
         assert_eq!(hash, expected);
         assert_eq!(files.get("m.toml").map(Vec::as_slice), Some(&b"one\n"[..]));
-        assert_eq!(files.get("rules/a.yml").map(Vec::as_slice), Some(&b"two\n"[..]));
+        assert_eq!(
+            files.get("rules/a.yml").map(Vec::as_slice),
+            Some(&b"two\n"[..])
+        );
     }
 
     #[test]
@@ -1862,16 +1865,16 @@ mod single_read_tests {
     #[test]
     fn an_executable_list_over_the_manifest_cap_still_hashes() {
         let scratch = tempfile::tempdir().unwrap();
-        let mut list = String::new();
-        for i in 0..40_000 {
-            list.push_str(&format!("bin/{i:06}\n"));
-        }
+        let list: String = (0..40_000).map(|i| format!("bin/{i:06}\n")).collect();
         assert!(list.len() > MAX_CAPTURE_BYTES);
         fs::write(scratch.path().join(EXEC_SIDECAR), list).unwrap();
 
         // The list is bounded by the tree, not by the capture cap: the refusal here, if any, is
         // about the listed files being absent, never about the size of the list.
         let err = tree_hash(scratch.path()).unwrap_err().to_string();
-        assert!(!err.contains(EXEC_SIDECAR) || !err.to_lowercase().contains("size"), "{err}");
+        assert!(
+            !err.contains(EXEC_SIDECAR) || !err.to_lowercase().contains("size"),
+            "{err}"
+        );
     }
 }

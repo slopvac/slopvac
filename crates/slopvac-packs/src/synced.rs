@@ -16,7 +16,7 @@ use slopvac_plugins::sync::{Store, SyncError};
 
 use crate::messages::PackMessage;
 use crate::{
-    Budget, Limits, MemorySource, LoadedPack, PackError, PackKind, Packs, Source, to_lock_id,
+    Budget, Limits, LoadedPack, MemorySource, PackError, PackKind, Packs, Source, to_lock_id,
 };
 
 /// Most bytes of one plugin tree a load keeps in memory.
