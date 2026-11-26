@@ -24,8 +24,9 @@ from pathlib import Path
 
 import pytest
 import yaml
+from real_binary import ROOT
 
-from real_binary import ROOT, slopvac_binary  # noqa: F401  (fixture)
+pytest_plugins = ["real_binary"]  # the real-binary fixtures
 
 LINT = ROOT / ".github" / "workflows" / "lint.yml"
 GATE = "Gate this repo's own docs"
