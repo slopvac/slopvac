@@ -17,7 +17,7 @@ use slopvac_context::{
 use slopvac_parse::{BlockKind, ByteMapper, Container, Document, Projection};
 use slopvac_text::Sentence;
 
-use crate::prepare::Prepared;
+use crate::prepare::{CodeSentence, Prepared, SentenceBalance};
 
 mod entry;
 
@@ -110,8 +110,9 @@ struct View<'a> {
     prepared: HashMap<usize, &'a [Sentence]>,
     /// Set when a sentence offset did not lie on the text of its block.
     unmapped: Cell<bool>,
-    /// The prose sentences the document may still hold, and the whole budget it had.
-    sentences_left: (usize, usize),
+    /// The sentences the document may still hold. The prose, the composite text a document
+    /// rule reads and the code blocks split here all charge it.
+    balance: &'a SentenceBalance,
 }
 
 /// The key of a projection in `View::prepared`.
@@ -198,7 +199,7 @@ impl<'a> View<'a> {
             .enumerate()
             .map(|(i, e)| ((e.span.start, e.span.end), i))
             .collect();
-        let prepared_budget = prepared.sentences_left();
+        let balance = prepared.balance();
         let prepared = prepared
             .blocks()
             .iter()
@@ -216,12 +217,56 @@ impl<'a> View<'a> {
             by_text,
             prepared,
             unmapped: Cell::new(false),
-            sentences_left: prepared_budget,
+            balance,
         }
     }
 }
 
 impl View<'_> {
+    /// The sentences of a code block, charged to the document's sentence budget the first time
+    /// any tagger reads the block.
+    fn code_sentences<'a>(
+        &self,
+        block: &BlockView<'a>,
+    ) -> Result<Vec<SentenceView<'a>>, ContextError> {
+        let key = (block.text.as_ptr().addr(), block.text.len());
+        let cached = self.balance.code_split(key);
+        let ranges = if let Some(ranges) = cached {
+            ranges
+        } else {
+            let refused = || ContextError::SentenceLimit {
+                limit: self.balance.limit(),
+            };
+            let found = slopvac_context::split_sentences_within(block, self.balance.left())
+                .ok_or_else(refused)?;
+            self.balance.spend(found.len()).ok_or_else(refused)?;
+            let base = block.text.as_ptr().addr();
+            let ranges = found
+                .iter()
+                .map(|s| {
+                    let offset = s
+                        .text
+                        .as_ptr()
+                        .addr()
+                        .checked_sub(base)
+                        .ok_or_else(refused)?;
+                    Ok((s.span.clone(), offset, s.text.len()))
+                })
+                .collect::<Result<Vec<CodeSentence>, ContextError>>()?;
+            self.balance.keep_code_split(key, ranges.clone());
+            ranges
+        };
+        Ok(ranges
+            .into_iter()
+            .filter_map(|(span, offset, len)| {
+                block
+                    .text
+                    .get(offset..offset.checked_add(len)?)
+                    .map(|text| SentenceView { span, text })
+            })
+            .collect())
+    }
+
     /// Replace the tags that sit on interleaved text by tags on the text that contributed.
     ///
     /// The cells of a table whose left cell wraps over several lines read cell by cell, so
@@ -354,12 +399,8 @@ impl DocumentView for View<'_> {
         else {
             // No projection, so the engine split no sentences: a code block. A tagger may
             // read the sentences of a code block whether or not any matches, so the split
-            // stops at what the document may still hold.
-            return slopvac_context::split_sentences_within(block, self.sentences_left.0).ok_or(
-                ContextError::TagLimit {
-                    limit: self.sentences_left.1,
-                },
-            );
+            // draws on what the document may still hold, once for each block.
+            return self.code_sentences(block);
         };
         let Some(sentences) = self.prepared.get(&projection_key(projection)) else {
             return Ok(Vec::new());
@@ -400,6 +441,12 @@ pub(crate) enum TagError {
         /// The most tags, or pieces of tags, the document was allowed.
         limit: usize,
     },
+    /// The document has more sentences than its size allows, so a block was not split.
+    #[error("{}", crate::messages::EngineText::SentenceBudget { limit: *.limit })]
+    SentenceBudget {
+        /// The most sentences the document was allowed.
+        limit: usize,
+    },
     /// The sentences of a block do not lie on the text the block was projected from.
     #[error("{}", crate::messages::EngineText::SentenceMapping)]
     Unmapped,
@@ -409,6 +456,7 @@ impl From<ContextError> for TagError {
     fn from(e: ContextError) -> Self {
         match e {
             ContextError::TagLimit { limit } => Self::Budget { limit },
+            ContextError::SentenceLimit { limit } => Self::SentenceBudget { limit },
             other => Self::Tagger(other),
         }
     }

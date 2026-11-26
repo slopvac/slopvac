@@ -81,10 +81,10 @@ pub trait DocumentView {
     /// each.
     ///
     /// # Errors
-    /// Returns [`Error::TagLimit`] when the block holds more sentences than that.
+    /// Returns [`Error::SentenceLimit`] when the block holds more sentences than that.
     fn sentences<'a>(&self, block: &BlockView<'a>) -> Result<Vec<SentenceView<'a>>, Error> {
         let limit = sentence_budget(self.source_len());
-        split_sentences_within(block, limit).ok_or(Error::TagLimit { limit })
+        split_sentences_within(block, limit).ok_or(Error::SentenceLimit { limit })
     }
 }
 

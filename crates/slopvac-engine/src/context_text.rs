@@ -11,6 +11,20 @@ use crate::EngineError;
 use crate::tagging::TagError;
 
 impl EngineError {
+    /// The budget this error reports as passed, with its limit, for the `budget` and `limit`
+    /// keys of a diagnostic: `tags`, `sentences`, `table-cells` or `tag-lookups`. `None` for
+    /// any other error.
+    #[must_use]
+    pub const fn budget(&self) -> Option<(&'static str, usize)> {
+        match self {
+            Self::TagBuildBudget { limit } => Some(("tags", *limit)),
+            Self::SentenceBudget { limit } => Some(("sentences", *limit)),
+            Self::CellBudget { limit } => Some(("table-cells", *limit)),
+            Self::TagLookupBudget { limit } => Some(("tag-lookups", *limit)),
+            _ => None,
+        }
+    }
+
     /// A context failure with its untrusted parts (patterns, ids, paths, messages) left raw.
     pub(crate) fn from_context(error: &ContextError) -> Self {
         Self::Context(error.raw_message())
@@ -35,6 +49,7 @@ impl EngineError {
     pub(crate) fn from_tag(error: TagError) -> Self {
         match error {
             TagError::Budget { limit } => Self::TagBuildBudget { limit },
+            TagError::SentenceBudget { limit } => Self::SentenceBudget { limit },
             TagError::Tagger(error) => Self::from_context(&error),
             TagError::Unmapped => Self::Context(error.to_string()),
         }

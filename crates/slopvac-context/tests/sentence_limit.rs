@@ -6,7 +6,7 @@
 use slopvac_context::{Error, PlainDocument, builtin_registry, take_sentences_built};
 
 #[test]
-fn a_paragraph_of_very_short_sentences_ends_the_run_with_the_tag_limit_error()
+fn a_paragraph_of_very_short_sentences_ends_the_run_with_the_sentence_limit_error()
 -> Result<(), Box<dyn std::error::Error>> {
     // 300000 sentences of 4 bytes. One sentence for every 8 bytes, plus 65,536, allows
     // 150,000 + 65,536 = 215,536 of them.
@@ -16,8 +16,8 @@ fn a_paragraph_of_very_short_sentences_ends_the_run_with_the_tag_limit_error()
     let _ = take_sentences_built();
     let result = builtin_registry()?.tag_document(&doc);
     assert!(
-        matches!(result, Err(Error::TagLimit { limit: l }) if l == limit),
-        "expected the tag limit error with {limit}"
+        matches!(result, Err(Error::SentenceLimit { limit: l }) if l == limit),
+        "expected the sentence limit error with {limit}"
     );
     let built = take_sentences_built();
     assert!(built <= limit + 1, "{built} records for a limit of {limit}");

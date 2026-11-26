@@ -37,6 +37,13 @@ pub(crate) enum ContextMessage {
         #[count]
         limit: usize,
     },
+    /// A text holds more sentences than its size allows.
+    #[code("context-sentence-limit")]
+    #[text("the text has more than {limit} sentences")]
+    SentenceLimit {
+        #[count]
+        limit: usize,
+    },
     /// A genre id that no definition provides.
     #[code("context-genre-unknown")]
     #[text("unknown genre `{id}`")]
@@ -130,6 +137,10 @@ mod tests {
         ContextMessage::TagLimit { limit: 65_536 },
         "the document has more than 65536 context tags"
     )]
+    #[case::sentence_limit(
+        ContextMessage::SentenceLimit { limit: 65_536 },
+        "the text has more than 65536 sentences"
+    )]
     #[case::genre_unknown(
         ContextMessage::GenreUnknown { id: "memo".to_owned() },
         "unknown genre `memo`"
@@ -186,6 +197,7 @@ mod tests {
                 ("context-match-failed", Kind::Text),
                 ("context-tagger-duplicate", Kind::Text),
                 ("context-tag-limit", Kind::Text),
+                ("context-sentence-limit", Kind::Text),
                 ("context-genre-unknown", Kind::Text),
                 ("context-yaml-invalid", Kind::Text),
                 ("context-glob-invalid", Kind::Text),

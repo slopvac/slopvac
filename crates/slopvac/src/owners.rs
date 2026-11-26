@@ -60,7 +60,17 @@ fn terms_error(err: &TermsError) -> CliError {
 /// project `root`; it is joined to `root` and shown through `shown_path`, so it reads relative
 /// to the run root or as `<external>/<file name>` outside it (policies.md, 1.7).
 pub(crate) fn agents_error(err: &AgentsError, root: &Path) -> CliError {
-    CliError::new(err.code(), agents_message(err, root))
+    let error = CliError::new(err.code(), agents_message(err, root));
+    match err.budget() {
+        Some((budget, limit)) => {
+            let mut data = crate::engine::budget_data_of(budget, limit);
+            if let Some(path) = err.input_path() {
+                data.insert("path".into(), path.into());
+            }
+            error.with_data(data)
+        }
+        None => error,
+    }
 }
 
 fn agents_message(err: &AgentsError, root: &Path) -> String {
@@ -91,6 +101,9 @@ fn agents_message(err: &AgentsError, root: &Path) -> String {
         ),
         AgentsError::Text(e) => format!("text segmentation failed: {e}"),
         AgentsError::Context(e) => e.to_string(),
+        AgentsError::InputBudget { shown, source } => {
+            format!("{}: {source}", slopvac_sanitize::line(shown))
+        }
         AgentsError::NotUtf8(p) => format!("steering must be UTF-8: {}", path(p)),
         AgentsError::Conflict(p) => format!("file changed during setup; retry: {}", path(p)),
         AgentsError::NotManaged(p) => format!(
@@ -254,7 +267,26 @@ pub fn review(m: &ArgMatches, offline: bool, out: &mut dyn Write) -> Result<u8, 
 
 /// `slopvac claims`. Reads the two named files and nothing else, so it needs no network.
 pub fn claims(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
-    let text = claims::run(m).map_err(|e| agents_error(&e, &cwd()))?;
+    let text = match claims::run(m) {
+        Ok(text) => text,
+        Err(e) => {
+            let error = agents_error(&e, &cwd());
+            // The JSON report is the default format. A refused budget reports as a lint run
+            // does, so a program reads the budget and its limit from the notice data. The
+            // text error still goes to stderr, and the exit code is the same.
+            let json = m.get_one::<String>("format").is_none_or(|f| f != "text");
+            if json && e.budget().is_some() {
+                let report = slopvac_report::render(
+                    slopvac_report::Format::Json,
+                    &engine::failure_report(&error),
+                    &slopvac_report::NoSources,
+                )
+                .map_err(|err| CliError::new("render-failed", err.to_string()))?;
+                write(out, &report)?;
+            }
+            return Err(error);
+        }
+    };
     write(out, &text)?;
     Ok(exit::PASS)
 }

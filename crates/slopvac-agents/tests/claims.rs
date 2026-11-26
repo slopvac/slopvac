@@ -410,3 +410,16 @@ fn many_paragraphs_that_together_pass_the_budget_are_refused_with_the_budget_cod
     );
     assert!(matches!(&result, Err(e) if e.code() == "context-budget-exceeded"));
 }
+
+#[test]
+fn a_refused_paragraph_names_the_sentence_budget_and_none_of_the_text() {
+    // 300000 sentences of 4 bytes, "Go. ": 1,200,000 bytes plus the newline. One sentence
+    // for every 8 bytes, plus 65,536, is 150,000 + 65,536 = 215,536.
+    let paragraph = format!("{}\n", "Go. ".repeat(300_000));
+    let limit = paragraph.len() / 8 + 65_536;
+    let error = compare("The pack is signed.\n", &paragraph)
+        .map(|r| r.summary)
+        .expect_err("the text passes the sentence budget");
+    let message = error.to_string();
+    assert_eq!(message, format!("the text has more than {limit} sentences"));
+}

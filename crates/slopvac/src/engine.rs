@@ -142,13 +142,24 @@ impl Run {
     /// for their own output, so the notice keeps it raw. The error goes to stderr as it is,
     /// so it carries the message escaped once.
     fn skip(&mut self, code: &'static str, shown: &str, message: String) {
-        let error = CliError::new(code, line(&message));
+        self.skip_with_data(code, shown, message, serde_json::Map::new());
+    }
+
+    /// `skip` with the machine-readable detail of the refusal in the notice.
+    fn skip_with_data(
+        &mut self,
+        code: &'static str,
+        shown: &str,
+        message: String,
+        data: serde_json::Map<String, serde_json::Value>,
+    ) {
+        let error = CliError::new(code, line(&message)).with_data(data.clone());
         self.notices.push(Notice {
             code: KebabName::new(code).expect("skip codes are kebab-case"),
             level: NoticeLevel::Warning,
             message: NonEmptyString::new(message).expect("messages are not empty"),
             path: Some(shown.to_owned()),
-            data: serde_json::Map::new(),
+            data,
         });
         self.incomplete.push(error);
     }
@@ -174,15 +185,28 @@ impl Run {
     fn skip_engine_error(&mut self, shown: &str, err: &EngineError) {
         // `EngineError` is `#[non_exhaustive]`, so a new variant lands in `lint-failed` until
         // it gets a code of its own.
-        let code = match err {
-            // The check is incomplete for a reason a pack can fix, so it has a code.
-            EngineError::TagLookupBudget { .. } | EngineError::TagBuildBudget { .. } => {
-                "context-budget-exceeded"
+        // Every refused budget has this code. The `budget` and `limit` keys say which one.
+        let (code, data) = match err.budget() {
+            Some((budget, limit)) => {
+                let mut data = budget_data_of(budget, limit);
+                data.insert("path".into(), shown.into());
+                ("context-budget-exceeded", data)
             }
-            _ => "lint-failed",
+            None => ("lint-failed", serde_json::Map::new()),
         };
-        self.skip(code, shown, format!("{shown}: {}", err.raw_message()));
+        self.skip_with_data(code, shown, format!("{shown}: {}", err.raw_message()), data);
     }
+}
+
+/// The `budget` and `limit` keys of a context budget diagnostic.
+pub(crate) fn budget_data_of(
+    budget: &str,
+    limit: usize,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut data = serde_json::Map::new();
+    data.insert("budget".into(), budget.into());
+    data.insert("limit".into(), limit.into());
+    data
 }
 
 /// The engine kind for a discovered file, or why there is none.
@@ -486,12 +510,11 @@ fn validate_configs(
     Ok(notices)
 }
 
-/// An outcome for a run that could not start.
-fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome {
+/// The notice that marks a refused run: the error's code, text and data.
+fn failure_notice(error: &CliError) -> Notice {
     // The notice keeps the raw text when the error text was escaped for stderr.
     let notice_message = error.report_message.as_deref().unwrap_or(&error.message);
-    // The report must not read as a clean run: a notice marks it unsuccessful.
-    run.notices.push(Notice {
+    Notice {
         code: KebabName::new(error.code)
             .unwrap_or_else(|_| KebabName::new("lint-failed").expect("lint-failed is kebab-case")),
         level: NoticeLevel::Warning,
@@ -499,7 +522,19 @@ fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome 
             .unwrap_or_else(|_| NonEmptyString::new("lint failed").expect("not empty")),
         path: None,
         data: error.data.clone(),
-    });
+    }
+}
+
+/// The report of a command that was refused before it produced one: no documents, and a
+/// notice that carries the error, as a refused lint run reports it.
+pub(crate) fn failure_report(error: &CliError) -> Report {
+    assemble(&[], vec![failure_notice(error)])
+}
+
+/// An outcome for a run that could not start.
+fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome {
+    // The report must not read as a clean run: a notice marks it unsuccessful.
+    run.notices.push(failure_notice(error));
     run.incomplete.push(error.clone());
     RunOutcome {
         incomplete: run.incomplete,
@@ -1438,6 +1473,14 @@ mod skip_tests {
         EngineError::TagBuildBudget { limit: 65_536 },
         "context-budget-exceeded"
     )]
+    #[case::sentence_budget(
+        EngineError::SentenceBudget { limit: 65_536 },
+        "context-budget-exceeded"
+    )]
+    #[case::cell_budget(
+        EngineError::CellBudget { limit: 65_536 },
+        "context-budget-exceeded"
+    )]
     #[case::terms(EngineError::Terms("x".into()), "lint-failed")]
     #[case::internal(EngineError::Internal("x".into()), "lint-failed")]
     fn an_engine_error_leaves_the_file_unchecked_and_the_run_incomplete(
@@ -1453,6 +1496,27 @@ mod skip_tests {
         assert_eq!(run.notices[0].code.as_str(), code);
         assert_eq!(run.notices[0].level, NoticeLevel::Warning);
         assert_eq!(run.notices[0].path.as_deref(), Some("docs/a.md"));
+    }
+
+    #[rstest]
+    #[case::tags(EngineError::TagBuildBudget { limit: 70_000 }, "tags", 70_000)]
+    #[case::sentences(EngineError::SentenceBudget { limit: 71_000 }, "sentences", 71_000)]
+    #[case::table_cells(EngineError::CellBudget { limit: 72_000 }, "table-cells", 72_000)]
+    #[case::tag_lookups(EngineError::TagLookupBudget { limit: 17_000 }, "tag-lookups", 17_000)]
+    fn a_budget_refusal_names_its_budget_limit_and_file_in_the_notice_data(
+        #[case] err: EngineError,
+        #[case] budget: &str,
+        #[case] limit: u64,
+    ) {
+        let mut run = Run::default();
+        run.skip_engine_error("docs/a.md", &err);
+
+        let data = &run.notices[0].data;
+        assert_eq!(data["budget"], budget);
+        assert_eq!(data["limit"], limit);
+        assert_eq!(data["path"], "docs/a.md");
+        // The error the run returns carries the same detail as the notice.
+        assert_eq!(&run.incomplete[0].data, data);
     }
 
     /// A context failure holds a pattern with a backslash and a newline. The engine error keeps

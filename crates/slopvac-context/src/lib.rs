@@ -95,6 +95,11 @@ pub enum Error {
         /// The most tags the document was allowed.
         limit: usize,
     },
+    /// A text holds more sentences than its size allows, so it was not split.
+    SentenceLimit {
+        /// The most sentences the text was allowed.
+        limit: usize,
+    },
     /// A genre id that no definition provides.
     UnknownGenre(String),
     /// A YAML data file did not parse.
@@ -148,6 +153,17 @@ impl Error {
         self.message(str::to_owned).code()
     }
 
+    /// The budget this error reports as passed, with its limit: `("tags", n)` or
+    /// `("sentences", n)`. `None` for any other error.
+    #[must_use]
+    pub const fn budget(&self) -> Option<(&'static str, usize)> {
+        match self {
+            Self::TagLimit { limit } => Some(("tags", *limit)),
+            Self::SentenceLimit { limit } => Some(("sentences", *limit)),
+            _ => None,
+        }
+    }
+
     /// The message of this error with its untrusted parts (patterns, ids, paths, OS and
     /// parser messages) left unescaped. `Display` is this text, escaped.
     ///
@@ -181,6 +197,7 @@ impl Error {
             },
             Self::DuplicateTagger(id) => ContextMessage::TaggerDuplicate { id: escape(id) },
             Self::TagLimit { limit } => ContextMessage::TagLimit { limit: *limit },
+            Self::SentenceLimit { limit } => ContextMessage::SentenceLimit { limit: *limit },
             Self::UnknownGenre(id) => ContextMessage::GenreUnknown { id: escape(id) },
             Self::Yaml(source) => ContextMessage::YamlInvalid {
                 reason: escape(&source.to_string()),
@@ -235,6 +252,7 @@ impl std::error::Error for Error {
             Self::PatternTooLong { .. }
             | Self::DuplicateTagger(_)
             | Self::TagLimit { .. }
+            | Self::SentenceLimit { .. }
             | Self::UnknownGenre(_)
             | Self::TooLarge { .. }
             | Self::Unreadable { .. }
