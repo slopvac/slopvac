@@ -733,6 +733,9 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
     {
         return Err(RunError::Revoked { id: line(id) });
     }
+    let (vp, spec) = loader
+        .load(&pack_id)
+        .map_err(|_| refused(withheld(TRUST_INPUTS)))?;
     // The cache is not trusted (threat model E8), so the signature is checked again here, from
     // the cached files and offline, before a person's trust is recorded for what they hold.
     if let Some(pack) = lock.get(&pack_id) {
@@ -749,9 +752,6 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
             source: cause::sync(&runner.dirs.project_root, &e),
         })?;
     }
-    let (vp, spec) = loader
-        .load(&pack_id)
-        .map_err(|_| refused(withheld(TRUST_INPUTS)))?;
     let (gate, spec) = runner.prepared(&vp, spec, TRUST_INPUTS).map_err(refused)?;
     let (_, state) = gate.state(&vp, &spec).map_err(|e| store_failed(&e))?;
     if state == TrustState::Revoked {

@@ -148,7 +148,15 @@ impl World {
     /// Install a pack the way sync leaves it, and add its lock entry. Returns the tree.
     fn install(&mut self, spec: &Spec) -> PathBuf {
         let tree = self.write_tree(spec);
-        self.lock_entry(spec);
+        // The lock pins the digest of the archive that sync cached, and the loader derives the
+        // tree hash from that archive. The store's record is only a hint.
+        let archive = targz_of_dir(&tree);
+        let digest = slopvac_plugins::oci::Digest::of(&archive);
+        let blobs = self.tmp.path().join("store/blobs");
+        fs::create_dir_all(&blobs).unwrap();
+        fs::write(blobs.join(digest.hex()), &archive).unwrap();
+        self.count += 1;
+        self.lock_entry_with(spec, digest.hex());
         let hash = tree_hash(&tree).unwrap();
         let dest = self
             .tmp
@@ -157,7 +165,7 @@ impl World {
             .join(format!("tree-{}", hash.hex()));
         fs::rename(&tree, &dest).unwrap();
         fs::write(
-            self.tmp.path().join("store/refs").join(self.digest_hex()),
+            self.tmp.path().join("store/refs").join(digest.hex()),
             hash.hex(),
         )
         .unwrap();
@@ -185,6 +193,11 @@ impl World {
     /// A lock entry for `spec` with a digest of its own, whether or not the store holds it.
     fn lock_entry(&mut self, spec: &Spec) {
         self.count += 1;
+        let digest = self.digest_hex();
+        self.lock_entry_with(spec, &digest);
+    }
+
+    fn lock_entry_with(&mut self, spec: &Spec, digest_hex: &str) {
         let requires = spec
             .locked_requires
             .iter()
@@ -198,7 +211,7 @@ impl World {
             spec.version,
             spec.locked_api,
             spec.id,
-            self.digest_hex(),
+            digest_hex,
         ));
     }
 
@@ -209,6 +222,35 @@ impl World {
     fn load(&self, requested: &[&str]) -> Result<Vec<LoadedPack>, SyncedError> {
         load_synced(&ids(requested), &self.lock(), &self.store())
     }
+}
+
+/// A `.tar.gz` of the files under `root`, in path order.
+fn targz_of_dir(root: &Path) -> Vec<u8> {
+    use std::io::Write as _;
+    fn walk(dir: &Path, base: &Path, out: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, base, out);
+            } else {
+                out.push(path.strip_prefix(base).unwrap().to_path_buf());
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(root, root, &mut files);
+    files.sort();
+    let mut tar = tar::Builder::new(Vec::new());
+    for rel in files {
+        let bytes = fs::read(root.join(&rel)).unwrap();
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        tar.append_data(&mut header, &rel, bytes.as_slice()).unwrap();
+    }
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gz.write_all(&tar.into_inner().unwrap()).unwrap();
+    gz.finish().unwrap()
 }
 
 fn ids(requested: &[&str]) -> Vec<PackId> {

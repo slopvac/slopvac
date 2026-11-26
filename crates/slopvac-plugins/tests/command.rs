@@ -288,6 +288,15 @@ fn oci_entry(id: &str, kind: &str, version: &str, registry: &str, digest: &str) 
     )
 }
 
+/// A lock entry for the code plugin `fake` that comes from the project, so `plugins trust` has
+/// no cached signature to check for it.
+fn fake_code_entry() -> String {
+    format!(
+        "\n[[plugins]]\nid = \"fake\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
+         slopvac_api = 1\nsource = \"plugins/fake\"\ndigest = \"{OTHER_HASH}\"\n"
+    )
+}
+
 /// A lock entry for a project directory.
 fn path_entry(id: &str, version: &str, dir: &str, digest: &str) -> String {
     format!(
@@ -441,7 +450,7 @@ fn status_flags_a_plugin_that_the_revocation_list_names() {
 #[test]
 fn status_says_a_code_plugin_is_not_trusted_until_trust_is_recorded() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let before = f.run(&["status"], false, with_loader(&f));
     assert_eq!(before.result.unwrap(), 2);
     assert_eq!(
@@ -715,7 +724,7 @@ fn update_offline_fails_with_the_update_error_as_its_cause() {
 #[test]
 fn trust_records_the_content_hash_and_says_trust_is_not_containment() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let ran = f.run(&["trust", "fake"], false, |s| {
         s.loader(TreeLoader::new(f.base.path(), "fake"))
     });
@@ -750,7 +759,7 @@ fn trust_of_a_data_plugin_exits_2_with_plugin_not_code_and_records_nothing() {
 #[test]
 fn trust_refuses_a_plugin_that_the_revocation_list_names() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     f.revoke(&[OTHER_HASH]);
     let err = f
         .run(&["trust", "fake"], false, |s| {
@@ -1046,7 +1055,7 @@ fn a_damaged_revocation_cache_keeps_its_code_and_names_no_absolute_path() {
 #[test]
 fn a_refused_program_path_is_withheld_and_never_absolute() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let outside = f.base.path().join("elsewhere/prog");
     let loader = OutsideProgram {
         inner: TreeLoader::new(f.base.path(), "fake"),
@@ -1094,7 +1103,7 @@ fn an_output_failure_keeps_the_io_error_as_its_source() {
 #[test]
 fn trust_without_a_loader_says_so_in_registered_text() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let err = f.run(&["trust", "fake"], false, |s| s).result.unwrap_err();
     assert_eq!(
         err.to_string(),
@@ -1176,7 +1185,7 @@ impl PluginLoader for FailingLoader {
 #[test]
 fn loader_text_is_never_echoed_into_the_failure() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let err = f
         .run(&["trust", "fake"], false, |s| s.loader(FailingLoader))
         .result
@@ -1193,7 +1202,7 @@ fn loader_text_is_never_echoed_into_the_failure() {
 #[test]
 fn status_names_the_code_beside_a_withheld_loader_failure() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let ran = f.run(&["status"], false, |s| s.loader(FailingLoader));
     assert!(
         ran.out.contains(
@@ -1210,7 +1219,7 @@ const STORE_WITHHELD: &str =
 #[test]
 fn trust_names_the_code_beside_a_withheld_damaged_store() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     fs::create_dir_all(f.state()).unwrap();
     fs::write(f.state().join("trust.json"), "not json").unwrap();
     let err = f
@@ -1224,7 +1233,7 @@ fn trust_names_the_code_beside_a_withheld_damaged_store() {
 #[test]
 fn status_names_the_code_beside_a_withheld_damaged_store() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     fs::create_dir_all(f.state()).unwrap();
     fs::write(f.state().join("trust.json"), "not json").unwrap();
     let ran = f.run(&["status"], false, with_loader(&f));
@@ -1239,7 +1248,7 @@ fn status_names_the_code_beside_a_withheld_damaged_store() {
 #[test]
 fn trust_tells_a_missing_revocation_list_and_still_records_trust_offline() {
     let f = Fixture::uncached();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let ran = f.run(&["trust", "fake"], false, with_loader(&f));
     assert_eq!(ran.result.unwrap(), 0);
     assert!(
@@ -1266,7 +1275,7 @@ fn trust_tells_a_stale_revocation_list_and_still_records_trust() {
     .unwrap()
     .refresh(&client())
     .unwrap();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let ran = f.run(&["trust", "fake"], false, with_loader(&f));
     assert_eq!(ran.result.unwrap(), 0);
     assert!(
@@ -1294,7 +1303,7 @@ fn a_malformed_revocation_cache_shows_no_parser_text_in_the_chain() {
 #[test]
 fn a_malformed_trust_store_shows_no_parser_text_in_the_chain() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     fs::create_dir_all(f.state()).unwrap();
     fs::write(
         f.state().join("trust.json"),
@@ -1326,7 +1335,7 @@ fn seen(ran: &Ran) -> String {
 
 fn code_fixture() -> Fixture {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     f
 }
 
