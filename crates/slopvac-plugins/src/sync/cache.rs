@@ -7,11 +7,19 @@ use tempfile::NamedTempFile;
 
 use super::error::SyncError;
 use crate::extract::{
-    Evicted, ExtractError, TreeHash, ensure_private_child, ensure_private_dir, evict, verify_tree,
+    Evicted, ExtractError, TreeHash, ensure_private_child, ensure_private_dir, evict, verify_tree_capturing,
 };
 use crate::lock::Digest as LockDigest;
 use crate::messages::sync as messages;
 use crate::oci::Digest;
+
+/// A tree that a hashing pass accepted: its hash, and the manifest at its root as that same pass
+/// read it. What is later derived from the tree comes from these, never from a second read.
+#[derive(Debug, Clone)]
+pub(super) struct Accepted {
+    pub(super) hash: TreeHash,
+    pub(super) manifest: Option<Vec<u8>>,
+}
 
 /// What the store holds for one locked digest.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -261,16 +269,29 @@ impl Store {
     /// # Errors
     /// [`SyncError::Store`] when the tree cannot be read.
     pub fn inspect(&self, locked: &LockDigest) -> Result<TreeState, SyncError> {
+        self.inspect_accepted(locked).map(|(state, _)| state)
+    }
+
+    /// [`Self::inspect`], and for an intact tree the hash the pass accepted and the manifest as
+    /// that same pass read it. A caller that acts on the tree uses these and never reads the
+    /// manifest again.
+    pub(super) fn inspect_accepted(
+        &self,
+        locked: &LockDigest,
+    ) -> Result<(TreeState, Option<Accepted>), SyncError> {
         let Some(hash) = self.recorded(locked) else {
-            return Ok(TreeState::Absent);
+            return Ok((TreeState::Absent, None));
         };
         let dir = self.tree_dir(&hash);
         if fs::symlink_metadata(&dir).is_err() {
-            return Ok(TreeState::Absent);
+            return Ok((TreeState::Absent, None));
         }
-        match verify_tree(&dir, &hash) {
-            Ok(()) => Ok(TreeState::Intact(dir)),
-            Err(ExtractError::Tampered { .. }) => Ok(TreeState::Tampered(dir)),
+        let verified = verify_tree_capturing(&dir, &hash);
+        #[cfg(feature = "test-support")]
+        self.observe(&dir);
+        match verified {
+            Ok(manifest) => Ok((TreeState::Intact(dir), Some(Accepted { hash, manifest }))),
+            Err(ExtractError::Tampered { .. }) => Ok((TreeState::Tampered(dir), None)),
             Err(e) => Err(SyncError::Store(e.unescaped())),
         }
     }

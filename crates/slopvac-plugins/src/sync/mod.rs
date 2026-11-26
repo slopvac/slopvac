@@ -65,13 +65,14 @@ use std::time::Duration;
 
 use semver::{Version, VersionReq};
 
+use cache::Accepted;
 pub use cache::{Store, StoreLock, TreeState};
 pub use error::SyncError;
 pub use verified::VerifiedTree;
 
 use crate::extract::{
     ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash, tree_hash_capturing,
-    verify_tree,
+    verify_tree_capturing,
 };
 use crate::launch::Launcher;
 use crate::lock::{
@@ -176,10 +177,12 @@ enum Acquired {
     /// A tree fetched from a pinned git commit, hashed and equal to the lock,
     /// not yet in the store.
     Staged(Box<StagedTree>),
-    /// A tree already in the store whose hash is the locked digest.
-    Stored(PathBuf),
-    /// A verified directory in the project.
-    InPlace(PathBuf),
+    /// A tree already in the store whose hash is the locked digest, and its manifest as the
+    /// pass that checked the hash read it.
+    Stored(PathBuf, Option<Vec<u8>>),
+    /// A verified directory in the project, and its manifest as the pass that checked the hash
+    /// read it.
+    InPlace(PathBuf, Option<Vec<u8>>),
 }
 
 /// Where and how sync builds managed Python environments (threat model
@@ -365,8 +368,8 @@ impl<'a> Syncer<'a> {
             ..SyncReport::default()
         };
         for ((pack, how), (before, aside)) in acquired.into_iter().zip(states) {
-            let mut outcome = self.install(pack, how, &before)?;
-            outcome.python_env = self.python_env(pack, &outcome.tree)?;
+            let (mut outcome, accepted) = self.install(pack, how, &before)?;
+            outcome.python_env = self.python_env(pack, &outcome.tree, &accepted)?;
             // A modified tree too large to delete was moved aside; keep reporting it.
             outcome.quarantined = outcome.quarantined.or(aside);
             report.packs.push(outcome);
@@ -374,7 +377,12 @@ impl<'a> Syncer<'a> {
         Ok(report)
     }
 
-    fn python_env(&self, pack: &LockedPack, tree: &Path) -> Result<Option<String>, SyncError> {
+    fn python_env(
+        &self,
+        pack: &LockedPack,
+        tree: &Path,
+        accepted: &Accepted,
+    ) -> Result<Option<String>, SyncError> {
         let Some(build) = self.python else {
             return Ok(None);
         };
@@ -382,14 +390,13 @@ impl<'a> Syncer<'a> {
             id: pack.id.clone(),
             source,
         };
-        // One pass hashes the tree and keeps the manifest, so the runtime is selected from the
-        // bytes the hash covers.
-        let (hash, manifest) =
-            tree_hash_capturing(tree, MANIFEST_FILE).map_err(|e| fail(e.into()))?;
+        // The hash and the manifest come from the pass that accepted the tree: the runtime is
+        // selected from the bytes that were accepted, and no second pass reads the tree.
+        let Accepted { hash, manifest } = accepted;
         let Some(manifest) = manifest else {
             return Ok(None);
         };
-        let Some(runtime) = PythonRuntime::from_manifest(tree, &manifest).map_err(fail)? else {
+        let Some(runtime) = PythonRuntime::from_manifest(tree, manifest).map_err(fail)? else {
             return Ok(None);
         };
         let installer = Installer {
@@ -401,8 +408,8 @@ impl<'a> Syncer<'a> {
                 Network::Online(_) => InstallNetwork::Online,
             },
         };
-        build.envs.ensure(&installer, tree, &hash).map_err(fail)?;
-        Ok(Some(EnvStore::key(&hash, &installer.python)))
+        build.envs.ensure(&installer, tree, hash).map_err(fail)?;
+        Ok(Some(EnvStore::key(hash, &installer.python)))
     }
 
     fn install(
@@ -410,7 +417,7 @@ impl<'a> Syncer<'a> {
         pack: &LockedPack,
         how: Acquired,
         before: &TreeState,
-    ) -> Result<PackOutcome, SyncError> {
+    ) -> Result<(PackOutcome, Accepted), SyncError> {
         let outcome = |change, tree, quarantined| PackOutcome {
             id: pack.id.clone(),
             version: pack.version.clone(),
@@ -424,13 +431,22 @@ impl<'a> Syncer<'a> {
             source,
         };
         let blob = match how {
-            Acquired::InPlace(dir) => return Ok(outcome(Change::InPlace, dir, None)),
-            Acquired::Stored(dir) => {
+            Acquired::InPlace(dir, manifest) => {
+                let hash = Self::locked_tree_hash(pack)?;
+                return Ok((
+                    outcome(Change::InPlace, dir, None),
+                    Accepted { hash, manifest },
+                ));
+            }
+            Acquired::Stored(dir, manifest) => {
                 // The tree hash is the digest: link the digest to it again in case
                 // the record was lost.
                 let hash = Self::locked_tree_hash(pack)?;
                 self.store.record(&pack.digest, &hash)?;
-                return Ok(outcome(Change::Unchanged, dir, None));
+                return Ok((
+                    outcome(Change::Unchanged, dir, None),
+                    Accepted { hash, manifest },
+                ));
             }
             Acquired::Staged(staged) => {
                 let done = staged.install(&self.store.trees()).map_err(extract)?;
@@ -439,7 +455,13 @@ impl<'a> Syncer<'a> {
                     TreeState::Tampered(_) => Change::Reinstalled,
                     _ => Change::Installed,
                 };
-                return Ok(outcome(change, done.root, done.quarantined));
+                return Ok((
+                    outcome(change, done.root, done.quarantined),
+                    Accepted {
+                        hash: done.hash,
+                        manifest: done.manifest,
+                    },
+                ));
             }
             Acquired::Archive(blob) => blob,
         };
@@ -457,7 +479,13 @@ impl<'a> Syncer<'a> {
             TreeState::Tampered(_) => Change::Reinstalled,
             _ => Change::Installed,
         };
-        Ok(outcome(change, done.root, done.quarantined))
+        Ok((
+            outcome(change, done.root, done.quarantined),
+            Accepted {
+                hash: done.hash,
+                manifest: done.manifest,
+            },
+        ))
     }
 
     fn acquire(&self, pack: &LockedPack, revoked: &RevocationList) -> Result<Acquired, SyncError> {
@@ -799,8 +827,8 @@ impl<'a> Syncer<'a> {
         let expected = Self::locked_tree_hash(pack)?;
         let dir = self.store.tree_dir(&expected);
         if fs::symlink_metadata(&dir).is_ok() {
-            match verify_tree(&dir, &expected) {
-                Ok(()) => return Ok(Acquired::Stored(dir)),
+            match verify_tree_capturing(&dir, &expected) {
+                Ok(manifest) => return Ok(Acquired::Stored(dir, manifest)),
                 Err(ExtractError::Tampered { .. }) => {
                     if matches!(self.network, Network::Offline) {
                         let aside = cache::evict_tree(&dir)?;
@@ -914,16 +942,17 @@ impl<'a> Syncer<'a> {
             actual: actual.to_owned(),
         };
         if fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir()) {
-            let hash = tree_hash(&path).map_err(|source| SyncError::Extract {
-                id: id.clone(),
-                source,
-            })?;
+            let (hash, manifest) =
+                tree_hash_capturing(&path, MANIFEST_FILE).map_err(|source| SyncError::Extract {
+                    id: id.clone(),
+                    source,
+                })?;
             if hash.as_str() != pack.digest.as_str() {
                 return Err(mismatch(hash.as_str()));
             }
             #[cfg(feature = "test-support")]
             self.store.observe(&path);
-            return Ok(Acquired::InPlace(path));
+            return Ok(Acquired::InPlace(path, manifest));
         }
         let locked = Self::locked_digest(pack)?;
         if let Some(cached) = self.store.blob(&locked, self.limits.compressed_bytes) {
@@ -1041,23 +1070,22 @@ pub fn status_with_python(
     status_in(store, Some(envs), project_root, lock)
 }
 
-fn python_state(envs: &EnvStore, tree: &Path) -> PythonState {
-    let (hash, manifest) = match tree_hash_capturing(tree, MANIFEST_FILE) {
-        Ok(done) => done,
-        Err(e) => return PythonState::Failed(e.to_string()),
-    };
+/// The state of the environment of an accepted tree. The hash and the manifest are those of the
+/// pass that accepted the tree; nothing here reads the tree again.
+fn python_state(envs: &EnvStore, tree: &Path, accepted: &Accepted) -> PythonState {
+    let Accepted { hash, manifest } = accepted;
     let Some(manifest) = manifest else {
         return PythonState::NotChecked;
     };
-    let runtime = match PythonRuntime::from_manifest(tree, &manifest) {
+    let runtime = match PythonRuntime::from_manifest(tree, manifest) {
         Ok(None) => return PythonState::NotChecked,
         Ok(Some(r)) => r,
         Err(e) => return PythonState::Failed(e.to_string()),
     };
-    match envs.load(&hash, &runtime.python) {
+    match envs.load(hash, &runtime.python) {
         Ok(None) => PythonState::Missing,
         Ok(Some(env)) => match env.verify_full() {
-            Ok(()) => PythonState::Verified(EnvStore::key(&hash, &runtime.python)),
+            Ok(()) => PythonState::Verified(EnvStore::key(hash, &runtime.python)),
             Err(e) => PythonState::Failed(e.to_string()),
         },
         Err(e) => PythonState::Failed(e.to_string()),
@@ -1073,28 +1101,33 @@ fn status_in(
     lock.packs()
         .iter()
         .map(|pack| {
+            let mut accepted = None;
             let state = match pack.source.kind() {
                 SourceKind::Path(rel) if project_root.join(rel).is_dir() => {
                     let dir = project_root.join(rel);
-                    let accepted = tree_hash(&dir);
+                    let passed = tree_hash_capturing(&dir, MANIFEST_FILE);
                     #[cfg(feature = "test-support")]
                     store.observe(&dir);
-                    match accepted {
-                        Ok(hash) if hash.as_str() == pack.digest.as_str() => {
+                    match passed {
+                        Ok((hash, manifest)) if hash.as_str() == pack.digest.as_str() => {
+                            accepted = Some(Accepted { hash, manifest });
                             PackState::InPlace(dir)
                         }
                         _ => PackState::InPlaceChanged(dir),
                     }
                 }
-                _ => match store.inspect(&pack.digest)? {
-                    TreeState::Absent => PackState::NotInstalled,
-                    TreeState::Intact(dir) => PackState::Recorded(dir),
-                    TreeState::Tampered(dir) => PackState::Tampered(dir),
+                _ => match store.inspect_accepted(&pack.digest)? {
+                    (TreeState::Absent, _) => PackState::NotInstalled,
+                    (TreeState::Intact(dir), seen) => {
+                        accepted = seen;
+                        PackState::Recorded(dir)
+                    }
+                    (TreeState::Tampered(dir), _) => PackState::Tampered(dir),
                 },
             };
-            let python = match (&state, envs) {
-                (PackState::Recorded(dir) | PackState::InPlace(dir), Some(envs)) => {
-                    python_state(envs, dir)
+            let python = match (&state, envs, &accepted) {
+                (PackState::Recorded(dir) | PackState::InPlace(dir), Some(envs), Some(seen)) => {
+                    python_state(envs, dir, seen)
                 }
                 _ => PythonState::NotChecked,
             };

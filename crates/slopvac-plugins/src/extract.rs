@@ -23,6 +23,7 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::hooks::check_relative_path;
 use crate::messages::transport::{TransportPhrase, TransportText};
+use crate::pyenv::MANIFEST_FILE;
 
 /// Limits from the threat model, section 5.5.
 #[derive(Debug, Clone, Copy)]
@@ -281,6 +282,10 @@ pub struct Extracted {
     /// Where a cached tree that failed verification and was too large to delete
     /// was moved. It still occupies storage until the operator removes it.
     pub quarantined: Option<PathBuf>,
+    /// The content of `slopvac-plugin.toml` at the root, as the pass that produced `hash` read
+    /// it, or `None` when the tree has none. What is parsed from these bytes is what the hash
+    /// covers.
+    pub manifest: Option<Vec<u8>>,
 }
 
 /// What [`evict`] did with a tree.
@@ -811,7 +816,8 @@ impl StagedTree {
     /// # Errors
     /// As [`tree_hash`], plus [`ExtractError::Io`] when the move fails.
     pub fn install(self, store: &Path) -> Result<Extracted, ExtractError> {
-        let hash = tree_hash(&self.root)?;
+        let (hash, manifest) = hash_walk(&self.root, &Keep::File(MANIFEST_FILE), &mut |_, _| {})?;
+        let manifest = manifest.into_iter().next().map(|(_, bytes)| bytes);
         let exec: HashSet<&str> = self.executable.iter().map(String::as_str).collect();
         let result = install(&self.root, store, &hash, &exec);
         let leftover = if self.root.exists() {
@@ -832,6 +838,7 @@ impl StagedTree {
             files: self.files,
             bytes: self.bytes,
             quarantined,
+            manifest,
         })
     }
 }
@@ -867,6 +874,7 @@ fn scan_archive<S: std::hash::BuildHasher>(
     let mut dirs: HashSet<String> = HashSet::new();
     let mut bytes = 0u64;
     let mut pending_name: Option<Vec<u8>> = None;
+    let mut manifest: Option<Vec<u8>> = None;
 
     // Raw entries: the tar crate's own preprocessing allocates sparse
     // descriptors before any type check, so long names and PAX records are
@@ -921,7 +929,11 @@ fn scan_archive<S: std::hash::BuildHasher>(
         budget.charge(parents.len() + 1)?;
         dirs.extend(parents);
         let exec = executable.contains(&rel);
-        let rec = write_entry(&mut entry, root, rel, exec)?;
+        let is_manifest = rel == MANIFEST_FILE;
+        let (rec, kept) = write_entry(&mut entry, root, rel, exec, is_manifest)?;
+        if is_manifest {
+            manifest = kept;
+        }
         bytes += rec.len;
         if exec {
             exec_paths.push(rec.path.clone());
@@ -950,6 +962,7 @@ fn scan_archive<S: std::hash::BuildHasher>(
         exec_paths,
         files: file_count,
         bytes,
+        manifest,
     })
 }
 
@@ -957,6 +970,7 @@ fn scan_archive<S: std::hash::BuildHasher>(
 struct Scanned {
     hash: TreeHash,
     exec_paths: Vec<String>,
+    manifest: Option<Vec<u8>>,
     files: usize,
     bytes: u64,
 }
@@ -977,6 +991,7 @@ fn unpack<S: std::hash::BuildHasher>(
         hash: scanned.hash,
         files: scanned.files,
         bytes: scanned.bytes,
+        manifest: scanned.manifest,
     })
 }
 
@@ -1051,7 +1066,8 @@ fn write_entry(
     root: Option<&Path>,
     rel: String,
     exec: bool,
-) -> Result<FileRecord, ExtractError> {
+    keep: bool,
+) -> Result<(FileRecord, Option<Vec<u8>>), ExtractError> {
     // With no root the entry is only hashed.
     let mut out = None;
     if let Some(root) = root {
@@ -1068,18 +1084,35 @@ fn write_entry(
         .header()
         .size()
         .map_err(|e| ExtractError::Malformed(e.to_string()))?;
-    let (sha, len) = hash_stream(entry, out.as_mut(), &rel, None)?;
+    let mut tee = Capture {
+        inner: &mut *entry,
+        kept: Vec::new(),
+        cap: if keep { MAX_CAPTURE_BYTES } else { 0 },
+        over: false,
+    };
+    let hashed = hash_stream(&mut tee, out.as_mut(), &rel, None);
+    if keep && tee.over {
+        return Err(ExtractError::CaptureLimit {
+            path: rel,
+            cap: MAX_CAPTURE_BYTES,
+        });
+    }
+    let (sha, len) = hashed?;
+    let kept = keep.then_some(tee.kept);
     if len != declared {
         return Err(ExtractError::Malformed(
             TransportText::ExtractShortEntry { path: rel.clone() }.to_string(),
         ));
     }
-    Ok(FileRecord {
-        path: rel,
-        executable: exec,
-        sha,
-        len,
-    })
+    Ok((
+        FileRecord {
+            path: rel,
+            executable: exec,
+            sha,
+            len,
+        },
+        kept,
+    ))
 }
 
 fn sidecar_bytes(sorted: &[String]) -> Vec<u8> {
@@ -1278,8 +1311,8 @@ pub(crate) fn open_regular(path: &Path) -> io::Result<File> {
 
 /// A reader that keeps a copy of what it reads, so a file hashed in one pass is parsed from the
 /// same bytes instead of being opened a second time.
-struct Capture<'a> {
-    inner: &'a mut File,
+struct Capture<'a, R: Read> {
+    inner: &'a mut R,
     kept: Vec<u8>,
     /// Most bytes to keep. A file over it is still hashed, and `over` says it did not fit.
     cap: u64,
@@ -1300,7 +1333,7 @@ enum Keep<'a> {
     All(u64),
 }
 
-impl Read for Capture<'_> {
+impl<R: Read> Read for Capture<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
         // `usize` widens to `u64` without loss on every supported target.
@@ -1326,6 +1359,25 @@ pub fn tree_hash_capturing_files_observed(
     after_hash: &mut dyn FnMut(&str, &Path),
 ) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
     hash_walk(dir, &Keep::All(cap), after_hash)
+}
+
+/// [`verify_tree`], and the content of the manifest at the root of the tree as the same pass read
+/// it, or `None` when the tree has none. A caller that accepts the tree on this result parses the
+/// manifest from these bytes and never reads the file again.
+///
+/// # Errors
+/// As [`verify_tree`], and [`ExtractError::CaptureLimit`] when the manifest is over 1 MiB.
+pub fn verify_tree_capturing(
+    dir: &Path,
+    expected: &TreeHash,
+) -> Result<Option<Vec<u8>>, ExtractError> {
+    match hash_walk(dir, &Keep::File(MANIFEST_FILE), &mut |_, _| {}) {
+        Ok((actual, mut kept)) if actual == *expected => Ok(kept.remove(MANIFEST_FILE)),
+        Ok(_) | Err(ExtractError::Refused(_)) => Err(ExtractError::Tampered {
+            path: dir.to_owned(),
+        }),
+        Err(e) => Err(e),
+    }
 }
 
 /// Recompute the hash of a stored tree.
@@ -1482,7 +1534,9 @@ fn hash_walk(
                         cap,
                         over: false,
                     };
-                    let hashed = hash_stream(&mut tee, None, &rel, Some(budget))?;
+                    let hashed = hash_stream(&mut tee, None, &rel, Some(budget));
+                    // The capture cap decides first: a file that outgrew it is a capture limit,
+                    // whether or not the tree budget ran out in the same read.
                     if tee.over {
                         // A file kept for the caller over its cap is a limit of its own. The
                         // executable list over the tree budget is a tree size violation.
@@ -1500,6 +1554,7 @@ fn hash_walk(
                             )
                         });
                     }
+                    let hashed = hashed?;
                     if wanted {
                         // The capture held at most `keep_left` bytes, so this cannot underflow.
                         if matches!(keep, Keep::All(_)) {
