@@ -128,7 +128,7 @@ fn has_blocklist(t: &dyn TableLike) -> bool {
 ///   (`ReasonBlocklistCategoryNoSeverityOverRule`).
 ///
 /// The checks run in this order: L1, then L2, then widened L2. The first match decides the
-/// reason. An earlier `off` category therefore gets the L2 reason, whether or not an earlier
+/// reason. An earlier `off` category therefore gets the L2 reason, even when an earlier
 /// layer also set a rule or the category. L2 names the more specific cause.
 ///
 /// The category checks treat every earlier override as one that can merge with the later one.
