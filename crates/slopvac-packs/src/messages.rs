@@ -115,7 +115,9 @@ pub(crate) enum PackMessage {
     LoaderManifestInvalid { id: String },
     /// The command of a code plugin leaves its tree or starts with a dash.
     #[code("plugin-loader-command-unsafe")]
-    #[message("the command of plugin `{id}` must be a relative path inside the plugin, with no leading dash")]
+    #[message(
+        "the command of plugin `{id}` must be a relative path inside the plugin, with no leading dash"
+    )]
     LoaderCommandUnsafe { id: String },
 }
 

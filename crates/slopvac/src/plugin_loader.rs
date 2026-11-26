@@ -7,15 +7,15 @@
 
 use std::path::{Path, PathBuf};
 
-use slopvac_fs::{read_capped_regular_to_string, ReadOptions};
-use slopvac_packs::{load_code_plugin, CodePluginContext, SyncedError};
+use slopvac_fs::{ReadOptions, read_capped_regular_to_string};
+use slopvac_packs::{CodePluginContext, SyncedError, load_code_plugin};
+use slopvac_plugins::PluginLoader;
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::host::PluginSpec;
-use slopvac_plugins::lock::{LockedPack, Lockfile, PackId, MAX_LOCK_BYTES};
+use slopvac_plugins::lock::{LockedPack, Lockfile, MAX_LOCK_BYTES, PackId};
 use slopvac_plugins::sign::{KeyPolicy, PublicKey};
-use slopvac_plugins::sync::{status, PackState, Store};
+use slopvac_plugins::sync::{PackState, Store, status};
 use slopvac_plugins::trust::VerifiedPlugin;
-use slopvac_plugins::PluginLoader;
 
 /// The `PATH` of a plugin child. The host never passes its own, and the value enters the trust
 /// hash, so it is the same on every machine: the system directories only.

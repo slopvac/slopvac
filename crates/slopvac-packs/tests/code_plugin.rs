@@ -13,7 +13,7 @@ use std::fs;
 use std::path::Path;
 
 use rstest::rstest;
-use slopvac_packs::{load_code_plugin, CodePluginContext, CodePluginError};
+use slopvac_packs::{CodePluginContext, CodePluginError, load_code_plugin};
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::{LockedPack, Lockfile, PackId};
 use slopvac_plugins::protocol::{FeatureSet, HookDecl, PluginDeclaration};
