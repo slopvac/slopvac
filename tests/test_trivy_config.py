@@ -182,44 +182,91 @@ def test_every_trivy_step_is_found() -> None:
     }
 
 
-@pytest.mark.parametrize(
-    ("file", "job", "step", "before"),
-    all_trivy_jobs(),
-    ids=lambda v: v if isinstance(v, str) else "",
-)
-def test_trivy_reads_config_from_outside_the_checkout(
-    file: str, job: str, step: dict, before: list[dict]
-) -> None:
-    # Trivy reads ./trivy.yaml and ./trivy-secret.yaml from the working
-    # directory unless told otherwise, so a pull request could plant either.
-    trusted = "${{ runner.temp }}/trivy-trusted/"
-    assert step["with"]["trivy-config"] == trusted + "trivy.yaml"
-    assert step["env"]["TRIVY_SECRET_CONFIG"] == trusted + "trivy-secret.yaml"
-    writers = [s for s in before if s.get("name") == "Write trusted Trivy config"]
-    assert len(writers) == 1, f"{file}:{job}"
-    run = writers[0]["run"]
-    assert "$RUNNER_TEMP/trivy-trusted/trivy.yaml" in run
-    assert "$RUNNER_TEMP/trivy-trusted/trivy-secret.yaml" in run
-    assert "${{" not in run  # fixed text, no expression
+WRITER = "scripts/ci/trivy_trusted_config.sh"
+ALL_SEVERITIES = {"UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
+
+# The effective policy of each job on main 4a7cceaf02, worked out from that
+# workflow and trivy-action v0.36.0 (not from the current workflow). The action
+# unsets TRIVY_SEVERITY for format sarif, so the full scan gates on every severity.
+MAIN_POLICY = {
+    "trivy": {
+        "scanners": {"vuln", "misconfig", "secret"},
+        "severities": ALL_SEVERITIES,
+        "exit_code": "1",
+        "ignore": ".trivyignore.yaml",
+    },
+    "trivy-secret": {
+        "scanners": {"secret"},
+        "severities": {"HIGH", "CRITICAL"},
+        "exit_code": "1",
+        "ignore": ".trivyignore.yaml",
+    },
+}
 
 
-def test_trusted_trivy_config_is_valid_and_keeps_the_gate_strict(
-    tmp_path: Path,
-) -> None:
-    (writer,) = [
-        s
-        for s in all_trivy_jobs()[0][3]
-        if s.get("name") == "Write trusted Trivy config"
-    ]
+def writer_step(job: str, before: list[dict]) -> dict:
+    found = [s for s in before if s.get("name") == "Write trusted Trivy config"]
+    assert len(found) == 1, f"{job}: expected one Write trusted Trivy config step"
+    return found[0]
+
+
+def run_writer(step: dict, tmp_path: Path) -> Path:
+    command = step["run"].replace(WRITER, str(ROOT / WRITER))
     done = subprocess.run(
-        ["bash", "-euo", "pipefail", "-c", writer["run"]],
+        ["bash", "-c", command],
         env={"RUNNER_TEMP": str(tmp_path), "PATH": "/usr/bin:/bin"},
         capture_output=True,
         text=True,
         check=False,
     )
     assert done.returncode == 0, done.stderr
-    base = tmp_path / "trivy-trusted"
+    return tmp_path / "trivy-trusted"
+
+
+def steps_of(job: str) -> list[dict]:
+    return load_workflow()["jobs"][job]["steps"]
+
+
+@pytest.mark.parametrize("job", JOBS)
+def test_trivy_reads_config_from_outside_the_checkout(job: str) -> None:
+    # Trivy reads ./trivy.yaml and ./trivy-secret.yaml from the working
+    # directory unless told otherwise, so a pull request could plant either.
+    steps = steps_of(job)
+    scan = next(s for s in steps if str(s.get("uses", "")).startswith("aquasecurity/"))
+    trusted = "${{ runner.temp }}/trivy-trusted/"
+    assert scan["with"]["trivy-config"] == trusted + "trivy.yaml"
+    assert scan["env"]["TRIVY_SECRET_CONFIG"] == trusted + "trivy-secret.yaml"
+    run = writer_step(job, steps[: steps.index(scan)])["run"]
+    assert run.startswith(f"bash {WRITER} ")
+    assert "${{" not in run  # fixed text, no expression
+
+
+@pytest.mark.parametrize("job", JOBS)
+def test_effective_policy_matches_main(job: str, tmp_path: Path) -> None:
+    want = MAIN_POLICY[job]
+    steps = steps_of(job)
+    scan = next(s for s in steps if str(s.get("uses", "")).startswith("aquasecurity/"))
+    base = run_writer(writer_step(job, steps[: steps.index(scan)]), tmp_path)
     config = yaml.safe_load((base / "trivy.yaml").read_text())
-    assert not set(config) & {"scan", "exit-code", "ignorefile", "skip-dirs"}
+    with_ = scan["with"]
+    # trivy-action unsets TRIVY_SEVERITY for sarif, so the config decides there.
+    if with_["format"] == "sarif":
+        got = set(config["severity"])
+    else:
+        got = set(with_["severity"].split(","))
+    assert got == want["severities"]
+    assert set(with_["scanners"].split(",")) == want["scanners"]
+    assert with_["exit-code"] == want["exit_code"]
+    assert with_["trivyignores"] == want["ignore"]
+    assert "ignore-unfixed" not in with_
+    assert "skip-dirs" not in with_ and "skip-files" not in with_
+
+
+def test_trusted_config_holds_only_severity_and_an_empty_secret_config(
+    tmp_path: Path,
+) -> None:
+    step = writer_step("trivy", steps_of("trivy"))
+    base = run_writer(step, tmp_path)
+    config = yaml.safe_load((base / "trivy.yaml").read_text())
+    assert set(config) == {"severity"}
     assert (base / "trivy-secret.yaml").read_text().strip() == "{}"

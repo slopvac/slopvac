@@ -269,9 +269,7 @@ jobs:
       # checkout, and the scan step points at them.
       - name: Write trusted Trivy config
         run: |
-          mkdir -p "$RUNNER_TEMP/trivy-trusted"
-          printf '%s\n' 'severity:' '  - HIGH' '  - CRITICAL' > "$RUNNER_TEMP/trivy-trusted/trivy.yaml"
-          printf '%s\n' '{}' > "$RUNNER_TEMP/trivy-trusted/trivy-secret.yaml"
+          bash scripts/ci/trivy_trusted_config.sh UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
       - name: Scan filesystem
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
@@ -316,9 +314,7 @@ jobs:
       # checkout, and the scan step points at them.
       - name: Write trusted Trivy config
         run: |
-          mkdir -p "$RUNNER_TEMP/trivy-trusted"
-          printf '%s\n' 'severity:' '  - HIGH' '  - CRITICAL' > "$RUNNER_TEMP/trivy-trusted/trivy.yaml"
-          printf '%s\n' '{}' > "$RUNNER_TEMP/trivy-trusted/trivy-secret.yaml"
+          bash scripts/ci/trivy_trusted_config.sh HIGH,CRITICAL
       # The table format prints a scanned file name at the start of a log line,
       # where the runner reads a leading colon pair as a workflow command. The scan
       # writes SARIF to a file, and a failure prints it through the one escaper
