@@ -285,6 +285,7 @@ jobs:
           exit-code: "1"
           trivyignores: .trivyignore.yaml
           trivy-config: ${{ runner.temp }}/trivy-trusted/trivy.yaml
+          cache-dir: ${{ runner.temp }}/trivy-cache
       - name: Print Trivy findings
         if: failure()
         run: python3 scripts/print_trivy_findings.py trivy-results.sarif
@@ -335,6 +336,7 @@ jobs:
           exit-code: "1"
           trivyignores: .trivyignore.yaml
           trivy-config: ${{ runner.temp }}/trivy-trusted/trivy.yaml
+          cache-dir: ${{ runner.temp }}/trivy-cache
       - name: Print Trivy findings
         if: failure()
         run: python3 scripts/print_trivy_findings.py trivy-secret-results.sarif

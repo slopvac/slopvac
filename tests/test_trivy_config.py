@@ -270,3 +270,36 @@ def test_trusted_config_holds_only_severity_and_an_empty_secret_config(
     config = yaml.safe_load((base / "trivy.yaml").read_text())
     assert set(config) == {"severity"}
     assert (base / "trivy-secret.yaml").read_text().strip() == "{}"
+
+
+# trivy-action v0.36.0 `cache-dir` default, from its action.yaml.
+ACTION_DEFAULT_CACHE_DIR = "${{ github.workspace }}/.cache/trivy"
+
+
+def cache_paths() -> list[tuple[str, str]]:
+    """(where, path) for every Trivy cache location any workflow sets."""
+    found = []
+    for file, job, step, _ in all_trivy_jobs():
+        path = step["with"].get("cache-dir", ACTION_DEFAULT_CACHE_DIR)
+        found.append((f"{file}:{job}", path))
+    for path in sorted((ROOT / ".github/workflows").glob("*.y*ml")):
+        for name, job in (yaml.safe_load(path.read_text()).get("jobs") or {}).items():
+            for step in job.get("steps") or []:
+                where = str(step.get("with", {}).get("path", ""))
+                if str(step.get("uses", "")).startswith("actions/cache") and (
+                    "trivy" in where
+                ):
+                    found.append((f"{path.name}:{name}", where))
+    return found
+
+
+def test_trivy_caches_are_found() -> None:
+    assert len(cache_paths()) >= 2
+
+
+@pytest.mark.parametrize(("where", "path"), cache_paths())
+def test_trivy_cache_is_outside_the_checkout(where: str, path: str) -> None:
+    # A pull request can plant a vulnerability database in the checkout, which
+    # would hide findings. The cache must live under the runner temp directory.
+    assert path.startswith("${{ runner.temp }}/"), f"{where}: cache path {path}"
+    assert "github.workspace" not in path
