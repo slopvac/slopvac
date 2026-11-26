@@ -421,7 +421,7 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 **3.0 requirement.**
 
 - The exit codes keep their meaning. Slopvac uses no other exit code.
-- Exit 2 (incomplete) means slopvac did not read or did not check part of the input: a file refused over a cap or budget, a file that is malformed or unreadable, or content the engine could not extract. Those notices are warnings. In 3.0, a notice that lists active rules the engine did not run on input it did read (`rule-kind-not-implemented`, `comment-rules-not-run`) is an info notice: the run stays complete and exits 0, and the notice names the rules in `data.rules`. A warning notice that is not about unread or unchecked input, such as `config-unknown-rule`, leaves the run complete.
+- Exit 2 (incomplete) means slopvac did not read or did not check part of the input: a file refused over a cap or budget, a file that is malformed or unreadable, or content the engine could not extract. Those notices are warnings. A rule that does not apply is not a failed check. In code-comments mode, a rule that is on by default but cannot run on comments is listed in the info notice `comment-rules-not-run`, and the run stays complete. A rule that should have run and did not makes the run incomplete, and its notice is a warning that names the rules in `data.rules`: a rule of a kind or check the engine does not run (`rule-kind-not-implemented`), a capitalization rule in a style the engine does not run (`rule-style-not-implemented`), and in code-comments mode a rule the user enabled by name that cannot run on comments (`comment-rule-named-not-run`). A warning notice that is not about unread or unchecked input, such as `config-unknown-rule`, leaves the run complete.
 - Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `plugin-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation. Until the generated reference ships, the tables in this contract are the list of codes.
 - The `report` command uses these codes, and each exits 2: `report-incomplete` (a required form field is missing), `report-body-file` (the `--body-file` path is refused or cannot be written), `report-gh-missing` (`gh` is not found), `report-gh-not-logged-in` (`gh` is not logged in to github.com), `report-gh-failed` (`gh issue create` failed or ran longer than 60 seconds), `report-invalid` (a title, field or sample holds a control character) and `report-sample-unreadable` (the `--include-text` file cannot be read).
 - No code is reused, and no code changes meaning. A code that stops occurring stays in the documentation, marked retired.
@@ -441,7 +441,8 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 
   | Code | Level | Meaning |
   | --- | --- | --- |
-  | `rule-kind-not-implemented` | info | Active rules of a kind the engine does not run did not run. `data.rules` lists them. |
+  | `rule-kind-not-implemented` | warning | Active rules of a kind or check the engine does not run did not run. `data.rules` lists them. The run is incomplete. |
+  | `comment-rule-named-not-run` | warning | In code-comments mode, rules that the user enabled by name cannot run on comments. `data.rules` lists them. The run is incomplete. |
   | `rule-style-not-implemented` | warning | Active capitalization rules did not run, because the engine runs only the sentence style. |
   | `vocabulary-no-blocklist` | info | Active vocabulary rules did not run, because no word blocklist is set. |
   | `vocabulary-no-taggable-entries` | info | Active vocabulary rules did not run, because the blocklist holds no noun, verb, adjective or adverb entry of three or more letters. |
