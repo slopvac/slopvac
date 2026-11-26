@@ -1,1 +1,49 @@
-* @srobroek
+# Security- and CI-relevant files. A ruleset that requires code-owner review
+# applies only to the paths listed here, so other changes need no owner review.
+
+# CI, workflows, repository automation and this file.
+/.github/ @srobroek
+/scripts/ @srobroek
+/justfile @srobroek
+/.pre-commit-config.yaml @srobroek
+/.pre-commit-hooks.yaml @srobroek
+/.gitattributes @srobroek
+
+# Toolchains and build configuration.
+/mise.toml @srobroek
+/rust-toolchain.toml @srobroek
+/.cargo/ @srobroek
+/.config/ @srobroek
+/clippy.toml @srobroek
+/rustfmt.toml @srobroek
+/_typos.toml @srobroek
+
+# Scanners and supply-chain policy.
+/.trivyignore.yaml @srobroek
+/trivy.yaml @srobroek
+/trivy.yml @srobroek
+/deny.toml @srobroek
+/tests/test_trivy_config.py @srobroek
+
+# Dependency manifests and lock files.
+/Cargo.toml @srobroek
+/Cargo.lock @srobroek
+/crates/*/Cargo.toml @srobroek
+/pyproject.toml @srobroek
+/uv.lock @srobroek
+/packages/*/pyproject.toml @srobroek
+/packages/*/uv.lock @srobroek
+
+# Releases, signing keys and trust.
+/release-please-config.json @srobroek
+/.release-please-manifest.json @srobroek
+/keys/ @srobroek
+/crates/slopvac-plugins/src/sign.rs @srobroek
+/crates/slopvac-plugins/src/revoke.rs @srobroek
+/crates/slopvac-update/ @srobroek
+
+# Security policy and the threat model.
+/SECURITY.md @srobroek
+/docs/contract/threat-model.md @srobroek
+/docs/contract/policies.md @srobroek
+/.codex/threat-model.md @srobroek
