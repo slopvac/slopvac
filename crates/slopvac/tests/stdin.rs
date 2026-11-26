@@ -67,16 +67,12 @@ fn rst_is_accepted_and_checked_when_a_converter_exists() {
     assert!(!String::from_utf8_lossy(&out.stderr).contains("error[usage]"));
 }
 
-// STUB(slopvac-8l4.12.28): the engine has no parser for plain text, HTML or comment mode yet,
-// so these inputs are accepted by the options and then reported as unsupported (exit 2),
-// never skipped silently.
+// STUB(slopvac-8l4.3.84): the engine has no parser for plain text or HTML yet, so these inputs
+// are accepted by the options and then reported as unsupported (exit 2), never skipped
+// silently.
 #[test]
 fn inputs_without_an_engine_parser_are_an_incomplete_run() {
-    let cases: [&[&str]; 3] = [
-        &["--language", "text"],
-        &["--language", "html"],
-        &["--mode", "code-comments", "--language", "python"],
-    ];
+    let cases: [&[&str]; 2] = [&["--language", "text"], &["--language", "html"]];
     for args in cases {
         stdin_lint(args)
             .write_stdin("words\n")
@@ -86,6 +82,30 @@ fn inputs_without_an_engine_parser_are_an_incomplete_run() {
                 "error[input-unsupported]: <stdin>",
             ));
     }
+}
+
+#[test]
+fn comments_on_stdin_are_linted_through_the_engine() {
+    let out = stdin_lint(&[
+        "--mode",
+        "code-comments",
+        "--language",
+        "python",
+        "--format",
+        "json",
+    ])
+    .write_stdin("# Parse the input.\nx = 1\n")
+    .output()
+    .expect("run");
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).expect("a JSON report");
+    let codes: Vec<&str> = report["documents"][0]["unchecked"]
+        .as_array()
+        .expect("unchecked")
+        .iter()
+        .map(|n| n["code"].as_str().expect("code"))
+        .collect();
+    assert_eq!(codes, ["comment-rules-not-run"], "{report}");
 }
 
 #[test]
