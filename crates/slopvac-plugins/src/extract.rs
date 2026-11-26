@@ -1125,14 +1125,8 @@ fn write_entry(
         .header()
         .size()
         .map_err(|e| ExtractError::Malformed(e.to_string()))?;
-    let mut tee = Capture {
-        inner: &mut *entry,
-        kept: Vec::new(),
-        cap: if keep { MAX_CAPTURE_BYTES } else { 0 },
-        over: false,
-        #[cfg(feature = "test-support")]
-        seen: 0,
-    };
+    let cap = if keep { MAX_CAPTURE_BYTES } else { 0 };
+    let mut tee = Capture::new(&mut *entry, cap, usize::try_from(cap).unwrap_or(usize::MAX));
     let hashed = hash_stream(&mut tee, out.as_mut(), &rel, None);
     if keep && tee.over {
         return Err(ExtractError::CaptureLimit {
@@ -1235,7 +1229,7 @@ fn hash_stream(
     cap: Option<u64>,
 ) -> Result<([u8; 32], u64), ExtractError> {
     let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 64 * 1024];
+    let mut buf = vec![0u8; HASH_CHUNK];
     let mut len = 0u64;
     loop {
         let n = src.read(&mut buf).map_err(|e| {
@@ -1359,6 +1353,9 @@ struct Capture<'a, R: Read> {
     kept: Vec<u8>,
     /// Most bytes to keep. A file over it is still hashed, and `over` says it did not fit.
     cap: u64,
+    /// Most bytes the buffer may hold in capacity. It grows by doubling, but never past this, so
+    /// a file read to a budget does not leave a buffer rounded up far beyond it.
+    limit: usize,
     over: bool,
     /// Bytes pulled through the reader, kept or not. A test hook: it exists only with the
     /// `test-support` feature, so a release build has no such state on the read path.
@@ -1375,7 +1372,10 @@ const MAX_CAPTURE_BYTES: u64 = 1 << 20;
 /// much, so the probe at most doubles an overshoot that was already allowed. It is fixed, and
 /// does not depend on the caller's cap, so a file that keeps growing costs a bounded read and a
 /// bounded buffer however large the cap is.
-const PROBE_ALLOWANCE: u64 = 64 * 1024;
+const PROBE_ALLOWANCE: u64 = HASH_CHUNK as u64;
+
+/// Bytes [`hash_stream`] reads at a time.
+const HASH_CHUNK: usize = 64 * 1024;
 
 /// What a hash pass keeps besides the executable list.
 enum Keep<'a> {
@@ -1410,25 +1410,14 @@ fn hash_captured<R: Read>(
     rel: &str,
 ) -> Captured {
     let mut limited = src.take(bound);
-    let mut tee = Capture {
-        inner: &mut limited,
-        kept: Vec::new(),
-        cap,
-        over: false,
-        #[cfg(feature = "test-support")]
-        seen: 0,
-    };
+    // The buffer holds what was read, which is at most the smaller of the cap and the budget plus
+    // the chunk that crossed it.
+    let limit = usize::try_from(cap.min(budget).saturating_add(1 + HASH_CHUNK as u64)).unwrap_or(usize::MAX);
+    let mut tee = Capture::new(&mut limited, cap, limit);
     let hashed = hash_stream(&mut tee, None, rel, Some(budget));
-    if probe && hashed.is_err() && !tee.over {
-        let mut rest = [0u8; 4096];
-        let mut left = PROBE_ALLOWANCE;
-        while !tee.over && left > 0 {
-            let want = rest.len().min(usize::try_from(left).unwrap_or(rest.len()));
-            match tee.read(&mut rest[..want]) {
-                Ok(n) if n > 0 => left -= n as u64,
-                _ => break,
-            }
-        }
+    // Only a budget refusal is probed. A read error is kept as it was.
+    if probe && matches!(hashed, Err(ExtractError::Refused(_))) && !tee.over {
+        tee.probe(PROBE_ALLOWANCE);
     }
     Captured {
         hashed,
@@ -1477,6 +1466,59 @@ impl Hooks<'_> {
     fn after_read(&mut self, _captured: &Captured) {}
 }
 
+impl<'a, R: Read> Capture<'a, R> {
+    fn new(inner: &'a mut R, cap: u64, limit: usize) -> Self {
+        Self {
+            inner,
+            kept: Vec::new(),
+            cap,
+            limit,
+            over: false,
+            #[cfg(feature = "test-support")]
+            seen: 0,
+        }
+    }
+
+    /// Append to the buffer, growing it by doubling up to `limit` and never past what is needed
+    /// beyond that.
+    fn keep(&mut self, data: &[u8]) -> io::Result<()> {
+        let need = self.kept.len() + data.len();
+        if need > self.kept.capacity() {
+            let target = need.max(self.kept.capacity().saturating_mul(2).min(self.limit));
+            self.kept
+                .try_reserve_exact(target - self.kept.len())
+                .map_err(io::Error::other)?;
+        }
+        self.kept.extend_from_slice(data);
+        Ok(())
+    }
+
+    /// Read on for at most `allowance` bytes to find out whether the cap is crossed. The bytes
+    /// are counted and dropped, so the probe adds nothing to the buffer.
+    fn probe(&mut self, allowance: u64) {
+        let mut rest = [0u8; 4096];
+        let mut left = allowance;
+        let mut extra = 0u64;
+        while left > 0 {
+            let want = rest.len().min(usize::try_from(left).unwrap_or(rest.len()));
+            let n = match self.inner.read(&mut rest[..want]) {
+                Ok(n) if n > 0 => n as u64,
+                _ => break,
+            };
+            #[cfg(feature = "test-support")]
+            {
+                self.seen += n;
+            }
+            left -= n;
+            extra += n;
+            if self.kept.len() as u64 + extra > self.cap {
+                self.over = true;
+                break;
+            }
+        }
+    }
+}
+
 impl<R: Read> Read for Capture<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
@@ -1486,7 +1528,7 @@ impl<R: Read> Read for Capture<'_, R> {
         }
         // `usize` widens to `u64` without loss on every supported target.
         if self.kept.len() as u64 + n as u64 <= self.cap {
-            self.kept.extend_from_slice(&buf[..n]);
+            self.keep(&buf[..n])?;
         } else {
             self.over = true;
         }
