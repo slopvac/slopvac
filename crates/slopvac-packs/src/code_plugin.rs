@@ -14,7 +14,7 @@ use slopvac_plugins::protocol::{self, FeatureSet, PluginDeclaration};
 use slopvac_plugins::trust::VerifiedPlugin;
 
 use crate::messages::PackMessage;
-use crate::{DirSource, Manifest, ManifestError, PackKind, PackSource, SourceError};
+use crate::{DirSource, Manifest, ManifestError, PackKind, PackPath, PackSource, SourceError};
 
 /// What the caller knows about an installed tree and the child it will start.
 #[derive(Debug, Clone)]
@@ -66,6 +66,12 @@ pub enum CodePluginError {
         id: String,
         /// The field that differs: `id`, `version` or `kind`.
         field: &'static str,
+    },
+    /// The command of the plugin leaves its tree, or an interpreter would read it as an option.
+    #[error("{}", PackMessage::LoaderCommandUnsafe { id: String::from(.id) })]
+    Command {
+        /// The plugin id.
+        id: String,
     },
     /// The manifest could not be read.
     #[error("{}", PackMessage::LoaderManifestUnreadable { id: String::from(.id) })]
@@ -131,6 +137,11 @@ pub fn load_code_plugin(
     let (PackKind::Code, Some(table)) = (manifest.kind, manifest.plugin) else {
         return Err(mismatch("kind"));
     };
+    // Relative, forward slashes, no `..` segment, and no leading dash: the program is joined
+    // to the tree root, and the same text is a script argument for a Python plugin.
+    if table.command.starts_with('-') || PackPath::parse(&table.command).is_err() {
+        return Err(CodePluginError::Command { id });
+    }
     let declaration = PluginDeclaration {
         network: table.network,
         hooks: table

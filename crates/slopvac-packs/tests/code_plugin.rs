@@ -59,7 +59,7 @@ fn install(root: &Path, manifest_text: &str) -> CodePluginContext {
 
 #[rstest]
 #[case::data_plugin("data", manifest("acme", "1.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::NotCode { .. }))]
-#[case::id_differs("code", manifest("other", "1.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::Mismatch { field: "id", .. }))]
+#[case::id_differs("code", manifest("evil", "1.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::Mismatch { field: "id", .. }))]
 #[case::version_differs("code", manifest("acme", "2.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::Mismatch { field: "version", .. }))]
 #[case::no_plugin_table(
     "code",
@@ -69,17 +69,17 @@ fn install(root: &Path, manifest_text: &str) -> CodePluginContext {
 #[case::command_leaves_the_tree(
     "code",
     manifest("acme", "1.0.0", &TABLE.replace("bin/acme", "../x")),
-    |e: &CodePluginError| matches!(e, CodePluginError::Manifest { .. })
+    |e: &CodePluginError| matches!(e, CodePluginError::Command { .. })
 )]
 #[case::command_with_backslash(
     "code",
     manifest("acme", "1.0.0", &TABLE.replace("bin/acme", "a\\\\b")),
-    |e: &CodePluginError| matches!(e, CodePluginError::Manifest { .. })
+    |e: &CodePluginError| matches!(e, CodePluginError::Command { .. })
 )]
 #[case::command_with_leading_dash(
     "code",
     manifest("acme", "1.0.0", &TABLE.replace("bin/acme", "-x")),
-    |e: &CodePluginError| matches!(e, CodePluginError::Manifest { .. })
+    |e: &CodePluginError| matches!(e, CodePluginError::Command { .. })
 )]
 fn a_plugin_that_breaks_the_contract_is_refused(
     #[case] lock_kind: &str,
@@ -102,7 +102,7 @@ fn a_native_plugin_runs_its_command_from_the_tree_root() {
     assert_eq!(spec.args, ["--serve", "x"]);
     assert_eq!(spec.cwd, dir.path());
     assert_eq!(spec.path_env, PATH_ENV);
-    assert!(spec.env.is_empty());
+    assert_eq!(spec.env, Vec::<(String, String)>::new());
     assert_eq!(plugin.root, dir.path());
 }
 
@@ -164,9 +164,9 @@ fn a_signed_registry_plugin_takes_its_digest_and_key_from_the_lock() {
 #[test]
 fn the_error_text_comes_from_the_catalog_and_holds_no_file_content() {
     let dir = tempfile::tempdir().unwrap();
-    let context = install(dir.path(), &manifest("other", "1.0.0", TABLE));
+    let context = install(dir.path(), &manifest("evil", "1.0.0", TABLE));
     let error = load_code_plugin(&path_locked(), dir.path(), &context).unwrap_err();
     let text = error.to_string();
     assert!(text.contains("acme"), "{text}");
-    assert!(!text.contains("other"), "{text}");
+    assert!(!text.contains("evil"), "{text}");
 }

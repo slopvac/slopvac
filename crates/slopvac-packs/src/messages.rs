@@ -113,6 +113,10 @@ pub(crate) enum PackMessage {
     #[code("plugin-loader-manifest-invalid")]
     #[message("the manifest of plugin `{id}` does not meet the plugin contract")]
     LoaderManifestInvalid { id: String },
+    /// The command of a code plugin leaves its tree or starts with a dash.
+    #[code("plugin-loader-command-unsafe")]
+    #[message("the command of plugin `{id}` must be a relative path inside the plugin, with no leading dash")]
+    LoaderCommandUnsafe { id: String },
 }
 
 fn claims_text(claims: &[(QualifiedName, Provenance)]) -> String {
