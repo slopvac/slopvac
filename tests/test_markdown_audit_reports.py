@@ -268,3 +268,57 @@ def test_a_report_path_outside_the_root_fails_with_fixed_text(tmp_path, scan) ->
     assert "Traceback" not in done.stderr
     _no_workflow_command(done.stdout + done.stderr)
     assert "pwned" not in done.stdout + done.stderr
+
+
+# ---- one fixed line for every other failure ---------------------------------------
+
+
+def _fixed_failure(done, line: str) -> None:
+    assert done.returncode == 1
+    assert line in done.stderr.splitlines()
+    assert "Traceback" not in done.stderr
+    assert "pwned" not in done.stderr
+    _no_workflow_command(done.stdout + done.stderr)
+
+
+@pytest.mark.parametrize("scan", ["authored", "configured", "all-files"])
+def test_a_linter_timeout_fails_with_fixed_text(tmp_path, scan) -> None:
+    case = {scan + "-sleep": True, "env": {"AUDIT_LINTER_TIMEOUT": "1"}}
+    _fixed_failure(run_audit(tmp_path, case), f"{scan}: the linter timed out after 1 s")
+
+
+_BAD_PATHS = {
+    "null": 'report["documents"][0]["path"] = None',
+    "missing": 'del report["documents"][0]["path"]',
+    "number": 'report["documents"][0]["path"] = 7',
+}
+
+
+@pytest.mark.parametrize("fault", list(_BAD_PATHS))
+@pytest.mark.parametrize("scan", ["authored", "configured", "all-files"])
+def test_a_document_without_a_string_path_fails_with_fixed_text(tmp_path, scan, fault) -> None:
+    done = run_audit(tmp_path, {scan: _BAD_PATHS[fault]})
+    _fixed_failure(done, f"{scan}: document 0 has no path")
+
+
+def test_an_unexpected_exception_prints_one_fixed_line(tmp_path) -> None:
+    # A finding without `severity` is a report shape the step does not expect.
+    case = {"all-files": 'report["documents"][0]["findings"] = [{"message": "x"}]'}
+    _fixed_failure(run_audit(tmp_path, case), "Audit failed: internal error (KeyError)")
+
+
+@pytest.mark.parametrize(
+    ("report", "problems"),
+    [
+        pytest.param({"documents": [{"path": "a.md"}]}, 0, id="string"),
+        pytest.param({"documents": [{"path": None}]}, 1, id="null"),
+        pytest.param({"documents": [{}]}, 1, id="missing"),
+        pytest.param({"documents": [{"path": 3}, "x", None]}, 3, id="number-and-non-dicts"),
+        pytest.param({"documents": [{"path": ""}]}, 1, id="empty"),
+    ],
+)
+def test_path_problems(report, problems) -> None:
+    found = audit.path_problems("scan", report)
+    assert len(found) == problems
+    for i, message in enumerate(found):
+        assert message.startswith("scan: document ") and message.endswith(" has no path")

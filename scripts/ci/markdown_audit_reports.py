@@ -68,3 +68,19 @@ def configured_problems(reported: list[str], all_files: set[str], authored_count
     if not reported and authored_count:
         problems.append("configured: the report is empty but authored documents exist")
     return problems
+
+
+def path_problems(name: str, report: object) -> list[str]:
+    """Return one message per document of `report` that has no usable `path`.
+
+    A path is a non-empty string. The messages name the scan and the document index only.
+    """
+    documents = report.get("documents") if isinstance(report, dict) else None
+    if not isinstance(documents, list):
+        return []
+    problems = []
+    for index, document in enumerate(documents):
+        path = document.get("path") if isinstance(document, dict) else None
+        if not isinstance(path, str) or not path:
+            problems.append(f"{name}: document {index} has no path")
+    return problems

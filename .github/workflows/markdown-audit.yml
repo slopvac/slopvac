@@ -51,10 +51,25 @@ jobs:
           from urllib.parse import unquote, urlsplit
           from markdown_it import MarkdownIt
 
+          def fail_with_one_line(kind, value, traceback):
+              # Any exception the step does not expect ends here. The line names the type only:
+              # the message, the arguments and the traceback can hold file names and report
+              # text from the repository, which the Actions log would act on. Expected
+              # failures raise SystemExit with fixed text and never reach this hook, and
+              # SystemExit(0) keeps its code. A KeyboardInterrupt also lands here, so it
+              # still ends the run nonzero.
+              print(f"Audit failed: internal error ({kind.__name__})", file=sys.stderr, flush=True)
+
+          sys.excepthook = fail_with_one_line
           sys.path.insert(0, "scripts")
           sys.path.insert(0, "scripts/ci")
           from workflow_escape import escape_workflow_data as escape
-          from markdown_audit_reports import configured_problems, document_set_problems, gate_problems
+          from markdown_audit_reports import (
+              configured_problems,
+              document_set_problems,
+              gate_problems,
+              path_problems,
+          )
 
           root = Path.cwd()
           binary = os.environ["SLOPVAC_BIN"]
@@ -103,7 +118,11 @@ jobs:
           print("DISTINCT_DOCUMENTS", len(expected_paths), flush=True)
 
           def command(name, args):
-              result = subprocess.run(args, capture_output=True, text=True, timeout=1200)
+              limit = int(os.environ.get("AUDIT_LINTER_TIMEOUT", "1200"))
+              try:
+                  result = subprocess.run(args, capture_output=True, text=True, timeout=limit)
+              except subprocess.TimeoutExpired:
+                  raise SystemExit(f"{name}: the linter timed out after {limit} s") from None
               (out / (name + ".stdout")).write_text(result.stdout)
               (out / (name + ".stderr")).write_text(result.stderr)
               print("COMMAND", name, "EXIT", result.returncode, flush=True)
@@ -140,7 +159,7 @@ jobs:
                       ) from None
                   # Every document needs a boolean gate verdict. `false` is allowed in the
                   # diagnostic scans, which may fail, and not in the authored scan.
-                  bad = gate_problems(
+                  bad = path_problems(name, reports[name]) + gate_problems(
                       name, reports[name], allow_false=name != "authored"
                   )
                   if bad:

@@ -22,7 +22,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "markdown-audit.yml"
 HOSTILE_NAME = "::error::pwned::add-mask::x"
 
 _STUB_SLOPVAC = f"""#!{sys.executable}
-import json, os, sys
+import json, os, sys, time
 from pathlib import Path
 
 args = sys.argv[1:]
@@ -30,6 +30,8 @@ out = Path(args[args.index("--out") + 1])
 files = args[args.index("--out") + 2:]
 scan = out.stem
 case = json.loads(Path(os.environ["AUDIT_CASE"]).read_text())
+if case.get(scan + "-sleep"):
+    time.sleep(30)
 documents = [
     {{
         "path": path,
@@ -122,6 +124,7 @@ def run_audit(root: Path, case: dict) -> subprocess.CompletedProcess[str]:
         "PATH": f"{root / 'bin'}{os.pathsep}{os.environ['PATH']}",
         "AUDIT_CASE": str(case_file),
         "TMPDIR": str(scratch),
+        **case.get("env", {}),
         "SLOPVAC_BIN": str(root / "bin" / "slopvac"),
         "GITHUB_STEP_SUMMARY": str(root / "summary.md"),
     }
