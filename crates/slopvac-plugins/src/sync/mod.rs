@@ -473,6 +473,8 @@ impl<'a> Syncer<'a> {
         })?;
         let exec = self.executables.get(&pack.id).cloned().unwrap_or_default();
         let done = extract_targz(file, &self.store.trees(), &exec, self.limits).map_err(extract)?;
+        #[cfg(feature = "test-support")]
+        self.store.observe(&done.root);
         self.store.record(&pack.digest, &done.hash)?;
         let change = match before {
             TreeState::Intact(dir) if *dir == done.root => Change::Unchanged,
@@ -827,7 +829,10 @@ impl<'a> Syncer<'a> {
         let expected = Self::locked_tree_hash(pack)?;
         let dir = self.store.tree_dir(&expected);
         if fs::symlink_metadata(&dir).is_ok() {
-            match verify_tree_capturing(&dir, &expected) {
+            let verified = verify_tree_capturing(&dir, &expected);
+            #[cfg(feature = "test-support")]
+            self.store.observe(&dir);
+            match verified {
                 Ok(manifest) => return Ok(Acquired::Stored(dir, manifest)),
                 Err(ExtractError::Tampered { .. }) => {
                     if matches!(self.network, Network::Offline) {
@@ -886,6 +891,8 @@ impl<'a> Syncer<'a> {
                 actual: actual.to_string(),
             });
         }
+        #[cfg(feature = "test-support")]
+        self.store.observe(staged.root());
         Ok(Acquired::Staged(Box::new(staged)))
     }
 
