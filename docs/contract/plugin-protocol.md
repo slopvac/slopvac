@@ -362,8 +362,9 @@ Only recipes return paths. Each is relative to the project root with the same re
 
 ## 10. Error codes
 
-Errors use the JSON-RPC error object. `code` is numeric. `data.slopvac_code` is the stable kebab-case string that policies.md section 3.5 requires, and the schema requires it on every error a plugin sends. A numeric code never changes meaning. Messages are not an interface.
+Errors use the JSON-RPC error object. `code` is numeric. `data.slopvac_code` is the stable kebab-case string that policies.md section 3.5 requires, and the schema requires it on every error a plugin sends. A numeric code never changes meaning. Messages are not an interface. Both tables below are generated from the host's code table in `crates/slopvac-plugins/src/error_codes.rs`. A test fails when this text differs from it, so change the table in that file and paste the text the test prints.
 
+<!-- generated:rpc-codes begin -->
 | Code | `slopvac_code` | Meaning |
 |---|---|---|
 | -32700 | `parse-error` | The body is not valid JSON. |
@@ -382,16 +383,21 @@ Errors use the JSON-RPC error object. `code` is numeric. `data.slopvac_code` is 
 | -32009 | `extract-malformed` | The bytes break the format, or an embedded payload does not decode. |
 | -32010 | `extract-budget` | A binary extractor hit a limit. |
 | -32011 | `binary-encrypted` | The container is encrypted or protected by a password. A plugin sends it for an encrypted OpenDocument package, and the host raises it for an encrypted Office Open XML package (section 5.5.4). |
+<!-- generated:rpc-codes end -->
 
 The range -32099 to -32000 is the slopvac range. The plugin may add codes from -32050 to -32099 for its own use if it also sets `data.slopvac_code`, and the host treats them as `internal-error`. The host reserves the rest of the range.
 
 The host raises these codes in its own diagnostics. They have no numeric code, because no message carries them:
 
+<!-- generated:host-codes begin -->
 | `slopvac_code` | Cause |
 |---|---|
 | `plugin-untrusted` | The content hash has no recorded trust. The message prints the `slopvac plugins trust` command. |
+| `trust-key-missing` | Trust records exist but the key they were made under is gone. |
+| `trust-key-mismatch` | The trust records were made under another key than the store's. |
+| `trust-key-unusable` | The trust key file is not private to the user or does not hold a key. |
 | `plugin-hash-mismatch` | The installed bytes differ from the hash that trust recorded. |
-| `plugin-not-code` | Reserved, not emitted yet: `slopvac plugins trust` or `untrust` named a data plugin, which runs no code and needs no trust. |
+| `plugin-not-code` | `slopvac plugins trust` or `untrust` named a data plugin, which runs no code and needs no trust. |
 | `plugin-timeout` | A timer in section 6.3 expired. |
 | `plugin-exited` | The process ended with requests pending. |
 | `plugin-protocol-violation` | A framing error, a limit breach or a duplicate key. |
@@ -400,6 +406,8 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 | `launcher-not-installed` | The running program did not install the plugin launcher, so the host cannot start a plugin or a git plugin source. Nothing was spawned. |
 | `plugin-declaration-mismatch` | The reply disagrees with the hashed manifest (section 4.3). |
 | `request-id-exhausted` | The request counter reached 2^53-1. |
+| `offline-network-needed` | A command that needs the network ran in offline mode. The update commands share this code. |
+| `plugin-usage` | The caller used the plugin wrongly, for example an undeclared hook. |
 | `binary-format-mismatch` | The signature and the name of a file disagree about its format (section 5.5.1). |
 | `binary-no-source` | A binary extractor found no embedded source in a valid container. The level depends on the name (section 5.5.4). |
 | `binary-input-changed` | A binary file grew between the preflight and the read (section 5.5.6). |
@@ -407,6 +415,7 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 | `input-unsupported` | The host's existing code for a named input that it does not lint. It also covers a file the user named whose format no enabled extractor reads, such as EPUB or PDF. The document goes in `unchecked`, `data.format` names the detected format (section 5.5.1), and the run exits 2. The binary extraction contract adds no code of its own for it. |
 | `extract-unsupported` | An `info` notice for content that an extractor skipped inside a document it read (section 5.5.4). A plugin lists the content in the result's `unsupported` field and sends no error number. The run exits 0. |
 | `extract-output-invalid` | The host validator rejects the output of a first-party (built-in) extractor (section 5.5). Output from a third-party plugin gets `plugin-output-invalid` instead. The cause is a slopvac bug, and the message points to the issue tracker. It is separate from `plugin-output-invalid`, which covers plugin output, and has the same severity and exit. |
+<!-- generated:host-codes end -->
 
 Binary extraction has four *shared* codes: `extract-unsupported`, `extract-malformed`, `extract-budget` and `extract-output-invalid`. Plugins, the native adapter and the host use the same strings. `binary-encrypted` and `binary-input-declined` sit outside that family, next to `binary-no-source`, `binary-format-mismatch` and `binary-format-ambiguous`.
 
