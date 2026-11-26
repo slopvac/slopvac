@@ -75,3 +75,13 @@ def test_the_audit_step_checks_every_report() -> None:
     # One call per report, with the authored scan the only one that rejects `false`.
     assert re.search(r"gate_problems\(\s*name,\s*reports\[name\],\s*allow_false=name != \"authored\"\s*\)", script)
     assert "raise SystemExit" in script.split("gate_problems", 1)[1]
+
+
+def test_the_cargo_cache_is_saved_only_by_a_push_to_main() -> None:
+    # The workflow is called from test.yml, where `github.event_name` is the caller's event:
+    # `pull_request`, `merge_group` or `push`. Only the push to main may save the cache.
+    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["inventory-and-audit"]["steps"]
+    (cache,) = [s for s in steps if str(s.get("uses", "")).startswith("Swatinem/rust-cache@")]
+    assert cache["with"]["save-if"] == (
+        "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
+    )
