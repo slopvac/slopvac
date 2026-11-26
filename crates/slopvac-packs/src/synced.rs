@@ -9,14 +9,17 @@ use std::collections::HashSet;
 
 use semver::Version;
 use slopvac_model::{ApiVersion, PackId};
+#[cfg(feature = "test-support")]
+use slopvac_plugins::extract::tree_hash_capturing_files_observed;
 use slopvac_plugins::extract::{ExtractError, Limits as ExtractLimits, tree_hash_capturing_files};
 use slopvac_plugins::lock::{LockedPack, Lockfile, PackId as LockPackId, PackKind as LockKind};
 use slopvac_plugins::sign::RESERVED_ID;
 use slopvac_plugins::sync::{Store, SyncError};
 
 use crate::messages::PackMessage;
+use crate::source::MemorySource;
 use crate::{
-    Budget, Limits, LoadedPack, MemorySource, PackError, PackKind, Packs, Source, to_lock_id,
+    Budget, Limits, LoadedPack, PackError, PackKind, Packs, Source, to_lock_id,
 };
 
 /// Most bytes of one plugin tree a load keeps in memory.
@@ -46,6 +49,15 @@ pub enum SyncedError {
     Tampered {
         /// The plugin id.
         id: String,
+    },
+    /// The stored tree is over the number of bytes a load keeps in memory. The tree is not
+    /// known to be damaged.
+    #[error("{}", PackMessage::TooLarge { id: String::from(.id), cap: *.cap })]
+    TooLarge {
+        /// The plugin id.
+        id: String,
+        /// The limit, in bytes.
+        cap: u64,
     },
     /// The store could not be read.
     #[error("{}", PackMessage::StoreUnreadable { id: String::from(.id) })]
@@ -111,6 +123,7 @@ impl SyncedError {
             Self::NotLocked { .. } => code_of!(NotLocked { id }),
             Self::NotInstalled { .. } => code_of!(NotInstalled { id }),
             Self::Tampered { .. } => code_of!(Tampered { id }),
+            Self::TooLarge { .. } => code_of!(TooLarge { id, cap }),
             Self::StoreUnreadable { .. } => code_of!(StoreUnreadable { id }),
             Self::ApiUnsupported { .. } => code_of!(ApiUnsupported { id, api }),
             Self::ManifestMismatch { .. } => code_of!(ManifestMismatch { id, field }),
@@ -247,14 +260,53 @@ pub fn load_synced(
 /// that crosses a budget, so no later pack is read. A caller that loaded the core pack through
 /// the same `budget` makes the budget cover the whole run.
 ///
+/// A load keeps the files of one plugin tree in memory while it hashes them, up to 32 MiB in all.
+/// A larger tree is refused with [`SyncedError::TooLarge`], which says the tree is too big for
+/// a load and nothing about its integrity.
+///
 /// # Errors
-/// As [`load_synced`], and [`PackError::Budget`] (wrapped in
-/// [`SyncedError::Pack`]) when a budget is crossed.
+/// As [`load_synced`], [`SyncedError::TooLarge`] for a tree over that limit, and
+/// [`PackError::Budget`] (wrapped in [`SyncedError::Pack`]) when a budget is crossed.
 pub fn load_synced_within(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
     budget: &mut Budget,
+) -> Result<Vec<LoadedPack>, SyncedError> {
+    load_inner(
+        requested,
+        lock,
+        store,
+        budget,
+        #[cfg(feature = "test-support")]
+        None,
+    )
+}
+
+/// Test seam: [`load_synced_within`], and `after_hash` runs for each file of a plugin tree right
+/// after the pass that hashes it has read that file. A test changes the file on disk there, at
+/// the one moment a second read would see other bytes.
+///
+/// # Errors
+/// As [`load_synced_within`].
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn load_synced_observed(
+    requested: &[PackId],
+    lock: &Lockfile,
+    store: &Store,
+    budget: &mut Budget,
+    after_hash: &mut dyn FnMut(&str, &Path),
+) -> Result<Vec<LoadedPack>, SyncedError> {
+    load_inner(requested, lock, store, budget, Some(after_hash))
+}
+
+fn load_inner(
+    requested: &[PackId],
+    lock: &Lockfile,
+    store: &Store,
+    budget: &mut Budget,
+    #[cfg(feature = "test-support")] mut after_hash: Option<&mut dyn FnMut(&str, &Path)>,
 ) -> Result<Vec<LoadedPack>, SyncedError> {
     let mut loaded: Vec<LoadedPack> = Vec::new();
     for locked in dependency_order(requested, lock)? {
@@ -280,7 +332,14 @@ pub fn load_synced_within(
         };
         // One pass hashes the tree and keeps its files, so the pack below is read from the
         // bytes the hash covers and no file is opened a second time.
-        let files = match tree_hash_capturing_files(&tree.dir, PLUGIN_TREE_CAP) {
+        #[cfg(feature = "test-support")]
+        let hashed = match after_hash.as_deref_mut() {
+            Some(observer) => tree_hash_capturing_files_observed(&tree.dir, PLUGIN_TREE_CAP, observer),
+            None => tree_hash_capturing_files(&tree.dir, PLUGIN_TREE_CAP),
+        };
+        #[cfg(not(feature = "test-support"))]
+        let hashed = tree_hash_capturing_files(&tree.dir, PLUGIN_TREE_CAP);
+        let files = match hashed {
             Ok((hash, files)) if hash == tree.hash => files,
             Err(ExtractError::Io { what, source }) => {
                 return Err(SyncedError::StoreUnreadable {
@@ -290,6 +349,9 @@ pub fn load_synced_within(
                         source: ExtractError::Io { what, source },
                     }),
                 });
+            }
+            Err(ExtractError::CaptureLimit { cap, .. }) => {
+                return Err(SyncedError::TooLarge { id, cap });
             }
             _ => return Err(SyncedError::Tampered { id }),
         };

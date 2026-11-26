@@ -122,6 +122,9 @@ impl<'a> InstalledPlugins<'a> {
                 }
                 .into());
             }
+            Err(ExtractError::CaptureLimit { cap, .. }) => {
+                return Err(SyncedError::TooLarge { id: name, cap }.into());
+            }
             Err(_) => return Err(SyncedError::Tampered { id: name }.into()),
         };
         if hash != expected {

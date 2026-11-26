@@ -1,8 +1,10 @@
 //! Read `.slopvac/plugins.lock` of a project.
 
+#[cfg(feature = "test-support")]
 use std::cell::RefCell;
 use std::fmt;
 use std::path::Path;
+#[cfg(feature = "test-support")]
 use std::rc::Rc;
 
 use slopvac_fs::{InputKind, ReadOptions, read_capped_regular_to_string};
@@ -40,16 +42,19 @@ impl std::error::Error for LockReadError {
     }
 }
 
+#[cfg(feature = "test-support")]
 thread_local! {
     /// What a test hung on the lock reader of this thread.
     static OBSERVER: RefCell<Option<Rc<dyn Fn()>>> = const { RefCell::new(None) };
 }
 
 /// Ends the observation that [`observe_lock_reads`] started, when dropped.
+#[cfg(feature = "test-support")]
 #[doc(hidden)]
 #[must_use]
 pub struct LockReadObservation(());
 
+#[cfg(feature = "test-support")]
 impl Drop for LockReadObservation {
     fn drop(&mut self) {
         OBSERVER.with(|slot| *slot.borrow_mut() = None);
@@ -59,6 +64,7 @@ impl Drop for LockReadObservation {
 /// Call `observer` after every read of a lock file on this thread, however the read is reached,
 /// until the returned guard is dropped. A test counts the reads of one command with it, and
 /// changes the file between two of them.
+#[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub fn observe_lock_reads(observer: impl Fn() + 'static) -> LockReadObservation {
     OBSERVER.with(|slot| *slot.borrow_mut() = Some(Rc::new(observer)));
@@ -74,9 +80,12 @@ pub fn observe_lock_reads(observer: impl Fn() + 'static) -> LockReadObservation 
 /// the second keeps the location only, never the rejected text.
 pub fn read_project_lock(project_root: &Path, required: bool) -> Result<Lockfile, LockReadError> {
     let read = read_lock_file(project_root, required);
-    let observer = OBSERVER.with(|slot| slot.borrow().clone());
-    if let Some(observer) = observer {
-        observer();
+    #[cfg(feature = "test-support")]
+{
+        let observer = OBSERVER.with(|slot| slot.borrow().clone());
+        if let Some(observer) = observer {
+            observer();
+        }
     }
     read
 }

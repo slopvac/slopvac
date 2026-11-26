@@ -172,7 +172,8 @@ impl Client {
     /// proves that a path makes no request by asserting zero.
     #[doc(hidden)]
     #[must_use]
-    pub fn counting_for_tests(
+    #[cfg(feature = "test-support")]
+pub fn counting_for_tests(
         creds: Box<dyn CredentialSource>,
         attempts: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     ) -> Self {

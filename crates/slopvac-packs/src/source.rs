@@ -43,6 +43,15 @@ pub enum SourceError {
         /// The cap the file went over, in bytes.
         cap: u64,
     },
+    /// A file that must be text is not valid UTF-8. The cause keeps the offset only, never the bytes.
+    #[error("{}", PackMessage::FileNotText { path: slopvac_sanitize::line(.path) })]
+    NotText {
+        /// The pack-relative path of the file.
+        path: String,
+        /// Where the text stops being UTF-8.
+        #[source]
+        cause: std::str::Utf8Error,
+    },
     /// The pack holds a link.
     #[error("{}", PackMessage::FileLink { path: slopvac_sanitize::line(.path) })]
     Link {
@@ -64,6 +73,7 @@ impl SourceError {
     pub fn code(&self) -> Option<&'static str> {
         match self {
             Self::Link { .. } => Some(code_of!(FileLink { path })),
+            Self::NotText { .. } => Some(code_of!(FileNotText { path })),
             Self::TooManyEntries => Some(code_of!(TooManyEntries { limit })),
             Self::TooLarge { cap } => slopvac_rules::LoadErrorKind::TooLarge(*cap).code(),
             Self::StyleTooLarge { .. } => Some(slopvac_config::Code::StyleTooLarge.as_str()),
@@ -191,14 +201,14 @@ impl DirSource {
 /// A pack held in memory: the files of a tree exactly as one hash pass read them, so a pack
 /// loaded from it never opens a file a second time.
 #[derive(Debug, Clone)]
-pub struct MemorySource {
+pub(crate) struct MemorySource {
     files: std::collections::BTreeMap<String, Vec<u8>>,
 }
 
 impl MemorySource {
     /// A source over `files`, keyed by pack-relative path with `/` separators.
     #[must_use]
-    pub fn new(files: std::collections::BTreeMap<String, Vec<u8>>) -> Self {
+    pub(crate) fn new(files: std::collections::BTreeMap<String, Vec<u8>>) -> Self {
         Self { files }
     }
 
@@ -209,10 +219,12 @@ impl MemorySource {
         if bytes.len() as u64 > cap {
             return Err(SourceError::TooLarge { cap });
         }
-        String::from_utf8(bytes.clone()).map_err(|_| {
-            let e = std::io::Error::new(std::io::ErrorKind::InvalidData, "not UTF-8");
-            SourceError::Read(slopvac_fs::Error::read(&e))
-        })
+        std::str::from_utf8(bytes)
+            .map(str::to_owned)
+            .map_err(|cause| SourceError::NotText {
+                path: path.to_owned(),
+                cause,
+            })
     }
 }
 
@@ -349,6 +361,9 @@ mod tests {
     #[test]
     fn a_memory_source_refuses_a_file_that_is_not_text() {
         let path = PackPath::parse("bin/tool").unwrap();
-        assert!(matches!(source().read(&path), Err(SourceError::Read(_))));
+        assert!(matches!(
+            source().read(&path),
+            Err(SourceError::NotText { .. })
+        ));
     }
 }

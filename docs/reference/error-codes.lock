@@ -701,6 +701,7 @@ plugin-spawn-failed error
 plugin-store-unreadable error
 plugin-tampered error
 plugin-timeout error
+plugin-too-large error
 plugin-too-many-entries error
 plugin-untrusted error
 plugin-usage error
@@ -757,6 +758,7 @@ plugins-command-path text
 plugins-config-id-invalid text
 plugins-config-range-invalid text
 plugins-detail-withheld text
+plugins-extract-capture-limit text
 plugins-extract-changed text
 plugins-extract-collision text
 plugins-extract-compressed-size text

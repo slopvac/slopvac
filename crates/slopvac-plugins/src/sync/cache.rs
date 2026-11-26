@@ -50,13 +50,16 @@ pub struct StoreLock {
 #[derive(Debug, Clone)]
 pub struct Store {
     root: PathBuf,
+    #[cfg(feature = "test-support")]
     observer: Option<ReadObserver>,
 }
 
 /// What a test hangs on the read boundary of the store.
+#[cfg(feature = "test-support")]
 #[derive(Clone)]
 struct ReadObserver(std::sync::Arc<dyn Fn(&Path) + Send + Sync>);
 
+#[cfg(feature = "test-support")]
 impl std::fmt::Debug for ReadObserver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("ReadObserver")
@@ -69,6 +72,7 @@ impl Store {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self {
             root: root.into(),
+            #[cfg(feature = "test-support")]
             observer: None,
         }
     }
@@ -78,7 +82,8 @@ impl Store {
     /// second read of the same path would see other bytes.
     #[doc(hidden)]
     #[must_use]
-    pub fn with_read_observer(
+    #[cfg(feature = "test-support")]
+pub fn with_read_observer(
         mut self,
         observer: std::sync::Arc<dyn Fn(&Path) + Send + Sync>,
     ) -> Self {
@@ -87,7 +92,8 @@ impl Store {
     }
 
     /// Tell the observer, if a test set one, that `path` was just checked.
-    pub(super) fn observe(&self, path: &Path) {
+    #[cfg(feature = "test-support")]
+pub(super) fn observe(&self, path: &Path) {
         if let Some(observer) = &self.observer {
             (observer.0)(path);
         }
@@ -168,7 +174,8 @@ impl Store {
             && meta.len() <= max
             && hash_file(&path).is_ok_and(|actual| actual == *digest);
         if ok {
-            self.observe(&path);
+            #[cfg(feature = "test-support")]
+self.observe(&path);
             Some(path)
         } else {
             let _ = fs::remove_file(&path);

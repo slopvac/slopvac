@@ -299,6 +299,42 @@ fn a_pack_two_packs_require_loads_once() {
 }
 
 #[test]
+fn a_data_plugin_loads_the_rule_file_its_hash_covered_not_the_one_on_disk() {
+    let mut w = World::new();
+    let tree = w.install(&Spec::new("acme").rules(&["alpha"]));
+    // After the file is hashed, the file on disk gains two rules. A load that opened it a second
+    // time would see three rules; the load keeps the one rule the hash covered.
+    let swapped = Spec::new("acme").rules(&["alpha", "beta", "gamma"]);
+    let replacement = swapped
+        .files
+        .iter()
+        .find(|(name, _)| *name == "categories/c.json")
+        .map(|(_, text)| text.clone())
+        .unwrap();
+    let mut seen = Vec::new();
+    let mut swap = |rel: &str, path: &Path| {
+        seen.push(rel.to_owned());
+        if rel == "categories/c.json" {
+            fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
+            fs::write(path, &replacement).unwrap();
+        }
+    };
+
+    let packs = slopvac_packs::load_synced_observed(
+        &ids(&["acme"]),
+        &w.lock(),
+        &w.store(),
+        &mut Budget::default(),
+        &mut swap,
+    )
+    .unwrap();
+
+    assert!(seen.iter().any(|r| r == "categories/c.json"), "{seen:?}");
+    assert_eq!(fs::read_to_string(tree.join("categories/c.json")).unwrap(), replacement);
+    assert_eq!(packs[0].rules().len(), 1);
+}
+
+#[test]
 fn a_tampered_pack_tree_fails_the_load_with_a_typed_error() {
     let mut w = World::new();
     let tree = w.install(&Spec::new("acme"));
@@ -928,6 +964,7 @@ fn a_budget_refusal_exposes_its_budget_name_and_limit(
 #[case::not_locked(SyncedError::NotLocked { id: "a".into() }, Some("plugin-not-locked"))]
 #[case::not_installed(SyncedError::NotInstalled { id: "a".into() }, Some("plugin-not-installed"))]
 #[case::tampered(SyncedError::Tampered { id: "a".into() }, Some("plugin-tampered"))]
+#[case::too_large(SyncedError::TooLarge { id: "a".into(), cap: 7 }, Some("plugin-too-large"))]
 #[case::api(SyncedError::ApiUnsupported { id: "a".into(), api: 9 }, Some("plugin-api-unsupported"))]
 #[case::mismatch(SyncedError::ManifestMismatch { id: "a".into(), field: "id" }, Some("plugin-manifest-mismatch"))]
 #[case::cycle(SyncedError::RequiresCycle { cycle: vec!["a".into(), "a".into()] }, Some("plugin-requires-cycle"))]

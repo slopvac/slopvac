@@ -122,6 +122,14 @@ pub enum ExtractError {
         /// The tree.
         path: PathBuf,
     },
+    /// A file the caller asked to keep in memory is over the limit the caller set. Nothing is
+    /// wrong with the tree; the caller cannot hold it.
+    CaptureLimit {
+        /// The file, relative to the tree root.
+        path: String,
+        /// The limit it went over, in bytes.
+        cap: u64,
+    },
     /// A file system operation failed.
     Io {
         /// The operation.
@@ -140,6 +148,11 @@ impl ExtractError {
             Self::Malformed(m) => TransportText::ExtractMalformed { detail: m.clone() }.to_string(),
             Self::Tampered { path } => TransportText::ExtractTampered {
                 path: path.to_string_lossy().into_owned(),
+            }
+            .to_string(),
+            Self::CaptureLimit { path, cap } => TransportText::ExtractCaptureLimit {
+                path: path.clone(),
+                cap: *cap,
             }
             .to_string(),
             Self::Io { what, source } => TransportText::ExtractIo {
@@ -1269,13 +1282,13 @@ struct Capture<'a> {
     inner: &'a mut File,
     kept: Vec<u8>,
     /// Most bytes to keep. A file over it is still hashed, and `over` says it did not fit.
-    cap: usize,
+    cap: u64,
     over: bool,
 }
 
 /// Most bytes a hash pass keeps of one file it is asked to capture by name. The executable
 /// list has its own bound, the size of the tree, so a valid list over this still verifies.
-const MAX_CAPTURE_BYTES: usize = 1 << 20;
+const MAX_CAPTURE_BYTES: u64 = 1 << 20;
 
 /// What a hash pass keeps besides the executable list.
 enum Keep<'a> {
@@ -1290,13 +1303,29 @@ enum Keep<'a> {
 impl Read for Capture<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
-        if self.kept.len() + n <= self.cap {
+        // `usize` widens to `u64` without loss on every supported target.
+        if self.kept.len() as u64 + n as u64 <= self.cap {
             self.kept.extend_from_slice(&buf[..n]);
         } else {
             self.over = true;
         }
         Ok(n)
     }
+}
+
+/// Test seam: [`tree_hash_capturing_files`], with `after_hash` called for each file right after
+/// the pass has read it.
+///
+/// # Errors
+/// As [`tree_hash_capturing_files`].
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn tree_hash_capturing_files_observed(
+    dir: &Path,
+    cap: u64,
+    after_hash: &mut dyn FnMut(&str, &Path),
+) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
+    hash_walk(dir, &Keep::All(cap), after_hash)
 }
 
 /// Recompute the hash of a stored tree.
@@ -1442,7 +1471,7 @@ fn hash_walk(
                     let cap = if wanted {
                         match keep {
                             Keep::All(_) => keep_left,
-                            _ => MAX_CAPTURE_BYTES as u64,
+                            _ => MAX_CAPTURE_BYTES,
                         }
                     } else {
                         budget
@@ -1450,17 +1479,28 @@ fn hash_walk(
                     let mut tee = Capture {
                         inner: &mut f,
                         kept: Vec::new(),
-                        cap: usize::try_from(cap).unwrap_or(usize::MAX),
+                        cap,
                         over: false,
                     };
                     let hashed = hash_stream(&mut tee, None, &rel, Some(budget))?;
                     if tee.over {
-                        return Err(refused(
-                            TransportText::ExtractTreeSize { path: rel.clone() }.to_string(),
-                        ));
+                        // A file kept for the caller over its cap is a limit of its own. The
+                        // executable list over the tree budget is a tree size violation.
+                        return Err(if wanted {
+                            ExtractError::CaptureLimit {
+                                path: rel.clone(),
+                                cap: match keep {
+                                    Keep::All(total) => *total,
+                                    _ => MAX_CAPTURE_BYTES,
+                                },
+                            }
+                        } else {
+                            refused(TransportText::ExtractTreeSize { path: rel.clone() }.to_string())
+                        });
                     }
                     if wanted {
-                        keep_left = keep_left.saturating_sub(hashed.1);
+                        // The capture held at most `keep_left` bytes, so this cannot underflow.
+                        keep_left -= tee.kept.len() as u64;
                         if rel == EXEC_SIDECAR {
                             sidecar = Some(tee.kept.clone());
                         }
@@ -1854,27 +1894,54 @@ mod single_read_tests {
     }
 
     #[test]
-    fn files_over_the_capture_total_are_refused() {
+    fn files_over_the_capture_total_are_a_limit_of_their_own() {
         let scratch = tempfile::tempdir().unwrap();
         fs::write(scratch.path().join("a"), vec![b'x'; 10]).unwrap();
         fs::write(scratch.path().join("b"), vec![b'y'; 10]).unwrap();
 
-        assert!(tree_hash_capturing_files(scratch.path(), 15).is_err());
+        let err = tree_hash_capturing_files(scratch.path(), 15).unwrap_err();
+
+        assert!(
+            matches!(err, ExtractError::CaptureLimit { ref path, cap: 15 } if path == "b"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_named_file_over_the_capture_cap_is_a_limit_of_its_own() {
+        let scratch = tempfile::tempdir().unwrap();
+        let big = vec![b'x'; usize::try_from(MAX_CAPTURE_BYTES).unwrap() + 1];
+        fs::write(scratch.path().join("m.toml"), big).unwrap();
+
+        let err = tree_hash_capturing(scratch.path(), "m.toml").unwrap_err();
+
+        assert!(
+            matches!(err, ExtractError::CaptureLimit { ref path, cap } if path == "m.toml" && cap == MAX_CAPTURE_BYTES),
+            "{err:?}"
+        );
     }
 
     #[test]
     fn an_executable_list_over_the_manifest_cap_still_hashes() {
+        // A sorted, unique list of files that exist, over 1 MiB: names of 66 bytes.
         let scratch = tempfile::tempdir().unwrap();
-        let list = "bin/some-file-name\n".repeat(60_000);
-        assert!(list.len() > MAX_CAPTURE_BYTES);
-        fs::write(scratch.path().join(EXEC_SIDECAR), list).unwrap();
+        let bin = scratch.path().join("bin");
+        fs::create_dir(&bin).unwrap();
+        let pad = "x".repeat(56);
+        let mut list = String::new();
+        for i in 0..19_000 {
+            let name = format!("{i:05}-{pad}");
+            fs::write(bin.join(&name), b"#!/bin/sh\n").unwrap();
+            list.push_str("bin/");
+            list.push_str(&name);
+            list.push('\n');
+        }
+        assert!(list.len() as u64 > MAX_CAPTURE_BYTES);
+        fs::write(scratch.path().join(EXEC_SIDECAR), &list).unwrap();
 
-        // The list is bounded by the tree, not by the capture cap: the refusal here, if any, is
-        // about the listed files being absent, never about the size of the list.
-        let err = tree_hash(scratch.path()).unwrap_err().to_string();
-        assert!(
-            !err.contains(EXEC_SIDECAR) || !err.to_lowercase().contains("size"),
-            "{err}"
-        );
+        let hash = tree_hash(scratch.path()).unwrap();
+
+        // The same hash through the capturing pass: the list is read once, whatever its size.
+        assert_eq!(tree_hash_capturing(scratch.path(), "m.toml").unwrap().0, hash);
     }
 }

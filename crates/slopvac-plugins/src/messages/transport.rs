@@ -370,6 +370,14 @@ pub(crate) enum TransportText {
         path: String,
         detail: String,
     },
+    /// A file the caller keeps in memory is over the caller's limit.
+    #[code("plugins-extract-capture-limit")]
+    #[text("`{path}` is over the {cap} byte limit for a file held in memory")]
+    ExtractCaptureLimit {
+        #[display_path]
+        path: String,
+        cap: u64,
+    },
     /// A file exceeds the tree byte bound.
     #[code("plugins-extract-tree-size")]
     #[text("`{path}` exceeds the tree size bound")]
@@ -1396,6 +1404,13 @@ mod tests {
                     detail: s("y"),
                 },
                 "`x`: y",
+            ),
+            (
+                T::ExtractCaptureLimit {
+                    path: s("x"),
+                    cap: 7,
+                },
+                "`x` is over the 7 byte limit for a file held in memory",
             ),
             (
                 T::ExtractTreeSize { path: s("x") },

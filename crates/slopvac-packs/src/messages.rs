@@ -35,6 +35,18 @@ pub(crate) enum PackMessage {
         "the installed tree of plugin `{id}` differs from its lock digest; run `slopvac plugins sync` to restore it"
     )]
     Tampered { id: String },
+    /// A plugin file that must be text is not valid UTF-8.
+    #[code("plugin-file-not-text")]
+    #[message("plugin file `{path}` is not valid UTF-8 text")]
+    FileNotText { path: String },
+    /// The installed tree of a plugin is over what a load keeps in memory.
+    #[code("plugin-too-large")]
+    #[message("the installed tree of plugin `{id}` is over the {cap} byte limit for a load")]
+    TooLarge {
+        id: String,
+        #[count]
+        cap: u64,
+    },
     /// The store could not be read for a plugin.
     #[code("plugin-store-unreadable")]
     #[message("cannot read the installed tree of plugin `{id}`")]

@@ -60,7 +60,14 @@ tracing.workspace = true
 unicode-normalization.workspace = true
 ureq.workspace = true
 
+[features]
+# Test seams: hooks that count or observe the reads, requests and source uses of one test. Only
+# the dev-dependency below turns it on, so a release build carries none of them.
+test-support = []
+
 [dev-dependencies]
+# Enables `test-support` for this package's own test and doc builds.
+slopvac-plugins = { workspace = true, features = ["test-support"] }
 base64.workspace = true
 jsonschema.workspace = true
 minisign.workspace = true
