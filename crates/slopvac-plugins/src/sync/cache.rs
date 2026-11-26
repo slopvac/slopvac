@@ -50,13 +50,44 @@ pub struct StoreLock {
 #[derive(Debug, Clone)]
 pub struct Store {
     root: PathBuf,
+    observer: Option<ReadObserver>,
+}
+
+/// What a test hangs on the read boundary of the store.
+#[derive(Clone)]
+struct ReadObserver(std::sync::Arc<dyn Fn(&Path) + Send + Sync>);
+
+impl std::fmt::Debug for ReadObserver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ReadObserver")
+    }
 }
 
 impl Store {
     /// A store at `root`. Nothing is created until the first write.
     #[must_use]
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            observer: None,
+        }
+    }
+
+    /// Call `observer` with the path of each cached file right after the store has checked its
+    /// bytes against its name. A test uses it to change the file at the one moment that a
+    /// second read of the same path would see other bytes.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_read_observer(mut self, observer: std::sync::Arc<dyn Fn(&Path) + Send + Sync>) -> Self {
+        self.observer = Some(ReadObserver(observer));
+        self
+    }
+
+    /// Tell the observer, if a test set one, that `path` was just checked.
+    pub(super) fn observe(&self, path: &Path) {
+        if let Some(observer) = &self.observer {
+            (observer.0)(path);
+        }
     }
 
     /// The data directory.
@@ -134,6 +165,7 @@ impl Store {
             && meta.len() <= max
             && hash_file(&path).is_ok_and(|actual| actual == *digest);
         if ok {
+            self.observe(&path);
             Some(path)
         } else {
             let _ = fs::remove_file(&path);

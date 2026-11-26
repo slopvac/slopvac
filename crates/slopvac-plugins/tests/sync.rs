@@ -1712,3 +1712,63 @@ mod python {
         assert_eq!(python_states(&t), [PythonState::NotChecked]);
     }
 }
+
+fn locked_style(lock: &Lockfile) -> &slopvac_plugins::lock::LockedPack {
+    lock.get(&"style".parse::<PackId>().unwrap()).unwrap()
+}
+
+#[test]
+fn an_online_syncer_with_a_cache_miss_checks_the_cache_only_and_makes_no_request() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let pol = policy("acme", &[&key]);
+    let lock = oci_lock(&server.registry(), &p);
+    let store = env.store();
+    let revs = env.revocations(NOW);
+
+    let err = Syncer::new(&store, Network::Online(&c), &pol, env.project.path(), &revs)
+        .verify_cached_signature(locked_style(&lock))
+        .unwrap_err();
+
+    assert_eq!(err.code(), "offline-plugin-missing");
+    assert!(server.requests().is_empty(), "{:?}", server.requests());
+    assert!(
+        !env.data.path().join("slopvac/blobs").exists(),
+        "the check wrote into the cache"
+    );
+}
+
+#[test]
+fn a_cached_manifest_swapped_after_its_digest_check_does_not_change_what_is_verified() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let pol = policy("acme", &[&key]);
+    let lock = oci_lock(&server.registry(), &p);
+    run(&env, Network::Online(&c), &pol, &lock).unwrap();
+    let manifest = env
+        .data
+        .path()
+        .join("slopvac/blobs")
+        .join(p.digest.split_once(':').unwrap().1);
+    // Right after the store has checked the manifest against its digest, replace the file.
+    let target = manifest.clone();
+    let store = env
+        .store()
+        .with_read_observer(std::sync::Arc::new(move |path: &Path| {
+            if path == target {
+                fs::write(path, b"{}").unwrap();
+            }
+        }));
+    let revs = env.revocations(NOW);
+
+    let verified = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+        .verify_cached_signature(locked_style(&lock));
+
+    assert!(verified.is_ok(), "{verified:?}");
+}

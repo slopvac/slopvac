@@ -13,6 +13,7 @@
 mod common;
 mod oci_server;
 mod revocations;
+mod signed_fixture;
 mod support;
 
 use std::collections::BTreeMap;
@@ -23,7 +24,7 @@ use std::path::{Path, PathBuf};
 use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
 use slopvac_plugins::extract::tree_hash;
-use slopvac_plugins::lock::{PackId, VersionReq, parse_version_req};
+use slopvac_plugins::lock::{LockedPack, PackId, VersionReq, parse_version_req};
 use slopvac_plugins::oci::{Anonymous, Client};
 use slopvac_plugins::pyenv::EnvStore;
 use slopvac_plugins::revoke::Revocations;
@@ -253,8 +254,8 @@ impl TreeLoader {
 }
 
 impl PluginLoader for TreeLoader {
-    fn load(&self, id: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
-        if id.as_str() != self.id {
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
+        if locked.id.as_str() != self.id {
             return Err("no such plugin tree".to_owned());
         }
         let vp = VerifiedPlugin {
@@ -920,7 +921,7 @@ mod python_env {
     }
 
     impl PluginLoader for PyLoader {
-        fn load(&self, _: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
+        fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
             Ok(self.parts())
         }
     }
@@ -991,8 +992,8 @@ struct OutsideProgram {
 }
 
 impl PluginLoader for OutsideProgram {
-    fn load(&self, id: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
-        let (vp, mut spec) = self.inner.load(id)?;
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
+        let (vp, mut spec) = self.inner.load(locked)?;
         spec.program.clone_from(&self.program);
         Ok((vp, spec))
     }
@@ -1177,7 +1178,7 @@ fn a_failed_sync_keeps_no_absolute_path_anywhere_in_its_source_chain() {
 struct FailingLoader;
 
 impl PluginLoader for FailingLoader {
-    fn load(&self, _: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
+    fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
         Err("cannot read /home/someone/secret-dir/plugin.toml".to_owned())
     }
 }
@@ -1685,4 +1686,119 @@ mod native_archive {
             .mode();
         assert_eq!(mode & 0o111, 0o111, "mode {mode:o}");
     }
+}
+
+// ---- round 5: one lock snapshot, and where the trusted bytes came from ------------------
+
+const NOT_BEFORE: &str = "2026-11-01T00:00:00Z";
+const GIT_PIN: &str = "0123456789abcdef0123456789abcdef01234567";
+
+/// The line of `plugins trust` output that says where the trusted bytes came from.
+fn provenance_line(out: &str) -> &str {
+    out.lines()
+        .find(|l| l.starts_with("source: "))
+        .unwrap_or_else(|| panic!("no provenance line in:\n{out}"))
+}
+
+/// A lock entry for the code plugin `fake` from the first-party namespace, signed by `p`.
+fn signed_oci_entry(p: &signed_fixture::Published) -> String {
+    format!(
+        "\n[[plugins]]\nid = \"fake\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"oci://r.example/slopvac/fake:1.0.0\"\ndigest = \"{}\"\n\n\
+         [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{NOT_BEFORE}\"\n",
+        p.digest, p.key_id
+    )
+}
+
+#[test]
+fn trust_of_a_signed_oci_plugin_prints_its_source_kind_and_the_verified_key_id() {
+    let f = Fixture::new();
+    let key = signed_fixture::Key::new();
+    let p = signed_fixture::publish(
+        &key,
+        "slopvac",
+        "fake",
+        "1.0.0",
+        NOT_BEFORE,
+        &[("slopvac-plugin.toml", b"x")],
+    );
+    p.cache_into(&f.cache());
+    f.write_lock(&[signed_oci_entry(&p)]);
+    let policy = KeyPolicy {
+        first_party: vec![key.public()],
+        ..KeyPolicy::default()
+    };
+    let ran = f.run(&["trust", "fake"], false, |s| {
+        s.loader(TreeLoader::new(f.base.path(), "fake")).policy(policy)
+    });
+    assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
+    let line = provenance_line(&ran.out);
+    assert!(line.starts_with("source: oci "), "{line}");
+    assert!(line.ends_with(&format!("; signed by {}", p.key_id)), "{line}");
+}
+
+#[rstest::rstest]
+#[case::path("path", "plugins/fake".to_owned())]
+#[case::git("git", format!("git+https://example.invalid/acme/fake.git@{GIT_PIN}"))]
+fn trust_of_an_unsigned_path_or_git_plugin_succeeds_and_says_it_is_unsigned(
+    #[case] kind: &str,
+    #[case] source: String,
+) {
+    let f = Fixture::new();
+    f.write_lock(&[code_path_entry("fake", &source, OTHER_HASH)]);
+    let ran = f.run(&["trust", "fake"], false, with_loader(&f));
+    assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
+    let line = provenance_line(&ran.out);
+    assert!(line.starts_with(&format!("source: {kind} ")), "{line}");
+    assert!(line.ends_with("; unsigned"), "{line}");
+}
+
+#[test]
+fn trust_of_an_unsigned_oci_entry_reports_sync_unsigned_and_records_nothing() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    let ran = f.run(&["trust", "fake"], false, with_loader(&f));
+    assert_eq!(ran.result.unwrap_err().code(), "sync-unsigned");
+    assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
+}
+
+/// A loader that records the entry it was given, then rewrites the lock under the command, as
+/// another process could between the command's read and the load.
+struct SwappingLoader {
+    inner: TreeLoader,
+    lock: PathBuf,
+    seen: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+}
+
+impl PluginLoader for SwappingLoader {
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
+        self.seen.borrow_mut().push(locked.digest.to_string());
+        let swapped = code_path_entry(
+            "fake",
+            &format!("git+https://example.invalid/acme/fake.git@{GIT_PIN}"),
+            HASH,
+        );
+        fs::write(&self.lock, format!("schema_version = 3\n{swapped}")).unwrap();
+        self.inner.load(locked)
+    }
+}
+
+#[test]
+fn the_entry_the_loader_gets_is_the_entry_the_command_read_and_reports() {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let loader = SwappingLoader {
+        inner: TreeLoader::new(f.base.path(), "fake"),
+        lock: f.project().join(".slopvac/plugins.lock"),
+        seen: std::rc::Rc::clone(&seen),
+    };
+    let ran = f.run(&["trust", "fake"], false, |s| s.loader(loader));
+    assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
+    assert_eq!(*seen.borrow(), [OTHER_HASH]);
+    assert!(
+        provenance_line(&ran.out).starts_with("source: path plugins/fake;"),
+        "{}",
+        ran.out
+    );
 }
