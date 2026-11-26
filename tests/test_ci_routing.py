@@ -315,6 +315,13 @@ def test_docs_and_python_changes_skip_the_rust_legs(paths, expected):
     assert {job: evaluate(JOBS[job]["if"], outputs) for job in HEAVY} == expected
 
 
+def test_the_generated_codes_file_routes_to_rust_and_the_docs_site():
+    # `slopvac-schemas check` regenerates the file in the Rust job, and the site reads it.
+    path = "docs/reference/plugin-protocol-codes.json"
+    assert in_class("rust", path)
+    assert in_class("docs-site", path)
+
+
 @pytest.mark.parametrize(
     "path",
     [

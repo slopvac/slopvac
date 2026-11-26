@@ -13,6 +13,15 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+    /// A data file could not be serialized.
+    #[error("cannot serialize {file}")]
+    Serialize {
+        /// The file name.
+        file: &'static str,
+        /// The cause.
+        #[source]
+        source: serde_json::Error,
+    },
     /// A type's schema is not a JSON object.
     #[error("the generated schema for {file} is not an object")]
     NotAnObject {

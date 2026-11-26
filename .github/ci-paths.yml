@@ -62,6 +62,8 @@ rust:
   - 'ast-grep/**'
   - 'sgconfig.yml'
   - 'docs/reference/error-codes.lock'
+  # Generated from the plugin host's code table. `slopvac-schemas check` compares it.
+  - 'docs/reference/plugin-protocol-codes.json'
   # Files outside crates/ that the crates embed with include_str!/include_bytes! or read
   # from their tests. tests/test_ci_routing.py derives the include_* paths from the
   # sources, so a new embedded input cannot escape this class.
@@ -115,6 +117,8 @@ docs-site:
   - 'scripts/docs/**'
   - 'tests/docs/**'
   - 'schemas/**'
+  # The site reads the plugin protocol code tables from this generated file.
+  - 'docs/reference/plugin-protocol-codes.json'
   - 'packages/slopvac-lint/src/slopvac/rules/**'
   - 'crates/**'
   - 'Cargo.toml'

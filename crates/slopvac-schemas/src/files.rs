@@ -13,13 +13,19 @@ use crate::link::{inline_defs, link_shared_defs_keeping};
 
 /// Where the generated files live, relative to the repository root.
 const SCHEMA_DIR: &str = "schemas/v3";
+/// Where the generated data files live, relative to the repository root.
+const REFERENCE_DIR: &str = "docs/reference";
+/// The section 10 code tables of the plugin protocol, generated from the host's code table.
+const PROTOCOL_CODES_FILE: &str = "plugin-protocol-codes.json";
 const DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
 
 /// One generated file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Generated {
-    /// File name inside `schemas/v3`.
+    /// The directory of the file, relative to the repository root.
+    pub dir: &'static str,
+    /// File name inside that directory.
     pub file: &'static str,
     /// The canonical JSON text.
     pub text: String,
@@ -29,15 +35,33 @@ pub struct Generated {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Drift {
-    /// File name inside `schemas/v3`.
+    /// File name. The diff header names its directory.
     pub file: &'static str,
     /// A unified diff from the committed text to the generated text.
     pub diff: String,
 }
 
-/// Generate every artifact in [`ARTIFACTS`] in memory.
+/// Generate every artifact in [`ARTIFACTS`] in memory, then the data file under
+/// `docs/reference` that the docs site reads.
 pub fn generate() -> Result<Vec<Generated>> {
-    generate_from(ARTIFACTS)
+    let mut files = generate_from(ARTIFACTS)?;
+    files.push(Generated {
+        dir: REFERENCE_DIR,
+        file: PROTOCOL_CODES_FILE,
+        text: protocol_codes_text()?,
+    });
+    Ok(files)
+}
+
+/// The host's section 10 tables as canonical JSON.
+fn protocol_codes_text() -> Result<String> {
+    let value = serde_json::to_value(slopvac_plugins::protocol_codes()).map_err(|source| {
+        Error::Serialize {
+            file: PROTOCOL_CODES_FILE,
+            source,
+        }
+    })?;
+    Ok(to_canonical_json(&value))
 }
 
 /// Generate the given artifacts in memory, in order. Each artifact may import only the files
@@ -66,6 +90,7 @@ pub fn generate_from(artifacts: &[Artifact]) -> Result<Vec<Generated>> {
     Ok(done
         .into_iter()
         .map(|(file, schema)| Generated {
+            dir: SCHEMA_DIR,
             file,
             text: to_canonical_json(&schema),
         })
@@ -117,7 +142,13 @@ fn build(
 pub fn write(root: &Path) -> Result<Vec<Generated>> {
     let generated = generate()?;
     for file in &generated {
-        let path = schema_path(root, file.file);
+        let path = generated_path(root, file);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|source| Error::Io {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
         fs::write(&path, &file.text).map_err(|source| Error::Io { path, source })?;
     }
     Ok(generated)
@@ -129,13 +160,13 @@ pub fn write(root: &Path) -> Result<Vec<Generated>> {
 pub fn check(root: &Path) -> Result<Vec<Drift>> {
     let mut drift = Vec::new();
     for file in generate()? {
-        let path = schema_path(root, file.file);
+        let path = generated_path(root, &file);
         let committed = fs::read_to_string(&path).map_err(|source| Error::Io {
             path: path.clone(),
             source,
         })?;
         if committed != file.text {
-            let name = format!("{SCHEMA_DIR}/{}", file.file);
+            let name = format!("{}/{}", file.dir, file.file);
             let diff = TextDiff::from_lines(&committed, &file.text)
                 .unified_diff()
                 .context_radius(3)
@@ -150,6 +181,6 @@ pub fn check(root: &Path) -> Result<Vec<Drift>> {
     Ok(drift)
 }
 
-fn schema_path(root: &Path, file: &str) -> PathBuf {
-    root.join(SCHEMA_DIR).join(file)
+fn generated_path(root: &Path, file: &Generated) -> PathBuf {
+    root.join(file.dir).join(file.file)
 }

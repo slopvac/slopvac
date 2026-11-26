@@ -44,7 +44,7 @@ fn main() -> ExitCode {
     let outcome = match name {
         "write" => slopvac_schemas::write(&root).map(|written| {
             for file in written {
-                println!("wrote schemas/v3/{}", file.file);
+                println!("wrote {}/{}", file.dir, file.file);
             }
             ExitCode::SUCCESS
         }),

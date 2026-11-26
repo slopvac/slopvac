@@ -63,30 +63,22 @@ required = []
 optional = ["document-path"]
 """
 
-CONTRACT = """\
-# Contract
-
-## 9. Other
-
-| 1 | `ignored` | Not an error. |
-
-## 10. Error codes
-
-<!-- generated:rpc-codes begin -->
-| Code | `slopvac_code` | Meaning |
-|---|---|---|
-| -32700 | `parse-error` | The body is not valid JSON. |
-| -32001 | `protocol-version-unsupported` | No common version. |
-<!-- generated:rpc-codes end -->
-
-<!-- generated:host-codes begin -->
-| `slopvac_code` | Cause |
-|---|---|
-| `plugin-timeout` | A timer expired. |
-<!-- generated:host-codes end -->
-
-## 11. Security
-"""
+CODES = {
+    "rpc": [
+        {
+            "code": -32700,
+            "slopvac_code": "parse-error",
+            "meaning": "The body is not valid JSON.",
+        },
+        {
+            "code": -32001,
+            "slopvac_code": "protocol-version-unsupported",
+            "meaning": "No common version.",
+        },
+    ],
+    "host": [{"slopvac_code": "plugin-timeout", "cause": "A timer expired."}],
+}
+CODES_FILE = "plugin-protocol-codes.json"
 
 RULES_YAML = """\
 id: demo
@@ -163,7 +155,7 @@ def sources(tmp_path: Path) -> dict[str, Path]:
         )
     )
     (schemas / "b.schema.json").write_text(_schema("b.schema.json"))
-    for name in ("plugin-protocol", "plugin-manifest", "common"):
+    for name in ("plugin-protocol", "plugin-manifest", "common", "plugin-protocol-codes"):
         shutil.copy(REAL_SCHEMAS / f"{name}.schema.json", schemas)
     (schemas / "config.schema.json").write_text(
         _schema("config.schema.json", **FIXTURE_CONFIG)
@@ -174,7 +166,9 @@ def sources(tmp_path: Path) -> dict[str, Path]:
         (packs / pack_id / "slopvac-plugin.toml").write_text(body)
     contract = tmp_path / "contract"
     contract.mkdir()
-    (contract / "plugin-protocol.md").write_text(CONTRACT)
+    reference = tmp_path / "reference"
+    reference.mkdir()
+    (reference / CODES_FILE).write_text(json.dumps(CODES, indent=2) + "\n")
     config = tmp_path / "site.toml"
     config.write_text(
         'site_url = "https://docs.example.org/tools/"\napi_version = "v3"\n'
@@ -184,6 +178,7 @@ def sources(tmp_path: Path) -> dict[str, Path]:
         "schemas": schemas,
         "packs": packs,
         "contract": contract,
+        "reference": reference,
         "config": config,
         "out": tmp_path / "out",
     }
@@ -197,7 +192,7 @@ def _run(sources: dict[str, Path], *extra: str) -> int:
             "--rules-dir", str(sources["rules"]),
             "--schemas-dir", str(sources["schemas"]),
             "--plugins-dir", str(sources["packs"]),
-            "--contract-dir", str(sources["contract"]),
+            "--reference-dir", str(sources["reference"]),
             *extra,
         ]
     )  # fmt: skip
@@ -301,7 +296,7 @@ def test_protocol_capabilities_show_declaration_offer_and_reply_fields(
     assert "| `capabilities.requiresNetwork` | boolean | yes |" in capabilities
 
 
-def test_protocol_errors_come_from_the_contract_tables(
+def test_protocol_errors_come_from_the_reference_file(
     sources: dict[str, Path],
 ) -> None:
     _run(sources)
@@ -309,7 +304,6 @@ def test_protocol_errors_come_from_the_contract_tables(
     errors = errors.split("## Definitions")[0]
     assert "| -32001 | `protocol-version-unsupported` | No common version. |" in errors
     assert "| `plugin-timeout` | A timer expired. |" in errors
-    assert "ignored" not in errors
 
 
 def test_protocol_definitions_follow_the_schema_with_fields(
@@ -319,14 +313,6 @@ def test_protocol_definitions_follow_the_schema_with_fields(
     page = _read(sources, "plugins/protocol.md")
     definition = page.split("### CancelParams")[1].split("###")[0]
     assert "| `id` | integer ([`RequestId`](#requestid)) | yes |" in definition
-
-
-def test_protocol_without_error_tables_in_the_contract_fails(
-    sources: dict[str, Path],
-) -> None:
-    (sources["contract"] / "plugin-protocol.md").write_text("# Contract\n")
-    with pytest.raises(SystemExit, match="Error codes"):
-        _run(sources)
 
 
 def test_manifest_reference_documents_fields_and_the_kind_rule(
@@ -421,7 +407,7 @@ def test_committed_schemas_contract_and_example_pack_render() -> None:
     import plugin_pages
 
     schemas = plugin_pages.SchemaSet(REAL_SCHEMAS)
-    protocol = plugin_pages.generate_protocol(schemas, ROOT / "docs" / "contract")
+    protocol = plugin_pages.generate_protocol(schemas, ROOT / "docs" / "reference")
     assert "| -32002 | `required-feature-missing` |" in protocol["plugins/protocol.md"]
     packs = plugin_pages.generate_packs(
         schemas, ROOT / "packages" / "slopvac-plugin" / "examples"
@@ -771,130 +757,151 @@ def test_a_pack_named_index_does_not_replace_the_packs_index(
 # --- error tables ----------------------------------------------------------
 
 
-def _with_contract(sources: dict[str, Path], new: str) -> None:
-    old = "| -32001 |"
-    assert old in CONTRACT
-    text = CONTRACT.replace(old, f"{new}\n{old}")
-    (sources["contract"] / "plugin-protocol.md").write_text(text)
+def _expected_rows(codes: dict) -> list[str]:
+    rows = [f"| {r['code']} | `{r['slopvac_code']}` | {r['meaning']} |" for r in codes["rpc"]]
+    rows += [f"| `{r['slopvac_code']}` | {r['cause']} |" for r in codes["host"]]
+    return rows
+
+
+def _published_rows(sources: dict[str, Path]) -> list[str]:
+    errors = _read(sources, "plugins/protocol.md").split("## Errors")[1]
+    errors = errors.split("## Definitions")[0]
+    headers = ("| Code |", "| `slopvac_code` |", "| ---")
+    return [
+        line
+        for line in errors.splitlines()
+        if line.startswith("|") and not line.startswith(headers)
+    ]
 
 
 def test_an_escaped_pipe_stays_inside_its_error_table_cell(
     sources: dict[str, Path],
 ) -> None:
-    _with_contract(sources, "| -32009 | `pipe-case` | Takes a \\| b. |")
+    codes = json.loads((sources["reference"] / CODES_FILE).read_text())
+    codes["rpc"][0]["meaning"] = "Takes a | b."
+    (sources["reference"] / CODES_FILE).write_text(json.dumps(codes))
     _run(sources)
-    errors = _read(sources, "plugins/protocol.md").split("## Errors")[1]
-    assert "| -32009 | `pipe-case` | Takes a \\| b. |" in errors
+    assert "| -32700 | `parse-error` | Takes a \\| b. |" in _published_rows(sources)
+
+
+def _codes_file(sources: dict[str, Path], mutate) -> None:
+    path = sources["reference"] / CODES_FILE
+    codes = json.loads(path.read_text())
+    path.write_text(mutate(codes))
 
 
 @pytest.mark.parametrize(
-    "row",
+    "mutate",
     [
-        "| -32009 | `short-row` |",
-        "| -32009 | `split-row` | one | two |",
-        "| nine | `bad-code` | Not numeric. |",
+        pytest.param(lambda c: "{not json", id="not-json"),
+        pytest.param(lambda c: "[]", id="not-an-object"),
+        pytest.param(lambda c: json.dumps({"rpc": c["rpc"]}), id="host-missing"),
+        pytest.param(lambda c: json.dumps({"host": c["host"]}), id="rpc-missing"),
+        pytest.param(lambda c: json.dumps({**c, "rpc": []}), id="no-numeric-rows"),
+        pytest.param(lambda c: json.dumps({**c, "host": []}), id="no-host-rows"),
+        pytest.param(lambda c: json.dumps({**c, "extra": 1}), id="unknown-key"),
+        pytest.param(
+            lambda c: json.dumps(
+                {**c, "rpc": [{**c["rpc"][0], "code": "-32700"}, *c["rpc"][1:]]}
+            ),
+            id="code-is-text",
+        ),
+        pytest.param(
+            lambda c: json.dumps({**c, "host": [{"slopvac_code": "x"}]}),
+            id="row-missing-a-key",
+        ),
     ],
 )
-def test_a_malformed_error_table_row_stops_the_build(
-    sources: dict[str, Path], row: str
+def test_a_malformed_codes_file_stops_the_build(
+    sources: dict[str, Path], mutate
 ) -> None:
-    _with_contract(sources, row)
-    with pytest.raises(SystemExit, match="malformed"):
+    _codes_file(sources, mutate)
+    with pytest.raises(SystemExit, match="plugin-protocol-codes"):
         _run(sources)
 
 
-def _contract(sources: dict[str, Path], text: str) -> str:
-    (sources["contract"] / "plugin-protocol.md").write_text(text)
+def test_a_missing_codes_file_stops_the_build(sources: dict[str, Path]) -> None:
+    (sources["reference"] / CODES_FILE).unlink()
+    with pytest.raises(SystemExit, match="plugin-protocol-codes"):
+        _run(sources)
+
+
+def _error_section(rows: str, heading: str = "## 10. Error codes") -> str:
+    return (
+        "# Contract\n\n## 9. Other\n\n| 1 | `ignored` | Not an error. |\n\n"
+        f"{heading}\n\n{rows}\n## 11. Security\n"
+    )
+
+
+_BLOCKS = (
+    "<!-- generated:rpc-codes begin -->\n| -32700 | `parse-error` | The body is not valid JSON. |\n"
+    "<!-- generated:rpc-codes end -->\n"
+    "<!-- generated:host-codes begin -->\n| `plugin-timeout` | A timer expired. |\n"
+    "<!-- generated:host-codes end -->\n"
+)
+_EXTRA = "| -32099 | `extra` | Not in the generated file. |\n"
+
+# Every document that the round 2 and round 3 reviews found. The site reads the generated
+# file only, so none of them may change the published rows.
+ADVERSARIAL_DOCS = {
+    "row-after-the-blocks": _error_section(_BLOCKS + _EXTRA),
+    "row-before-the-blocks": _error_section(_EXTRA + _BLOCKS),
+    "row-between-unrelated-markers": _error_section(
+        "<!-- other begin -->\n" + _EXTRA + "<!-- other end -->\n" + _BLOCKS
+    ),
+    "row-inside-a-fence": _error_section(_BLOCKS + "```text\n" + _EXTRA + "```\n"),
+    "renamed-heading": _error_section(_BLOCKS + _EXTRA, "## 10. Failure list"),
+    "second-error-codes-heading": (
+        "## 8. Error codes\n\n" + _EXTRA + "\n" + _error_section(_BLOCKS)
+    ),
+    "begin-marker-with-trailing-space": _error_section(
+        _BLOCKS.replace("rpc-codes begin -->", "rpc-codes begin --> ", 1) + _EXTRA
+    ),
+    "indented-row-before-the-marker": _error_section(
+        "  " + _EXTRA + _BLOCKS
+    ),
+    "marker-with-an-unrelated-prefix": _error_section(
+        _BLOCKS.replace(
+            "<!-- generated:rpc-codes begin -->",
+            "<!-- generated:other begin --><!-- generated:rpc-codes begin -->",
+            1,
+        )
+        + _EXTRA
+    ),
+    "fence-closed-by-a-run-followed-by-text": _error_section(
+        "```text\n``` not a closer\n" + _EXTRA + "```\n" + _BLOCKS + _EXTRA
+    ),
+}
+
+
+@pytest.mark.parametrize("doc", ADVERSARIAL_DOCS.values(), ids=ADVERSARIAL_DOCS.keys())
+def test_the_published_rows_are_the_generated_rows_whatever_the_contract_says(
+    sources: dict[str, Path], doc: str
+) -> None:
+    (sources["contract"] / "plugin-protocol.md").write_text(doc)
     _run(sources)
-    errors = _read(sources, "plugins/protocol.md").split("## Errors")[1]
-    return errors.split("## Definitions")[0]
+    assert _published_rows(sources) == _expected_rows(CODES)
 
 
-def test_a_row_between_unrelated_markers_is_not_published(
-    sources: dict[str, Path],
-) -> None:
-    extra = (
-        "<!-- other begin -->\n| -32020 | `unrelated` | Not generated. |\n"
-        "<!-- other end -->\n"
-    )
-    errors = _contract(
-        sources,
-        CONTRACT.replace("<!-- generated:host", extra + "<!-- generated:host", 1),
-    )
-    assert "unrelated" not in errors
-    assert "`parse-error`" in errors
-
-
-def test_a_row_inside_a_code_fence_is_not_published(sources: dict[str, Path]) -> None:
-    fence = "```text\n| -32021 | `fenced` | In a fence. |\n```\n"
-    for where in ("<!-- generated:rpc-codes end -->", "## 11. Security"):
-        errors = _contract(sources, CONTRACT.replace(where, fence + where, 1))
-        assert "fenced" not in errors
-
-
-def test_the_error_heading_does_not_decide_which_rows_are_published(
-    sources: dict[str, Path],
-) -> None:
-    decoy = "## 8. Error codes\n\n| -32022 | `decoy` | Before the real section. |\n\n"
-    errors = _contract(
-        sources,
-        CONTRACT.replace("## 9. Other", decoy + "## 9. Other", 1).replace(
-            "## 10. Error codes", "## 10. Failure list", 1
-        ),
-    )
-    assert "decoy" not in errors
-    assert "`plugin-timeout`" in errors
-
-
-@pytest.mark.parametrize("name", ["rpc-codes", "host-codes"])
-@pytest.mark.parametrize("damage", ["missing", "twice"])
-def test_a_missing_or_repeated_block_stops_the_build(
-    sources: dict[str, Path], name: str, damage: str
-) -> None:
-    begin = f"<!-- generated:{name} begin -->"
-    end = f"<!-- generated:{name} end -->"
-    if damage == "missing":
-        text = CONTRACT.replace(begin, "").replace(end, "")
-    else:
-        text = CONTRACT.replace("## 11. Security", f"{begin}\n{end}\n## 11. Security")
-    (sources["contract"] / "plugin-protocol.md").write_text(text)
-    with pytest.raises(SystemExit, match=name):
-        _run(sources)
-
-
-def test_the_real_contract_publishes_exactly_the_rows_of_its_two_blocks() -> None:
+def test_the_real_reference_file_is_published_row_for_row() -> None:
+    sys.path.insert(0, str(ROOT / "scripts" / "docs"))
     import plugin_pages
 
-    doc = (ROOT / "docs/contract/plugin-protocol.md").read_text()
-    expected: dict[str, list[str]] = {}
-    for name in ("rpc-codes", "host-codes"):
-        block = doc.split(f"<!-- generated:{name} begin -->\n")[1]
-        block = block.split(f"<!-- generated:{name} end -->")[0]
-        expected[name] = [
-            line for line in block.splitlines()[2:] if line.startswith("|")
-        ]
-    codes, diagnostics = plugin_pages._error_tables(
-        ROOT / "docs/contract/plugin-protocol.md"
-    )
-    assert len(codes) == len(expected["rpc-codes"])
-    assert len(diagnostics) == len(expected["host-codes"])
-    assert [c[1] for c in codes] == [
-        r.split("|")[2].strip().strip("`") for r in expected["rpc-codes"]
+    codes = json.loads((ROOT / "docs/reference" / CODES_FILE).read_text())
+    schemas = plugin_pages.SchemaSet(REAL_SCHEMAS)
+    page = plugin_pages.generate_protocol(schemas, ROOT / "docs" / "reference")
+    errors = page["plugins/protocol.md"].split("## Errors")[1].split("## Definitions")[0]
+    published = [
+        line
+        for line in errors.splitlines()
+        if line.startswith("|")
+        and not line.startswith(("| Code |", "| `slopvac_code` |", "| ---"))
     ]
-    assert [d[0] for d in diagnostics] == [
-        r.split("|")[1].strip().strip("`") for r in expected["host-codes"]
-    ]
-
-
-def test_the_publisher_and_the_rust_gate_use_the_same_block_names() -> None:
-    import plugin_pages
-
-    source = (ROOT / "crates/slopvac-plugins/src/error_codes.rs").read_text()
-    assert "<!-- generated:{name} begin -->" in source
-    assert "<!-- generated:{name} end -->" in source
-    cases = re.findall(r'#\[case::\w+\("([a-z-]+)", (?:true|false)\)\]', source)
-    assert sorted(cases) == sorted(plugin_pages.ERROR_BLOCKS)
-    assert plugin_pages.BLOCK_MARKER == "<!-- generated:{name} {edge} -->"
+    expected = [
+        f"| {r['code']} | `{r['slopvac_code']}` | {r['meaning']} |" for r in codes["rpc"]
+    ] + [f"| `{r['slopvac_code']}` | {r['cause']} |" for r in codes["host"]]
+    assert published == expected
+    assert len(published) == len(codes["rpc"]) + len(codes["host"])
 
 
 # --- URLs and link structure -----------------------------------------------

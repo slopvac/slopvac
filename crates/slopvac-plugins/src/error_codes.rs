@@ -6,7 +6,12 @@
 //! row. `HOST_CODES` lists the codes the host raises in diagnostics with no numeric code.
 //! `protocol_error_tables` renders both as the two Markdown tables of section 10. A test
 //! compares that text with the committed document, so a row without a mapping and a mapping
-//! without a row both fail the build.
+//! without a row both fail the build. [`protocol_codes`] returns the same two tables as data.
+//! `slopvac-schemas` writes them to `docs/reference/plugin-protocol-codes.json`, the file the
+//! docs site reads.
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// One row of the numeric JSON-RPC table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,26 +39,17 @@ impl RpcCode {
 }
 
 /// One row of the table of codes with no numeric code.
-#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HostCode {
     /// The stable code.
     pub(crate) name: &'static str,
-    /// Whether this crate's message registry defines the code. A code that another crate
-    /// registers, or that only the contract defines, is `false`.
-    pub(crate) registered_here: bool,
     /// The cause column of the document.
     pub(crate) cause: &'static str,
 }
 
-#[cfg(test)]
 impl HostCode {
-    const fn new(name: &'static str, registered_here: bool, cause: &'static str) -> Self {
-        Self {
-            name,
-            registered_here,
-            cause,
-        }
+    const fn new(name: &'static str, cause: &'static str) -> Self {
+        Self { name, cause }
     }
 }
 
@@ -148,116 +144,150 @@ pub(crate) const RPC_CODES: &[RpcCode] = &[
 ];
 
 /// The codes the host raises with no numeric code, in document order.
-#[cfg(test)]
 pub(crate) const HOST_CODES: &[HostCode] = &[
     HostCode::new(
         "plugin-untrusted",
-        true,
         "The content hash has no recorded trust. The message prints the `slopvac plugins trust` command.",
     ),
     HostCode::new(
         "trust-key-missing",
-        true,
         "Trust records exist but the key they were made under is gone.",
     ),
     HostCode::new(
         "trust-key-mismatch",
-        true,
         "The trust records were made under another key than the store's.",
     ),
     HostCode::new(
         "trust-key-unusable",
-        true,
         "The trust key file is not private to the user or does not hold a key.",
     ),
     HostCode::new(
         "plugin-hash-mismatch",
-        true,
         "The installed bytes differ from the hash that trust recorded.",
     ),
     HostCode::new(
         "plugin-not-code",
-        true,
         "`slopvac plugins trust` or `untrust` named a data plugin, which runs no code and needs no trust.",
     ),
-    HostCode::new("plugin-timeout", true, "A timer in section 6.3 expired."),
-    HostCode::new(
-        "plugin-exited",
-        true,
-        "The process ended with requests pending.",
-    ),
+    HostCode::new("plugin-timeout", "A timer in section 6.3 expired."),
+    HostCode::new("plugin-exited", "The process ended with requests pending."),
     HostCode::new(
         "plugin-protocol-violation",
-        true,
         "A framing error, a limit breach or a duplicate key.",
     ),
     HostCode::new(
         "plugin-output-invalid",
-        true,
         "A result does not match its schema, or breaks a rule such as span bounds.",
     ),
-    HostCode::new("plugin-spawn-failed", true, "The program did not start."),
+    HostCode::new("plugin-spawn-failed", "The program did not start."),
     HostCode::new(
         "launcher-not-installed",
-        true,
         "The running program did not install the plugin launcher, so the host cannot start a plugin or a git plugin source. Nothing was spawned.",
     ),
     HostCode::new(
         "plugin-declaration-mismatch",
-        true,
         "The reply disagrees with the hashed manifest (section 4.3).",
     ),
     HostCode::new(
         "request-id-exhausted",
-        true,
         "The request counter reached 2^53-1.",
     ),
     HostCode::new(
         "offline-network-needed",
-        false,
         "A command that needs the network ran in offline mode. The update commands share this code.",
     ),
     HostCode::new(
         "plugin-usage",
-        true,
         "The caller used the plugin wrongly, for example an undeclared hook.",
     ),
     HostCode::new(
         "binary-format-mismatch",
-        false,
         "The signature and the name of a file disagree about its format (section 5.5.1).",
     ),
     HostCode::new(
         "binary-no-source",
-        false,
         "A binary extractor found no embedded source in a valid container. The level depends on the name (section 5.5.4).",
     ),
     HostCode::new(
         "binary-input-changed",
-        false,
         "A binary file grew between the preflight and the read (section 5.5.6).",
     ),
     HostCode::new(
         "binary-format-ambiguous",
-        false,
         "Two or more enabled hooks claim a format, and the config maps it to none of them (section 5.5.1).",
     ),
     HostCode::new(
         "input-unsupported",
-        false,
         "The host's existing code for a named input that it does not lint. It also covers a file the user named whose format no enabled extractor reads, such as EPUB or PDF. The document goes in `unchecked`, `data.format` names the detected format (section 5.5.1), and the run exits 2. The binary extraction contract adds no code of its own for it.",
     ),
     HostCode::new(
         "extract-unsupported",
-        false,
         "An `info` notice for content that an extractor skipped inside a document it read (section 5.5.4). A plugin lists the content in the result's `unsupported` field and sends no error number. The run exits 0.",
     ),
     HostCode::new(
         "extract-output-invalid",
-        false,
         "The host validator rejects the output of a first-party (built-in) extractor (section 5.5). Output from a third-party plugin gets `plugin-output-invalid` instead. The cause is a slopvac bug, and the message points to the issue tracker. It is separate from `plugin-output-invalid`, which covers plugin output, and has the same severity and exit.",
     ),
 ];
+
+/// Both tables of plugin-protocol.md section 10, as the one data file that the docs site
+/// reads (`docs/reference/plugin-protocol-codes.json`). `slopvac-schemas` generates the file
+/// and its schema from the host's code table, so the site never parses the Markdown.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[non_exhaustive]
+pub struct ProtocolCodes {
+    /// The numeric JSON-RPC codes, in document order.
+    pub rpc: Vec<RpcCodeRow>,
+    /// The codes the host raises with no numeric code, in document order.
+    pub host: Vec<HostCodeRow>,
+}
+
+/// One numeric JSON-RPC code and the `slopvac_code` it reports as.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[non_exhaustive]
+pub struct RpcCodeRow {
+    /// The numeric JSON-RPC code.
+    pub code: i64,
+    /// The stable kebab-case `data.slopvac_code`.
+    pub slopvac_code: String,
+    /// What the code means.
+    pub meaning: String,
+}
+
+/// One code that the host raises in its own diagnostics, with no numeric code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[non_exhaustive]
+pub struct HostCodeRow {
+    /// The stable kebab-case code.
+    pub slopvac_code: String,
+    /// What causes the host to raise it.
+    pub cause: String,
+}
+
+/// The two section 10 tables, built from the same constants the host reads.
+#[must_use]
+pub fn protocol_codes() -> ProtocolCodes {
+    ProtocolCodes {
+        rpc: RPC_CODES
+            .iter()
+            .map(|row| RpcCodeRow {
+                code: row.number,
+                slopvac_code: row.name.to_owned(),
+                meaning: row.meaning.to_owned(),
+            })
+            .collect(),
+        host: HOST_CODES
+            .iter()
+            .map(|row| HostCodeRow {
+                slopvac_code: row.name.to_owned(),
+                cause: row.cause.to_owned(),
+            })
+            .collect(),
+    }
+}
 
 #[cfg(test)]
 const RPC_HEADER: &str = "| Code | `slopvac_code` | Meaning |\n|---|---|---|\n";
@@ -302,25 +332,122 @@ mod tests {
     use crate::messages::host::HostMessage;
     use crate::messages::message_entries;
 
+    /// Host codes that another crate registers, or that only the contract defines.
+    const NOT_REGISTERED_HERE: [&str; 8] = [
+        "binary-format-mismatch",
+        "binary-no-source",
+        "binary-input-changed",
+        "binary-format-ambiguous",
+        "input-unsupported",
+        "extract-unsupported",
+        "extract-output-invalid",
+        "offline-network-needed",
+    ];
+
     const DOC: &str = include_str!("../../../docs/contract/plugin-protocol.md");
 
-    /// The text of the one generated block `name`. The site generator publishes rows from
-    /// the same two blocks and refuses a missing or repeated one, so this refuses it too.
-    fn block_in<'a>(doc: &'a str, name: &str) -> Result<&'a str, String> {
-        let begin = format!("<!-- generated:{name} begin -->\n");
-        let end = format!("<!-- generated:{name} end -->");
-        let (begins, ends) = (doc.matches(&begin).count(), doc.matches(&end).count());
-        if begins != 1 || ends != 1 {
-            return Err(format!(
-                "`{name}` needs one begin and one end marker, found {begins} and {ends}"
-            ));
+    /// The opening run of a fenced code block: its character and length (`CommonMark`).
+    fn fence_open(line: &str) -> Option<(char, usize)> {
+        let text = line.trim_start_matches(' ');
+        if line.len() - text.len() > 3 {
+            return None;
         }
-        let start = doc.find(&begin).unwrap_or_default() + begin.len();
-        let len = doc[start..].find(&end).ok_or("end marker before begin")?;
-        Ok(&doc[start..start + len])
+        let ch = text.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+        let run = text.chars().take_while(|&c| c == ch).count();
+        // A backtick fence cannot hold a backtick in its info string.
+        (run >= 3 && !(ch == '`' && text[run..].contains('`'))).then_some((ch, run))
     }
 
-    fn block(name: &str) -> &'static str {
+    /// Whether `line` closes a fence opened with `ch` and `run`: a run at least as long, then
+    /// nothing but white space.
+    fn fence_close(line: &str, ch: char, run: usize) -> bool {
+        let text = line.trim_start_matches(' ');
+        let found = text.chars().take_while(|&c| c == ch).count();
+        line.len() - text.len() <= 3 && found >= run && text[found..].trim().is_empty()
+    }
+
+    /// What one pass over the document finds: each generated block with its text, and the
+    /// table rows of section 10 outside every block. Code fences hide everything inside them.
+    /// A marker is a whole line, exactly `<!-- generated:NAME begin -->` or `... end -->`, and
+    /// any other line that holds the marker prefix is an error, so no reader can take a loose
+    /// marker differently.
+    #[derive(Debug, Default)]
+    struct Scan {
+        blocks: Vec<(String, String)>,
+        stray: Vec<String>,
+    }
+
+    /// The name and edge of a whole-line marker: `true` for begin.
+    fn marker(line: &str) -> Option<(&str, bool)> {
+        let rest = line.strip_prefix("<!-- generated:")?;
+        let (name, begin) = rest
+            .strip_suffix(" begin -->")
+            .map(|name| (name, true))
+            .or_else(|| rest.strip_suffix(" end -->").map(|name| (name, false)))?;
+        let valid = !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        valid.then_some((name, begin))
+    }
+
+    fn scan(doc: &str) -> Result<Scan, String> {
+        let mut out = Scan::default();
+        let mut fence: Option<(char, usize)> = None;
+        let mut open: Option<(String, String)> = None;
+        let mut section = false;
+        for line in doc.lines() {
+            if let Some((ch, run)) = fence {
+                if fence_close(line, ch, run) {
+                    fence = None;
+                }
+                continue;
+            }
+            if let Some(found) = fence_open(line) {
+                fence = Some(found);
+                continue;
+            }
+            if line.starts_with("## ") {
+                section = line.starts_with("## 10. Error codes");
+            }
+            if line.contains("<!-- generated:") {
+                match (marker(line), open.take()) {
+                    (Some((name, true)), None) => open = Some((name.to_owned(), String::new())),
+                    (Some((name, false)), Some((begun, text))) if name == begun => {
+                        out.blocks.push((begun, text));
+                    }
+                    _ => return Err(format!("loose or unbalanced marker line: {line:?}")),
+                }
+            } else if let Some((_, text)) = open.as_mut() {
+                text.push_str(line);
+                text.push('\n');
+            } else if section && line.trim_start().starts_with('|') {
+                out.stray.push(line.to_owned());
+            }
+        }
+        match open {
+            Some((name, _)) => Err(format!("block `{name}` is never closed")),
+            None => Ok(out),
+        }
+    }
+
+    /// The text of the one generated block `name`. A missing or repeated block means the
+    /// document drifted from the table.
+    fn block_in(doc: &str, name: &str) -> Result<String, String> {
+        let mut found = scan(doc)?
+            .blocks
+            .into_iter()
+            .filter(|(block, _)| block == name);
+        match (found.next(), found.next()) {
+            (Some((_, text)), None) => Ok(text),
+            (first, second) => Err(format!(
+                "`{name}` needs exactly one block, found {}",
+                usize::from(first.is_some()) + usize::from(second.is_some())
+            )),
+        }
+    }
+
+    fn block(name: &str) -> String {
         block_in(DOC, name).unwrap_or_default()
     }
 
@@ -333,29 +460,14 @@ mod tests {
         assert!(block_in(doc, "x").is_err());
     }
 
-    /// Table rows in section 10 that sit outside the generated blocks. The site generator
-    /// (`scripts/docs/plugin_pages.py`) publishes rows only from the blocks, so a row outside
-    /// them is dead text that no check covers, and the gate refuses it.
+    /// Table rows in section 10 outside the generated blocks, or the scan error. Rows in
+    /// the blocks are checked against the table. A row anywhere else is dead text that no
+    /// check covers, so the gate refuses it.
     fn rows_outside_blocks(doc: &str) -> Vec<String> {
-        let Some(start) = doc.find("\n## 10. Error codes\n") else {
-            return vec!["no section 10".to_owned()];
-        };
-        let section = &doc[start + 1..];
-        let section = section
-            .find("\n## 11.")
-            .map_or(section, |end| &section[..end]);
-        let mut inside = false;
-        let mut stray = Vec::new();
-        for line in section.lines() {
-            if line.starts_with("<!-- generated:") && line.ends_with(" begin -->") {
-                inside = true;
-            } else if line.starts_with("<!-- generated:") && line.ends_with(" end -->") {
-                inside = false;
-            } else if !inside && line.starts_with('|') {
-                stray.push(line.to_owned());
-            }
+        match scan(doc) {
+            Ok(found) => found.stray,
+            Err(why) => vec![why],
         }
-        stray
     }
 
     #[test]
@@ -379,6 +491,46 @@ mod tests {
     fn a_row_in_another_section_is_not_reported() {
         let doc =
             "# P\n\n## 9. Rules\n| x | y |\n## 10. Error codes\ntext\n## 11. Security\n| z |\n";
+        assert_eq!(rows_outside_blocks(doc), Vec::<String>::new());
+    }
+
+    /// A document the gate must refuse: a row outside the blocks, or a block the site and
+    /// the reader could take differently.
+    fn refused(doc: &str) -> bool {
+        let doc = &format!("# P\n\n{doc}");
+        !rows_outside_blocks(doc).is_empty()
+            || block_in(doc, "rpc-codes").is_err()
+            || block_in(doc, "host-codes").is_err()
+    }
+
+    #[rstest]
+    #[case::trailing_space_on_begin(
+        "## 10. Error codes\n<!-- generated:rpc-codes begin --> \n| -1 | `a` | m |\n<!-- generated:rpc-codes end -->\n<!-- generated:host-codes begin -->\n| `b` | c |\n<!-- generated:host-codes end -->\n## 11. Security\n"
+    )]
+    #[case::indented_row_before_the_marker(
+        "## 10. Error codes\n  | -32099 | `extra` | x |\n<!-- generated:rpc-codes begin -->\n| -1 | `a` | m |\n<!-- generated:rpc-codes end -->\n<!-- generated:host-codes begin -->\n| `b` | c |\n<!-- generated:host-codes end -->\n## 11. Security\n"
+    )]
+    #[case::prefixed_marker(
+        "## 10. Error codes\n<!-- generated:other begin --><!-- generated:rpc-codes begin -->\n| -1 | `a` | m |\n<!-- generated:rpc-codes end -->\n<!-- generated:host-codes begin -->\n| `b` | c |\n<!-- generated:host-codes end -->\n## 11. Security\n"
+    )]
+    fn a_document_with_a_loose_marker_or_an_indented_row_is_refused(#[case] doc: &str) {
+        assert!(refused(doc), "{doc}");
+    }
+
+    #[rstest]
+    #[case::fence_closed_by_a_run_with_text(
+        "## 10. Error codes\n```text\n``` not a closer\n| -32022 | `inside` | Still in the fence. |\n```\n<!-- generated:rpc-codes begin -->\n| -1 | `a` | m |\n<!-- generated:rpc-codes end -->\n<!-- generated:host-codes begin -->\n| `b` | c |\n<!-- generated:host-codes end -->\n## 11. Security\n"
+    )]
+    #[case::longer_fence_holds_a_shorter_run(
+        "## 10. Error codes\n````text\n```\n| -32023 | `inside` | Still in the fence. |\n````\n<!-- generated:rpc-codes begin -->\n| -1 | `a` | m |\n<!-- generated:rpc-codes end -->\n<!-- generated:host-codes begin -->\n| `b` | c |\n<!-- generated:host-codes end -->\n## 11. Security\n"
+    )]
+    fn a_row_that_stays_inside_a_fence_is_not_a_row(#[case] doc: &str) {
+        assert!(!refused(doc), "{doc}");
+    }
+
+    #[test]
+    fn a_marker_inside_a_fence_is_not_a_marker() {
+        let doc = "# P\n\n## 10. Error codes\n```md\n<!-- generated:rpc-codes begin -->\n```\n";
         assert_eq!(rows_outside_blocks(doc), Vec::<String>::new());
     }
 
@@ -430,8 +582,8 @@ mod tests {
         for row in HOST_CODES {
             assert_eq!(
                 registered.contains(row.name),
-                row.registered_here,
-                "`{}`: registered_here is wrong",
+                !NOT_REGISTERED_HERE.contains(&row.name),
+                "`{}`: the list of codes that this crate does not register is wrong",
                 row.name
             );
         }

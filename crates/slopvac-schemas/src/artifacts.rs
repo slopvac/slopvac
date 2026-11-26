@@ -154,7 +154,29 @@ pub const ARTIFACTS: &[Artifact] = &[
         keep: &[],
         build: plugins_lock,
     },
+    Artifact {
+        file: "plugin-protocol-codes.schema.json",
+        title: "slopvac v3 plugin protocol codes",
+        description: Some(
+            "The two error-code tables of plugin-protocol.md section 10, as the data file \
+             docs/reference/plugin-protocol-codes.json. The docs site reads this file, not the \
+             Markdown. The host's code table in slopvac-plugins is the source, and the file is \
+             generated from it.",
+        ),
+        imports: &[],
+        inline: &[],
+        keep: &[],
+        build: protocol_codes,
+    },
 ];
+
+/// The producer contract: what the generated reference file holds.
+fn protocol_codes() -> Value {
+    schema_settings(Contract::Serialize)
+        .into_generator()
+        .into_root_schema_for::<slopvac_plugins::ProtocolCodes>()
+        .to_value()
+}
 
 /// The plugin index. Both the index and the lockfile are read and written by slopvac, so the
 /// output rule applies to them.

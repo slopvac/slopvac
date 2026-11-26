@@ -1,0 +1,178 @@
+{
+  "host": [
+    {
+      "cause": "The content hash has no recorded trust. The message prints the `slopvac plugins trust` command.",
+      "slopvac_code": "plugin-untrusted"
+    },
+    {
+      "cause": "Trust records exist but the key they were made under is gone.",
+      "slopvac_code": "trust-key-missing"
+    },
+    {
+      "cause": "The trust records were made under another key than the store's.",
+      "slopvac_code": "trust-key-mismatch"
+    },
+    {
+      "cause": "The trust key file is not private to the user or does not hold a key.",
+      "slopvac_code": "trust-key-unusable"
+    },
+    {
+      "cause": "The installed bytes differ from the hash that trust recorded.",
+      "slopvac_code": "plugin-hash-mismatch"
+    },
+    {
+      "cause": "`slopvac plugins trust` or `untrust` named a data plugin, which runs no code and needs no trust.",
+      "slopvac_code": "plugin-not-code"
+    },
+    {
+      "cause": "A timer in section 6.3 expired.",
+      "slopvac_code": "plugin-timeout"
+    },
+    {
+      "cause": "The process ended with requests pending.",
+      "slopvac_code": "plugin-exited"
+    },
+    {
+      "cause": "A framing error, a limit breach or a duplicate key.",
+      "slopvac_code": "plugin-protocol-violation"
+    },
+    {
+      "cause": "A result does not match its schema, or breaks a rule such as span bounds.",
+      "slopvac_code": "plugin-output-invalid"
+    },
+    {
+      "cause": "The program did not start.",
+      "slopvac_code": "plugin-spawn-failed"
+    },
+    {
+      "cause": "The running program did not install the plugin launcher, so the host cannot start a plugin or a git plugin source. Nothing was spawned.",
+      "slopvac_code": "launcher-not-installed"
+    },
+    {
+      "cause": "The reply disagrees with the hashed manifest (section 4.3).",
+      "slopvac_code": "plugin-declaration-mismatch"
+    },
+    {
+      "cause": "The request counter reached 2^53-1.",
+      "slopvac_code": "request-id-exhausted"
+    },
+    {
+      "cause": "A command that needs the network ran in offline mode. The update commands share this code.",
+      "slopvac_code": "offline-network-needed"
+    },
+    {
+      "cause": "The caller used the plugin wrongly, for example an undeclared hook.",
+      "slopvac_code": "plugin-usage"
+    },
+    {
+      "cause": "The signature and the name of a file disagree about its format (section 5.5.1).",
+      "slopvac_code": "binary-format-mismatch"
+    },
+    {
+      "cause": "A binary extractor found no embedded source in a valid container. The level depends on the name (section 5.5.4).",
+      "slopvac_code": "binary-no-source"
+    },
+    {
+      "cause": "A binary file grew between the preflight and the read (section 5.5.6).",
+      "slopvac_code": "binary-input-changed"
+    },
+    {
+      "cause": "Two or more enabled hooks claim a format, and the config maps it to none of them (section 5.5.1).",
+      "slopvac_code": "binary-format-ambiguous"
+    },
+    {
+      "cause": "The host's existing code for a named input that it does not lint. It also covers a file the user named whose format no enabled extractor reads, such as EPUB or PDF. The document goes in `unchecked`, `data.format` names the detected format (section 5.5.1), and the run exits 2. The binary extraction contract adds no code of its own for it.",
+      "slopvac_code": "input-unsupported"
+    },
+    {
+      "cause": "An `info` notice for content that an extractor skipped inside a document it read (section 5.5.4). A plugin lists the content in the result's `unsupported` field and sends no error number. The run exits 0.",
+      "slopvac_code": "extract-unsupported"
+    },
+    {
+      "cause": "The host validator rejects the output of a first-party (built-in) extractor (section 5.5). Output from a third-party plugin gets `plugin-output-invalid` instead. The cause is a slopvac bug, and the message points to the issue tracker. It is separate from `plugin-output-invalid`, which covers plugin output, and has the same severity and exit.",
+      "slopvac_code": "extract-output-invalid"
+    }
+  ],
+  "rpc": [
+    {
+      "code": -32700,
+      "meaning": "The body is not valid JSON.",
+      "slopvac_code": "parse-error"
+    },
+    {
+      "code": -32600,
+      "meaning": "The body is not a valid message, or it is a batch array, or the plugin is shut down.",
+      "slopvac_code": "invalid-request"
+    },
+    {
+      "code": -32601,
+      "meaning": "Unknown method, or a hook the plugin did not declare.",
+      "slopvac_code": "method-not-found"
+    },
+    {
+      "code": -32602,
+      "meaning": "Params do not match the schema, or name an unknown hook id.",
+      "slopvac_code": "invalid-params"
+    },
+    {
+      "code": -32603,
+      "meaning": "The plugin failed.",
+      "slopvac_code": "internal-error"
+    },
+    {
+      "code": -32001,
+      "meaning": "No common version. `data.supported` holds the plugin range.",
+      "slopvac_code": "protocol-version-unsupported"
+    },
+    {
+      "code": -32002,
+      "meaning": "The host lacks a feature the plugin requires.",
+      "slopvac_code": "required-feature-missing"
+    },
+    {
+      "code": -32003,
+      "meaning": "A request arrived before `initialize` finished.",
+      "slopvac_code": "not-initialized"
+    },
+    {
+      "code": -32004,
+      "meaning": "A message exceeds `maxMessageBytes`.",
+      "slopvac_code": "message-too-large"
+    },
+    {
+      "code": -32005,
+      "meaning": "The plugin stopped a request after a cancel.",
+      "slopvac_code": "request-cancelled"
+    },
+    {
+      "code": -32006,
+      "meaning": "The plugin cannot process this document, for example binary content.",
+      "slopvac_code": "document-invalid"
+    },
+    {
+      "code": -32007,
+      "meaning": "A provider refused the call because offline mode is on.",
+      "slopvac_code": "offline"
+    },
+    {
+      "code": -32008,
+      "meaning": "A binary extractor declines this whole document. -32008 has no other meaning. `extract-unsupported` is a host notice with no number, and a plugin never sends it as an error. A plugin sends this number with `data.reason` `unknown-format` or `variant-unsupported` (section 5.5.4).",
+      "slopvac_code": "binary-input-declined"
+    },
+    {
+      "code": -32009,
+      "meaning": "The bytes break the format, or an embedded payload does not decode.",
+      "slopvac_code": "extract-malformed"
+    },
+    {
+      "code": -32010,
+      "meaning": "A binary extractor hit a limit.",
+      "slopvac_code": "extract-budget"
+    },
+    {
+      "code": -32011,
+      "meaning": "The container is encrypted or protected by a password. A plugin sends it for an encrypted OpenDocument package, and the host raises it for an encrypted Office Open XML package (section 5.5.4).",
+      "slopvac_code": "binary-encrypted"
+    }
+  ]
+}

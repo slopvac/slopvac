@@ -54,7 +54,7 @@ DEFAULT_OUT = ROOT / "build" / "site-src"
 # Plugin manifests to document. The example plugin is the only committed one
 # until the plugin loader and the bundled core plugin exist.
 PACKS_DIR = ROOT / "packages" / "slopvac-plugin" / "examples"
-CONTRACT_DIR = ROOT / "docs" / "contract"
+REFERENCE_DIR = ROOT / "docs" / "reference"
 SITE_CONFIG = ROOT / "docs" / "site.toml"
 CARGO = "cargo"
 
@@ -444,14 +444,14 @@ def build(
     rules_dir: Path = RULES_DIR,
     schemas_dir: Path = SCHEMAS_DIR,
     packs_dir: Path = PACKS_DIR,
-    contract_dir: Path = CONTRACT_DIR,
+    reference_dir: Path = REFERENCE_DIR,
 ) -> Pages:
     pages: Pages = {}
     schemas = plugin_pages.SchemaSet(schemas_dir)
     generated = (
         generate_rules(rules_dir),
         generate_schemas(site, schemas_dir),
-        plugin_pages.generate_protocol(schemas, contract_dir),
+        plugin_pages.generate_protocol(schemas, reference_dir),
         plugin_pages.generate_manifest(schemas),
         generate_styles(),
         generate_terms(),
@@ -530,7 +530,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--rules-dir", type=Path, default=RULES_DIR)
     parser.add_argument("--schemas-dir", type=Path, default=SCHEMAS_DIR)
     parser.add_argument("--plugins-dir", type=Path, default=PACKS_DIR)
-    parser.add_argument("--contract-dir", type=Path, default=CONTRACT_DIR)
+    parser.add_argument("--reference-dir", type=Path, default=REFERENCE_DIR)
     parser.add_argument(
         "--check",
         action="store_true",
@@ -545,7 +545,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     site = load_site(args.config)
     pages = build(
-        site, args.rules_dir, args.schemas_dir, args.plugins_dir, args.contract_dir
+        site, args.rules_dir, args.schemas_dir, args.plugins_dir, args.reference_dir
     )
     problems = broken_links(pages) + schema_id_problems(pages, site)
     if args.check:
