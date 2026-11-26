@@ -681,6 +681,7 @@ plugin-declaration-mismatch error
 plugin-exited error
 plugin-file-link error
 plugin-file-not-loaded text
+plugin-file-not-text error
 plugin-glob-too-complex error
 plugin-hash-mismatch error
 plugin-loader-command-unsafe text

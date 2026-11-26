@@ -134,6 +134,7 @@ impl Store {
             .read_to_end(&mut bytes)
             .ok()?;
         if bytes.len() as u64 <= max && Digest::of(&bytes) == *digest {
+            #[cfg(feature = "test-support")]
             self.observe(&path);
             Some(bytes)
         } else {

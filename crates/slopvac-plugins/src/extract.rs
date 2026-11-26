@@ -1936,6 +1936,12 @@ mod single_read_tests {
         for i in 0..19_000 {
             let name = format!("{i:05}-{pad}");
             fs::write(bin.join(&name), b"#!/bin/sh\n").unwrap();
+            #[cfg(unix)]
+            fs::set_permissions(
+                bin.join(&name),
+                std::os::unix::fs::PermissionsExt::from_mode(0o755),
+            )
+            .unwrap();
             list.push_str("bin/");
             list.push_str(&name);
             list.push('\n');
