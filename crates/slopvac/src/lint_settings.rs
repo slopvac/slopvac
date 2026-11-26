@@ -734,6 +734,11 @@ pub fn build(
             // `severity_shift` moves levels that come from rule definitions, styles and the
             // genre chain. A level that the config sets is final. A category floor holds
             // after the shift.
+            // Only a `rules` entry from a config layer counts as naming the rule: a category
+            // entry, a preset, a style and the genre chain turn rules on without naming them.
+            let named_by_config = named
+                .as_ref()
+                .is_some_and(|n| n.from == LevelFrom::Rule && !is_inherited(n.source.layer));
             let level = match named {
                 Some(named) => engine_level(named.level).map(|l| {
                     let l = if is_inherited(named.source.layer) {
@@ -761,6 +766,14 @@ pub fn build(
             };
             if hit(&disabled) || (!only.is_empty() && !hit(&only)) {
                 settings.rule_levels.insert(id.clone(), Level::Off);
+            }
+            let named_by_only = only.iter().any(|n| n.as_str() == id.as_str());
+            let on = settings
+                .rule_levels
+                .get(id)
+                .is_none_or(|l| *l != Level::Off);
+            if on && (named_by_only || (named_by_config && level.is_some())) {
+                settings.named_rules.insert(id.clone());
             }
         }
     }
@@ -1377,5 +1390,50 @@ pub(crate) mod tests {
             level(&s, "core:docs-discipline.history-internal-reference"),
             None
         );
+    }
+
+    /// The rules that the settings of `config` mark as named by the user.
+    fn named(config: &str, overrides: &Overrides) -> Vec<String> {
+        let rules = Catalog::load().expect("the rules load");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("slopvac.toml");
+        std::fs::write(&path, config).expect("write config");
+        let loaded = load(&path, &NoPresets).expect("the config loads");
+        validate(&loaded, &rules).expect("the config validates");
+        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let settings = build(&rules, &resolved, Vec::new(), overrides).expect("settings");
+        settings
+            .named_rules
+            .iter()
+            .map(|id| id.as_str().to_owned())
+            .collect()
+    }
+
+    #[rstest::rstest]
+    #[case::rules_entry("[rules]\n\"core:prose-craft.sentence-length\" = \"warning\"\n", &["core:prose-craft.sentence-length"])]
+    #[case::bare_rules_entry("[rules]\n\"prose-craft.sentence-length\" = \"warning\"\n", &["core:prose-craft.sentence-length"])]
+    #[case::rules_entry_off("[rules]\n\"core:prose-craft.sentence-length\" = \"off\"\n", &[])]
+    #[case::category_entry("[categories]\n\"core:prose-craft\" = \"warning\"\n", &[])]
+    #[case::style_and_genre_only("styles = [\"core:legacy-normal\"]\n", &[])]
+    fn only_a_rules_entry_names_a_rule(#[case] body: &str, #[case] expected: &[&str]) {
+        assert_eq!(
+            named(&format!("{HEAD}{body}"), &Overrides::default()),
+            expected
+        );
+    }
+
+    #[test]
+    fn a_rule_selected_by_id_on_the_command_line_is_named_and_a_disabled_one_is_not() {
+        let rule = "core:prose-craft.sentence-length".to_owned();
+        let only = Overrides {
+            only_categories: vec![rule.clone()],
+            ..Overrides::default()
+        };
+        assert_eq!(named(HEAD, &only), [rule.clone()]);
+        let disabled = Overrides {
+            disable: vec![rule],
+            ..Overrides::default()
+        };
+        assert!(named(HEAD, &disabled).is_empty());
     }
 }

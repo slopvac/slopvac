@@ -357,3 +357,28 @@ fn directive_text_is_not_matched(#[case] extra: Value, #[case] source: &str, #[c
     let doc = lint_with(&engine(&[allow]), Language::Shell, source);
     assert_eq!(doc.findings.len(), n);
 }
+
+#[rstest]
+#[case::on_by_default(false, "comment-rules-not-run", NoticeLevel::Info)]
+#[case::named_by_the_user(true, "comment-rule-named-not-run", NoticeLevel::Warning)]
+fn a_prose_only_rule_is_info_by_default_and_a_warning_when_the_user_named_it(
+    #[case] named: bool,
+    #[case] code: &str,
+    #[case] level: NoticeLevel,
+) {
+    let mut s = settings();
+    if named {
+        s.named_rules.insert(id("core:cat.long"));
+    }
+    let e = Engine::new(vec![ruleset(vec![category("cat", &[long_rule()])])], s).unwrap();
+    let doc = e
+        .lint(&Input::comments("f", "# a b c d e\n", Language::Shell))
+        .unwrap();
+    let [n] = doc.unchecked.as_slice() else {
+        panic!("{:?}", doc.unchecked)
+    };
+    assert_eq!((n.code.as_str(), n.level), (code, level));
+    assert_eq!(n.data["rules"], json!(["core:cat.long"]));
+    // A warning notice makes the run incomplete, which fails the gate.
+    assert_eq!(doc.gate.is_passed(), !named);
+}

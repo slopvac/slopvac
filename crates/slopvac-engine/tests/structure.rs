@@ -200,11 +200,15 @@ fn a_check_the_engine_does_not_know_is_still_reported_as_not_run() {
     assert_eq!(doc.unchecked.len(), 1);
     let n = &doc.unchecked[0];
     assert_eq!(n.code.as_str(), "rule-kind-not-implemented");
-    assert_eq!(n.level, NoticeLevel::Info);
+    assert_eq!(n.level, NoticeLevel::Warning);
     assert!(
         n.message
             .as_str()
             .starts_with("1 active structure rule(s) did not run")
+    );
+    assert!(
+        !doc.gate.is_passed(),
+        "a warning notice makes the run incomplete"
     );
 }
 

@@ -6,7 +6,7 @@
 //! logic (advisory demotion, authored floors) live in the config layer; this crate applies
 //! the final answer.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use slopvac_context::{GenreAssignment, GenreRegistry, RuleLevel};
 use slopvac_model::{
@@ -160,6 +160,10 @@ pub struct Settings {
     pub mode: Mode,
     /// Levels set for single rules. These win over a category level.
     pub rule_levels: BTreeMap<RuleId, Level>,
+    /// Rules the user turned on by name: a config `rules` entry or `--only`, not a category,
+    /// preset, style or genre. In code-comment mode, one of these that cannot read comments
+    /// makes the run incomplete instead of joining the info notice.
+    pub named_rules: BTreeSet<RuleId>,
     /// Levels the genre chain gives single rules. They sit below `rule_levels` and the
     /// `categories` levels: explicit configuration beats a genre default.
     pub genre_levels: BTreeMap<RuleId, Level>,
@@ -204,6 +208,7 @@ impl Settings {
             genre_assignments: None,
             mode: Mode::Prose,
             rule_levels: BTreeMap::new(),
+            named_rules: BTreeSet::new(),
             genre_levels: BTreeMap::new(),
             severity_shift: 0,
             categories: BTreeMap::new(),
