@@ -66,8 +66,8 @@ FORMATS = ["json", "rdjsonl", "sarif", "codeclimate"]
 
 
 # A process double for what the real binary cannot be told to do: die from a
-# signal, exit 70, fail `plugins sync` (not wired in the binary yet) and log
-# the exact argv it received. It writes no report content; every test of report
+# signal, exit 70, exit 1 from `plugins sync` (the real command exits 0 or 2)
+# and log the exact argv it received. It writes no report content; every test of report
 # content runs the real binary (see real_binary.py).
 PROCESS_DOUBLE = """#!/usr/bin/env python3
 import json, os, signal, sys
@@ -407,6 +407,9 @@ def test_stderr_that_is_not_utf8_is_shown_not_dropped(sync, capfd):
 
 # ---- plugins sync ------------------------------------------------------------
 
+# A lockfile the real command accepts offline: schema 3, no entries.
+EMPTY_LOCK = "schema_version = 3\nplugins = []\n"
+
 
 @pytest.fixture
 def sync(tmp_path, binary):
@@ -415,7 +418,7 @@ def sync(tmp_path, binary):
     def go(*, locked: bool, **extra):
         if locked:
             lock.parent.mkdir(exist_ok=True)
-            lock.write_text("schema_version = 1\n", encoding="utf-8")
+            lock.write_text(EMPTY_LOCK, encoding="utf-8")
         log = tmp_path / "log"
         log.unlink(missing_ok=True)
         env = {"BINARY": str(binary), "FAKE_LOG": str(log), "LOCKFILE": str(lock)}
@@ -441,6 +444,60 @@ def test_no_lockfile_means_no_sync(sync):
 @pytest.mark.parametrize("status", ["1", "2", "70"])
 def test_a_failed_sync_fails_the_action(sync, status):
     assert sync(locked=True, FAKE_EXIT_SYNC=status)[0] == 2
+
+
+@pytest.fixture
+def real_sync(tmp_path, monkeypatch, slopvac_binary):
+    """Run the Action's ``sync`` against the real binary in a throwaway project.
+
+    The project has its own config, so the repository's 2.x ``slopvac.toml`` is
+    never the nearest one, and the plugin store and state sit under ``tmp_path``.
+    """
+    project = tmp_path / "project"
+    (project / ".slopvac").mkdir(parents=True)
+    (project / "slopvac.toml").write_text("schema_version = 3\n", encoding="utf-8")
+    monkeypatch.chdir(project)
+    env = {
+        "BINARY": str(slopvac_binary),
+        "HOME": str(tmp_path / "home"),
+        "XDG_DATA_HOME": str(tmp_path / "data"),
+        "XDG_STATE_HOME": str(tmp_path / "state"),
+        "XDG_CACHE_HOME": str(tmp_path / "cache"),
+    }
+    for name in ("CI", "LOCKFILE"):
+        monkeypatch.delenv(name, raising=False)
+
+    def go(lock_text: str | None, **extra: str) -> int:
+        if lock_text is not None:
+            (project / ".slopvac" / "plugins.lock").write_text(lock_text, encoding="utf-8")
+        return action.sync({**env, **extra})
+
+    return go
+
+
+def test_real_sync_accepts_a_lockfile_with_no_plugins(real_sync, capfd):
+    assert real_sync(EMPTY_LOCK) == 0
+    captured = capfd.readouterr()
+    assert captured.err == ""
+    assert "::error" not in captured.out
+
+
+def test_real_sync_without_a_lockfile_skips_with_a_notice(real_sync, capfd):
+    assert real_sync(None) == 0
+    assert capfd.readouterr().out == (
+        "::notice title=slopvac::no .slopvac/plugins.lock; skipping plugins sync\n"
+    )
+
+
+def test_real_sync_under_ci_runs_from_the_lock(real_sync):
+    assert real_sync(EMPTY_LOCK, CI="true") == 0
+
+
+def test_real_sync_fails_the_action_on_a_lockfile_the_command_refuses(real_sync, capfd):
+    assert real_sync("not a lockfile") == 2
+    captured = capfd.readouterr()
+    assert captured.err == "error[plugins-lock-invalid]: not a valid lockfile\n"
+    assert captured.out == "::error title=slopvac::plugins sync failed (status 2)\n"
 
 
 def _steps():
