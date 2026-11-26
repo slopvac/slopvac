@@ -1155,7 +1155,12 @@ fn colliding_with_core() -> (Spec, String) {
 fn colliding_with_core_as(id: &'static str) -> (Spec, String) {
     let packs = Packs::core().unwrap();
     let core_rule = packs.rule_sets().next().unwrap().rules().next().unwrap();
-    let local = core_rule.id().local().to_owned();
+    colliding_with(id, core_rule.id().local())
+}
+
+/// A plugin `id` whose one rule has the local id `local` of a core rule, and that id.
+fn colliding_with(id: &'static str, local: &str) -> (Spec, String) {
+    let local = local.to_owned();
     let (category, rule) = local.split_once('.').unwrap();
     let text = format!(
         r#"{{"schema_version":3,"id":"{category}","title":"T","description":"D","rules":[{{"id":"{rule}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"a"}},"citation":{{"source":"s"}}}}]}}"#
@@ -1355,6 +1360,78 @@ fn two_core_clashes_in_one_plugin_name_the_lowest_rule_in_either_order(#[case] l
             &err,
             SyncedError::Pack(PackError::RuleIdCollision { plugin, rule })
                 if plugin == "acme" && *rule == low
+        ),
+        "{err:?}"
+    );
+}
+
+// The refusal is a function of the set of plugins, not of the order they are listed in. Three
+// plugins clash with three different core rules and `beta` is listed twice. The lowest qualified
+// id, `alpha:<category>.<rule>`, decides which plugin and rule the error names.
+#[rstest]
+#[case::alpha_first(&[0, 1, 2, 1])]
+#[case::alpha_last(&[1, 2, 1, 0])]
+#[case::beta_first(&[1, 1, 2, 0])]
+#[case::gamma_first(&[2, 0, 1, 1])]
+fn core_clashes_across_plugins_name_the_lowest_qualified_id_in_any_order(#[case] order: &[usize]) {
+    let core = Packs::core().unwrap();
+    let locals: Vec<String> = core
+        .rule_sets()
+        .flat_map(|s| s.rules().map(|r| r.id().local().to_owned()))
+        .collect();
+    let mut w = World::new();
+    let mut expected = String::new();
+    for (name, local) in [
+        ("alpha", &locals[2]),
+        ("beta", &locals[0]),
+        ("gamma", &locals[1]),
+    ] {
+        let (spec, local) = colliding_with(name, local);
+        if name == "alpha" {
+            expected = local;
+        }
+        w.install(&spec);
+    }
+    let mut loaded = Vec::new();
+    for &i in order {
+        let name = ["alpha", "beta", "gamma"][i];
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+    }
+    loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
+
+    let err = Packs::new(loaded).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            PackError::RuleIdCollision { plugin, rule } if plugin == "alpha" && *rule == expected
+        ),
+        "{err:?}"
+    );
+}
+
+// With no core clash, the lowest duplicated qualified id decides. `acme:c.r0`, `beta:c.r0` and
+// `beta:c.r1` are each supplied twice, in every listing order.
+#[rstest]
+#[case::acme_first(&["acme", "beta", "acme", "beta"])]
+#[case::beta_first(&["beta", "beta", "acme", "acme"])]
+#[case::interleaved(&["beta", "acme", "beta", "acme"])]
+#[case::acme_last(&["acme", "beta", "beta", "acme"])]
+fn duplicate_ids_name_the_lowest_qualified_id_in_any_order(#[case] order: &[&'static str]) {
+    let mut w = World::new();
+    w.install(&Spec::new("acme").rules(&["a"]));
+    w.install(&Spec::new("beta").rules(&["a", "b"]));
+    let mut loaded = Vec::new();
+    for name in order {
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+    }
+
+    let err = Packs::new(loaded).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            PackError::RuleIdCollision { plugin, rule } if plugin == "acme" && rule == "c.r0"
         ),
         "{err:?}"
     );
