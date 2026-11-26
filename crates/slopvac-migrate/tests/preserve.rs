@@ -610,8 +610,10 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
 ///
 /// Anything else would outrank the companion style and the settings 2.x let win. In the other
 /// direction, every vocabulary rule the input authors in a layer must still be there at its
-/// authored level, so a dropped or changed entry fails too. Extra override blocks that hold
-/// only guards are allowed. Returns the number of layers walked, or the first offence.
+/// authored level, so a dropped or changed entry fails too. Every authored override block must
+/// match a written one by its `files`, with or without a vocabulary rule. Extra override
+/// blocks that hold only guards are allowed. Returns the number of layers walked, or the first
+/// offence.
 fn check_vocabulary_entries(text: &str, authored: &str) -> Result<usize, String> {
     let doc = toml::from_str::<toml::Table>(text)
         .map_err(|e| format!("the written config does not parse: {e}\n{text}"))?;
@@ -653,13 +655,22 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<usize, String>
             }
         }
     }
-    // An authored override that the output no longer has loses its rules with it.
+    // Every authored override must still be there, even one that holds no vocabulary rule: a
+    // category-only override changes the levels of the files it matches.
     for block in &authored_blocks {
         if let Some((id, level)) = vocabulary_levels(block)?.into_iter().next() {
             return Err(format!(
                 "authored vocabulary rule {id} = {level} is missing: its override block is gone\n{text}"
             ));
         }
+    }
+    if let Some(block) = authored_blocks.first() {
+        let files = block
+            .get("files")
+            .map_or_else(|| "(no files)".to_owned(), ToString::to_string);
+        return Err(format!(
+            "authored override {files} is missing from the written config\n{text}"
+        ));
     }
     // The layer checks above name the exact entry that went missing. This one catches the rest:
     // an input that authors a blocklist or a category, where the output keeps none of it.
