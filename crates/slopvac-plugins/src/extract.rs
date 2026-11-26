@@ -1130,6 +1130,7 @@ fn write_entry(
         kept: Vec::new(),
         cap: if keep { MAX_CAPTURE_BYTES } else { 0 },
         over: false,
+        seen: 0,
     };
     let hashed = hash_stream(&mut tee, out.as_mut(), &rel, None);
     if keep && tee.over {
@@ -1358,6 +1359,8 @@ struct Capture<'a, R: Read> {
     /// Most bytes to keep. A file over it is still hashed, and `over` says it did not fit.
     cap: u64,
     over: bool,
+    /// Bytes pulled through the reader, kept or not.
+    seen: u64,
 }
 
 /// Most bytes a hash pass keeps of one file it is asked to capture by name. The executable
@@ -1377,6 +1380,7 @@ enum Keep<'a> {
 impl<R: Read> Read for Capture<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
+        self.seen += n as u64;
         // `usize` widens to `u64` without loss on every supported target.
         if self.kept.len() as u64 + n as u64 <= self.cap {
             self.kept.extend_from_slice(&buf[..n]);
@@ -1400,6 +1404,55 @@ pub fn tree_hash_capturing_files_observed(
     after_hash: &mut dyn FnMut(&str, &Path),
 ) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
     hash_walk(dir, &Keep::All(cap), after_hash)
+}
+
+/// Test seam: [`tree_hash_capturing`] with the tree byte budget given, `before_read` called with
+/// each file's path after its metadata was checked and before it is read, and `after_read` called
+/// with the bytes pulled from each captured file.
+///
+/// # Errors
+/// As [`tree_hash_capturing`].
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn tree_hash_capturing_probed(
+    dir: &Path,
+    name: &str,
+    tree_budget: u64,
+    before_read: &mut dyn FnMut(&Path),
+    after_read: &mut dyn FnMut(u64),
+) -> Result<(TreeHash, Option<Vec<u8>>), ExtractError> {
+    let (hash, mut kept) = hash_walk_with(
+        dir,
+        &Keep::File(name),
+        &mut |_, _| {},
+        &mut |_, p| before_read(p),
+        after_read,
+        tree_budget,
+    )?;
+    Ok((hash, kept.remove(name)))
+}
+
+/// Test seam: [`tree_hash_capturing_files`] with the same hooks as [`tree_hash_capturing_probed`].
+///
+/// # Errors
+/// As [`tree_hash_capturing_files`].
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn tree_hash_capturing_files_probed(
+    dir: &Path,
+    cap: u64,
+    tree_budget: u64,
+    before_read: &mut dyn FnMut(&Path),
+    after_read: &mut dyn FnMut(u64),
+) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
+    hash_walk_with(
+        dir,
+        &Keep::All(cap),
+        &mut |_, _| {},
+        &mut |_, p| before_read(p),
+        after_read,
+        tree_budget,
+    )
 }
 
 /// [`verify_tree`], and the content of the manifest at the root of the tree as the same pass read
@@ -1485,7 +1538,14 @@ fn hash_walk(
     keep: &Keep<'_>,
     after_hash: &mut dyn FnMut(&str, &Path),
 ) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
-    hash_walk_with(dir, keep, after_hash, &mut |_, _| {}, MAX_TREE_BYTES)
+    hash_walk_with(
+        dir,
+        keep,
+        after_hash,
+        &mut |_, _| {},
+        &mut |_| {},
+        MAX_TREE_BYTES,
+    )
 }
 
 /// [`hash_walk`] with the tree byte budget given, and `before_read` called for each file after its
@@ -1500,6 +1560,7 @@ fn hash_walk_with(
     keep: &Keep<'_>,
     after_hash: &mut dyn FnMut(&str, &Path),
     before_read: &mut dyn FnMut(&str, &Path),
+    after_read: &mut dyn FnMut(u64),
     tree_budget: u64,
 ) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
     let dir = normalised(dir);
@@ -1605,6 +1666,7 @@ fn hash_walk_with(
                         kept: Vec::new(),
                         cap,
                         over: false,
+                        seen: 0,
                     };
                     let hashed = hash_stream(&mut tee, None, &rel, Some(budget));
                     if hashed.is_err() && wanted && !tee.over {
@@ -1614,6 +1676,7 @@ fn hash_walk_with(
                         let mut rest = [0u8; 16 * 1024];
                         while !tee.over && matches!(tee.read(&mut rest), Ok(n) if n > 0) {}
                     }
+                    after_read(tee.seen);
                     // The capture cap decides first: a file that outgrew it is a capture limit,
                     // whether or not the tree budget ran out in the same read.
                     if tee.over {
@@ -2062,9 +2125,15 @@ mod single_read_tests {
             "the text names the staging path: {text}"
         );
         assert!(
-            !text.split_whitespace().any(|w| w.starts_with('/')),
-            "the text holds an absolute path: {text}"
+            text.contains("<external>/tree"),
+            "the staging directory is not shown in its redacted form: {text}"
         );
+    }
+
+    /// Make `path` grow to `len` bytes (sparse) just before the walk reads it.
+    fn grow(path: &Path, len: u64) {
+        let file = fs::OpenOptions::new().write(true).open(path).unwrap();
+        file.set_len(len).unwrap();
     }
 
     #[test]
@@ -2072,28 +2141,52 @@ mod single_read_tests {
         let scratch = tempfile::tempdir().unwrap();
         let manifest = scratch.path().join("m.toml");
         fs::write(&manifest, b"x").unwrap();
-        let grown = manifest.clone();
 
-        // The budget is 512 KiB, under the 1 MiB capture cap. The file grows to 3 MiB (sparse)
-        // between its metadata and its read, so the budget trips first. Reading on, a bounded
-        // probe finds that the cap was crossed too, and the cap decides.
-        let err = hash_walk_with(
+        // The budget is 1 KiB under the 1 MiB capture cap. The file grows to 3 MiB (sparse)
+        // between its metadata and its read, so the budget trips first. A bounded probe then
+        // finds that the cap was crossed too, and the cap decides.
+        let err = tree_hash_capturing_probed(
             scratch.path(),
-            &Keep::File("m.toml"),
-            &mut |_, _| {},
-            &mut |rel, _| {
-                if rel == "m.toml" {
-                    let file = fs::OpenOptions::new().write(true).open(&grown).unwrap();
-                    file.set_len(3 << 20).unwrap();
-                }
-            },
-            512 << 10,
+            "m.toml",
+            MAX_CAPTURE_BYTES - 1024,
+            &mut |_| grow(&manifest, 3 << 20),
+            &mut |_| {},
         )
         .unwrap_err();
 
         assert!(
             matches!(err, ExtractError::CaptureLimit { cap, .. } if cap == MAX_CAPTURE_BYTES),
             "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_file_that_grows_far_past_the_budget_stays_refused_and_is_read_only_a_little_further() {
+        let scratch = tempfile::tempdir().unwrap();
+        let big = scratch.path().join("big.bin");
+        fs::write(&big, b"x").unwrap();
+        let budget: u64 = 256 << 10;
+        let mut seen = Vec::new();
+
+        // The caller's cap is 64 MiB, far above the budget. The file grows to 3 MiB, so the
+        // budget trips and the cap cannot be shown crossed: the original refusal stands, and the
+        // walk has pulled at most the budget plus one hash chunk plus the probe allowance, a
+        // bound that does not depend on the cap or on how far the file grew.
+        let err = tree_hash_capturing_files_probed(
+            scratch.path(),
+            64 << 20,
+            budget,
+            &mut |_| grow(&big, 3 << 20),
+            &mut |n| seen.push(n),
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, ExtractError::Refused(_)), "{err:?}");
+        assert_eq!(seen.len(), 1, "one captured file");
+        assert!(
+            seen[0] <= budget + 2 * (64 << 10),
+            "{} bytes pulled from a file over a {budget} byte budget",
+            seen[0]
         );
     }
 
