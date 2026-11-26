@@ -16,13 +16,15 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::Value as Json;
-use slopvac_config::{ConfigLevel, LevelFrom, LoadedConfig, Resolved, Setting, describe};
+use slopvac_config::{
+    ConfigLevel, GroupedKey, LevelFrom, LoadedConfig, Resolved, Setting, describe,
+};
 use slopvac_config::{Inputs, PackFile, Presets, UnknownRule, unknown_rules};
 use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Level, Settings};
 use slopvac_model::{
-    CategoryId, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, KebabName,
-    NonEmptyString, Notice, NoticeLevel, RuleId, Severity,
+    CategoryName, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, KebabName,
+    NonEmptyString, Notice, NoticeLevel, RESERVED_ID, RuleId, Severity,
 };
 use slopvac_rules::MatchKind;
 use slopvac_styles::{BuiltinSource, Style, StylePresets};
@@ -96,14 +98,41 @@ fn legacy_style(name: &str) -> &'static Style {
     styles.get(name).unwrap_or_else(|| &styles["legacy-normal"])
 }
 
-fn rule_id_of(rules: &Catalog, key: &str) -> Option<RuleId> {
-    rules.rule_named(key).map(|r| r.id().clone())
+/// The rule a config or command-line key names. `Ok(None)` when no rule has the key, and an
+/// error when a bare key is the local id of rules in more than one plugin.
+fn rule_id_of(rules: &Catalog, key: &str) -> Result<Option<RuleId>, LintOptionError> {
+    match rules.rules_named(key).as_slice() {
+        [] => Ok(None),
+        [rule] => Ok(Some(rule.id().clone())),
+        many => Err(LintOptionError::AmbiguousRule {
+            name: format!("{key:?}"),
+            candidates: many
+                .iter()
+                .map(|r| r.id().as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        }),
+    }
 }
 
-fn category_of(rules: &Catalog, key: &str) -> Option<String> {
-    rules
-        .category_named(key)
-        .map(|c| c.id().as_str().to_owned())
+/// The category a config or command-line key names. `Ok(None)` when no plugin has the key,
+/// and an error when a bare key is the id of categories in more than one plugin.
+pub(crate) fn category_of(
+    rules: &Catalog,
+    key: &str,
+) -> Result<Option<CategoryName>, LintOptionError> {
+    match rules.categories_named(key).as_slice() {
+        [] => Ok(None),
+        [(plugin, category)] => Ok(Some(CategoryName::of(plugin, category.id()))),
+        many => Err(LintOptionError::AmbiguousCategory {
+            name: format!("{key:?}"),
+            candidates: many
+                .iter()
+                .map(|(plugin, c)| format!("{plugin}:{}", c.id()))
+                .collect::<Vec<_>>()
+                .join(", "),
+        }),
+    }
 }
 
 /// Check the names a config uses against the catalogue. A key may be bare (`orwell.x`,
@@ -119,24 +148,37 @@ fn check_names(
     unknown: &mut Vec<UnknownRule>,
 ) -> Result<(), Box<Located>> {
     for setting in settings {
-        if let [head, key, ..] = setting.path.as_slice()
-            && head == "categories"
-            && category_of(rules, key).is_none()
-        {
-            return Err(Box::new(Located {
-                error: CliError::escaping(
-                    "config-unknown-category",
-                    &format!(
-                        "{}: unknown category {key:?}; use a category from `slopvac rules`",
-                        describe(&redacted(&setting.source, root))
-                    ),
-                ),
+        let located = |error| {
+            Box::new(Located {
+                error,
                 source: Some(setting.source.clone()),
-            }));
+            })
+        };
+        match setting.path.as_slice() {
+            [head, key, ..] if head == "categories" => match category_of(rules, key) {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    return Err(located(CliError::escaping(
+                        "config-unknown-category",
+                        &format!(
+                            "{}: unknown category {key:?}; use a category from `slopvac rules`",
+                            describe(&redacted(&setting.source, root))
+                        ),
+                    )));
+                }
+                Err(ambiguous) => return Err(located(ambiguous.into())),
+            },
+            // An unknown rule is a notice, so only an ambiguous one stops the run.
+            [head, key, ..] if head == "rules" => {
+                if let Err(ambiguous) = rule_id_of(rules, key) {
+                    return Err(located(ambiguous.into()));
+                }
+            }
+            _ => {}
         }
     }
     unknown.extend(unknown_rules(settings, |key| {
-        rule_id_of(rules, key).is_some()
+        matches!(rule_id_of(rules, key), Ok(Some(_)))
     }));
     Ok(())
 }
@@ -290,8 +332,36 @@ fn legacy_name(listed: &str) -> Option<&'static Style> {
 }
 
 /// The built-in style presets, plus the `core:legacy-<profile>` styles.
-struct ShippedStyles {
+pub(crate) struct ShippedStyles {
     styles: StylePresets<BuiltinSource>,
+}
+
+impl ShippedStyles {
+    /// The styles and genres that ship with the binary.
+    pub(crate) fn new() -> Self {
+        Self {
+            styles: StylePresets(BuiltinSource),
+        }
+    }
+}
+
+/// Qualify the bare `categories` and `rules` keys of a shipped layer to the plugin `core`,
+/// which owns every shipped preset. A key written in a config file keeps its own spelling, so
+/// the two never meet: a bare key that two plugins share stays ambiguous for a file and is
+/// `core`'s for a preset.
+fn qualified_to_core(layer: Vec<Setting>) -> Vec<Setting> {
+    layer
+        .into_iter()
+        .map(|mut setting| {
+            if let [head, key, ..] = setting.path.as_mut_slice()
+                && (head == "categories" || head == "rules")
+                && !key.contains(':')
+            {
+                *key = format!("{RESERVED_ID}:{key}");
+            }
+            setting
+        })
+        .collect()
 }
 
 impl Presets for ShippedStyles {
@@ -300,6 +370,7 @@ impl Presets for ShippedStyles {
             Some(style) => Some(style.layer().to_vec()),
             None => self.styles.style(name),
         }
+        .map(qualified_to_core)
     }
 
     fn style_layers(&self, listed: &[String]) -> Vec<Vec<Setting>> {
@@ -320,11 +391,15 @@ impl Presets for ShippedStyles {
         if !run.is_empty() {
             layers.extend(self.styles.style_layers(&run));
         }
-        layers
+        layers.into_iter().map(qualified_to_core).collect()
     }
 
     fn genre_chain(&self, name: &str) -> Vec<Vec<Setting>> {
-        self.styles.genre_chain(name)
+        self.styles
+            .genre_chain(name)
+            .into_iter()
+            .map(qualified_to_core)
+            .collect()
     }
 
     fn pack_config(&self, name: &str) -> Option<PackFile> {
@@ -346,15 +421,76 @@ pub fn genre_assignments(config: &LoadedConfig) -> Vec<GenreAssignment> {
         .collect()
 }
 
+/// Each key of `resolved` with its final value and the values it replaced, for
+/// `--explain-config`. A `categories` or `rules` key is grouped under the catalogue entry it
+/// names, so `x`, `core:x` and a shipped preset's `core:x` are one entry with one history. A
+/// key that names no entry, or more than one, keeps its own spelling. The entry is shown under
+/// the spelling of the contribution that won. A shipped preset's bare keys load as
+/// `core:<key>` (see `qualified_to_core`), and are shown as the preset's author wrote them.
+pub(crate) fn explain(resolved: &Resolved, catalog: &Catalog) -> Vec<slopvac_config::Explained> {
+    resolved.explain_grouped(|path, contribution| {
+        let mut shown = path.to_vec();
+        let mut group = path.to_vec();
+        let mut rank = 0;
+        let mut fallback = None;
+        if let [head, key, ..] = shown.as_mut_slice()
+            && (head == "categories" || head == "rules")
+        {
+            rank = spelling_rank(key);
+            // A preset key keeps the spelling its author wrote, whether or not it resolves.
+            if is_inherited(contribution.source.layer)
+                && let Some(bare) = key.strip_prefix(&format!("{RESERVED_ID}:"))
+            {
+                fallback = Some(path.to_vec());
+                *key = bare.to_owned();
+            }
+            if let Some(identity) = identity_of(catalog, head, &path[1]) {
+                group[1] = identity;
+            }
+        }
+        let key = GroupedKey::new(group, shown, rank);
+        match fallback {
+            Some(fallback) => key.with_fallback(fallback),
+            None => key,
+        }
+    })
+}
+
+/// The rank of a spelling of a `categories` or `rules` key when one layer writes a key more
+/// than one way: the qualified spelling (0) wins over the bare one (1). `build` lists the
+/// spellings it reads in this order, and `explain` ranks by it, so both report one value.
+fn spelling_rank(key: &str) -> usize {
+    usize::from(!key.contains(':'))
+}
+
+/// `spellings` in the order that wins a tie, by [`spelling_rank`].
+fn by_rank<T>(mut spellings: Vec<(&str, T)>) -> Vec<T> {
+    spellings.sort_by_key(|(key, _)| spelling_rank(key));
+    spellings.into_iter().map(|(_, v)| v).collect()
+}
+
+/// The `<plugin>:<id>` of the one category or rule that `key` names under `section`.
+fn identity_of(catalog: &Catalog, section: &str, key: &str) -> Option<String> {
+    match section {
+        "categories" => match catalog.categories_named(key).as_slice() {
+            [(plugin, category)] => Some(format!("{}:{}", plugin.as_str(), category.id().as_str())),
+            _ => None,
+        },
+        "rules" => match catalog.rules_named(key).as_slice() {
+            [rule] => Some(rule.id().as_str().to_owned()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// The merged settings of the file at `rel`.
 #[must_use]
 pub fn resolve(config: &LoadedConfig, rel: &Path) -> Resolved {
     config.resolve(
         rel,
         &Inputs {
-            presets: &ShippedStyles {
-                styles: StylePresets(BuiltinSource),
-            },
+            presets: &ShippedStyles::new(),
             front_matter: &[],
             directives: &[],
             cli: &[],
@@ -453,14 +589,23 @@ fn internal(what: &str, err: impl std::fmt::Display) -> CliError {
     CliError::new("settings-invalid", format!("{what}: {err}"))
 }
 
-/// The ids a `--category` or `--disable` name selects: a category, or a rule in either form.
-fn selected(rules: &Catalog, names: &[String]) -> Result<Vec<String>, CliError> {
+/// What a `--category` or `--disable` name selects, with the plugin resolved.
+enum Selected {
+    /// A category, by the name a report gives it.
+    Category(CategoryName),
+    /// A rule.
+    Rule(RuleId),
+}
+
+/// What a `--category` or `--disable` name selects: a category, or a rule in either form.
+/// A qualified name keeps its plugin, and a bare name that two plugins share is an error.
+fn selected(rules: &Catalog, names: &[String]) -> Result<Vec<Selected>, CliError> {
     let mut out = Vec::new();
     for name in names {
-        if let Some(category) = category_of(rules, name) {
-            out.push(category);
-        } else if let Some(id) = rule_id_of(rules, name) {
-            out.push(id.as_str().to_owned());
+        if let Some(category) = category_of(rules, name)? {
+            out.push(Selected::Category(category));
+        } else if let Some(id) = rule_id_of(rules, name)? {
+            out.push(Selected::Rule(id));
         } else {
             return Err(CliError::new(
                 "usage",
@@ -481,14 +626,9 @@ fn is_inherited(layer: ConfigLayer) -> bool {
     )
 }
 
-/// Build the engine settings for a file from its resolved config.
-///
-/// `sources` is copied to each report document.
-///
-/// # Errors
-/// `usage` for a `--category` or `--disable` name that the catalogue lacks.
-pub fn build(
-    rules: &Catalog,
+/// The settings of a file before any category or rule is set: profile, genre, thresholds and
+/// the severity shift.
+fn base_settings(
     resolved: &Resolved,
     sources: Vec<ConfigSource>,
     cli: &Overrides,
@@ -515,6 +655,23 @@ pub fn build(
         .get(&["profile", "severity_shift"])
         .and_then(Json::as_i64)
         .unwrap_or(0);
+    Ok(settings)
+}
+
+/// Build the engine settings for a file from its resolved config.
+///
+/// `sources` is copied to each report document.
+///
+/// # Errors
+/// `usage` for a `--category` or `--disable` name that the catalogue lacks, and
+/// `ambiguous-category` or `ambiguous-rule` for a bare name that more than one plugin ships.
+pub fn build(
+    rules: &Catalog,
+    resolved: &Resolved,
+    sources: Vec<ConfigSource>,
+    cli: &Overrides,
+) -> Result<Settings, CliError> {
+    let mut settings = base_settings(resolved, sources, cli)?;
 
     let shift = resolved
         .get(&["profile", "severity_shift"])
@@ -522,23 +679,32 @@ pub fn build(
         .unwrap_or(0);
     let disabled = selected(rules, &cli.disable)?;
     let only = selected(rules, &cli.only_categories)?;
-    for category in rules.categories() {
+    let categories = rules
+        .sets()
+        .iter()
+        .flat_map(|set| set.categories().iter().map(move |c| (set.pack(), c)));
+    for (plugin, category) in categories {
         let name = category.id().as_str();
-        let qualified = format!(
-            "{}:{name}",
-            category.rules().first().map_or("core", |r| r.id().pack())
-        );
+        let qualified = format!("{plugin}:{name}");
+        let reported = CategoryName::of(plugin, category.id());
+        // A bare key names this category only when no other plugin ships the same id. The
+        // shipped presets are qualified to `core` when they load.
+        let bare_category = rules.categories_named(name).len() == 1;
         let field = |f: &'static str| {
-            vec![
+            let mut paths = vec![(
+                qualified.as_str(),
                 vec!["categories", qualified.as_str(), f],
-                vec!["categories", name, f],
-            ]
+            )];
+            if bare_category {
+                paths.push((name, vec!["categories", name, f]));
+            }
+            by_rank(paths)
         };
         // `"none"` clears the budget; it is stored as null and must not fall back to the
         // budget in the rule data.
         let budget = resolved.get_by_any(&field("max_per_100_words"));
         settings.categories.insert(
-            CategoryId::new(name).map_err(|e| internal("category", e))?,
+            reported.clone(),
             CategoryDials::default()
                 .with_weight(resolved.get_by_any(&field("weight")).and_then(Json::as_f64))
                 .with_max_per_100_words(budget.and_then(Json::as_f64))
@@ -551,12 +717,20 @@ pub fn build(
             let id = rule.id();
             // A judgement rule has no finding to grade: a category entry never sets its
             // level, only a `rules` entry does (docs/contract/profiles.md).
-            let categories: Vec<&str> = if rule.kind() == MatchKind::Judgement {
-                Vec::new()
-            } else {
-                vec![qualified.as_str(), name]
-            };
-            let named = resolved.level_by_any_unfloored(&[id.as_str(), id.local()], &categories);
+            let mut categories: Vec<(&str, &str)> = Vec::new();
+            if rule.kind() != MatchKind::Judgement {
+                categories.push((qualified.as_str(), qualified.as_str()));
+                if bare_category {
+                    categories.push((name, name));
+                }
+            }
+            let categories = by_rank(categories);
+            let mut keys = vec![(id.as_str(), id.as_str())];
+            if rules.rules_named(id.local()).len() == 1 {
+                keys.push((id.local(), id.local()));
+            }
+            let keys = by_rank(keys);
+            let named = resolved.level_by_any_unfloored(&keys, &categories);
             // `severity_shift` moves levels that come from rule definitions, styles and the
             // genre chain. A level that the config sets is final. A category floor holds
             // after the shift.
@@ -579,7 +753,12 @@ pub fn build(
             if let Some(level) = level {
                 settings.rule_levels.insert(id.clone(), level);
             }
-            let hit = |list: &[String]| list.iter().any(|n| n == name || n.as_str() == id.as_str());
+            let hit = |list: &[Selected]| {
+                list.iter().any(|n| match n {
+                    Selected::Category(c) => *c == reported,
+                    Selected::Rule(r) => r == id,
+                })
+            };
             if hit(&disabled) || (!only.is_empty() && !hit(&only)) {
                 settings.rule_levels.insert(id.clone(), Level::Off);
             }
@@ -619,8 +798,11 @@ pub fn config_sources(files: &[(String, bool)]) -> Vec<ConfigSource> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::rule_catalog::{catalog_of, catalog_with_rules};
+    use rstest::rstest;
+    use serde_json::json;
     use slopvac_config::load;
 
     /// No packs behind the loader: these tests cover the settings builder, not packs.
@@ -642,14 +824,167 @@ mod tests {
 
     /// The settings that `config` (the text of a `slopvac.toml`) gives to a file.
     fn settings(config: &str) -> Result<Settings, CliError> {
-        let rules = Catalog::load().expect("the rules load");
+        settings_over(&Catalog::load().expect("the rules load"), config)
+    }
+
+    /// The settings that `config` gives to a file, over the catalogue `rules`.
+    fn settings_over(rules: &Catalog, config: &str) -> Result<Settings, CliError> {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, config).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
-        validate(&loaded, &rules)?;
+        validate(&loaded, rules)?;
         let resolved = resolve(&loaded, Path::new("doc.md"));
-        build(&rules, &resolved, Vec::new(), &Overrides::default())
+        build(rules, &resolved, Vec::new(), &Overrides::default())
+    }
+
+    /// A catalogue of two plugins, `alpha` and `beta`, that each ship a category `style`.
+    fn two_plugins_with_one_category_id() -> Catalog {
+        catalog_of(&[("alpha", "style"), ("beta", "style")])
+    }
+
+    /// The `explain` paths of `config` (the text of a `slopvac.toml`) over the catalogue `rules`.
+    fn explained_paths(rules: &Catalog, config: &str) -> Vec<String> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("slopvac.toml");
+        std::fs::write(&path, config).expect("write config");
+        let loaded = load(&path, &NoPresets).expect("the config loads");
+        let resolved = resolve(&loaded, Path::new("doc.md"));
+        explain(&resolved, rules)
+            .into_iter()
+            .map(|e| e.path)
+            .filter(|p| p.starts_with("categories"))
+            .collect()
+    }
+
+    #[test]
+    fn explain_keeps_categories_of_two_plugins_with_one_local_id_apart() {
+        let rules = catalog_of(&[("core", "style"), ("alpha", "style")]);
+        let config =
+            format!("{HEAD}\n[categories]\n\"core:style\" = \"off\"\n\"alpha:style\" = \"off\"\n");
+        assert_eq!(
+            explained_paths(&rules, &config),
+            [
+                "categories.\"alpha:style\".severity",
+                "categories.\"core:style\".severity",
+            ]
+        );
+    }
+
+    // Both spellings in one layer: the qualified key wins the tie, as it does for `lint`
+    // (`a_qualified_and_a_bare_key_in_one_layer_resolve_the_same_in_either_order`), so the one
+    // entry shows the qualified spelling and its value. The bare value is the replaced one.
+    #[test]
+    fn explain_merges_the_bare_and_qualified_spellings_of_one_category() {
+        let rules = catalog_of(&[("core", "style"), ("alpha", "tone")]);
+        let config = format!("{HEAD}\n[categories]\n\"core:style\" = \"off\"\nstyle = \"error\"\n");
+        assert_eq!(
+            explained_paths(&rules, &config),
+            ["categories.\"core:style\".severity"]
+        );
+    }
+
+    /// `explain` over the shipped catalogue for `config`, with the shipped presets.
+    fn explained_with_presets(config: &str) -> Vec<slopvac_config::Explained> {
+        explained_with_presets_over(&Catalog::load().expect("the rules load"), config)
+    }
+
+    /// `explain` over `rules` for `config`, with the shipped presets.
+    fn explained_with_presets_over(
+        rules: &Catalog,
+        config: &str,
+    ) -> Vec<slopvac_config::Explained> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("slopvac.toml");
+        std::fs::write(&path, config).expect("write config");
+        let loaded = load(&path, &ShippedStyles::new()).expect("the config loads");
+        let resolved = resolve(&loaded, Path::new("doc.md"));
+        explain(&resolved, rules)
+    }
+
+    // `explain` and `lint` read one value for a key that one layer spells both ways, in either
+    // order, for a category and for a rule.
+    #[rstest]
+    #[case::category_qualified_first(
+        "[categories]\n\"core:orwell\" = \"off\"\norwell = \"error\"\n",
+        "categories.\"core:orwell\".severity",
+        "core:orwell.unsupported-evaluative"
+    )]
+    #[case::category_bare_first(
+        "[categories]\norwell = \"error\"\n\"core:orwell\" = \"off\"\n",
+        "categories.\"core:orwell\".severity",
+        "core:orwell.unsupported-evaluative"
+    )]
+    #[case::rule_qualified_first(
+        "[rules]\n\"core:prose-inflation.slop-lexicon\" = \"off\"\n\"prose-inflation.slop-lexicon\" = \"error\"\n",
+        "rules.\"core:prose-inflation.slop-lexicon\"",
+        "core:prose-inflation.slop-lexicon"
+    )]
+    #[case::rule_bare_first(
+        "[rules]\n\"prose-inflation.slop-lexicon\" = \"error\"\n\"core:prose-inflation.slop-lexicon\" = \"off\"\n",
+        "rules.\"core:prose-inflation.slop-lexicon\"",
+        "core:prose-inflation.slop-lexicon"
+    )]
+    fn explain_reports_the_value_that_lint_uses_for_a_key_spelled_both_ways(
+        #[case] entries: &str,
+        #[case] shown: &str,
+        #[case] rule: &str,
+    ) {
+        let config = format!("{HEAD}\n{entries}");
+        let explained = explained_with_presets(&config);
+        let entry = explained
+            .iter()
+            .find(|e| e.path == shown)
+            .unwrap_or_else(|| panic!("no entry {shown}: {explained:?}"));
+        let s = settings(&config).unwrap();
+        assert_eq!(level(&s, rule), Some(Level::Off));
+        assert_eq!(entry.value, json!("off"));
+    }
+
+    // A plugin ships a category `ste-vocabulary`, and the project sets it by its bare name. The
+    // `ste` preset's `ste-vocabulary` names no core category. Stripping the preset's `core:`
+    // would print both under one path, so the preset's entry keeps the qualified spelling.
+    #[test]
+    fn a_preset_key_stays_qualified_when_its_bare_spelling_is_another_entries_path() {
+        let rules = catalog_of(&[("core", "style"), ("alpha", "ste-vocabulary")]);
+        let config =
+            format!("{HEAD}styles = [\"ste\"]\n\n[categories]\nste-vocabulary = \"error\"\n");
+        let explained = explained_with_presets_over(&rules, &config);
+        let entries: Vec<(&str, &serde_json::Value)> = explained
+            .iter()
+            .filter(|e| e.path.contains("ste-vocabulary"))
+            .map(|e| (e.path.as_str(), &e.value))
+            .collect();
+        assert_eq!(
+            entries,
+            [
+                ("categories.ste-vocabulary.severity", &json!("error")),
+                ("categories.\"core:ste-vocabulary\".severity", &json!("off")),
+            ]
+        );
+    }
+
+    // A preset key keeps the spelling its author wrote, whether or not it names a catalogue
+    // entry. `ste-vocabulary` names no category.
+    #[test]
+    fn a_preset_key_keeps_its_own_spelling_when_it_names_no_catalogue_entry() {
+        let explained = explained_with_presets(&format!("{HEAD}styles = [\"ste\"]\n"));
+        let paths: Vec<&str> = explained
+            .iter()
+            .map(|e| e.path.as_str())
+            .filter(|p| p.contains("ste-vocabulary"))
+            .collect();
+        assert_eq!(paths, ["categories.ste-vocabulary.severity"]);
+    }
+
+    /// The settings that the command-line `cli` gives over `rules` and an empty config.
+    fn settings_with(rules: &Catalog, cli: &Overrides) -> Result<Settings, CliError> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("slopvac.toml");
+        std::fs::write(&path, HEAD).expect("write config");
+        let loaded = load(&path, &NoPresets).expect("the config loads");
+        let resolved = resolve(&loaded, Path::new("doc.md"));
+        build(rules, &resolved, Vec::new(), cli)
     }
 
     fn level(settings: &Settings, rule: &str) -> Option<Level> {
@@ -724,6 +1059,142 @@ mod tests {
             level(&s, "core:orwell.unsupported-evaluative"),
             Some(Level::Off)
         );
+    }
+
+    #[test]
+    fn a_config_entry_for_one_plugins_category_leaves_the_other_plugins_category_alone() {
+        let rules = two_plugins_with_one_category_id();
+        let config = format!("{HEAD}\n[categories.\"alpha:style\"]\nweight = 0.0\n");
+        let s = settings_over(&rules, &config).unwrap();
+        let dials: Vec<(&str, Option<f64>)> = s
+            .categories
+            .iter()
+            .map(|(name, d)| (name.as_str(), d.weight))
+            .collect();
+        assert_eq!(dials, [("alpha:style", Some(0.0)), ("beta:style", None)]);
+    }
+
+    #[rstest]
+    #[case::category("[categories.style]\nweight = 0.0\n", "ambiguous-category")]
+    #[case::rule("[rules]\n\"style.hit\" = \"off\"\n", "ambiguous-rule")]
+    fn a_bare_config_key_that_two_plugins_share_is_refused(
+        #[case] table: &str,
+        #[case] code: &str,
+    ) {
+        let rules = two_plugins_with_one_category_id();
+        let error = settings_over(&rules, &format!("{HEAD}\n{table}")).unwrap_err();
+        assert_eq!(error.code, code);
+        assert!(error.message.contains("alpha:style"), "{}", error.message);
+        assert!(error.message.contains("beta:style"), "{}", error.message);
+    }
+
+    #[test]
+    fn a_bare_category_key_that_one_plugin_has_applies_to_that_plugin() {
+        let rules = catalog_of(&[("alpha", "style"), ("beta", "tone")]);
+        let config = format!("{HEAD}\n[categories.style]\nweight = 0.0\n");
+        let s = settings_over(&rules, &config).unwrap();
+        let dials: Vec<(&str, Option<f64>)> = s
+            .categories
+            .iter()
+            .map(|(name, d)| (name.as_str(), d.weight))
+            .collect();
+        assert_eq!(dials, [("alpha:style", Some(0.0)), ("beta:tone", None)]);
+    }
+
+    #[rstest]
+    #[case::a_category("alpha:style")]
+    #[case::a_rule("alpha:style.hit")]
+    fn disabling_a_qualified_name_leaves_the_other_plugin_alone(#[case] name: &str) {
+        let rules = two_plugins_with_one_category_id();
+        let cli = Overrides {
+            disable: vec![name.to_owned()],
+            ..Overrides::default()
+        };
+        let s = settings_with(&rules, &cli).unwrap();
+        assert_eq!(level(&s, "alpha:style.hit"), Some(Level::Off));
+        assert_eq!(level(&s, "beta:style.hit"), None);
+    }
+
+    #[test]
+    fn selecting_a_qualified_category_runs_only_that_plugins_category() {
+        let rules = two_plugins_with_one_category_id();
+        let cli = Overrides {
+            only_categories: vec!["alpha:style".to_owned()],
+            ..Overrides::default()
+        };
+        let s = settings_with(&rules, &cli).unwrap();
+        assert_eq!(level(&s, "alpha:style.hit"), None);
+        assert_eq!(level(&s, "beta:style.hit"), Some(Level::Off));
+    }
+
+    #[rstest]
+    #[case::disable("style", true, "ambiguous-category")]
+    #[case::select("style", false, "ambiguous-category")]
+    #[case::disable_rule("style.hit", true, "ambiguous-rule")]
+    fn a_bare_command_line_name_that_two_plugins_share_is_refused(
+        #[case] name: &str,
+        #[case] disable: bool,
+        #[case] code: &str,
+    ) {
+        let rules = two_plugins_with_one_category_id();
+        let mut cli = Overrides::default();
+        let list = if disable {
+            &mut cli.disable
+        } else {
+            &mut cli.only_categories
+        };
+        list.push(name.to_owned());
+        assert_eq!(settings_with(&rules, &cli).unwrap_err().code, code);
+    }
+
+    #[test]
+    fn a_shipped_preset_dial_stays_with_core_when_a_plugin_shares_the_category_id() {
+        // The shipped `ste` style gives `ste-words` a weight of 0.8 by its bare name.
+        let mut sets = Catalog::load().expect("the rules load").into_sets();
+        sets.extend(catalog_of(&[("alpha", "ste-words")]).into_sets());
+        let rules = Catalog::from_sets(sets);
+        let config = format!("{HEAD}styles = [\"ste\"]\n");
+        let s = settings_over(&rules, &config).unwrap();
+        let weight = |name: &str| s.categories[&CategoryName::new(name).unwrap()].weight;
+        assert_eq!(weight("ste-words"), Some(0.8));
+        assert_eq!(weight("alpha:ste-words"), None);
+    }
+
+    /// The catalogue of the shipped rules and a plugin `alpha` that ships a rule with the same
+    /// local id as the core rule `ste-practices.latin-abbreviation`, which the `ste` style
+    /// turns off by its bare name.
+    pub(crate) fn core_and_a_plugin_sharing_a_preset_rule() -> Catalog {
+        let mut sets = Catalog::load().expect("the rules load").into_sets();
+        sets.extend(
+            catalog_with_rules(&[("alpha", "ste-practices", "latin-abbreviation")]).into_sets(),
+        );
+        Catalog::from_sets(sets)
+    }
+
+    #[test]
+    fn a_shipped_preset_rule_level_stays_with_core_when_a_plugin_shares_the_rule_id() {
+        let rules = core_and_a_plugin_sharing_a_preset_rule();
+        let s = settings_over(&rules, &format!("{HEAD}styles = [\"ste\"]\n")).unwrap();
+        assert_eq!(
+            level(&s, "core:ste-practices.latin-abbreviation"),
+            Some(Level::Off)
+        );
+        assert_eq!(level(&s, "alpha:ste-practices.latin-abbreviation"), None);
+    }
+
+    #[test]
+    fn an_ambiguous_bare_key_never_reaches_core_when_a_config_file_wrote_it() {
+        // `validate` refuses the key, so the settings builder must not use it either.
+        let rules = core_and_a_plugin_sharing_a_preset_rule();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("slopvac.toml");
+        let text = format!("{HEAD}[rules]\n\"ste-practices.latin-abbreviation\" = \"error\"\n");
+        std::fs::write(&path, text).expect("write config");
+        let loaded = load(&path, &NoPresets).expect("the config loads");
+        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let s = build(&rules, &resolved, Vec::new(), &Overrides::default()).unwrap();
+        assert_eq!(level(&s, "core:ste-practices.latin-abbreviation"), None);
+        assert_eq!(level(&s, "alpha:ste-practices.latin-abbreviation"), None);
     }
 
     /// `a.b` as an unknown rule at `slopvac.toml:4:1` in `layer`.
@@ -837,7 +1308,7 @@ mod tests {
 
     #[test]
     fn a_none_budget_clears_the_budget_and_an_absent_one_keeps_the_rule_data() {
-        let id = CategoryId::new("orwell").unwrap();
+        let id = CategoryName::new("orwell").unwrap();
         let absent = settings(HEAD).unwrap();
         assert!(!absent.categories[&id].budget_cleared);
         let cleared = settings(&format!(

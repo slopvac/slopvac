@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use slopvac_model::{
-    AiRegister, AiRegisterSummary, CategoryId, CategorySummary, Density, Document, RunSummary,
+    AiRegister, AiRegisterSummary, CategoryName, CategorySummary, Density, Document, RunSummary,
     Score,
 };
 
@@ -65,7 +65,7 @@ pub fn summarize(documents: &[Document]) -> RunSummary {
         }
     };
 
-    let mut buckets: BTreeMap<&CategoryId, Vec<&slopvac_model::CategoryScore>> = BTreeMap::new();
+    let mut buckets: BTreeMap<&CategoryName, Vec<&slopvac_model::CategoryScore>> = BTreeMap::new();
     for document in documents {
         for entry in &document.categories {
             buckets.entry(&entry.category).or_default().push(entry);

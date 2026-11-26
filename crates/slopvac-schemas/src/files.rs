@@ -9,7 +9,7 @@ use slopvac_model::schema_id;
 use crate::artifacts::{ARTIFACTS, Artifact};
 use crate::canonical::to_canonical_json;
 use crate::error::{Error, Result};
-use crate::link::{inline_defs, link_shared_defs};
+use crate::link::{inline_defs, link_shared_defs_keeping};
 
 /// Where the generated files live, relative to the repository root.
 const SCHEMA_DIR: &str = "schemas/v3";
@@ -109,7 +109,7 @@ fn build(
         }
     }
     inline_defs(artifact.file, &mut schema, &inline)?;
-    link_shared_defs(artifact.file, &mut schema, &imports)?;
+    link_shared_defs_keeping(artifact.file, &mut schema, &imports, artifact.keep)?;
     Ok(schema)
 }
 

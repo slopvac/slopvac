@@ -82,12 +82,6 @@ pub(crate) enum PackMessage {
         "plugin `{plugin}` is refused: its rule `{rule}` has the id of a rule that another plugin supplies, and nothing from the plugin loads"
     )]
     RuleIdCollision { plugin: String, rule: String },
-    /// A plugin supplies a category with the id of a core category, and no rule id is shared.
-    #[code("plugin-category-id-collision")]
-    #[message(
-        "plugin `{plugin}` is refused: its category `{category}` has the id of a category that another plugin supplies, and nothing from the plugin loads"
-    )]
-    CategoryIdCollision { plugin: String, category: String },
     /// A plugin file does not load. The reason is a fixed sentence, never file text.
     #[code("plugin-file-not-loaded")]
     #[text("`{path}` does not load: {reason}")]

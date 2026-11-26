@@ -18,7 +18,7 @@ Everything below the API major lives under `/v3/`, so a future major version get
 
 | Path | Content |
 | --- | --- |
-| `/v3/rules/<category>/<rule>/` | One page per rule. Outputs link here. |
+| `/v3/rules/<category>/<rule>/` | One page per rule of the built-in `core` plugin. Outputs link here. A rule of another plugin has no page, and its output carries no link. |
 | `/v3/rules/<category>/` | Category index. |
 | `/v3/styles/`, `/v3/genres/` | Style presets and genres. |
 | `/v3/plugins/protocol/` | Plugin protocol v1 reference. |

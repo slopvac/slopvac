@@ -91,3 +91,27 @@ fn a_config_source_accepts_each_published_layer() {
         );
     }
 }
+
+/// Every `category` value in `value`, in document order.
+fn categories(value: &Value) -> Vec<String> {
+    match value {
+        Value::Object(map) => map
+            .iter()
+            .flat_map(|(key, item)| match (key.as_str(), item) {
+                ("category", Value::String(name)) => vec![name.clone()],
+                _ => categories(item),
+            })
+            .collect(),
+        Value::Array(items) => items.iter().flat_map(categories).collect(),
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn a_report_keeps_a_qualified_category_through_a_round_trip() {
+    let before = report("category-qualified.json");
+    let parsed: Report = serde_json::from_value(before.clone()).unwrap();
+    let after = serde_json::to_value(&parsed).unwrap();
+    assert!(categories(&before).iter().any(|c| c == "acme:orwell"));
+    assert_eq!(categories(&after), categories(&before));
+}

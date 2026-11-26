@@ -19,9 +19,10 @@ use slopvac_diagrams::{
     Extraction, ExtractionStatus, Format as DiagramFormat, Signal, extract, extract_fenced,
 };
 use slopvac_model::{
-    AiSignal, BomMode, CategoryId, ContextTag, Contexts, Document, Edit, Extent, Finding, Fix,
-    GenreId, GenreReason, GenreResult, GenreSource, KebabName, LineCol, NonEmptyString, Notice,
-    NoticeLevel, PackId, PositionError, RuleId, RuleProvenance, Severity, SourceIndex, Span,
+    AiSignal, BomMode, CategoryId, CategoryName, ContextTag, Contexts, Document, Edit, Extent,
+    Finding, Fix, GenreId, GenreReason, GenreResult, GenreSource, KebabName, LineCol,
+    NonEmptyString, Notice, NoticeLevel, PackId, PositionError, RuleId, RuleProvenance, Severity,
+    SourceIndex, Span,
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
@@ -373,7 +374,7 @@ pub struct Engine {
     pub(crate) running: HashSet<String>,
     /// Active rules the engine cannot run. Each document is told about those that apply to it.
     not_run: Vec<NotRun>,
-    categories: std::collections::BTreeMap<CategoryId, CategoryInfo>,
+    categories: std::collections::BTreeMap<CategoryName, CategoryInfo>,
     /// How RST files are read, and the adapter built from it. The adapter finds its
     /// interpreter on the first file.
     rst_options: RstOptions,
@@ -453,7 +454,7 @@ fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Notice {
     .with_data(data)
 }
 
-fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Severity) -> Level {
+fn level_of(settings: &Settings, id: &RuleId, category: &CategoryName, shipped: Severity) -> Level {
     settings
         .rule_levels
         .get(id)
@@ -607,6 +608,20 @@ impl Engine {
         self
     }
 
+    /// Replace the genres that choose each document's levels. A test seam: the engine loads
+    /// only the built-in genres, and they name rules of `core`, so a test that needs a genre
+    /// for the rules of another plugin supplies it here. It takes effect when the settings
+    /// assign genres to documents.
+    #[cfg(feature = "test-counters")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_genres(mut self, genres: GenreRegistry) -> Self {
+        if self.genres.is_some() {
+            self.genres = Some(genres);
+        }
+        self
+    }
+
     /// Replace how RST files are read: the interpreter, the project roots it must stay
     /// out of, and the limits. The default reads `SLOPVAC_RST_CONVERTER`.
     #[must_use]
@@ -673,7 +688,8 @@ impl Engine {
         }
         for (s, set) in self.sets.iter().enumerate() {
             for (c, category) in set.categories().iter().enumerate() {
-                let meta = self.settings.categories.get(category.id());
+                let name = CategoryName::of(set.pack(), category.id());
+                let meta = self.settings.categories.get(&name);
                 let info = CategoryInfo {
                     weight: match meta.and_then(|d| d.level) {
                         Some(Level::Off) => 0.0,
@@ -695,18 +711,15 @@ impl Engine {
                         })
                     },
                 };
-                self.categories.insert(category.id().clone(), info);
+                self.categories.insert(name.clone(), info);
                 for (r, loaded) in category.rules().iter().enumerate() {
                     if owner.get(loaded.id()) != Some(&s) {
                         continue;
                     }
                     let rule = loaded.rule();
-                    let Level::On(severity) = level_of(
-                        &self.settings,
-                        loaded.id(),
-                        loaded.category(),
-                        rule.severity,
-                    ) else {
+                    let Level::On(severity) =
+                        level_of(&self.settings, loaded.id(), &name, rule.severity)
+                    else {
                         continue;
                     };
                     if let Some(applies) = &rule.applies_to {
@@ -1082,7 +1095,7 @@ impl Engine {
             {
                 return false;
             }
-            let category = loaded.map_or_else(|| category_of(&f.rule_id), |l| l.category().clone());
+            let category = category_of(&f.rule_id);
             let explicit = self.settings.rule_levels.contains_key(&f.rule_id)
                 || self
                     .settings
@@ -1312,10 +1325,25 @@ fn signal_of_rule(loaded: &LoadedRule) -> Option<Signal> {
     }
 }
 
-fn category_of(id: &RuleId) -> CategoryId {
+/// The category of a rule that reports without a category of its own.
+#[expect(
+    clippy::expect_used,
+    reason = "`meta` is a literal that is a valid category id"
+)]
+fn meta_category() -> CategoryId {
+    CategoryId::new("meta").expect("meta is a category id")
+}
+
+/// The category a rule id names, as a report names it: the plugin of the rule id and the
+/// category part of its local id. A local id with no category part reports in `meta`.
+fn category_of(id: &RuleId) -> CategoryName {
     let local = id.local();
-    CategoryId::new(local.split_once('.').map_or(local, |(c, _)| c))
-        .unwrap_or_else(|_| CategoryId::new("meta").expect("meta is a category id"))
+    let category = CategoryId::new(local.split_once('.').map_or(local, |(c, _)| c))
+        .unwrap_or_else(|_| meta_category());
+    PackId::new(id.pack()).map_or_else(
+        |_| CategoryName::from(category.clone()),
+        |plugin| CategoryName::of(&plugin, &category),
+    )
 }
 
 /// The tagger for the contexts the genre `id` declares, plus those of the `assigned` genre.
@@ -1407,7 +1435,7 @@ fn prose_inputs<'a>(
 struct Candidate<'r> {
     rule_id: &'r RuleId,
     pack: &'r PackId,
-    category: CategoryId,
+    category: CategoryName,
     severity: Severity,
     message: String,
     span: Span,
@@ -1761,7 +1789,7 @@ impl Run<'_> {
                 out.push(Finding {
                     rule_id: loaded.id().clone(),
                     pack: set.pack().clone(),
-                    category: loaded.category().clone(),
+                    category: CategoryName::of(set.pack(), loaded.category()),
                     severity: active.severity,
                     message: NonEmptyString::new(format_message(
                         rule.message.as_str(),
@@ -1852,7 +1880,7 @@ impl Run<'_> {
                     self.finding(Candidate {
                         rule_id: loaded.id(),
                         pack: set.pack(),
-                        category: loaded.category().clone(),
+                        category: CategoryName::of(set.pack(), loaded.category()),
                         severity: active.severity,
                         // The 2.x report folded the whitespace left where `{match}` was empty.
                         message: format_message(rule.message.as_str(), "", "")
@@ -1948,7 +1976,7 @@ impl Run<'_> {
         Ok(Some(Candidate {
             rule_id: loaded.id(),
             pack: set.pack(),
-            category: loaded.category().clone(),
+            category: CategoryName::of(set.pack(), loaded.category()),
             severity: active.severity,
             message: format_message(
                 rule.message.as_str(),
@@ -2305,8 +2333,11 @@ impl Run<'_> {
                 self.finding(Candidate {
                     rule_id: &rule_id,
                     pack: &pack,
-                    category: CategoryId::new("meta")
-                        .map_err(|e| EngineError::Internal(e.to_string()))?,
+                    category: CategoryName::of(
+                        &pack,
+                        &CategoryId::new("meta")
+                            .map_err(|e| EngineError::Internal(e.to_string()))?,
+                    ),
                     severity: Severity::Error,
                     message: invalid.message.clone(),
                     span: invalid.span,

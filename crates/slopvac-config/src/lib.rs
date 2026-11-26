@@ -41,8 +41,8 @@ pub use read::{
     MAX_EXTENDS_DEPTH, MAX_EXTENDS_FILES, MAX_FILE_BLOCKS, MAX_INDEX_EXTRA,
 };
 pub use resolve::{
-    ConfigLevel, Explained, Inputs, LevelFrom, Resolved, ResolvedLevel, core_defaults, describe,
-    render_explain,
+    ConfigLevel, Contribution, Explained, GroupedKey, Inputs, LevelFrom, Resolved, ResolvedLevel,
+    core_defaults, describe, render_explain,
 };
 pub use schema::{validate_config, validate_frontmatter, validate_style};
 pub use slopvac_model::{ConfigLayer, ConfigSource, Severity};

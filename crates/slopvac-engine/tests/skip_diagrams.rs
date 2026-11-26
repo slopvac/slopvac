@@ -84,7 +84,7 @@ fn a_fenced_diagram_is_checked_and_positioned_in_the_host_file() {
     assert_eq!(doc.findings.len(), 1);
     let f = &doc.findings[0];
     assert_eq!(f.rule_id, id("diagrams:diagram.label-run-on"));
-    assert_eq!(f.category.as_str(), "diagram");
+    assert_eq!(f.category.as_str(), "diagrams:diagram");
     assert_eq!(f.severity, Severity::Warning);
     assert_eq!(f.matched_text, "This label has far too many words in it");
     // Line 5 is `  A[This ...`, and the label starts after the two spaces and `A[`.
@@ -278,7 +278,7 @@ fn the_pack_severity_is_the_shipped_level_and_a_category_level_replaces_it() {
     assert_eq!(shipped.findings[0].severity, Severity::Warning);
     let mut capped = settings();
     capped.categories.insert(
-        slopvac_model::CategoryId::new("diagram").unwrap(),
+        slopvac_model::CategoryName::new("diagrams:diagram").unwrap(),
         slopvac_engine::CategoryDials::default().with_level(Some(Level::On(Severity::Suggestion))),
     );
     let doc = diagram_engine(capped).lint(&input).unwrap();

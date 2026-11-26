@@ -15,6 +15,7 @@ use slopvac_rules::{Example, LoadedCategory, LoadedRule, Match, MatchKind};
 
 use crate::errors::CliError;
 use crate::exit;
+use crate::lint_settings::category_of;
 use crate::rule_catalog::Catalog;
 use crate::severity::{Effective, Severities};
 
@@ -66,12 +67,13 @@ fn clean(text: &str) -> String {
 }
 
 fn load(m: &ArgMatches) -> Result<(Catalog, Severities), CliError> {
-    let severities = Severities::load(m)?;
-    Ok((Catalog::load()?, severities))
+    let catalog = Catalog::load()?;
+    let severities = Severities::load(m)?.for_catalog(&catalog);
+    Ok((catalog, severities))
 }
 
 fn url_of(rule: &LoadedRule) -> Option<String> {
-    RenderOptions::default().rule_url(rule.category().as_str(), rule.id().local())
+    RenderOptions::default().rule_page(rule.id(), rule.category().as_str())
 }
 
 fn source_of(rule: &LoadedRule) -> String {
@@ -114,12 +116,26 @@ impl Filter {
         })
     }
 
+    /// Resolve each `--category` value against the catalogue, so that one value names one
+    /// category: a qualified value names that plugin's category, a bare value names the one
+    /// category with that id, and a bare value that two plugins share is an error. A value no
+    /// category has stays as written and matches nothing.
+    fn resolved(mut self, set: &Catalog) -> Result<Self, CliError> {
+        for value in &mut self.categories {
+            category_of(set, value)?;
+            if let [(plugin, category)] = set.categories_named(value).as_slice() {
+                *value = format!("{plugin}:{}", category.id());
+            }
+        }
+        Ok(self)
+    }
+
     /// A rule is kept when its category is recommended for the genre. A rule that
     /// names other genres in `applies_to` is dropped too, unless `--include-excluded`.
     fn keeps(&self, category: &LoadedCategory, rule: &LoadedRule) -> bool {
-        if !self.categories.is_empty()
-            && !self.categories.iter().any(|c| c == category.id().as_str())
-        {
+        // `resolved` made each value the plugin and the category id.
+        let own = format!("{}:{}", rule.id().pack(), category.id());
+        if !self.categories.is_empty() && !self.categories.contains(&own) {
             return false;
         }
         if self.kind.is_some_and(|k| k != rule.kind()) {
@@ -153,13 +169,23 @@ fn selected<'a>(set: &'a Catalog, filter: &Filter) -> Vec<(&'a LoadedCategory, &
 /// # Errors
 /// A usage error for a bad `--genre`, or a load error.
 pub fn rules(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
-    let filter = Filter::from_matches(m)?;
     let (set, sev) = load(m)?;
-    let picked = selected(&set, &filter);
+    rules_in(&set, &sev, m, out)
+}
+
+/// `slopvac rules` over a given catalogue and severities.
+fn rules_in(
+    set: &Catalog,
+    sev: &Severities,
+    m: &ArgMatches,
+    out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
+    let filter = Filter::from_matches(m)?.resolved(set)?;
+    let picked = selected(set, &filter);
     let text = match format_of(m) {
-        "json" => rules_json(&set, &picked, &sev),
-        "md" => rules_md(&picked, &sev),
-        _ => rules_text(&picked, &sev),
+        "json" => rules_json(set, &picked, sev),
+        "md" => rules_md(&picked, sev),
+        _ => rules_text(&picked, sev),
     };
     emit(out, &text)
 }
@@ -248,24 +274,30 @@ fn rule_json(category: &LoadedCategory, rule: &LoadedRule, sev: &Severities) -> 
     value
 }
 
-fn rules_json(
-    set: &Catalog,
-    picked: &[(&LoadedCategory, &LoadedRule)],
-    sev: &Severities,
-) -> String {
-    let categories: Vec<Value> = set
-        .categories()
-        .map(|c| {
+/// The listing entry of every category, each naming the plugin that ships it.
+fn category_entries(set: &Catalog) -> Vec<Value> {
+    set.sets()
+        .iter()
+        .flat_map(|plugin| plugin.categories().iter().map(move |c| (plugin.pack(), c)))
+        .map(|(plugin, c)| {
             json!({
                 "id": c.id().as_str(),
-                "plugin": c.rules().first().map_or("core", |r| r.id().pack()),
+                "plugin": plugin.as_str(),
                 "title": c.title().as_str(),
                 "description": c.description().as_str(),
                 "weight": c.weight(),
                 "recommended_for": c.recommended_for().iter().map(GenreId::as_str).collect::<Vec<_>>(),
             })
         })
-        .collect();
+        .collect()
+}
+
+fn rules_json(
+    set: &Catalog,
+    picked: &[(&LoadedCategory, &LoadedRule)],
+    sev: &Severities,
+) -> String {
+    let categories = category_entries(set);
     let rules: Vec<Value> = picked.iter().map(|(c, r)| rule_json(c, r, sev)).collect();
     // The plugins that own the listed rules, in catalogue order. `plugin` names the first of
     // them; `plugins` and the `plugin` of each entry are the complete answer.
@@ -475,7 +507,7 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
     };
     let category = set
         .categories()
-        .find(|c| c.id() == rule.category())
+        .find(|c| c.rules().iter().any(|r| r.id() == rule.id()))
         .expect("a rule has a category");
     let text = match format_of(m) {
         "json" => {
@@ -565,6 +597,7 @@ fn explain_text(rule: &LoadedRule, sev: &Severities) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rule_catalog::catalog_of;
     use slopvac_model::PackId;
     use slopvac_rules::{CompileOptions, RuleSet};
     use std::path::PathBuf;
@@ -610,5 +643,63 @@ mod tests {
     #[test]
     fn include_excluded_brings_back_rules_the_genre_excludes() {
         assert_eq!(count(true), 2);
+    }
+
+    /// A rule set of `plugin` with one category `style` that has no rules.
+    fn empty_category_of(plugin: &str) -> RuleSet {
+        let text = r#"{"schema_version":3,"id":"style","title":"T","description":"D","rules":[]}"#;
+        RuleSet::from_sources(
+            &PackId::new(plugin).unwrap(),
+            [(PathBuf::from("style.json"), text.to_owned())],
+            &CompileOptions::default(),
+        )
+        .expect("loads")
+    }
+
+    #[test]
+    fn a_category_with_no_rules_names_the_plugin_that_ships_it() {
+        let catalog =
+            Catalog::from_sets(vec![empty_category_of("alpha"), empty_category_of("beta")]);
+        let emitted = rules_json(&catalog, &[], &Severities::unconfigured());
+        let json: Value = serde_json::from_str(&emitted).unwrap();
+        let listed: Vec<(&str, &str)> = json["categories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| (c["id"].as_str().unwrap(), c["plugin"].as_str().unwrap()))
+            .collect();
+        assert_eq!(listed, [("style", "alpha"), ("style", "beta")]);
+    }
+
+    /// Run `slopvac rules` with `args` over two plugins that each ship a category `style`.
+    fn run_rules(args: &[&str]) -> Result<String, CliError> {
+        let catalog = catalog_of(&[("alpha", "style"), ("beta", "style")]);
+        let mut words = vec!["slopvac", "rules"];
+        words.extend_from_slice(args);
+        let matches = crate::cli::command().try_get_matches_from(words).unwrap();
+        let (_, m) = matches.subcommand().unwrap();
+        let mut out = Vec::new();
+        rules_in(&catalog, &Severities::unconfigured(), m, &mut out)?;
+        Ok(String::from_utf8(out).unwrap())
+    }
+
+    #[test]
+    fn the_rules_command_refuses_a_bare_category_that_two_plugins_share() {
+        let error = run_rules(&["--category", "style"]).unwrap_err();
+        assert_eq!(error.code, "ambiguous-category");
+    }
+
+    #[rstest::rstest]
+    #[case::qualified("alpha:style", 1, "alpha:style.hit")]
+    #[case::unknown("nothing", 0, "")]
+    #[case::qualified_unknown("beta:other", 0, "")]
+    fn the_rules_command_lists_one_category_for_one_value(
+        #[case] value: &str,
+        #[case] count: usize,
+        #[case] id: &str,
+    ) {
+        let text = run_rules(&["--category", value]).unwrap();
+        assert_eq!(text.lines().count(), count + 1, "{text}");
+        assert!(text.contains(id), "{text}");
     }
 }

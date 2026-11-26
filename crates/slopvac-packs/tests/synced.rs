@@ -1148,14 +1148,24 @@ fn two_plugins_that_share_a_bare_rule_id_both_load() {
 
 /// A plugin `acme` whose one rule has the id of the first rule of the core pack, and that id.
 fn colliding_with_core() -> (Spec, String) {
+    colliding_with_core_as("acme")
+}
+
+/// As [`colliding_with_core`], for the plugin `id`.
+fn colliding_with_core_as(id: &'static str) -> (Spec, String) {
     let packs = Packs::core().unwrap();
     let core_rule = packs.rule_sets().next().unwrap().rules().next().unwrap();
-    let local = core_rule.id().local().to_owned();
+    colliding_with(id, core_rule.id().local())
+}
+
+/// A plugin `id` whose one rule has the local id `local` of a core rule, and that id.
+fn colliding_with(id: &'static str, local: &str) -> (Spec, String) {
+    let local = local.to_owned();
     let (category, rule) = local.split_once('.').unwrap();
     let text = format!(
         r#"{{"schema_version":3,"id":"{category}","title":"T","description":"D","rules":[{{"id":"{rule}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"a"}},"citation":{{"source":"s"}}}}]}}"#
     );
-    let mut spec = Spec::new("acme");
+    let mut spec = Spec::new(id);
     spec.provides = "categories = [\"categories/c.json\"]".into();
     spec.files.push(("categories/c.json", text));
     (spec, local)
@@ -1179,7 +1189,6 @@ fn a_plugin_rule_with_a_core_rule_id_is_refused_with_its_own_code() {
     assert!(err.to_string().contains(&format!("`{local}`")), "{err}");
 }
 
-// The refusal does not depend on where the core sits in the list.
 /// A plugin `acme` whose category has the id of a core category and whose one rule has a fresh
 /// id, and that category id.
 fn colliding_category_with_a_fresh_rule() -> (Spec, String) {
@@ -1195,31 +1204,41 @@ fn colliding_category_with_a_fresh_rule() -> (Spec, String) {
     (spec, category)
 }
 
-// Only the category is shared, so the refusal has the category code and the text names a
-// category and never a rule.
+// Categories are keyed by plugin and id, so a plugin category that shares only an id with a core
+// category is legal. Both load, each with its own metadata.
 #[test]
-fn a_category_only_collision_is_refused_with_the_category_code_and_text() {
+fn a_plugin_category_that_shares_an_id_with_a_core_category_loads_beside_it() {
     let (spec, category) = colliding_category_with_a_fresh_rule();
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
 
-    assert_eq!(err.code(), Some("plugin-category-id-collision"), "{err}");
-    assert_eq!(
-        err.to_string(),
-        format!(
-            "plugin `acme` is refused: its category `{category}` has the id of a category that another plugin supplies, and nothing from the plugin loads"
-        )
-    );
+    let shared: Vec<(String, String)> = packs
+        .rule_sets()
+        .flat_map(|s| {
+            s.categories()
+                .iter()
+                .filter(|c| c.id().as_str() == category)
+                .map(|c| (s.pack().to_string(), c.title().as_str().to_owned()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let plugins: Vec<&str> = shared.iter().map(|(p, _)| p.as_str()).collect();
+    assert_eq!(plugins, ["core", "acme"]);
+    assert_eq!(shared[1].1, "T");
+    assert_ne!(shared[0].1, "T");
 }
 
-// One plugin trips both guards: its first category shares only an id with a core category, and
-// its second category holds a rule with the id of a core rule. The plugin is refused and nothing
-// from it loads. Which of the two codes the refusal carries is not asserted: the order of the
-// two checks is settled by slopvac-8l4.3.77.
-#[test]
-fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_whole() {
+// One plugin supplies a category that shares only an id with a core category, and a category
+// that holds a rule with the id of a core rule. The rule clash decides the refusal, whichever
+// category the plugin lists first.
+#[rstest]
+#[case::clash_first(true)]
+#[case::clash_last(false)]
+fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_for_the_rule_in_either_order(
+    #[case] rule_clash_first: bool,
+) {
     let core = Packs::core().unwrap();
     let locals: Vec<String> = core
         .rule_sets()
@@ -1236,16 +1255,23 @@ fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_whole() {
             r#"{{"schema_version":3,"id":"{id}","title":"T","description":"D","rules":[{{"id":"{rule}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"a"}},"citation":{{"source":"s"}}}}]}}"#
         )
     };
-    let mut spec = Spec::new("acme");
-    spec.provides = "categories = [\"categories/a.json\", \"categories/b.json\"]".into();
-    spec.files.push((
-        "categories/a.json",
-        category(category_only, "zz-fresh-rule"),
-    ));
-    spec.files.push((
-        "categories/b.json",
+    let clash = (
+        "categories/rule-clash.json",
         category(shared_rule_category, shared_rule),
-    ));
+    );
+    let only = (
+        "categories/category-only.json",
+        category(category_only, "zz-fresh-rule"),
+    );
+    let (first, second) = if rule_clash_first {
+        (clash, only)
+    } else {
+        (only, clash)
+    };
+    let mut spec = Spec::new("acme");
+    spec.provides = format!("categories = [\"{}\", \"{}\"]", first.0, second.0);
+    spec.files.push(first);
+    spec.files.push(second);
     let mut w = World::new();
     w.install(&spec);
 
@@ -1253,14 +1279,224 @@ fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_whole() {
 
     assert!(
         matches!(
-            err.code(),
-            Some("plugin-rule-id-collision" | "plugin-category-id-collision")
+            &err,
+            SyncedError::Pack(PackError::RuleIdCollision { plugin, rule })
+                if plugin == "acme" && *rule == locals[0]
         ),
-        "{err}"
+        "{err:?}"
     );
+    assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
+}
+
+// A repeated plugin listed before a different plugin that clashes with the core: the core clash
+// is checked first, so the refusal names the clashing plugin and its rule. Both refusals carry
+// one code, so the plugin and the rule tell them apart.
+#[test]
+fn a_core_clash_is_reported_before_a_repeated_plugin_listed_ahead_of_it() {
+    let mut w = World::new();
+    w.install(&Spec::new("acme").rules(&["a"]));
+    let (clash, local) = colliding_with_core_as("other");
+    w.install(&clash);
+    let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+    loaded.extend(load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap());
+    loaded.extend(load_synced(&ids(&["other"]), &w.lock(), &w.store()).unwrap());
+    loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
+
+    let err = Packs::new(loaded).unwrap_err();
+
     assert!(
-        err.to_string().contains("nothing from the plugin loads"),
-        "{err}"
+        matches!(
+            &err,
+            PackError::RuleIdCollision { plugin, rule } if plugin == "other" && *rule == local
+        ),
+        "{err:?}"
+    );
+}
+
+// Two categories of one plugin both clash with the core. The refusal names the lowest of the
+// two rule ids, whichever category the plugin lists first.
+#[rstest]
+#[case::first_listed_is_lowest(true)]
+#[case::first_listed_is_highest(false)]
+fn two_core_clashes_in_one_plugin_name_the_lowest_rule_in_either_order(#[case] lowest_first: bool) {
+    let core = Packs::core().unwrap();
+    let locals: Vec<String> = core
+        .rule_sets()
+        .flat_map(|s| s.rules().map(|r| r.id().local().to_owned()))
+        .collect();
+    let first = locals[0].clone();
+    let second = locals
+        .iter()
+        .find(|l| l.split_once('.').unwrap().0 != first.split_once('.').unwrap().0)
+        .unwrap()
+        .clone();
+    let (low, high) = if first < second {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    let category = |local: &str| {
+        let (id, rule) = local.split_once('.').unwrap();
+        format!(
+            r#"{{"schema_version":3,"id":"{id}","title":"T","description":"D","rules":[{{"id":"{rule}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"a"}},"citation":{{"source":"s"}}}}]}}"#
+        )
+    };
+    let (a, b) = if lowest_first {
+        (&low, &high)
+    } else {
+        (&high, &low)
+    };
+    let mut spec = Spec::new("acme");
+    spec.provides = "categories = [\"categories/a.json\", \"categories/b.json\"]".into();
+    spec.files.push(("categories/a.json", category(a)));
+    spec.files.push(("categories/b.json", category(b)));
+    let mut w = World::new();
+    w.install(&spec);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            SyncedError::Pack(PackError::RuleIdCollision { plugin, rule })
+                if plugin == "acme" && *rule == low
+        ),
+        "{err:?}"
+    );
+}
+
+// The refusal is a function of the set of plugins, not of the order they are listed in. Three
+// plugins clash with three different core rules and `beta` is listed twice. The lowest qualified
+// id, `alpha:<category>.<rule>`, decides which plugin and rule the error names.
+#[rstest]
+#[case::alpha_first(&[0, 1, 2, 1])]
+#[case::alpha_last(&[1, 2, 1, 0])]
+#[case::beta_first(&[1, 1, 2, 0])]
+#[case::gamma_first(&[2, 0, 1, 1])]
+fn core_clashes_across_plugins_name_the_lowest_qualified_id_in_any_order(#[case] order: &[usize]) {
+    let core = Packs::core().unwrap();
+    let locals: Vec<String> = core
+        .rule_sets()
+        .flat_map(|s| s.rules().map(|r| r.id().local().to_owned()))
+        .collect();
+    let mut w = World::new();
+    let mut expected = String::new();
+    for (name, local) in [
+        ("alpha", &locals[2]),
+        ("beta", &locals[0]),
+        ("gamma", &locals[1]),
+    ] {
+        let (spec, local) = colliding_with(name, local);
+        if name == "alpha" {
+            expected = local;
+        }
+        w.install(&spec);
+    }
+    let mut loaded = Vec::new();
+    for &i in order {
+        let name = ["alpha", "beta", "gamma"][i];
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+    }
+    loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
+
+    let err = Packs::new(loaded).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            PackError::RuleIdCollision { plugin, rule } if plugin == "alpha" && *rule == expected
+        ),
+        "{err:?}"
+    );
+}
+
+// With no core clash, the lowest duplicated qualified id decides. `acme:c.r0`, `beta:c.r0` and
+// `beta:c.r1` are each supplied twice, in every listing order.
+#[rstest]
+#[case::acme_first(&["acme", "beta", "acme", "beta"])]
+#[case::beta_first(&["beta", "beta", "acme", "acme"])]
+#[case::interleaved(&["beta", "acme", "beta", "acme"])]
+#[case::acme_last(&["acme", "beta", "beta", "acme"])]
+fn duplicate_ids_name_the_lowest_qualified_id_in_any_order(#[case] order: &[&'static str]) {
+    let mut w = World::new();
+    w.install(&Spec::new("acme").rules(&["a"]));
+    w.install(&Spec::new("beta").rules(&["a", "b"]));
+    let mut loaded = Vec::new();
+    for name in order {
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+    }
+
+    let err = Packs::new(loaded).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            PackError::RuleIdCollision { plugin, rule } if plugin == "acme" && rule == "c.r0"
+        ),
+        "{err:?}"
+    );
+}
+
+// The order is byte order on the whole qualified id, not a comparison of plugin, category and
+// rule in turn. `acme-extra:...` sorts before `acme:...` because `-` (0x2d) is below `:` (0x3a),
+// so the plugin `acme-extra` is named although `acme` is the shorter id.
+#[rstest]
+#[case::prefix_first(&["acme", "acme-extra", "acme", "acme-extra"])]
+#[case::prefix_last(&["acme-extra", "acme", "acme-extra", "acme"])]
+fn core_clashes_of_a_prefix_plugin_pair_follow_byte_order_of_the_whole_id(
+    #[case] order: &[&'static str],
+) {
+    let core = Packs::core().unwrap();
+    let locals: Vec<String> = core
+        .rule_sets()
+        .flat_map(|s| s.rules().map(|r| r.id().local().to_owned()))
+        .collect();
+    let mut w = World::new();
+    let (acme, _) = colliding_with("acme", &locals[0]);
+    let (extra, expected) = colliding_with("acme-extra", &locals[1]);
+    w.install(&acme);
+    w.install(&extra);
+    let mut loaded = Vec::new();
+    for name in order {
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+    }
+    loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
+
+    let err = Packs::new(loaded).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            PackError::RuleIdCollision { plugin, rule }
+                if plugin == "acme-extra" && *rule == expected
+        ),
+        "{err:?}"
+    );
+}
+
+#[rstest]
+#[case::prefix_first(&["acme", "acme-extra", "acme", "acme-extra"])]
+#[case::prefix_last(&["acme-extra", "acme", "acme-extra", "acme"])]
+fn duplicates_of_a_prefix_plugin_pair_follow_byte_order_of_the_whole_id(
+    #[case] order: &[&'static str],
+) {
+    let mut w = World::new();
+    w.install(&Spec::new("acme").rules(&["a"]));
+    w.install(&Spec::new("acme-extra").rules(&["a"]));
+    let mut loaded = Vec::new();
+    for name in order {
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+    }
+
+    let err = Packs::new(loaded).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            PackError::RuleIdCollision { plugin, rule }
+                if plugin == "acme-extra" && rule == "c.r0"
+        ),
+        "{err:?}"
     );
 }
 

@@ -1352,6 +1352,42 @@
       "input": "pkg/a😀b",
       "python": true,
       "rust": true
+    },
+    {
+      "pattern": "^(?!core:)([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "style",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^(?!core:)([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "acme:style",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^(?!core:)([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "core:style",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?!core:)([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "style\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?!core:)([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "acme:style\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?!core:)([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "Acme:style",
+      "python": false,
+      "rust": false
     }
   ]
 }

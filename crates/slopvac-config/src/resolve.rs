@@ -1,6 +1,6 @@
 //! Merge the layers for one file and keep the history of every value.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -73,6 +73,63 @@ pub struct Contribution {
     /// numbered in the order they apply. Level resolution compares these.
     #[serde(skip)]
     scope: usize,
+}
+
+/// One group's entry, before its path is final.
+struct Placed {
+    group: Vec<String>,
+    shown: Vec<String>,
+    fallback: Option<Vec<String>>,
+    explained: Explained,
+}
+
+/// One contribution in a group, with the filing a caller gave it.
+struct Member {
+    shown: Vec<String>,
+    fallback: Option<Vec<String>>,
+    rank: usize,
+    contribution: Contribution,
+}
+
+/// Where [`Resolved::explain_grouped`] files one contribution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct GroupedKey {
+    /// The identity that contributions are merged under.
+    pub group: Vec<String>,
+    /// The spelling the entry shows when this contribution wins.
+    pub shown: Vec<String>,
+    /// Which spelling wins a tie between contributions of one layer instance: the lower rank.
+    /// The layer order decides first. A caller that reads the same key by [`Resolved::level_by_any`]
+    /// ranks its spellings by their order in that slice.
+    pub rank: usize,
+    /// A spelling to try when `shown` is also the displayed path of another entry. It is a
+    /// candidate, tried before the entry's `group` path and the numbered spellings of it, and
+    /// it is skipped when another entry already prints it. A caller sets it for a contribution
+    /// whose `shown` drops a qualifier, so that no two entries print under one path.
+    pub fallback: Option<Vec<String>>,
+}
+
+impl GroupedKey {
+    /// A filing under `group` that shows as `shown`, with tie rank `rank` and no fallback.
+    #[must_use]
+    pub fn new(group: Vec<String>, shown: Vec<String>, rank: usize) -> Self {
+        Self {
+            group,
+            shown,
+            rank,
+            fallback: None,
+        }
+    }
+
+    /// The same filing, with a fallback spelling for when `shown` is another entry's path. The
+    /// fallback is a candidate, not a promise: the entry takes the first free path among the
+    /// fallback, its own `group` path, and the `group` path with `#2`, `#3`, and so on.
+    #[must_use]
+    pub fn with_fallback(mut self, fallback: Vec<String>) -> Self {
+        self.fallback = Some(fallback);
+        self
+    }
 }
 
 /// The merged settings of one file, with the history of each key.
@@ -296,6 +353,96 @@ impl Resolved {
             }
         }
         Json::Object(root)
+    }
+
+    /// As [`Resolved::explain`], with contributions that a caller knows to be spellings of
+    /// one key merged into one entry. `identify` gives each contribution the identity it
+    /// is grouped under and the spelling it is shown under. The merged history runs in the
+    /// order the layers apply, and the entry shows the spelling of the contribution that won.
+    #[must_use]
+    pub fn explain_grouped(
+        &self,
+        identify: impl Fn(&[String], &Contribution) -> GroupedKey,
+    ) -> Vec<Explained> {
+        let mut grouped: BTreeMap<Vec<String>, Vec<Member>> = BTreeMap::new();
+        for (path, history) in &self.entries {
+            for contribution in history {
+                let key = identify(path, contribution);
+                grouped.entry(key.group).or_default().push(Member {
+                    shown: key.shown,
+                    fallback: key.fallback,
+                    rank: key.rank,
+                    contribution: contribution.clone(),
+                });
+            }
+        }
+        let mut entries: Vec<Placed> = grouped
+            .into_iter()
+            .filter_map(|(group, mut members)| {
+                members.sort_by_key(|m| (m.contribution.scope, std::cmp::Reverse(m.rank)));
+                let history: Vec<Contribution> =
+                    members.iter().map(|m| m.contribution.clone()).collect();
+                let win = Self::winner(&group, &history)?;
+                let winner = members
+                    .iter()
+                    .zip(&history)
+                    .find(|(_, c)| std::ptr::eq(*c, win))
+                    .map(|(m, _)| m)?;
+                let explained = Explained {
+                    path: String::new(),
+                    value: win.value.clone(),
+                    source: win.source.clone(),
+                    overridden: history
+                        .iter()
+                        .filter(|c| !std::ptr::eq(*c, win))
+                        .cloned()
+                        .collect(),
+                };
+                Some(Placed {
+                    group,
+                    shown: winner.shown.clone(),
+                    fallback: winner.fallback.clone(),
+                    explained,
+                })
+            })
+            .collect();
+        // Each path prints once. An entry with no fallback claims its own spelling first. Then
+        // an entry with a fallback claims its own spelling if it is still free, in group order.
+        // The rest take their fallback, then their group's path, then the group's path with a
+        // number, so no two entries print alike and the result depends only on the entries.
+        let mut taken: HashSet<String> = HashSet::new();
+        let mut placed = vec![false; entries.len()];
+        for pass in 0..2 {
+            for (i, entry) in entries.iter_mut().enumerate() {
+                if entry.fallback.is_some() != (pass == 1) {
+                    continue;
+                }
+                let own = display_path(&entry.shown);
+                if taken.insert(own.clone()) {
+                    entry.explained.path = own;
+                    placed[i] = true;
+                }
+            }
+        }
+        for (i, entry) in entries.iter_mut().enumerate() {
+            if placed[i] {
+                continue;
+            }
+            let candidates = entry
+                .fallback
+                .iter()
+                .chain(std::iter::once(&entry.group))
+                .map(|p| display_path(p));
+            let chosen =
+                candidates.chain((2..).map(|n| format!("{}#{n}", display_path(&entry.group))));
+            for path in chosen {
+                if taken.insert(path.clone()) {
+                    entry.explained.path = path;
+                    break;
+                }
+            }
+        }
+        entries.into_iter().map(|e| e.explained).collect()
     }
 
     /// Each key with its final value, where it came from, and the values it replaced.

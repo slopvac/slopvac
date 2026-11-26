@@ -270,7 +270,7 @@ models in `slopvac.report` and `slopvac.model`.
 | `RunSummary.categories` | preserve | Unchanged. |
 | `RunSummary.ai_register` | preserve | Unchanged. |
 | `RunSummary.prose` | preserve | Unchanged. |
-| `CategorySummary.category` | preserve | Unchanged. |
+| `CategorySummary.category` | preserve | The value is the bare id for a `core` category and `<plugin>:<category>` for a category of another plugin, such as `acme:style`. |
 | `CategorySummary.findings` | preserve | Unchanged. |
 | `CategorySummary.errors` | preserve | Unchanged. |
 | `CategorySummary.warnings` | preserve | Unchanged. |
@@ -295,7 +295,7 @@ models in `slopvac.report` and `slopvac.model`.
 | `DocumentScore.passed` | rename | Becomes `gate.passed`. |
 | `DocumentScore.failure_reasons` | rename | Becomes `gate.reasons`. A failed gate lists at least one reason. A passed gate lists none. |
 | `DocumentScore.unchecked` | preserve | Same key. Entries change from strings to Notices with a stable `code`. |
-| `CategoryScore.category` | preserve | Unchanged. `budget` stays nullable. |
+| `CategoryScore.category` | preserve | The value is the bare id for a `core` category and `<plugin>:<category>` for a category of another plugin, such as `acme:style`. `budget` stays nullable. |
 | `CategoryScore.findings` | preserve | Unchanged. `budget` stays nullable. |
 | `CategoryScore.errors` | preserve | Unchanged. `budget` stays nullable. |
 | `CategoryScore.warnings` | preserve | Unchanged. `budget` stays nullable. |
@@ -310,7 +310,7 @@ models in `slopvac.report` and `slopvac.model`.
 | `Finding.column` | preserve | Same keys. `column` and `end_column` now follow the position rules of slopvac-8l4.2.11. `end_column` is present only with `span`. |
 | `Finding.end_column` | preserve | Same keys. `column` and `end_column` now follow the position rules of slopvac-8l4.2.11. `end_column` is present only with `span`. |
 | `Finding.rule_id` | preserve | Same key. The value uses the form `<plugin>:<id>`, such as `core:orwell.not-un`. 2.x emitted `<category>.<id>`. |
-| `Finding.category` | preserve | Unchanged. |
+| `Finding.category` | preserve | The value is the bare id for a `core` category and `<plugin>:<category>` for a category of another plugin, such as `acme:style`. |
 | `Finding.severity` | preserve | Unchanged. |
 | `Finding.message` | preserve | Unchanged. |
 | `Finding.ai_signal` | preserve | Unchanged. |

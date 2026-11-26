@@ -22,8 +22,8 @@ mod values;
 
 pub use edit::{Edit, EditError, apply_edits};
 pub use ids::{
-    ApiVersion, ContextTag, Contexts, DuplicateContext, IdError, PackId, RuleId, SchemaVersion,
-    Severity,
+    ApiVersion, CategoryName, ContextTag, Contexts, DuplicateContext, IdError, PackId, RuleId,
+    SchemaVersion, Severity,
 };
 pub use messages::{message_entries, phrase_entries};
 pub use notice::{NoticeError, NoticeMessage, Result as NoticeResult};

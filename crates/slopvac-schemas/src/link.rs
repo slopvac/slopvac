@@ -19,6 +19,18 @@ pub fn link_shared_defs(
     root: &mut Value,
     imports: &[(&'static str, &Value)],
 ) -> Result<()> {
+    link_shared_defs_keeping(file, root, imports, &[])
+}
+
+/// As [`link_shared_defs`], with the local definitions named in `keep` counted as roots. They
+/// stay, so does every local definition they reach, and their references link and qualify like
+/// those of the root shape.
+pub fn link_shared_defs_keeping(
+    file: &'static str,
+    root: &mut Value,
+    imports: &[(&'static str, &Value)],
+    keep: &[&str],
+) -> Result<()> {
     let owners = owners(file, imports)?;
     let Some(object) = root.as_object_mut() else {
         return Err(Error::NotAnObject { file });
@@ -27,6 +39,21 @@ pub fn link_shared_defs(
         Some(Value::Object(defs)) => defs,
         _ => Map::new(),
     };
+    for name in keep {
+        if !defs.contains_key(*name) {
+            return Err(Error::UnknownKeep {
+                file,
+                def: (*name).to_owned(),
+            });
+        }
+        if let Some((owner, _)) = owners.get(*name) {
+            return Err(Error::KeptDefPublished {
+                file,
+                def: (*name).to_owned(),
+                owner,
+            });
+        }
+    }
     for (name, local) in &defs {
         if let Some((owner, published)) = owners.get(name.as_str()) {
             let mut local = local.clone();
@@ -54,7 +81,7 @@ pub fn link_shared_defs(
     };
     *object = shape;
     if has_root_shape(object) {
-        let reached = reachable(object, &defs);
+        let reached = reachable(object, &defs, keep);
         defs.retain(|name, _| reached.contains(name));
     }
     if !defs.is_empty() {
@@ -243,13 +270,18 @@ fn has_root_shape(object: &Map<String, Value>) -> bool {
 
 /// Names of the local definitions reached from the root shape, directly or through other
 /// local definitions.
-fn reachable(object: &Map<String, Value>, defs: &Map<String, Value>) -> BTreeSet<String> {
+fn reachable(
+    object: &Map<String, Value>,
+    defs: &Map<String, Value>,
+    keep: &[&str],
+) -> BTreeSet<String> {
     let shape: Map<String, Value> = object
         .iter()
         .filter(|(key, _)| *key != "$defs")
         .map(|(key, member)| (key.clone(), member.clone()))
         .collect();
     let mut queue = local_refs(Value::Object(shape));
+    queue.extend(keep.iter().map(|name| (*name).to_owned()));
     let mut seen = BTreeSet::new();
     while let Some(name) = queue.pop() {
         if seen.insert(name.clone())
@@ -367,6 +399,34 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::AmbiguousOwner { ref def, .. } if def == "Span"));
+    }
+
+    #[test]
+    fn keeping_a_def_the_file_lacks_fails_in_the_linker() {
+        let mut schema = json!({"type": "object", "$defs": {"Used": {"type": "string"}}});
+        let err =
+            link_shared_defs_keeping("x.schema.json", &mut schema, &[], &["Missing"]).unwrap_err();
+        assert!(matches!(err, Error::UnknownKeep { ref def, .. } if def == "Missing"));
+    }
+
+    #[test]
+    fn keeping_a_def_that_an_import_also_publishes_fails_instead_of_dropping_it() {
+        let mut schema = json!({
+            "type": "object",
+            "$defs": {"Span": {"type": "object", "properties": {"start": {"type": "integer"}}}},
+        });
+        let err = link_shared_defs_keeping(
+            "x.schema.json",
+            &mut schema,
+            &[("common.schema.json", &common())],
+            &["Span"],
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::KeptDefPublished { ref def, owner, .. }
+                if def == "Span" && owner == "common.schema.json"),
+            "{err:?}"
+        );
     }
 
     #[test]

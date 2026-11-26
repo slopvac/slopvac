@@ -113,7 +113,8 @@ impl Sources for NoSources {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderOptions {
     /// Base URL of the published docs, ending in `/` (for example `https://host/slopvac/`).
-    /// Rule pages sit at `<base>v3/rules/<category>/<rule>/`. `None` omits rule links.
+    /// Rule pages of the `core` plugin sit at `<base>v3/rules/<category>/<rule>/`. `None` omits
+    /// rule links.
     pub docs_base: Option<String>,
 }
 
@@ -140,6 +141,19 @@ impl RenderOptions {
             .and_then(|rest| rest.strip_prefix('.'))
             .unwrap_or(local);
         Some(format!("{base}/{API_VERSION}/rules/{category}/{name}/"))
+    }
+
+    /// The page for the rule `id`, when a docs address is set and the rule has a page.
+    ///
+    /// Only the rules of the built-in plugin `core` have pages (`docs/site.md`). A rule of
+    /// another plugin has none, so this returns `None` for it. `category` is the bare category
+    /// id of the rule, which is how a report names a category of `core`.
+    #[must_use]
+    pub fn rule_page(&self, id: &slopvac_model::RuleId, category: &str) -> Option<String> {
+        if id.pack() != slopvac_model::RESERVED_ID {
+            return None;
+        }
+        self.rule_url(category, id.local())
     }
 }
 

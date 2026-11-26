@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use serde_json::{Value, json};
 use slopvac_engine::{CategoryDials, Engine, Level, Settings};
 use slopvac_model::{
-    CategoryId, Document, GenreId, GenreResult, GenreSource, NonEmptyString, PackId, RuleId,
+    CategoryName, Document, GenreId, GenreResult, GenreSource, NonEmptyString, PackId, RuleId,
     Severity,
 };
 use slopvac_rules::{CompileOptions, RuleSet};
@@ -218,7 +218,7 @@ pub fn legacy_settings(profile: &str) -> Settings {
             .unwrap();
     for (name, dials) in style["categories"].as_table().unwrap() {
         settings.categories.insert(
-            CategoryId::new(name).unwrap(),
+            CategoryName::new(name).unwrap(),
             CategoryDials::default()
                 .with_level(Some(level(dials["severity"].as_str().unwrap())))
                 .with_weight(dials.get("weight").and_then(toml::Value::as_float))

@@ -82,7 +82,8 @@ Output formats:
 - `html`
 
 The language server reports the same findings to editors. SARIF and rdjsonl output link each rule
-to its documentation page. The [documentation site](docs/site.md) lists the page layout.
+of the built-in `core` plugin to its documentation page. A rule of another plugin has no
+page and no link. The [documentation site](docs/site.md) lists the page layout.
 
 ## What it checks
 

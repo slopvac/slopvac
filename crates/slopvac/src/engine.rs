@@ -380,11 +380,11 @@ impl Linter for EngineLinter {
 
     fn explain_config(&self, request: &LintRequest) -> ExplainOutcome {
         let mut run = Run::default();
-        let items = match prepare(request, &mut run) {
-            Ok((_, items)) => items,
+        let (catalog, items) = match prepare(request, &mut run) {
+            Ok((catalog, items)) => (Some(catalog), items),
             Err(err) => {
                 run.incomplete.push(err);
-                Vec::new()
+                (None, Vec::new())
             }
         };
         let none = LoadedConfig::without_files(request.root.clone());
@@ -394,7 +394,9 @@ impl Linter for EngineLinter {
                 Some((config, rel)) => (config.as_ref(), rel.clone()),
                 None => (&none, PathBuf::from(&item.shown)),
             };
-            let mut explained = lint_settings::resolve(config, &rel).explain();
+            let Some(catalog) = &catalog else { break };
+            let mut explained =
+                lint_settings::explain(&lint_settings::resolve(config, &rel), catalog);
             for entry in &mut explained {
                 redact_urls(&mut entry.value);
                 for replaced in &mut entry.overridden {

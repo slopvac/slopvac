@@ -38,7 +38,7 @@ pub(crate) fn render(
                 "source": {"name": "slopvac"},
                 "code": {"value": f.rule_id.as_str()},
             });
-            if let Some(url) = options.rule_url(f.category.as_str(), f.rule_id.local()) {
+            if let Some(url) = options.rule_page(&f.rule_id, f.category.as_str()) {
                 diagnostic["code"]["url"] = json!(url);
             }
             if let Some(fix) = &f.fix {

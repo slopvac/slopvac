@@ -437,63 +437,57 @@ fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
     Ok(())
 }
 
-/// Refuse a plugin that supplies a rule, or a category, with the local id of one the core pack
-/// supplies, and any rule whose qualified id another plugin supplies. Rule ids are qualified by
-/// plugin (`<plugin>:<category>.<rule>`, docs/contract/plugins.md, section 2), so two plugins may
-/// share a bare id. The core is different: the engine keys category settings and scoring by the
-/// category id, and a bare key reads as the first plugin with that rule, so a plugin with a core id
-/// would overwrite or switch off the core's. Nothing from the plugin loads.
+/// Refuse a plugin that supplies a rule with the local id of one the core pack supplies, and any
+/// rule whose qualified id another plugin supplies. Rule ids are qualified by plugin
+/// (`<plugin>:<category>.<rule>`, docs/contract/plugins.md, section 2), so two plugins may share
+/// a bare id. The core is different: a bare key reads as the first plugin with that rule, so a
+/// plugin with a core rule id would overwrite or switch off the core's. A category is keyed by
+/// plugin and id, so a plugin category that shares an id with a core category is legal.
+///
+/// A core clash outranks a duplicate qualified id. Within each class, the error names the
+/// lowest qualified id, compared as the whole `<plugin>:<category>.<rule>` text byte by byte, so
+/// the plugin and the rule it names are the same for any reordering of the same loaded entries,
+/// whether the entries are plugins or the categories inside them. A plugin loaded twice counts
+/// as two entries. Nothing from the plugin loads.
 fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
+    // Each rule of each plugin or core, with the id of the plugin that supplies it.
+    let rules_of = |pack: &LoadedPack| -> Vec<(String, slopvac_model::RuleId)> {
+        pack.rules
+            .categories()
+            .iter()
+            .flat_map(slopvac_rules::LoadedCategory::rules)
+            .map(|r| (pack.manifest.id.to_string(), r.id().clone()))
+            .collect()
+    };
+    let refusal = |(plugin, id): &(String, slopvac_model::RuleId)| PackError::RuleIdCollision {
+        plugin: plugin.clone(),
+        rule: id.local().to_owned(),
+    };
     // The core's ids first, wherever the core sits in the list, so no plugin escapes the check
     // by coming before it.
-    let core = packs.iter().filter(|p| p.origin == Source::Core);
-    let core_categories: HashSet<&str> = core
-        .clone()
-        .flat_map(|p| p.rules.categories())
-        .map(|c| c.id().as_str())
+    let core_rules: HashSet<String> = packs
+        .iter()
+        .filter(|p| p.origin == Source::Core)
+        .flat_map(rules_of)
+        .map(|(_, id)| id.local().to_owned())
         .collect();
-    let core_rules: HashSet<&str> = core
-        .flat_map(|p| p.rules.categories())
-        .flat_map(slopvac_rules::LoadedCategory::rules)
-        .map(|r| r.id().local())
-        .collect();
-    let mut qualified: HashSet<&str> = HashSet::new();
-    for pack in packs {
-        let is_core = pack.origin == Source::Core;
-        for category in pack.rules.categories() {
-            let core_rule_clash = category
-                .rules()
-                .iter()
-                .map(|r| r.id().local())
-                .find(|local| !is_core && core_rules.contains(local));
-            let core_category_clash = (!is_core
-                && core_categories.contains(category.id().as_str()))
-            .then_some(category.id().as_str());
-            let same_id = category
-                .rules()
-                .iter()
-                .find(|r| !qualified.insert(r.id().as_str()))
-                .map(|r| r.id().local());
-            let plugin = pack.manifest.id.to_string();
-            if let Some(rule) = core_rule_clash {
-                return Err(PackError::RuleIdCollision {
-                    plugin,
-                    rule: rule.to_owned(),
-                });
-            }
-            if let Some(category) = core_category_clash {
-                return Err(PackError::CategoryIdCollision {
-                    plugin,
-                    category: category.to_owned(),
-                });
-            }
-            if let Some(rule) = same_id {
-                return Err(PackError::RuleIdCollision {
-                    plugin,
-                    rule: rule.to_owned(),
-                });
-            }
-        }
+    let core_clash = packs
+        .iter()
+        .filter(|p| p.origin != Source::Core)
+        .flat_map(rules_of)
+        .filter(|(_, id)| core_rules.contains(id.local()))
+        .min_by(|(_, a), (_, b)| a.as_str().cmp(b.as_str()));
+    if let Some(found) = &core_clash {
+        return Err(refusal(found));
+    }
+    let all: Vec<(String, slopvac_model::RuleId)> = packs.iter().flat_map(rules_of).collect();
+    let mut seen: HashSet<&str> = HashSet::new();
+    let duplicate = all
+        .iter()
+        .filter(|(_, id)| !seen.insert(id.as_str()))
+        .min_by(|(_, a), (_, b)| a.as_str().cmp(b.as_str()));
+    if let Some(found) = duplicate {
+        return Err(refusal(found));
     }
     Ok(())
 }

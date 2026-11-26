@@ -25,6 +25,9 @@ pub struct Artifact {
     /// publishes a definition of the same name. A `$defs` name means one thing across
     /// `schemas/v3`.
     pub inline: &'static [&'static str],
+    /// Local definitions that stay under `$defs` although nothing in the file refers to them,
+    /// because another file's schema does. The build must generate each one.
+    pub keep: &'static [&'static str],
     /// Build the schema: a root type's schema with its `$defs`, or `$defs` alone.
     pub build: fn() -> Value,
 }
@@ -37,6 +40,7 @@ pub const ARTIFACTS: &[Artifact] = &[
         description: Some("Shared $defs referenced by every v3 artifact schema."),
         imports: &[],
         inline: &[],
+        keep: &[],
         build: common,
     },
     Artifact {
@@ -49,6 +53,7 @@ pub const ARTIFACTS: &[Artifact] = &[
         ),
         imports: &["common.schema.json"],
         inline: &["AiSignal"],
+        keep: &[],
         build: rule,
     },
     Artifact {
@@ -57,6 +62,7 @@ pub const ARTIFACTS: &[Artifact] = &[
         description: None,
         imports: &["common.schema.json", "rule.schema.json"],
         inline: &["CategoryId", "Density"],
+        keep: &[],
         build: category,
     },
     Artifact {
@@ -65,6 +71,7 @@ pub const ARTIFACTS: &[Artifact] = &[
         description: None,
         imports: &["common.schema.json"],
         inline: &["Genre"],
+        keep: &["CategoryId"],
         build: lint_report,
     },
     Artifact {
@@ -79,6 +86,7 @@ pub const ARTIFACTS: &[Artifact] = &[
         ),
         imports: &["common.schema.json"],
         inline: &[],
+        keep: &[],
         build: manifest,
     },
     Artifact {
@@ -94,6 +102,7 @@ pub const ARTIFACTS: &[Artifact] = &[
         ),
         imports: &["common.schema.json"],
         inline: &[],
+        keep: &[],
         build: doctor_report,
     },
     Artifact {
@@ -109,6 +118,7 @@ pub const ARTIFACTS: &[Artifact] = &[
         ),
         imports: &["common.schema.json"],
         inline: &[],
+        keep: &[],
         build: plugin_index,
     },
     Artifact {
@@ -125,6 +135,7 @@ pub const ARTIFACTS: &[Artifact] = &[
         ),
         imports: &["common.schema.json"],
         inline: &[],
+        keep: &[],
         build: plugins_lock,
     },
 ];
@@ -233,8 +244,22 @@ fn category() -> Value {
 /// The producer contract: what `Report` serializes, so a member the producer always writes
 /// stays required even where `Deserialize` would accept it absent.
 fn lint_report() -> Value {
-    schema_settings(Contract::Serialize)
+    let mut root = schema_settings(Contract::Serialize)
         .into_generator()
         .into_root_schema_for::<Report>()
-        .to_value()
+        .to_value();
+    // No report member is a bare `CategoryId` any more, but the rules output refers to this
+    // definition, so the file keeps it (see `Artifact::keep`).
+    let mut bare = schema_settings(Contract::Serialize)
+        .into_generator()
+        .into_root_schema_for::<slopvac_model::CategoryId>()
+        .to_value();
+    if let Some(object) = bare.as_object_mut() {
+        object.remove("$schema");
+        object.remove("title");
+    }
+    if let Some(defs) = root.get_mut("$defs").and_then(Value::as_object_mut) {
+        defs.insert("CategoryId".to_owned(), bare);
+    }
+    root
 }

@@ -6,12 +6,12 @@ use serde_json::{Value, json};
 use thiserror::Error;
 
 use crate::edit::{Edit, EditError, sorted_without_overlap};
-use crate::ids::{Contexts, PackId, RuleId, SchemaVersion, Severity};
+use crate::ids::{CategoryName, Contexts, PackId, RuleId, SchemaVersion, Severity};
 use crate::origin::Origin;
 use crate::schema::{absent_not_null, dependent_required, if_then, open_object, x_extensions};
 use crate::span::{LineCol, LineColError, Span};
 use crate::values::{
-    CategoryId, Density, GenreId, KebabName, NonEmptyString, Score, present, required_nullable,
+    Density, GenreId, KebabName, NonEmptyString, Score, present, required_nullable,
 };
 
 /// `budget` is always written, as a non-negative number or `null`.
@@ -297,8 +297,8 @@ pub struct Finding {
     pub rule_id: RuleId,
     /// Owning pack.
     pub pack: PackId,
-    /// Category id.
-    pub category: CategoryId,
+    /// Category: its bare id for the `core` plugin, `<plugin>:<category>` for another plugin.
+    pub category: CategoryName,
     /// Severity.
     pub severity: Severity,
     /// Message.
@@ -361,8 +361,8 @@ struct FindingWire {
     rule_id: RuleId,
     /// Owning pack.
     pack: PackId,
-    /// Category id.
-    category: CategoryId,
+    /// Category: its bare id for the `core` plugin, `<plugin>:<category>` for another plugin.
+    category: CategoryName,
     /// Severity.
     severity: Severity,
     /// Message.
@@ -514,8 +514,8 @@ pub struct AiRegister {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(transform = x_extensions)]
 pub struct CategorySummary {
-    /// Category id.
-    pub category: CategoryId,
+    /// Category: its bare id for the `core` plugin, `<plugin>:<category>` for another plugin.
+    pub category: CategoryName,
     /// Findings.
     #[schemars(with = "Count")]
     pub findings: usize,
@@ -611,8 +611,8 @@ pub struct GenreResult {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(transform = x_extensions)]
 pub struct CategoryScore {
-    /// Category id.
-    pub category: CategoryId,
+    /// Category: its bare id for the `core` plugin, `<plugin>:<category>` for another plugin.
+    pub category: CategoryName,
     /// Findings.
     #[schemars(with = "Count")]
     pub findings: usize,

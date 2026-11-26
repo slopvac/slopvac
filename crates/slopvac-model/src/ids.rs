@@ -96,6 +96,88 @@ impl fmt::Display for PackId {
     }
 }
 
+/// How a report names a category: the bare id for a category of the built-in plugin `core`,
+/// and `<plugin>:<category>` for a category of any other plugin. Two plugins may ship the same
+/// bare category id, and the qualified form keeps them apart. A `core:` prefix is refused, so
+/// one category has one spelling.
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[non_exhaustive]
+#[serde(try_from = "String", into = "String")]
+#[schemars(with = "String", extend("pattern" = schema::CATEGORY_NAME))]
+pub struct CategoryName(String);
+
+impl CategoryName {
+    /// Validate and wrap a category name: `<category>` or `<plugin>:<category>`, where
+    /// `<plugin>` is not `core`.
+    pub fn new(value: impl Into<String>) -> Result<Self, IdError> {
+        let value = value.into();
+        let valid = match value.split_once(':') {
+            None => is_pack(&value),
+            Some((plugin, category)) => {
+                plugin != crate::reserved::RESERVED_ID && is_pack(plugin) && is_pack(category)
+            }
+        };
+        if valid {
+            Ok(Self(value))
+        } else {
+            Err(IdError::new(
+                crate::messages::ModelPhrase::CategoryId.as_static(),
+                value,
+            ))
+        }
+    }
+
+    /// The name of `category` in `plugin`: bare for `core`, qualified for any other plugin.
+    #[must_use]
+    pub fn of(plugin: &PackId, category: &crate::values::CategoryId) -> Self {
+        if plugin.as_str() == crate::reserved::RESERVED_ID {
+            Self(category.as_str().to_owned())
+        } else {
+            Self(format!("{plugin}:{category}"))
+        }
+    }
+
+    /// The name as text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The plugin of a qualified name. `None` for a bare name, which belongs to `core`.
+    #[must_use]
+    pub fn plugin(&self) -> Option<&str> {
+        self.0.split_once(':').map(|(plugin, _)| plugin)
+    }
+}
+
+impl From<crate::values::CategoryId> for CategoryName {
+    /// The bare name, which is how a report names a category of the `core` plugin.
+    fn from(category: crate::values::CategoryId) -> Self {
+        Self(category.into())
+    }
+}
+
+impl TryFrom<String> for CategoryName {
+    type Error = IdError;
+    fn try_from(value: String) -> Result<Self, IdError> {
+        Self::new(value)
+    }
+}
+
+impl From<CategoryName> for String {
+    fn from(name: CategoryName) -> Self {
+        name.0
+    }
+}
+
+impl fmt::Display for CategoryName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// Qualified rule identifier `<plugin>:<id>`. A rule from a category file has the id
 /// `<category>.<rule>`, for example `core:prose-craft.acronym-periods`; a rule a plugin reports
 /// may use a bare id such as `core:passive-voice`. Short names resolve in configuration only
