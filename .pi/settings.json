@@ -1,6 +1,7 @@
 {
   "packages": [
     "npm:@srobroek/pi-lang-python",
-    "npm:@srobroek/pi-lang-rust"
+    "npm:@srobroek/pi-lang-rust",
+    "npm:@srobroek/pi-design"
   ]
 }
