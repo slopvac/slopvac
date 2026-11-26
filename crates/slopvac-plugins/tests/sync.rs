@@ -1587,7 +1587,13 @@ mod python {
         // read the manifest again would build the environment of the swapped bytes instead.
         let err = result.unwrap_err();
         assert!(
-            matches!(&err, SyncError::PythonEnv { source: PyEnvError::Tree(_), .. }),
+            matches!(
+                &err,
+                SyncError::PythonEnv {
+                    source: PyEnvError::Tree(_),
+                    ..
+                }
+            ),
             "{err:?}"
         );
         assert!(t.envs.load(&t.hash, "3.12").unwrap().is_none());
