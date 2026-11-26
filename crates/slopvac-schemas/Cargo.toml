@@ -23,6 +23,7 @@ thiserror = { workspace = true }
 [dev-dependencies]
 jsonschema = { workspace = true }
 rstest = { workspace = true }
+slopvac-plugins = { workspace = true }
 snapbox = { workspace = true }
 tempfile = { workspace = true }
 

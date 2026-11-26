@@ -14,23 +14,16 @@ from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator
-from referencing import Registry, Resource
 from slopvac_plugin.conformance._unsafe_ranges import UNSAFE_RANGES
+from test_schemas import _registry
 
 _SCHEMAS = Path(__file__).resolve().parents[2] / "schemas/v3"
 _DIGEST = "sha256:" + "0123456789abcdef" * 4
 
 
 def _lock_validator() -> Draft202012Validator:
-    schemas = [
-        json.loads(p.read_text(encoding="utf-8"))
-        for p in _SCHEMAS.glob("*.schema.json")
-    ]
-    registry = Registry().with_resources(
-        (s["$id"], Resource.from_contents(s)) for s in schemas
-    )
     lock = json.loads((_SCHEMAS / "plugins-lock.schema.json").read_text(encoding="utf-8"))
-    return Draft202012Validator(lock, registry=registry)
+    return Draft202012Validator(lock, registry=_registry())
 
 
 _VALIDATOR = _lock_validator()
@@ -61,7 +54,15 @@ def _samples() -> list[int]:
 
 
 # One source shape per branch of the pattern: a relative path, and a URL path and authority.
-_SHAPES = ["pkg/a{c}b", "https://h/a{c}b", "oci://h{c}x/p", "git+https://h/r{c}@" + "0" * 40]
+_SHAPES = [
+    "pkg/a{c}b",
+    "https://h/a{c}b",
+    "https://h{c}x/p",
+    "oci://h/a{c}b",
+    "oci://h{c}x/p",
+    "git+https://h/r{c}@" + "0" * 40,
+    "git+https://h{c}x/r@" + "0" * 40,
+]
 
 
 def test_the_sweep_has_the_expected_ranges() -> None:
