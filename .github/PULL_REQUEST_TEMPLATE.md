@@ -1,5 +1,6 @@
 <!-- Title: a Conventional Commit, `type(scope): summary`. Maintainers squash-merge, and release-please reads the title. -->
 
+<!-- The next two lines are optional. Keep them if you have a tracker entry and remove them otherwise. A GitHub issue link works instead: `Fixes #<n>` or `Issue: <url>`. -->
 Bead: <id>
 Flag: none
 
@@ -18,10 +19,10 @@ Flag: none
 | `cargo nextest run --workspace` | |
 | `cargo test --doc --workspace` | |
 | `prek run --all-files` | |
-| `pytest` | |
+| Tests: `mise exec -- uv run pytest` | |
 | Prose gate: `cargo run -p slopvac -- lint <files>` (exit 1 fails, exit 2 is incomplete) | |
 
 ## Notes for reviewers
 
-- Rust changes must meet [`docs/engineering.md`](../docs/engineering.md). To deviate from a rule, follow "How to request a departure" there.
+- Rust changes must meet [`docs/engineering.md`](https://github.com/slopvac/slopvac/blob/main/docs/engineering.md). To deviate from a rule, follow [How to request a departure](https://github.com/slopvac/slopvac/blob/main/docs/engineering.md#how-to-request-a-departure).
 - Contributions need a signed CLA. CLA Assistant comments on your first PR.
