@@ -77,9 +77,6 @@ impl PackError {
                 .code(),
             ),
             Self::RuleIdCollision { .. } => Some(code_of!(RuleIdCollision { plugin, rule })),
-            Self::CategoryIdCollision { .. } => {
-                Some(code_of!(CategoryIdCollision { plugin, category }))
-            }
             Self::GlobTooComplex => Some(code_of!(GlobTooComplex {
                 depth,
                 alternatives,
@@ -192,19 +189,6 @@ pub enum PackError {
         plugin: String,
         /// The colliding id without the plugin part: `<category>.<rule>`.
         rule: String,
-    },
-    /// A plugin supplies a category with the id of a core category, and shares no rule id. The
-    /// engine keys category settings by the category id, so the plugin would overwrite the
-    /// core's. The load refuses the plugin whole.
-    #[error("{}", crate::messages::PackMessage::CategoryIdCollision {
-        plugin: slopvac_sanitize::line(.plugin),
-        category: slopvac_sanitize::line(.category),
-    })]
-    CategoryIdCollision {
-        /// The plugin id.
-        plugin: String,
-        /// The colliding category id.
-        category: String,
     },
     /// A pack or the run is over a budget (X3). The code is `rules-budget-exceeded`, with
     /// `data.budget` the name of the budget (`plugin-files`, `plugin-bytes`, `plugin-run-bytes`,

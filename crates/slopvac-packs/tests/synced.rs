@@ -1179,7 +1179,6 @@ fn a_plugin_rule_with_a_core_rule_id_is_refused_with_its_own_code() {
     assert!(err.to_string().contains(&format!("`{local}`")), "{err}");
 }
 
-// The refusal does not depend on where the core sits in the list.
 /// A plugin `acme` whose category has the id of a core category and whose one rule has a fresh
 /// id, and that category id.
 fn colliding_category_with_a_fresh_rule() -> (Spec, String) {
@@ -1195,23 +1194,30 @@ fn colliding_category_with_a_fresh_rule() -> (Spec, String) {
     (spec, category)
 }
 
-// Only the category is shared, so the refusal has the category code and the text names a
-// category and never a rule.
+// Categories are keyed by plugin and id, so a plugin category that shares only an id with a core
+// category is legal. Both load, each with its own metadata.
 #[test]
-fn a_category_only_collision_is_refused_with_the_category_code_and_text() {
+fn a_plugin_category_that_shares_an_id_with_a_core_category_loads_beside_it() {
     let (spec, category) = colliding_category_with_a_fresh_rule();
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
 
-    assert_eq!(err.code(), Some("plugin-category-id-collision"), "{err}");
-    assert_eq!(
-        err.to_string(),
-        format!(
-            "plugin `acme` is refused: its category `{category}` has the id of a category that another plugin supplies, and nothing from the plugin loads"
-        )
-    );
+    let shared: Vec<(String, String)> = packs
+        .rule_sets()
+        .flat_map(|s| {
+            s.categories()
+                .iter()
+                .filter(|c| c.id().as_str() == category)
+                .map(|c| (s.pack().to_string(), c.title().as_str().to_owned()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let plugins: Vec<&str> = shared.iter().map(|(p, _)| p.as_str()).collect();
+    assert_eq!(plugins, ["core", "acme"]);
+    assert_eq!(shared[1].1, "T");
+    assert_ne!(shared[0].1, "T");
 }
 
 // One plugin supplies a category that shares only an id with a core category, and a category

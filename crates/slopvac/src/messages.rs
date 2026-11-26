@@ -94,6 +94,10 @@ pub static RETIRED: &[Retired] = &[
         code: "migrate-note-added-switch-blocks",
         note: "Replaced by migrate-note-merged-switch.",
     },
+    Retired {
+        code: "plugin-category-id-collision",
+        note: "A plugin category may share a bare id with a core category, because the engine keys categories by plugin and id. A shared rule id is still refused with plugin-rule-id-collision.",
+    },
 ];
 
 /// The entries of [`ALL`], paired with their catalog names.
