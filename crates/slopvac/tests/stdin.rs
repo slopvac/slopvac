@@ -108,7 +108,12 @@ fn a_clean_comment_on_stdin_passes_with_an_info_notice() {
         .as_array()
         .expect("unchecked")
         .iter()
-        .map(|n| (n["code"].as_str().expect("code"), n["level"].as_str().expect("level")))
+        .map(|n| {
+            (
+                n["code"].as_str().expect("code"),
+                n["level"].as_str().expect("level"),
+            )
+        })
         .collect();
     assert_eq!(notices, [("comment-rules-not-run", "info")], "{report}");
 }
