@@ -70,7 +70,8 @@ jobs:
           SLOPVAC_OFFLINE: "1"
         run: |
           set -uo pipefail
-          # An empty or missing page directory would lint nothing and pass. The message
+          # Fail when no *.md file exists anywhere below the page directory. That covers a
+          # missing directory, an empty one and one with only other files. The message
           # names no path.
           if [ -z "$(find "$RUNNER_TEMP/site-src" -type f -name '*.md' -print -quit 2>/dev/null)" ]; then
             echo "Docs site lint: no generated pages found"
