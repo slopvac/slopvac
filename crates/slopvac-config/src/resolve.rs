@@ -75,8 +75,13 @@ pub struct Contribution {
     scope: usize,
 }
 
-/// One contribution in a group: the spelling it shows, its tie rank and the contribution.
-type Member = (Vec<String>, usize, Contribution);
+/// One contribution in a group, with the filing a caller gave it.
+struct Member {
+    shown: Vec<String>,
+    fallback: Option<Vec<String>>,
+    rank: usize,
+    contribution: Contribution,
+}
 
 /// Where [`Resolved::explain_grouped`] files one contribution.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,6 +94,10 @@ pub struct GroupedKey {
     /// The layer order decides first. A caller that reads the same key by [`Resolved::level_by_any`]
     /// ranks its spellings by their order in that slice.
     pub rank: usize,
+    /// The spelling to show instead when `shown` is also the displayed path of another entry. A
+    /// caller sets it for a contribution whose `shown` drops a qualifier, so that two entries
+    /// never print under one path with different values.
+    pub fallback: Option<Vec<String>>,
 }
 
 /// The merged settings of one file, with the history of each key.
@@ -327,27 +336,28 @@ impl Resolved {
         for (path, history) in &self.entries {
             for contribution in history {
                 let key = identify(path, contribution);
-                grouped.entry(key.group).or_default().push((
-                    key.shown,
-                    key.rank,
-                    contribution.clone(),
-                ));
+                grouped.entry(key.group).or_default().push(Member {
+                    shown: key.shown,
+                    fallback: key.fallback,
+                    rank: key.rank,
+                    contribution: contribution.clone(),
+                });
             }
         }
-        grouped
+        let mut entries: Vec<(Vec<String>, Option<Vec<String>>, Explained)> = grouped
             .into_iter()
             .filter_map(|(path, mut members)| {
-                members.sort_by_key(|(_, rank, c)| (c.scope, std::cmp::Reverse(*rank)));
+                members.sort_by_key(|m| (m.contribution.scope, std::cmp::Reverse(m.rank)));
                 let history: Vec<Contribution> =
-                    members.iter().map(|(_, _, c)| c.clone()).collect();
+                    members.iter().map(|m| m.contribution.clone()).collect();
                 let win = Self::winner(&path, &history)?;
-                let shown = members
+                let winner = members
                     .iter()
                     .zip(&history)
                     .find(|(_, c)| std::ptr::eq(*c, win))
-                    .map(|((shown, _, _), _)| shown.clone())?;
-                Some(Explained {
-                    path: display_path(&shown),
+                    .map(|(m, _)| m)?;
+                let explained = Explained {
+                    path: display_path(&winner.shown),
                     value: win.value.clone(),
                     source: win.source.clone(),
                     overridden: history
@@ -355,9 +365,19 @@ impl Resolved {
                         .filter(|c| !std::ptr::eq(*c, win))
                         .cloned()
                         .collect(),
-                })
+                };
+                Some((winner.shown.clone(), winner.fallback.clone(), explained))
             })
-            .collect()
+            .collect();
+        let shown: Vec<Vec<String>> = entries.iter().map(|(s, _, _)| s.clone()).collect();
+        for (own, fallback, explained) in &mut entries {
+            if let Some(fallback) = fallback
+                && shown.iter().filter(|s| *s == own).count() > 1
+            {
+                explained.path = display_path(fallback);
+            }
+        }
+        entries.into_iter().map(|(_, _, e)| e).collect()
     }
 
     /// Each key with its final value, where it came from, and the values it replaced.

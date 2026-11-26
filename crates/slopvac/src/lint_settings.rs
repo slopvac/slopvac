@@ -432,6 +432,7 @@ pub(crate) fn explain(resolved: &Resolved, catalog: &Catalog) -> Vec<slopvac_con
         let mut shown = path.to_vec();
         let mut group = path.to_vec();
         let mut rank = 0;
+        let mut fallback = None;
         if let [head, key, ..] = shown.as_mut_slice()
             && (head == "categories" || head == "rules")
         {
@@ -440,13 +441,19 @@ pub(crate) fn explain(resolved: &Resolved, catalog: &Catalog) -> Vec<slopvac_con
             if is_inherited(contribution.source.layer)
                 && let Some(bare) = key.strip_prefix(&format!("{RESERVED_ID}:"))
             {
+                fallback = Some(path.to_vec());
                 *key = bare.to_owned();
             }
             if let Some(identity) = identity_of(catalog, head, &path[1]) {
                 group[1] = identity;
             }
         }
-        GroupedKey { group, shown, rank }
+        GroupedKey {
+            group,
+            shown,
+            rank,
+            fallback,
+        }
     })
 }
 
@@ -880,12 +887,20 @@ pub(crate) mod tests {
 
     /// `explain` over the shipped catalogue for `config`, with the shipped presets.
     fn explained_with_presets(config: &str) -> Vec<slopvac_config::Explained> {
+        explained_with_presets_over(&Catalog::load().expect("the rules load"), config)
+    }
+
+    /// `explain` over `rules` for `config`, with the shipped presets.
+    fn explained_with_presets_over(
+        rules: &Catalog,
+        config: &str,
+    ) -> Vec<slopvac_config::Explained> {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, config).expect("write config");
         let loaded = load(&path, &ShippedStyles::new()).expect("the config loads");
         let resolved = resolve(&loaded, Path::new("doc.md"));
-        explain(&resolved, &Catalog::load().expect("the rules load"))
+        explain(&resolved, rules)
     }
 
     // `explain` and `lint` read one value for a key that one layer spells both ways, in either
@@ -925,6 +940,29 @@ pub(crate) mod tests {
         let s = settings(&config).unwrap();
         assert_eq!(level(&s, rule), Some(Level::Off));
         assert_eq!(entry.value, json!("off"));
+    }
+
+    // A plugin ships a category `ste-vocabulary`, and the project sets it by its bare name. The
+    // `ste` preset's `ste-vocabulary` names no core category. Stripping the preset's `core:`
+    // would print both under one path, so the preset's entry keeps the qualified spelling.
+    #[test]
+    fn a_preset_key_stays_qualified_when_its_bare_spelling_is_another_entrys_path() {
+        let rules = catalog_of(&[("core", "style"), ("alpha", "ste-vocabulary")]);
+        let config =
+            format!("{HEAD}styles = [\"ste\"]\n\n[categories]\nste-vocabulary = \"error\"\n");
+        let explained = explained_with_presets_over(&rules, &config);
+        let entries: Vec<(&str, &serde_json::Value)> = explained
+            .iter()
+            .filter(|e| e.path.contains("ste-vocabulary"))
+            .map(|e| (e.path.as_str(), &e.value))
+            .collect();
+        assert_eq!(
+            entries,
+            [
+                ("categories.ste-vocabulary.severity", &json!("error")),
+                ("categories.\"core:ste-vocabulary\".severity", &json!("off")),
+            ]
+        );
     }
 
     // A preset key keeps the spelling its author wrote, whether or not it names a catalogue
