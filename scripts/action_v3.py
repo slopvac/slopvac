@@ -301,9 +301,15 @@ def _run(command: Sequence[str], env: Mapping[str, str]) -> int:
 def sync(env: Mapping[str, str] = os.environ) -> int:
     """Run ``plugins sync`` from the lockfile, as its own step before the lint.
 
-    A project with no lockfile needs no plugins, so there is nothing to sync.
-    Any failure (the binary exits 2 on a missing or mismatched digest) fails
-    the action.
+    Without a lockfile the step prints a notice and passes. The notice does not
+    show that the project needs no plugins: a project that depends on plugins
+    must commit ``.slopvac/plugins.lock`` so this step syncs it, because the
+    lint step runs ``--offline`` (policies.md, section 1.4). The binary reads
+    the lockfile under the project root, the directory of the nearest
+    ``slopvac.toml`` or else the working directory, and takes no flags here. It
+    exits 0 or 2 (2 for an unreadable or invalid lockfile, a failed fetch or a
+    digest mismatch, and in CI a config that names plugins the lockfile lacks).
+    Any nonzero exit, and death by signal, fails the action as incomplete.
     """
     lockfile = Path(env.get("LOCKFILE") or LOCKFILE)
     if not lockfile.is_file():
