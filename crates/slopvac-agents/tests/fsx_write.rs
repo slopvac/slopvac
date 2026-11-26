@@ -1,6 +1,10 @@
 //! The steering-file write path through `Project`'s public interface: atomic replace, the
 //! compare-and-swap refusal, refusal of special files and no leftover temporary file.
-#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::path::Path;
 
