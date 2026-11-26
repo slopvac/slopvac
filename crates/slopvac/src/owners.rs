@@ -276,13 +276,13 @@ pub fn claims(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
             // text error still goes to stderr, and the exit code is the same.
             let json = m.get_one::<String>("format").is_none_or(|f| f != "text");
             if json && e.budget().is_some() {
-                // A report that cannot be serialized leaves the error itself to say why.
-                if let Ok(mut report) =
-                    serde_json::to_string_pretty(&engine::failure_report(&error))
-                {
-                    report.push('\n');
-                    write(out, &report)?;
-                }
+                let report = slopvac_report::render(
+                    slopvac_report::Format::Json,
+                    &engine::failure_report(&error),
+                    &slopvac_report::NoSources,
+                )
+                .map_err(|err| CliError::new("render-failed", err.to_string()))?;
+                write(out, &report)?;
             }
             return Err(error);
         }
