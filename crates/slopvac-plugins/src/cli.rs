@@ -6,7 +6,6 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use slopvac_fs::{InputKind, ReadOptions, read_capped_regular_to_string};
 use slopvac_messages::{Catalog, render};
 use slopvac_sanitize::line;
 use slopvac_update::messages::UpdateMessage;
@@ -14,8 +13,8 @@ use slopvac_update::messages::UpdateMessage;
 use crate::PluginSpec;
 use crate::cause::{self, withheld};
 use crate::lock::{
-    LockedPack, Lockfile, MAX_LOCK_BYTES, PackId, PackKind, VersionReq, config_drift,
-    outdated as lock_outdated,
+    LockedPack, Lockfile, PackId, PackKind, VersionReq, config_drift,
+    outdated as lock_outdated, read_project_lock,
 };
 use crate::messages::cli::{CliText, Redacted, RunError};
 use crate::oci::Digest;
@@ -395,27 +394,7 @@ fn notices(out: &mut dyn Write, list: &[RevocationNotice]) -> Result<(), RunErro
 }
 
 fn read_lock(runner: &Runner<'_>, required: bool) -> Result<Lockfile, RunError> {
-    let path = runner.dirs.project_root.join(".slopvac/plugins.lock");
-    let invalid = |source: crate::lock::LockError| {
-        let detail = source.diagnostic();
-        RunError::LockInvalid {
-            // The parser's own error can echo the rejected value, so the cause keeps only the
-            // location.
-            source: Redacted::new(detail.clone()),
-            detail,
-        }
-    };
-
-    match read_capped_regular_to_string(&path, MAX_LOCK_BYTES as u64, ReadOptions::default()) {
-        Ok(text) => Lockfile::parse(&text).map_err(invalid),
-        Err(e) if !required && e.input_kind() == Some(InputKind::NotFound) => {
-            Lockfile::new(Vec::new()).map_err(invalid)
-        }
-        Err(source) => Err(RunError::LockUnreadable {
-            detail: source.to_string(),
-            source,
-        }),
-    }
+    read_project_lock(&runner.dirs.project_root, required)
 }
 
 fn kind_name(kind: PackKind) -> String {

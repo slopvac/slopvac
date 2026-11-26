@@ -185,7 +185,9 @@ impl Store {
         Ok(())
     }
 
-    fn recorded(&self, locked: &LockDigest) -> Option<TreeHash> {
+    /// The tree hash that the store recorded for a locked digest, or `None` when it recorded none.
+    #[must_use]
+    pub fn recorded(&self, locked: &LockDigest) -> Option<TreeHash> {
         let path = self.refs().join(&locked.as_str()[7..]);
         // The handle is checked, not the name: a ref swapped for a FIFO cannot hang the read.
         let mut text = String::new();

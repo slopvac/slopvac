@@ -13,7 +13,7 @@
 //! under ignored `x-` keys are bounded only by the input cap. Text from the file that appears in an error is escaped, so control
 //! and bidirectional characters cannot forge output.
 //!
-//! Everything here is pure: no network, no file system, no extraction. The sync
+//! Everything here is pure, except [`read_project_lock`], which reads the file: no network, no extraction. The sync
 //! code produces [`ResolvedPack`] lists and feeds them to [`diff()`]; the update
 //! code feeds available versions to [`outdated()`].
 
@@ -21,6 +21,7 @@ mod diff;
 mod model;
 mod outdated;
 mod parse;
+mod read;
 mod write;
 
 pub use diff::{Change, Delta, LockDiff, ResolvedPack, config_drift, diff};
@@ -31,4 +32,5 @@ pub use model::{
 };
 pub use outdated::{OutdatedPack, outdated, parse_version_req};
 pub use parse::LOCK_SCHEMA_VERSION;
+pub use read::read_project_lock;
 pub use semver::{Version, VersionReq};

@@ -99,23 +99,19 @@ pub(crate) enum PackMessage {
     },
     /// The lock entry of a plugin to load as code is a data plugin.
     #[code("plugin-loader-not-code")]
-    #[message("plugin `{id}` is a data plugin and has no program to load")]
+    #[text("plugin `{id}` is a data plugin and has no program to load")]
     LoaderNotCode { id: String },
-    /// The installed manifest of a code plugin disagrees with the lock entry.
-    #[code("plugin-loader-mismatch")]
-    #[message("plugin `{id}`: the installed manifest has another {field} than the lock")]
-    LoaderMismatch { id: String, field: String },
     /// The manifest of a code plugin could not be read.
     #[code("plugin-loader-manifest-unreadable")]
-    #[message("cannot read the manifest of plugin `{id}`")]
+    #[text("cannot read the manifest of plugin `{id}`")]
     LoaderManifestUnreadable { id: String },
     /// The manifest of a code plugin breaks the contract.
     #[code("plugin-loader-manifest-invalid")]
-    #[message("the manifest of plugin `{id}` does not meet the plugin contract")]
+    #[text("the manifest of plugin `{id}` does not meet the plugin contract")]
     LoaderManifestInvalid { id: String },
     /// The command of a code plugin leaves its tree or starts with a dash.
     #[code("plugin-loader-command-unsafe")]
-    #[message(
+    #[text(
         "the command of plugin `{id}` must be a relative path inside the plugin, with no leading dash"
     )]
     LoaderCommandUnsafe { id: String },

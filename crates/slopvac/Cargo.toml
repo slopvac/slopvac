@@ -54,6 +54,7 @@ slopvac-terms.workspace = true
 slopvac-text.workspace = true
 slopvac-update.workspace = true
 tempfile.workspace = true
+thiserror.workspace = true
 toml.workspace = true
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = [

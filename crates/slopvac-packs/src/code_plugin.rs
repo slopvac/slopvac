@@ -13,7 +13,7 @@ use slopvac_plugins::lock::{LockedPack, PackKind as LockKind, SourceKind};
 use slopvac_plugins::protocol::{self, FeatureSet, PluginDeclaration};
 use slopvac_plugins::trust::VerifiedPlugin;
 
-use crate::messages::PackMessage;
+use crate::messages::{PackMessage, code_of};
 use crate::{DirSource, Manifest, ManifestError, PackKind, PackPath, PackSource, SourceError};
 
 /// What the caller knows about an installed tree and the child it will start.
@@ -54,13 +54,13 @@ impl CodePluginContext {
 #[non_exhaustive]
 pub enum CodePluginError {
     /// The lock entry is for a data plugin, which has nothing to run.
-    #[error("{}", PackMessage::LoaderNotCode { id: String::from(.id) })]
+    #[error("{}", PackMessage::LoaderNotCode { id: slopvac_sanitize::line(.id) })]
     NotCode {
         /// The plugin id.
         id: String,
     },
     /// The installed manifest disagrees with the lock entry.
-    #[error("{}", PackMessage::LoaderMismatch { id: String::from(.id), field: String::from(*.field) })]
+    #[error("{}", PackMessage::ManifestMismatch { id: slopvac_sanitize::line(.id), field: String::from(*.field) })]
     Mismatch {
         /// The plugin id.
         id: String,
@@ -68,33 +68,51 @@ pub enum CodePluginError {
         field: &'static str,
     },
     /// The command of the plugin leaves its tree, or an interpreter would read it as an option.
-    #[error("{}", PackMessage::LoaderCommandUnsafe { id: String::from(.id) })]
+    #[error("{}", PackMessage::LoaderCommandUnsafe { id: slopvac_sanitize::line(.id) })]
     Command {
         /// The plugin id.
         id: String,
     },
     /// The manifest could not be read.
-    #[error("{}", PackMessage::LoaderManifestUnreadable { id: String::from(.id) })]
+    #[error("{}", PackMessage::LoaderManifestUnreadable { id: slopvac_sanitize::line(.id) })]
     Unreadable {
         /// The plugin id.
         id: String,
-        /// The read failure.
+        /// The read failure. TODO(slopvac-8l4.12.82): its `Display` is not catalog text, so the
+        /// chain a caller walks can show it; render the source through the catalog with the
+        /// source types of this crate.
         #[source]
         source: SourceError,
     },
     /// The manifest breaks the contract.
-    #[error("{}", PackMessage::LoaderManifestInvalid { id: String::from(.id) })]
+    #[error("{}", PackMessage::LoaderManifestInvalid { id: slopvac_sanitize::line(.id) })]
     Manifest {
         /// The plugin id.
         id: String,
-        /// What is wrong with the manifest.
+        /// What is wrong with the manifest. TODO(slopvac-8l4.12.82): as for `Unreadable`.
         #[source]
         source: ManifestError,
     },
 }
+impl CodePluginError {
+    /// The stable code of the catalog text this error renders.
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::NotCode { .. } => code_of!(LoaderNotCode { id }),
+            Self::Mismatch { .. } => code_of!(ManifestMismatch { id, field }),
+            Self::Command { .. } => code_of!(LoaderCommandUnsafe { id }),
+            Self::Unreadable { .. } => code_of!(LoaderManifestUnreadable { id }),
+            Self::Manifest { .. } => code_of!(LoaderManifestInvalid { id }),
+        }
+    }
+}
+
+type Result<T> = std::result::Result<T, CodePluginError>;
 
 /// The verified plugin and the spec to start it, from the lock entry and the installed tree at
-/// `root`. The caller has checked `root` against its lock digest.
+/// `root`. The caller owns the tree hash in `context` and checks `root` against it; this
+/// function takes the hash as given.
 ///
 /// The program is the manifest `command` under `root`, the working directory is `root`, and
 /// the declaration is read from the same manifest bytes that the tree hash covers. For
@@ -108,7 +126,7 @@ pub fn load_code_plugin(
     locked: &LockedPack,
     root: &Path,
     context: &CodePluginContext,
-) -> Result<(VerifiedPlugin, PluginSpec), CodePluginError> {
+) -> Result<(VerifiedPlugin, PluginSpec)> {
     let id = locked.id.to_string();
     if locked.kind != LockKind::Code {
         return Err(CodePluginError::NotCode { id });
