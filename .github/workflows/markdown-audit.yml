@@ -65,6 +65,16 @@ jobs:
                   return "fixture"
               if path.endswith("CHANGELOG.md") or path == "CODE_OF_CONDUCT.md":
                   return "release"
+              # Exact paths, never a glob. Each file stays in the inventory under this class.
+              # A perf fixture, an input for the benchmark and not prose.
+              if path == "scripts/perf/fixtures/readme.md":
+                  return "fixture"
+              # A dated review disposition from 2026-10-20, kept as a historical record.
+              if path == "REVIEW-FINDINGS.md":
+                  return "release"
+              # Tool scan context that still describes the 2.x linter.
+              if path == ".codex/threat-model.md":
+                  return "managed"
               if path.endswith("/docs/rules.md"):
                   return "generated"
               if path.startswith(".beads/") or path.startswith(".agents/skills/beads/"):
