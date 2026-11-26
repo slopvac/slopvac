@@ -94,7 +94,7 @@ def test_the_authored_report_holds_exactly_the_authored_documents(reported, prob
 
 # ---- the audit step's real script, against a stub linter ---------------------------
 
-from markdown_audit_harness import run_audit  # noqa: E402
+from markdown_audit_harness import assert_output_contract, run_audit  # noqa: E402
 
 HOSTILE_PATH = "::error::pwned\n::add-mask::x"
 
@@ -106,8 +106,7 @@ def _no_workflow_command(text: str) -> None:
 
 def test_a_correct_audit_passes_and_prints_no_workflow_command(tmp_path) -> None:
     done = run_audit(tmp_path, {})
-    assert done.returncode == 0, done.stderr
-    _no_workflow_command(done.stdout + done.stderr)
+    assert_output_contract(done, tmp_path)
     # The step wrote its report directory under the test directory, not the system one.
     assert list((tmp_path / "tmp").glob("markdown-audit-*"))
     # The hostile file name still reaches the log, in escaped form.
@@ -141,7 +140,8 @@ _PRINTS = {
 @pytest.mark.parametrize("case", list(_PRINTS.values()), ids=list(_PRINTS))
 def test_untrusted_report_text_reaches_the_log_only_escaped(tmp_path, case) -> None:
     done = run_audit(tmp_path, case)
-    _no_workflow_command(done.stdout + done.stderr)
+    assert done.stderr == ""
+    _no_workflow_command(done.stdout)
 
 
 @pytest.mark.parametrize(
@@ -179,15 +179,12 @@ _MALFORMED = {
 @pytest.mark.parametrize("scan", ["authored", "configured", "all-files"])
 def test_a_malformed_report_fails_the_audit_step(tmp_path, scan, fault) -> None:
     done = run_audit(tmp_path, {scan: _MALFORMED[fault]})
-    assert done.returncode != 0
-    assert f"{scan}: " in done.stderr
-    _no_workflow_command(done.stderr)
+    assert_output_contract(done, tmp_path, f"{scan}: ", prefix=True)
 
 
 def test_an_empty_authored_report_fails_the_audit_step(tmp_path) -> None:
     done = run_audit(tmp_path, {"authored": 'report["documents"] = []'})
-    assert done.returncode != 0
-    assert "authored: the report omits" in done.stderr
+    assert_output_contract(done, tmp_path, "authored: the report omits", prefix=True)
 
 
 _CONFIGURED_FAULTS = {
@@ -200,15 +197,13 @@ _CONFIGURED_FAULTS = {
 @pytest.mark.parametrize("fault", list(_CONFIGURED_FAULTS))
 def test_a_bad_configured_report_fails_the_audit_step(tmp_path, fault) -> None:
     done = run_audit(tmp_path, {"configured": _CONFIGURED_FAULTS[fault]})
-    assert done.returncode != 0
-    assert "configured: the report " in done.stderr
-    _no_workflow_command(done.stderr)
+    assert_output_contract(done, tmp_path, "configured: the report ", prefix=True)
 
 
 def test_a_proper_subset_is_a_valid_configured_report(tmp_path) -> None:
     # The config's exclusions are the CLI's business, so a smaller report is not a fault.
     done = run_audit(tmp_path, {"configured": 'del report["documents"][0]'})
-    assert done.returncode == 0, done.stderr
+    assert_output_contract(done, tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -235,8 +230,7 @@ _ALL_FILES_FAULTS = {"empty": 'report["documents"] = []', "one-omitted": 'del re
 @pytest.mark.parametrize("fault", list(_ALL_FILES_FAULTS))
 def test_a_partial_all_files_report_fails_the_audit_step(tmp_path, fault) -> None:
     done = run_audit(tmp_path, {"all-files": _ALL_FILES_FAULTS[fault]})
-    assert done.returncode != 0
-    assert "all-files: the report " in done.stderr
+    assert_output_contract(done, tmp_path, "all-files: the report ", prefix=True)
 
 
 _PAYLOAD = "::error::pwned\n##[group]x\n"
@@ -252,39 +246,26 @@ def test_a_failed_linter_with_no_report_fails_with_fixed_text(tmp_path, scan, co
         scan + "-stderr": _PAYLOAD,
     }
     done = run_audit(tmp_path, case)
-    assert done.returncode != 0
-    assert f"{scan}: the linter exited {code} and wrote no report" in done.stderr
-    assert "Traceback" not in done.stderr
-    _no_workflow_command(done.stdout + done.stderr)
-    assert "pwned" not in done.stdout + done.stderr
+    line = f"{scan}: the linter exited {code} and wrote no report"
+    assert_output_contract(done, tmp_path, line, payload_free=True)
 
 
 @pytest.mark.parametrize("scan", ["authored", "configured", "all-files"])
 def test_a_report_path_outside_the_root_fails_with_fixed_text(tmp_path, scan) -> None:
     case = {scan: 'report["documents"][0]["path"] = "/outside/::error::pwned.md"'}
     done = run_audit(tmp_path, case)
-    assert done.returncode != 0
-    assert f"{scan}: document 0 lies outside the repository" in done.stderr
-    assert "Traceback" not in done.stderr
-    _no_workflow_command(done.stdout + done.stderr)
-    assert "pwned" not in done.stdout + done.stderr
+    line = f"{scan}: document 0 lies outside the repository"
+    assert_output_contract(done, tmp_path, line, payload_free=True)
 
 
 # ---- one fixed line for every other failure ---------------------------------------
 
 
-def _fixed_failure(done, line: str) -> None:
-    assert done.returncode == 1
-    assert line in done.stderr.splitlines()
-    assert "Traceback" not in done.stderr
-    assert "pwned" not in done.stderr
-    _no_workflow_command(done.stdout + done.stderr)
-
-
 @pytest.mark.parametrize("scan", ["authored", "configured", "all-files"])
 def test_a_linter_timeout_fails_with_fixed_text(tmp_path, scan) -> None:
     case = {scan + "-sleep": True, "env": {"AUDIT_LINTER_TIMEOUT": "1"}}
-    _fixed_failure(run_audit(tmp_path, case), f"{scan}: the linter timed out after 1 s")
+    done = run_audit(tmp_path, case)
+    assert_output_contract(done, tmp_path, f"{scan}: the linter timed out after 1 s", payload_free=True)
 
 
 _BAD_PATHS = {
@@ -298,13 +279,14 @@ _BAD_PATHS = {
 @pytest.mark.parametrize("scan", ["authored", "configured", "all-files"])
 def test_a_document_without_a_string_path_fails_with_fixed_text(tmp_path, scan, fault) -> None:
     done = run_audit(tmp_path, {scan: _BAD_PATHS[fault]})
-    _fixed_failure(done, f"{scan}: document 0 has no path")
+    assert_output_contract(done, tmp_path, f"{scan}: document 0 has no path", payload_free=True)
 
 
 def test_an_unexpected_exception_prints_one_fixed_line(tmp_path) -> None:
     # A finding without `severity` is a report shape the step does not expect.
     case = {"all-files": 'report["documents"][0]["findings"] = [{"message": "x"}]'}
-    _fixed_failure(run_audit(tmp_path, case), "Audit failed: internal error (KeyError)")
+    done = run_audit(tmp_path, case)
+    assert_output_contract(done, tmp_path, "Audit failed: internal error (KeyError)")
 
 
 @pytest.mark.parametrize(
@@ -322,3 +304,27 @@ def test_path_problems(report, problems) -> None:
     assert len(found) == problems
     for i, message in enumerate(found):
         assert message.startswith("scan: document ") and message.endswith(" has no path")
+
+
+# ---- the launcher boundary ----------------------------------------------------------
+
+
+def _stderr_file(root):
+    return (root / "runner-temp" / "markdown-audit.stderr").read_text()
+
+
+def test_a_startup_failure_before_the_hook_prints_one_fixed_line(tmp_path) -> None:
+    # The import of `markdown_it` runs before the script installs its exception hook, and
+    # the module here raises with a payload, so Python itself would print a traceback.
+    done = run_audit(tmp_path, {"shadow-markdown-it": True})
+    assert_output_contract(done, tmp_path, "Audit failed (exit 1)", payload_free=True)
+    assert done.stdout.strip() == "Audit failed (exit 1)"
+    # The traceback went to the private file, which nothing prints.
+    assert "Traceback" in _stderr_file(tmp_path)
+
+
+def test_a_python_warning_with_a_payload_reaches_no_stream(tmp_path) -> None:
+    done = run_audit(tmp_path, {"warn": True})
+    assert_output_contract(done, tmp_path, payload_free=False)
+    assert "WARNPAYLOAD" not in done.stdout + done.stderr
+    assert "WARNPAYLOAD" in _stderr_file(tmp_path)

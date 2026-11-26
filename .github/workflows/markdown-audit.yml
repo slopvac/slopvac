@@ -37,8 +37,12 @@ jobs:
           SLOPVAC_NO_UPDATE_CHECK: "1"
           SLOPVAC_OFFLINE: "1"
         run: |
-          set -euo pipefail
-          uv run --project packages/slopvac-lint python - <<'PY'
+          # The audit's whole stderr goes to a private file that nothing prints: an import
+          # error, a warning or a startup failure can carry file names and report text from
+          # the repository. The script prints its fixed diagnostics on stdout.
+          set -uo pipefail
+          status=0
+          uv run --project packages/slopvac-lint python - 2>"$RUNNER_TEMP/markdown-audit.stderr" <<'PY' || status=$?
           import collections
           import json
           import os
@@ -51,6 +55,12 @@ jobs:
           from urllib.parse import unquote, urlsplit
           from markdown_it import MarkdownIt
 
+          def stop(text):
+              # Expected failures print their fixed text on stdout and exit 1. A bare
+              # SystemExit(text) would print it on stderr, which the launcher keeps private.
+              print(text, flush=True)
+              raise SystemExit(1)
+
           def fail_with_one_line(kind, value, traceback):
               # Any exception the step does not expect ends here. The line names the type only:
               # the message, the arguments and the traceback can hold file names and report
@@ -58,7 +68,7 @@ jobs:
               # failures raise SystemExit with fixed text and never reach this hook, and
               # SystemExit(0) keeps its code. A KeyboardInterrupt also lands here, so it
               # still ends the run nonzero.
-              print(f"Audit failed: internal error ({kind.__name__})", file=sys.stderr, flush=True)
+              print(f"Audit failed: internal error ({kind.__name__})", flush=True)
 
           sys.excepthook = fail_with_one_line
           sys.path.insert(0, "scripts")
@@ -74,7 +84,15 @@ jobs:
           root = Path.cwd()
           binary = os.environ["SLOPVAC_BIN"]
           out = Path(tempfile.mkdtemp(prefix="markdown-audit-"))
-          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          def git(*args):
+              # Git's stderr is discarded, so it can never reach the log. A failure ends in
+              # fixed text.
+              try:
+                  return subprocess.check_output(["git", *args], stderr=subprocess.DEVNULL).decode()
+              except (subprocess.CalledProcessError, OSError):
+                  stop(f"git {args[0]} failed")
+
+          tracked = git("ls-files", "-z").split("\0")
           files = sorted(p for p in tracked if Path(p).suffix.lower() in {".md", ".markdown", ".mdx"})
 
           def document_class(path):
@@ -105,7 +123,7 @@ jobs:
           class_counts = dict(collections.Counter(document_class(path) for path in files))
           authored_files = [path for path in files if document_class(path) == "authored"]
           print("DOCUMENT_CLASSES", json.dumps(class_counts), flush=True)
-          print("AUDIT_COMMIT", subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip(), flush=True)
+          print("AUDIT_COMMIT", git("rev-parse", "HEAD").strip(), flush=True)
           print("TRACKED_MARKDOWN", len(files), flush=True)
           print("EXTENSIONS", dict(collections.Counter(Path(p).suffix.lower() for p in files)), flush=True)
           canonical = {}
@@ -122,7 +140,7 @@ jobs:
               try:
                   result = subprocess.run(args, capture_output=True, text=True, timeout=limit)
               except subprocess.TimeoutExpired:
-                  raise SystemExit(f"{name}: the linter timed out after {limit} s") from None
+                  stop(f"{name}: the linter timed out after {limit} s")
               (out / (name + ".stdout")).write_text(result.stdout)
               (out / (name + ".stderr")).write_text(result.stderr)
               print("COMMAND", name, "EXIT", result.returncode, flush=True)
@@ -154,16 +172,16 @@ jobs:
                   try:
                       reports[name] = json.loads(target.read_text())
                   except (OSError, ValueError):
-                      raise SystemExit(
+                      stop(
                           f"{name}: the linter exited {result.returncode} and wrote no report"
-                      ) from None
+                      )
                   # Every document needs a boolean gate verdict. `false` is allowed in the
                   # diagnostic scans, which may fail, and not in the authored scan.
                   bad = path_problems(name, reports[name]) + gate_problems(
                       name, reports[name], allow_false=name != "authored"
                   )
                   if bad:
-                      raise SystemExit("\n".join(bad))
+                      stop("\n".join(bad))
                   summary = {k: reports[name]["summary"][k] for k in fields}
                   print("SUMMARY", name, escape(json.dumps(summary)), flush=True)
           finally:
@@ -173,7 +191,7 @@ jobs:
               try:
                   return str(Path(document["path"]).resolve().relative_to(root))
               except ValueError:
-                  raise SystemExit(f"{name}: document {index} lies outside the repository") from None
+                  stop(f"{name}: document {index} lies outside the repository")
 
           # Resolve every path once, so a path outside the root stops the audit with fixed text.
           paths = {
@@ -191,11 +209,11 @@ jobs:
               {canonical[p] for p in authored_files},
           )
           if bad:
-              raise SystemExit("\n".join(bad))
+              stop("\n".join(bad))
           # The all-files report must hold every tracked document: it is the coverage guarantee.
           bad = document_set_problems("all-files", paths["all-files"], expected_paths)
           if bad:
-              raise SystemExit("\n".join(bad))
+              stop("\n".join(bad))
           # Coverage comes from the all-files scan. The configured report may be a subset.
           bad = configured_problems(
               paths["configured"],
@@ -203,7 +221,7 @@ jobs:
               len(authored_files),
           )
           if bad:
-              raise SystemExit("\n".join(bad))
+              stop("\n".join(bad))
           excluded = sorted(expected_paths - set(configured))
           missing = sorted(expected_paths - set(scanned))
           unexpected = sorted(set(scanned) - expected_paths)
@@ -308,5 +326,9 @@ jobs:
               or exits["authored"] != 0
           )
           if incomplete:
-              raise SystemExit("Audit incomplete; inspect the log.")
+              stop("Audit incomplete; inspect the log.")
           PY
+          if [ "$status" -ne 0 ]; then
+            echo "Audit failed (exit $status)"
+            exit "$status"
+          fi

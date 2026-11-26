@@ -112,11 +112,57 @@ def make_repo(root: Path) -> Path:
     return repo
 
 
+def assert_output_contract(
+    done: subprocess.CompletedProcess[str],
+    root: Path,
+    expect: str | None = None,
+    *,
+    prefix: bool = False,
+    payload_free: bool = False,
+) -> None:
+    """Check the step's output contract, whatever the case.
+
+    The launcher sends the audit's whole stderr to a private file under `RUNNER_TEMP`, so
+    the step's own stderr is always empty. The script's fixed diagnostics go to stdout. On
+    a failure the shell then prints `Audit failed (exit N)` as the last line, with the real
+    code. No stream carries a traceback or a raw workflow command. `expect` is the fixed
+    line a failing case must print, as the whole line or, with `prefix`, its start.
+    """
+    assert done.stderr == ""
+    assert (root / "runner-temp" / "markdown-audit.stderr").exists()
+    for stream in (done.stdout, done.stderr):
+        assert "Traceback" not in stream
+        assert "::" not in stream
+        assert "##[" not in stream
+    if expect is None:
+        assert done.returncode == 0, done.stdout
+        assert "Audit failed" not in done.stdout
+        return
+    assert done.returncode != 0
+    lines = done.stdout.splitlines()
+    assert lines[-1] == f"Audit failed (exit {done.returncode})"
+    assert any(line.startswith(expect) if prefix else line == expect for line in lines), done.stdout
+    if payload_free:
+        assert "pwned" not in done.stdout
+
+
 def run_audit(root: Path, case: dict) -> subprocess.CompletedProcess[str]:
     repo = make_repo(root)
     # The step calls `tempfile.mkdtemp`, so keep its files under the test directory.
     scratch = root / "tmp"
     scratch.mkdir()
+    (root / "runner-temp").mkdir()
+    if case.get("shadow-markdown-it"):
+        # `python -` puts the working directory first on `sys.path`, so this module is
+        # imported before the script installs its exception hook.
+        (repo / "markdown_it.py").write_text('raise RuntimeError("::error::pwned")\n')
+    if case.get("warn"):
+        site = root / "site"
+        site.mkdir()
+        (site / "sitecustomize.py").write_text(
+            'import warnings\nwarnings.warn("::error::WARNPAYLOAD ##[group]x")\n'
+        )
+        case = {**case, "env": {**case.get("env", {}), "PYTHONPATH": str(site)}}
     case_file = root / "case.json"
     case_file.write_text(json.dumps(case), encoding="utf-8")
     env = {
@@ -124,6 +170,7 @@ def run_audit(root: Path, case: dict) -> subprocess.CompletedProcess[str]:
         "PATH": f"{root / 'bin'}{os.pathsep}{os.environ['PATH']}",
         "AUDIT_CASE": str(case_file),
         "TMPDIR": str(scratch),
+        "RUNNER_TEMP": str(root / "runner-temp"),
         **case.get("env", {}),
         "SLOPVAC_BIN": str(root / "bin" / "slopvac"),
         "GITHUB_STEP_SUMMARY": str(root / "summary.md"),
