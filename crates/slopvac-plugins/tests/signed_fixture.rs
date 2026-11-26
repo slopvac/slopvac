@@ -14,13 +14,13 @@ use slopvac_plugins::sign::{
 use slopvac_plugins::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER};
 
 /// A key pair that signs test artifacts.
-pub struct Key {
+pub(crate) struct Key {
     pk: minisign::PublicKey,
     sk: minisign::SecretKey,
 }
 
 impl Key {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let kp = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
         Self {
             pk: kp.pk,
@@ -28,7 +28,7 @@ impl Key {
         }
     }
 
-    pub fn public(&self) -> PublicKey {
+    pub(crate) fn public(&self) -> PublicKey {
         PublicKey::from_base64(&self.pk.to_base64()).unwrap()
     }
 
@@ -40,9 +40,9 @@ impl Key {
 }
 
 /// A signed artifact: its manifest, the digest of the manifest and every blob it names.
-pub struct Published {
-    pub digest: String,
-    pub key_id: String,
+pub(crate) struct Published {
+    pub(crate) digest: String,
+    pub(crate) key_id: String,
     manifest: Vec<u8>,
     blobs: Vec<(String, Vec<u8>)>,
 }
@@ -62,7 +62,7 @@ fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
 }
 
 /// Sign an artifact of plugin `id` at `version` in `namespace` with `key`.
-pub fn publish(
+pub(crate) fn publish(
     key: &Key,
     namespace: &str,
     id: &str,
@@ -112,7 +112,7 @@ pub fn publish(
 
 impl Published {
     /// Write the manifest and every blob into the store at `root`, under their digests.
-    pub fn cache_into(&self, root: &Path) {
+    pub(crate) fn cache_into(&self, root: &Path) {
         let blobs = root.join("blobs");
         fs::create_dir_all(&blobs).unwrap();
         let hex = |digest: &str| digest.split_once(':').unwrap().1.to_owned();
