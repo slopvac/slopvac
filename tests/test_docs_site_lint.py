@@ -1,13 +1,20 @@
 """The docs-site workflow's lint step runs the 3.x binary with a 3.x config.
 
 `docs-site.yml` lints the generated reference pages. The step runs here through its real
-`run:` text against a stub binary, so no build is needed. Expected values come from the
-exit-code contract (0 pass, 1 gate failed, 2 incomplete) and from the 3.x config schema.
+`run:` text against controlled doubles, so no build is needed and the outcome never
+depends on what is installed:
+
+* a stub `slopvac` at `target/debug/slopvac`, the path the build step produces, which
+  records each invocation and exits with a chosen code;
+* a stub `uvx` on `PATH` that exits 99, so a step that still launches the 2.x linter
+  through it fails an assertion instead of a missing tool.
+
+Expected values come from the exit-code contract (0 pass, 1 gate failed, 2 incomplete)
+and from the 3.x config schema.
 """
 
 from __future__ import annotations
 
-import shlex
 import subprocess
 import tomllib
 from pathlib import Path
@@ -21,40 +28,52 @@ CONFIG = ROOT / "docs" / "site-lint.toml"
 LINT = "Lint the generated Markdown"
 BUILD = "Build the slopvac binary"
 NO_PAGES = "Docs site lint: no generated pages found"
+BUILT_BINARY = "target/debug/slopvac"
+SEP = "\x1f"
+UVX_EXIT = 99
 
 
 def _steps() -> list[dict]:
-    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["build"][
-        "steps"
-    ]
+    jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    return jobs["build"]["steps"]
 
 
 def _step(name: str) -> dict:
-    (step,) = [s for s in _steps() if s.get("name") == name]
-    return step
+    found = [s for s in _steps() if s.get("name") == name]
+    assert len(found) == 1, f"expected one step named {name!r}, found {len(found)}"
+    return found[0]
+
+
+def _stub(path: Path, body: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+    path.chmod(0o755)
 
 
 def _run_lint_step(
     tmp_path: Path, code: int, pages: str
 ) -> subprocess.CompletedProcess:
-    """Run the lint step's script with a stub binary that records its arguments.
+    """Run the lint step's script with doubles for both launchers.
 
-    `pages` is "page" (one generated page), "empty" (a directory without pages) or
-    "missing" (no directory at all).
+    `pages` is "page" (one generated page), "empty" (a directory without pages),
+    "other" (a directory with only a non-Markdown file) or "missing" (no directory).
     """
-    stub = tmp_path / "target" / "debug" / "slopvac"
-    stub.parent.mkdir(parents=True)
-    stub.write_text(
-        f'#!/bin/sh\nprintf "%s\\n" "$@" > "{tmp_path}/args"\nexit {code}\n',
-        encoding="utf-8",
+    calls = tmp_path / "calls"
+    _stub(
+        tmp_path / BUILT_BINARY,
+        f'printf "%s" "$0" >> "{calls}"\n'
+        f'for a in "$@"; do printf "\\037%s" "$a" >> "{calls}"; done\n'
+        f'echo >> "{calls}"\nexit {code}\n',
     )
-    stub.chmod(0o755)
+    _stub(tmp_path / "bin" / "uvx", f"exit {UVX_EXIT}\n")
     site = tmp_path / "site-src"
     if pages != "missing":
         site.mkdir()
     if pages == "page":
         (site / "index.md").write_text("# Page\n", encoding="utf-8")
-    env = {"PATH": "/usr/bin:/bin", "RUNNER_TEMP": str(tmp_path)}
+    if pages == "other":
+        (site / "notes.txt").write_text("not a page\n", encoding="utf-8")
+    env = {"PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin", "RUNNER_TEMP": str(tmp_path)}
     return subprocess.run(
         ["bash", "-c", _step(LINT)["run"]],
         cwd=tmp_path,
@@ -65,46 +84,52 @@ def _run_lint_step(
     )
 
 
-@pytest.mark.parametrize("pages", ["empty", "missing"])
+def _invocation(tmp_path: Path) -> list[str]:
+    """Return argv (with argv[0]) of the one recorded call of the stub binary."""
+    calls = tmp_path / "calls"
+    assert calls.exists(), "the step never ran the stub binary"
+    lines = calls.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1, f"expected one invocation, found {len(lines)}"
+    return lines[0].split(SEP)
+
+
+@pytest.mark.parametrize("pages", ["empty", "other", "missing"])
 def test_a_run_without_generated_pages_fails_with_a_fixed_line(tmp_path, pages) -> None:
     result = _run_lint_step(tmp_path, 0, pages)
     assert result.returncode == 1
     assert NO_PAGES in result.stdout
     assert str(tmp_path) not in result.stdout + result.stderr
-    assert not (tmp_path / "args").exists()
+    assert not (tmp_path / "calls").exists()
 
 
 def test_a_run_with_a_page_runs_the_linter(tmp_path) -> None:
     result = _run_lint_step(tmp_path, 0, "page")
     assert result.returncode == 0
     assert NO_PAGES not in result.stdout
-    assert (tmp_path / "args").exists()
+    _invocation(tmp_path)
 
 
-def _build_output_path(run: str) -> str:
-    """Return the binary path that a `cargo build -p slopvac` step produces."""
-    words = shlex.split(run)
-    assert words[:2] == ["cargo", "build"]
-    assert words[words.index("-p") + 1] == "slopvac"
-    profile = "release" if "--release" in words else "debug"
-    assert "--target" not in words, "a target flag moves the output directory"
-    return f"target/{profile}/slopvac"
-
-
-def test_the_lint_step_runs_the_binary_that_the_build_step_produces() -> None:
+def test_the_build_step_comes_before_the_lint_step() -> None:
     names = [s.get("name") for s in _steps()]
+    assert BUILD in names, f"no step named {BUILD!r}"
+    assert LINT in names, f"no step named {LINT!r}"
     assert names.index(BUILD) < names.index(LINT)
-    built = _build_output_path(_step(BUILD)["run"])
-    assert built in shlex.split(_step(LINT)["run"])
+
+
+def test_the_step_runs_the_binary_that_the_build_produces(tmp_path) -> None:
+    _run_lint_step(tmp_path, 0, "page")
+    assert _invocation(tmp_path)[0] == BUILT_BINARY
 
 
 def test_the_site_config_is_a_3x_config() -> None:
     text = CONFIG.read_text(encoding="utf-8")
     config = tomllib.loads(text)
-    assert config["schema_version"] == 3
-    assert config["profile"] == "relaxed"
-    assert config["styles"] == ["core:legacy-relaxed"]
-    assert config["thresholds"] == {"max_unicode_dashes": 1}
+    assert config.get("schema_version") == 3, "site-lint.toml is not on schema 3"
+    assert config.get("profile") == "relaxed", "site-lint.toml sets no relaxed profile"
+    assert config.get("styles") == ["core:legacy-relaxed"], (
+        "site-lint.toml lists no styles"
+    )
+    assert config.get("thresholds") == {"max_unicode_dashes": 1}
     code = [
         ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
     ]
@@ -123,8 +148,7 @@ def test_the_lint_step_prints_the_real_exit_code(tmp_path, code) -> None:
 
 def test_the_binary_gets_the_page_directory_and_the_site_config(tmp_path) -> None:
     _run_lint_step(tmp_path, 0, "page")
-    args = (tmp_path / "args").read_text(encoding="utf-8").splitlines()
-    assert args == [
+    assert _invocation(tmp_path)[1:] == [
         "lint",
         str(tmp_path / "site-src"),
         "--config",
