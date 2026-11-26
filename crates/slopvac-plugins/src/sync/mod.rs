@@ -176,7 +176,7 @@ enum Acquired {
     Archive(PathBuf),
     /// A tree fetched from a pinned git commit, hashed and equal to the lock,
     /// not yet in the store.
-    Staged(Box<StagedTree>),
+    Staged(Box<StagedTree>, Accepted),
     /// A tree already in the store whose hash is the locked digest, and its manifest as the
     /// pass that checked the hash read it.
     Stored(PathBuf, Option<Vec<u8>>),
@@ -448,20 +448,18 @@ impl<'a> Syncer<'a> {
                     Accepted { hash, manifest },
                 ));
             }
-            Acquired::Staged(staged) => {
-                let done = staged.install(&self.store.trees()).map_err(extract)?;
+            Acquired::Staged(staged, accepted) => {
+                // The tree is hashed again to seal it. That hash must be the accepted one, and
+                // the manifest is the one the accepting pass read.
+                let done = staged
+                    .install_accepted(&self.store.trees(), &accepted.hash)
+                    .map_err(extract)?;
                 self.store.record(&pack.digest, &done.hash)?;
                 let change = match before {
                     TreeState::Tampered(_) => Change::Reinstalled,
                     _ => Change::Installed,
                 };
-                return Ok((
-                    outcome(change, done.root, done.quarantined),
-                    Accepted {
-                        hash: done.hash,
-                        manifest: done.manifest,
-                    },
-                ));
+                return Ok((outcome(change, done.root, done.quarantined), accepted));
             }
             Acquired::Archive(blob) => blob,
         };
@@ -883,7 +881,7 @@ impl<'a> Syncer<'a> {
             },
             git::GitError::Extract(source) => extract(source),
         })?;
-        let actual = staged.hash().map_err(extract)?;
+        let (actual, manifest) = staged.hash_capturing().map_err(extract)?;
         if actual != expected {
             return Err(SyncError::DigestMismatch {
                 id: id.clone(),
@@ -893,7 +891,13 @@ impl<'a> Syncer<'a> {
         }
         #[cfg(feature = "test-support")]
         self.store.observe(staged.root());
-        Ok(Acquired::Staged(Box::new(staged)))
+        Ok(Acquired::Staged(
+            Box::new(staged),
+            Accepted {
+                hash: actual,
+                manifest,
+            },
+        ))
     }
 
     fn acquire_archive(&self, pack: &LockedPack, url: &str) -> Result<Acquired, SyncError> {
@@ -1115,15 +1119,26 @@ fn status_in(
                     let passed = tree_hash_capturing(&dir, MANIFEST_FILE);
                     #[cfg(feature = "test-support")]
                     store.observe(&dir);
-                    match passed {
-                        Ok((hash, manifest)) if hash.as_str() == pack.digest.as_str() => {
-                            accepted = Some(Accepted { hash, manifest });
-                            PackState::InPlace(dir)
-                        }
-                        _ => PackState::InPlaceChanged(dir),
+                    // Only a hash that differs from the lock is a change. A pass that could not
+                    // finish keeps its typed cause.
+                    let (hash, manifest) = passed.map_err(|source| SyncError::Extract {
+                        id: pack.id.clone(),
+                        source,
+                    })?;
+                    if hash.as_str() == pack.digest.as_str() {
+                        accepted = Some(Accepted { hash, manifest });
+                        PackState::InPlace(dir)
+                    } else {
+                        PackState::InPlaceChanged(dir)
                     }
                 }
-                _ => match store.inspect_accepted(&pack.digest)? {
+                _ => match store
+                    .inspect_accepted(&pack.digest)
+                    .map_err(|source| SyncError::Extract {
+                        id: pack.id.clone(),
+                        source,
+                    })?
+                {
                     (TreeState::Absent, _) => PackState::NotInstalled,
                     (TreeState::Intact(dir), seen) => {
                         accepted = seen;

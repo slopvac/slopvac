@@ -810,14 +810,56 @@ impl StagedTree {
         tree_hash(&self.root)
     }
 
+    /// [`Self::hash`], and the content of the manifest at the root as the same pass read it, or
+    /// `None` when the tree has none.
+    ///
+    /// # Errors
+    /// As [`tree_hash`], and [`ExtractError::CaptureLimit`] when the manifest is over 1 MiB.
+    pub fn hash_capturing(&self) -> Result<(TreeHash, Option<Vec<u8>>), ExtractError> {
+        tree_hash_capturing(&self.root, MANIFEST_FILE)
+    }
+
     /// Seal the tree and move it into `store` under its hash. The hash is
     /// computed again here, so what is stored is what was hashed last.
     ///
     /// # Errors
-    /// As [`tree_hash`], plus [`ExtractError::Io`] when the move fails.
+    /// As [`tree_hash`], [`ExtractError::CaptureLimit`] when the manifest at the root is over
+    /// 1 MiB, and [`ExtractError::Io`] when the move fails.
     pub fn install(self, store: &Path) -> Result<Extracted, ExtractError> {
         let (hash, manifest) = hash_walk(&self.root, &Keep::File(MANIFEST_FILE), &mut |_, _| {})?;
         let manifest = manifest.into_iter().next().map(|(_, bytes)| bytes);
+        self.install_hashed(store, hash, manifest)
+    }
+
+    /// [`Self::install`] for a tree that a pass has already accepted under `accepted`. The tree
+    /// is hashed again to seal it, and a hash that differs from `accepted` is refused with
+    /// [`ExtractError::Tampered`] before anything is moved. The caller keeps the manifest of
+    /// the accepting pass; the one in the returned [`Extracted`] is that of the second pass.
+    ///
+    /// # Errors
+    /// As [`Self::install`], and [`ExtractError::Tampered`] when the tree no longer hashes to
+    /// `accepted`.
+    pub fn install_accepted(
+        self,
+        store: &Path,
+        accepted: &TreeHash,
+    ) -> Result<Extracted, ExtractError> {
+        let (hash, manifest) = hash_walk(&self.root, &Keep::File(MANIFEST_FILE), &mut |_, _| {})?;
+        if hash != *accepted {
+            return Err(ExtractError::Tampered {
+                path: self.root.clone(),
+            });
+        }
+        let manifest = manifest.into_iter().next().map(|(_, bytes)| bytes);
+        self.install_hashed(store, hash, manifest)
+    }
+
+    fn install_hashed(
+        self,
+        store: &Path,
+        hash: TreeHash,
+        manifest: Option<Vec<u8>>,
+    ) -> Result<Extracted, ExtractError> {
         let exec: HashSet<&str> = self.executable.iter().map(String::as_str).collect();
         let result = install(&self.root, store, &hash, &exec);
         let leftover = if self.root.exists() {
@@ -1499,6 +1541,23 @@ fn hash_walk(
                 stack.push((child, rel));
             } else if meta.is_file() {
                 claim(&mut names, &rel, false)?;
+                let wanted = match keep {
+                    Keep::Nothing => false,
+                    Keep::File(name) => *name == rel,
+                    Keep::All(_) => true,
+                };
+                // The capture cap is checked first, before the tree budget, so a file over
+                // both is a capture limit and never a tree size violation.
+                let (capture_cap, reported_cap) = match keep {
+                    Keep::All(total) => (keep_left, *total),
+                    _ => (MAX_CAPTURE_BYTES, MAX_CAPTURE_BYTES),
+                };
+                if wanted && meta.len() > capture_cap {
+                    return Err(ExtractError::CaptureLimit {
+                        path: rel,
+                        cap: reported_cap,
+                    });
+                }
                 if meta.len() > budget {
                     return Err(refused(
                         TransportText::ExtractTreeSize { path: rel.clone() }.to_string(),
@@ -1516,24 +1575,20 @@ fn hash_walk(
                         )
                     }
                 })?;
-                let wanted = match keep {
-                    Keep::Nothing => false,
-                    Keep::File(name) => *name == rel,
-                    Keep::All(_) => true,
-                };
                 let (sha, len) = if wanted || rel == EXEC_SIDECAR {
                     // The list is bounded by the tree. A file kept for the caller is bounded
                     // by what the caller allows.
-                    let cap = if wanted {
-                        match keep {
-                            Keep::All(_) => keep_left,
-                            _ => MAX_CAPTURE_BYTES,
-                        }
+                    let cap = if wanted { capture_cap } else { budget };
+                    // A file kept for the caller is read to its cap plus one byte at most, so a
+                    // file that grew since its metadata was read costs no more than that.
+                    let bound = if wanted {
+                        cap.min(u64::MAX - 1) + 1
                     } else {
-                        budget
+                        u64::MAX
                     };
+                    let mut limited = (&mut f).take(bound);
                     let mut tee = Capture {
-                        inner: &mut f,
+                        inner: &mut limited,
                         kept: Vec::new(),
                         cap,
                         over: false,
@@ -1547,10 +1602,7 @@ fn hash_walk(
                         return Err(if wanted {
                             ExtractError::CaptureLimit {
                                 path: rel.clone(),
-                                cap: match keep {
-                                    Keep::All(total) => *total,
-                                    _ => MAX_CAPTURE_BYTES,
-                                },
+                                cap: reported_cap,
                             }
                         } else {
                             refused(

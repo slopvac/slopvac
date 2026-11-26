@@ -1658,6 +1658,31 @@ mod python {
     }
 
     #[test]
+    fn status_keeps_the_typed_cause_of_a_pass_that_could_not_finish() {
+        // A manifest over 1 MiB: the tree hashes, but its manifest cannot be kept.
+        let big = format!("{PLUGIN_MANIFEST}# {}\n", "x".repeat(1 << 20));
+        let t = Setup::python(&[
+            ("slopvac-plugin.toml", big.as_str()),
+            ("plugin.py", "print('plugin')\n"),
+            ("pylock.toml", EMPTY_LOCK),
+        ]);
+
+        let err = status_with_python(&t.env.store(), &t.envs, t.env.project.path(), &t.lock)
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                SyncError::Extract {
+                    source: slopvac_plugins::extract::ExtractError::CaptureLimit { .. },
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
     fn status_checks_the_environment_of_the_manifest_bytes_that_were_accepted() {
         let t = Setup::python(&PLUGIN_FILES);
         t.sync(Network::Offline, true).unwrap();

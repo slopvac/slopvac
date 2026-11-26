@@ -270,16 +270,22 @@ impl Store {
     /// # Errors
     /// [`SyncError::Store`] when the tree cannot be read.
     pub fn inspect(&self, locked: &LockDigest) -> Result<TreeState, SyncError> {
-        self.inspect_accepted(locked).map(|(state, _)| state)
+        self.inspect_accepted(locked)
+            .map(|(state, _)| state)
+            .map_err(|e| SyncError::Store(e.unescaped()))
     }
 
     /// [`Self::inspect`], and for an intact tree the hash the pass accepted and the manifest as
     /// that same pass read it. A caller that acts on the tree uses these and never reads the
     /// manifest again.
+    ///
+    /// # Errors
+    /// The typed cause of a pass that could not finish. A tree that differs from its record is
+    /// [`TreeState::Tampered`], not an error.
     pub(super) fn inspect_accepted(
         &self,
         locked: &LockDigest,
-    ) -> Result<(TreeState, Option<Accepted>), SyncError> {
+    ) -> Result<(TreeState, Option<Accepted>), ExtractError> {
         let Some(hash) = self.recorded(locked) else {
             return Ok((TreeState::Absent, None));
         };
@@ -293,7 +299,7 @@ impl Store {
         match verified {
             Ok(manifest) => Ok((TreeState::Intact(dir), Some(Accepted { hash, manifest }))),
             Err(ExtractError::Tampered { .. }) => Ok((TreeState::Tampered(dir), None)),
-            Err(e) => Err(SyncError::Store(e.unescaped())),
+            Err(e) => Err(e),
         }
     }
 }
