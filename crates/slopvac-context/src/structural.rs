@@ -37,10 +37,10 @@ pub enum Scope {
     Document,
 }
 
-/// Structural conditions. All given conditions must hold. Path and front_matter are document
-/// conditions; heading_path, admonition_title and block_kind are block conditions; sentence is
-/// a sentence condition. Patterns are PCRE2 and case-insensitive. Blocks of kind code-block are
-/// skipped unless block_kind names them.
+/// Structural conditions. All given conditions must hold. `path` and `front_matter` are
+/// document conditions; `heading_path`, `admonition_title` and `block_kind` are block
+/// conditions; `sentence` is a sentence condition. Patterns are PCRE2 and case-insensitive.
+/// Blocks of kind `code-block` are skipped unless `block_kind` names them.
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[schemars(
     transform = x_extensions,
