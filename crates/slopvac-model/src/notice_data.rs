@@ -110,6 +110,27 @@ impl NoticeData {
         }
     }
 
+    /// Whether `code` is a code that carries this shape.
+    #[must_use]
+    pub fn serves(&self, code: &str) -> bool {
+        self.codes().contains(&code)
+    }
+
+    /// Whether `data` has the shape that `code` declares. A code with no typed shape accepts
+    /// any object. Unknown keys are allowed, as in the schema. The check reads the same
+    /// shape types that generate the schema.
+    pub(crate) fn fits(code: &str, data: &Value) -> bool {
+        if RULES_CODES.contains(&code) {
+            RulesNoticeData::deserialize(data).is_ok()
+        } else if UNSUPPORTED_CODES.contains(&code) {
+            UnsupportedNoticeData::deserialize(data).is_ok()
+        } else if BUDGET_CODES.contains(&code) {
+            BudgetNoticeData::deserialize(data).is_ok()
+        } else {
+            true
+        }
+    }
+
     /// The object a notice writes for this data.
     pub(crate) fn into_map(self) -> Map<String, Value> {
         // The shapes hold only strings and integers, so they always serialize to an object.

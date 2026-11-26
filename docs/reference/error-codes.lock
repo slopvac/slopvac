@@ -630,6 +630,7 @@ model-kind-rule text
 model-kind-score text
 model-kind-text text
 model-line-column text
+model-notice-data-shape text
 model-offset-bom text
 model-offset-code-point text
 model-offset-crlf text

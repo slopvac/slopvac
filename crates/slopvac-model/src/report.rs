@@ -58,7 +58,7 @@ pub enum NoticeLevel {
 
 /// A stable, machine-readable fact with a human message. Consumers branch on `code`, never on
 /// `message`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 #[schemars(transform = x_extensions, extend("allOf" = data_conditions()))]
 pub struct Notice {
     /// Stable kebab-case identifier. A code is never reused for a different meaning.
@@ -112,15 +112,18 @@ impl Notice {
 
     /// Returns the notice with typed `data` attached. This is the setter for a code with a
     /// typed shape; the published schema checks the shape per code.
-    #[must_use]
-    pub fn with(mut self, data: NoticeData) -> Self {
-        debug_assert!(
-            data.codes().contains(&self.code.as_str()),
-            "notice code {} does not carry this data shape",
-            self.code.as_str()
-        );
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::NoticeError::DataShape`] when the notice code does not carry the shape
+    /// of `data`. The notice is dropped with the error, so a caller that wants to keep it
+    /// clones it first.
+    pub fn with(mut self, data: NoticeData) -> crate::NoticeResult<Self> {
+        if !data.serves(self.code.as_str()) {
+            return Err(crate::NoticeError::DataShape(self.code.as_str().to_owned()));
+        }
         self.data = data.into_map();
-        self
+        Ok(self)
     }
 
     /// Returns the notice with untyped `data` attached.
@@ -132,6 +135,49 @@ impl Notice {
     pub fn with_data(mut self, data: serde_json::Map<String, Value>) -> Self {
         self.data = data;
         self
+    }
+}
+
+/// The wire form of a [`Notice`], before the shape of its `data` is checked.
+#[derive(Deserialize)]
+struct NoticeWire {
+    code: KebabName,
+    level: NoticeLevel,
+    message: NonEmptyString,
+    #[serde(default, deserialize_with = "present")]
+    path: Option<String>,
+    #[serde(default)]
+    data: Option<serde_json::Map<String, Value>>,
+}
+
+impl<'de> Deserialize<'de> for Notice {
+    /// Reads a notice and, for a code with a typed shape, checks `data` against that shape.
+    /// Absent `data` is allowed, and so are keys the shape does not name. The error names the
+    /// code and never the data.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = NoticeWire::deserialize(deserializer)?;
+        let data = match wire.data {
+            None => serde_json::Map::new(),
+            Some(map) => {
+                let value = Value::Object(map);
+                if !NoticeData::fits(wire.code.as_str(), &value) {
+                    return Err(serde::de::Error::custom(crate::NoticeError::DataShape(
+                        wire.code.as_str().to_owned(),
+                    )));
+                }
+                match value {
+                    Value::Object(map) => map,
+                    _ => serde_json::Map::new(),
+                }
+            }
+        };
+        Ok(Self {
+            code: wire.code,
+            level: wire.level,
+            message: wire.message,
+            path: wire.path,
+            data,
+        })
     }
 }
 

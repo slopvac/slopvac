@@ -57,6 +57,10 @@ pub enum NoticeError {
     /// Neither the rendered message nor the summary supplies text.
     #[error("{}", validation_text(.0))]
     EmptyMessage(#[from] ValueError),
+    /// The data does not have the shape that the notice code declares. The text names the
+    /// code and never the data.
+    #[error("{}", crate::messages::notice_data_shape(.0))]
+    DataShape(String),
 }
 
 fn validation_text(error: &impl ToString) -> String {

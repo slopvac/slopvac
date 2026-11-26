@@ -421,6 +421,13 @@ struct DiagramResult {
     notices: Vec<Notice>,
 }
 
+/// The notice with `data` attached. Each call site pairs a code and a shape from local
+/// constants, and a test per site reads the data back. If a pairing were ever wrong, the
+/// notice keeps its code, level and message and goes without data, and the report stays valid.
+pub(crate) fn with_data(notice: Notice, data: NoticeData) -> Notice {
+    notice.clone().with(data).unwrap_or(notice)
+}
+
 /// The notice for rules that code-comment mode cannot run, with their ids in `data.rules`.
 fn comment_not_run(level: NoticeLevel, ids: &[&str], named: bool) -> Notice {
     let data = NoticeData::rules(ids.iter().copied());
@@ -430,7 +437,7 @@ fn comment_not_run(level: NoticeLevel, ids: &[&str], named: bool) -> Notice {
     } else {
         EngineNotice::CommentRules { count, rules }
     };
-    notice(level, &message).with(data)
+    with_data(notice(level, &message), data)
 }
 
 /// Whether the checkers of `kind` only read prose, so a standalone diagram never reaches them
@@ -461,7 +468,7 @@ fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Notice {
             kind: kind.into(),
         }
     };
-    notice(NoticeLevel::Warning, &message).with(data)
+    with_data(notice(NoticeLevel::Warning, &message), data)
 }
 
 fn level_of(settings: &Settings, id: &RuleId, category: &CategoryName, shipped: Severity) -> Level {
@@ -2161,12 +2168,12 @@ impl Run<'_> {
         let mut n = notice(level, &message);
         n.path = Some(self.input.path.to_owned());
         Some(match status {
-            ExtractionStatus::Unsupported(_) => n.with(NoticeData::unsupported(
-                self.input.path,
-                format_name(format),
-            )),
+            ExtractionStatus::Unsupported(_) => with_data(
+                n,
+                NoticeData::unsupported(self.input.path, format_name(format)),
+            ),
             ExtractionStatus::BudgetExhausted(hit) => {
-                n.with(NoticeData::budget(hit.cap, hit.limit))
+                with_data(n, NoticeData::budget(hit.cap, hit.limit))
             }
             _ => n,
         })

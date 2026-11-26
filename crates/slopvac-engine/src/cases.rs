@@ -140,13 +140,13 @@ impl CaseReport {
             return None;
         }
         let data = NoticeData::rules(rules.iter().map(ToString::to_string));
-        Some(
+        Some(crate::lint::with_data(
             crate::lint::notice(
                 NoticeLevel::Warning,
                 &crate::messages::EngineNotice::CasesRuleUnchecked { count: rules.len() },
-            )
-            .with(data),
-        )
+            ),
+            data,
+        ))
     }
 
     /// The exit code, by the contract ruling in `docs/contract/rules.md`: 1 when a case or

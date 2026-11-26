@@ -2,8 +2,9 @@
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 #![allow(missing_docs, reason = "an integration test crate has no public API")]
 
+use rstest::rstest;
 use slopvac_messages::Catalog;
-use slopvac_model::{Notice, NoticeData, NoticeLevel};
+use slopvac_model::{Notice, NoticeData, NoticeError, NoticeLevel};
 
 #[derive(Debug, Catalog)]
 enum Message {
@@ -22,7 +23,10 @@ enum Message {
 }
 
 fn notice(message: &Message, level: NoticeLevel, data: NoticeData) -> String {
-    let notice = Notice::try_from_catalog(level, message).unwrap().with(data);
+    let notice = Notice::try_from_catalog(level, message)
+        .unwrap()
+        .with(data)
+        .unwrap();
     serde_json::to_string(&notice).unwrap()
 }
 
@@ -69,7 +73,21 @@ fn budget_data_writes_the_cap_name_and_its_numeric_limit() {
 fn typed_data_is_readable_through_the_untyped_map() {
     let notice = Notice::try_from_catalog(NoticeLevel::Warning, &Message::Budget)
         .unwrap()
-        .with(NoticeData::budget("xml-nodes", 7));
+        .with(NoticeData::budget("xml-nodes", 7))
+        .unwrap();
     assert_eq!(notice.data["budget"], "xml-nodes");
     assert_eq!(notice.data["limit"], 7);
+}
+
+#[rstest]
+#[case::rules_on_a_budget_code(Message::Budget, NoticeData::rules(["core:a.b"]))]
+#[case::budget_on_a_rules_code(Message::Rules, NoticeData::budget("fragments", 1))]
+#[case::unsupported_on_a_budget_code(Message::Budget, NoticeData::unsupported("a.md", "mermaid"))]
+fn data_of_another_shape_is_refused_by_the_setter(
+    #[case] message: Message,
+    #[case] data: NoticeData,
+) {
+    let notice = Notice::try_from_catalog(NoticeLevel::Warning, &message).unwrap();
+    let refused = notice.with(data).unwrap_err();
+    assert!(matches!(refused, NoticeError::DataShape(_)));
 }
