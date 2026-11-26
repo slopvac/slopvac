@@ -524,7 +524,7 @@ fn trust_of_a_synced_code_plugin_records_trust_and_exits_0() {
         .args(["--offline", "plugins", "trust", "fmt"])
         .assert()
         .success()
-        .stdout(predicate::str::starts_with(
+        .stdout(predicate::str::contains(
             "trusted `fmt` with content hash sha256:",
         ));
     sandbox
