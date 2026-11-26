@@ -1,8 +1,13 @@
 //! Typed notice data: the JSON a notice writes stays the shape the contract documents.
-#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 #![allow(missing_docs, reason = "an integration test crate has no public API")]
 
 use rstest::rstest;
+use serde_json::json;
 use slopvac_messages::Catalog;
 use slopvac_model::{Notice, NoticeData, NoticeError, NoticeLevel};
 
@@ -131,4 +136,49 @@ fn each_constructor_serves_one_code_and_builds_a_notice_that_reads_back(
     let read: Notice = serde_json::from_str(&json).unwrap();
     assert_eq!(read, notice);
     assert_eq!(read.code.as_str(), code);
+}
+
+fn rules_data(code: &str) -> NoticeData {
+    match code {
+        "rule-kind-not-implemented" => NoticeData::rule_kind_not_implemented(["a:b"]),
+        "rule-style-not-implemented" => NoticeData::rule_style_not_implemented(["a:b"]),
+        "comment-rules-not-run" => NoticeData::comment_rules_not_run(["a:b"]),
+        "comment-rule-named-not-run" => NoticeData::comment_rule_named_not_run(["a:b"]),
+        "cases-rule-unchecked" => NoticeData::cases_rule_unchecked(["a:b"]),
+        other => panic!("not a rules code: {other}"),
+    }
+}
+
+/// Five codes carry the same `rules` shape. Data built for one still belongs to that code only.
+#[rstest]
+fn data_of_another_code_with_the_same_shape_is_refused_by_the_setter(
+    #[values(
+        "rule-kind-not-implemented",
+        "rule-style-not-implemented",
+        "comment-rules-not-run",
+        "comment-rule-named-not-run",
+        "cases-rule-unchecked"
+    )]
+    notice_code: &str,
+    #[values(
+        "rule-kind-not-implemented",
+        "rule-style-not-implemented",
+        "comment-rules-not-run",
+        "comment-rule-named-not-run",
+        "cases-rule-unchecked"
+    )]
+    data_code: &str,
+) {
+    let notice: Notice =
+        serde_json::from_value(json!({"code": notice_code, "level": "warning", "message": "m"}))
+            .unwrap();
+    let attached = notice.with(rules_data(data_code));
+    if notice_code == data_code {
+        assert_eq!(attached.unwrap().code.as_str(), notice_code);
+    } else {
+        assert_eq!(
+            attached.unwrap_err(),
+            NoticeError::DataShape(notice_code.to_owned())
+        );
+    }
 }

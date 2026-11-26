@@ -157,6 +157,10 @@ fn an_unchecked_rule_alone_exits_2_with_the_warning_notice() {
     let notice = report.unchecked_notice().unwrap();
     assert_eq!(notice.code.as_str(), "cases-rule-unchecked");
     assert_eq!(notice.level, NoticeLevel::Warning);
+    assert_eq!(
+        notice.message.as_str(),
+        "1 active rule(s) of a mechanically checkable kind were not checked by the case runner"
+    );
     assert_eq!(notice.data["rules"], json!(["core:cat.bare"]));
 }
 

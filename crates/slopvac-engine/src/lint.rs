@@ -506,7 +506,7 @@ pub(crate) fn notice(level: NoticeLevel, message: &EngineNotice) -> Notice {
 
 /// A notice for a typed code. The code comes from `data`, which only a constructor of one
 /// code builds, and the text from the catalog `message`. The two name the same code at every
-/// call site, and `notice_codes` in the unit tests checks each pair.
+/// call site, and the public-path engine tests assert the code, message and data together.
 #[expect(
     clippy::expect_used,
     reason = "EngineNotice is a private derived catalog with validated codes and bundled nonempty summaries"
@@ -2401,95 +2401,4 @@ fn preserve_case(original: &str, replacement: &str) -> String {
         }
     }
     replacement.to_owned()
-}
-
-#[cfg(test)]
-mod notice_codes {
-    use slopvac_messages::Catalog;
-    use slopvac_model::{NoticeData, RuleId};
-
-    use super::{CAPITALIZATION, EngineNotice, NoticeLevel, comment_not_run, not_run_notice};
-
-    /// Each typed data code is the code of the catalog message that its site renders.
-    #[test]
-    fn each_data_code_is_the_catalog_code_of_its_message() {
-        let pairs: Vec<(&str, NoticeData)> = vec![
-            (
-                EngineNotice::RuleKind {
-                    count: 1,
-                    kind: "k".into(),
-                }
-                .code(),
-                NoticeData::rule_kind_not_implemented(["a:b"]),
-            ),
-            (
-                EngineNotice::RuleStyle {
-                    count: 1,
-                    kind: "k".into(),
-                }
-                .code(),
-                NoticeData::rule_style_not_implemented(["a:b"]),
-            ),
-            (
-                EngineNotice::CommentRules {
-                    count: 1,
-                    rules: "r".into(),
-                }
-                .code(),
-                NoticeData::comment_rules_not_run(["a:b"]),
-            ),
-            (
-                EngineNotice::CommentRuleNamed {
-                    count: 1,
-                    rules: "r".into(),
-                }
-                .code(),
-                NoticeData::comment_rule_named_not_run(["a:b"]),
-            ),
-            (
-                EngineNotice::CasesRuleUnchecked { count: 1 }.code(),
-                NoticeData::cases_rule_unchecked(["a:b"]),
-            ),
-            (
-                EngineNotice::ExtractUnsupported { reason: "r".into() }.code(),
-                NoticeData::extract_unsupported("a.md", "mermaid"),
-            ),
-            (
-                EngineNotice::ExtractBudget {
-                    cap: "c".into(),
-                    limit: 1,
-                }
-                .code(),
-                NoticeData::extract_budget("c", 1),
-            ),
-        ];
-        for (catalog_code, data) in pairs {
-            assert_eq!(catalog_code, data.code());
-        }
-    }
-
-    #[test]
-    fn the_rule_site_notices_carry_the_code_of_their_message() {
-        assert_eq!(
-            comment_not_run(NoticeLevel::Info, &["a:b"], false)
-                .code
-                .as_str(),
-            "comment-rules-not-run"
-        );
-        assert_eq!(
-            comment_not_run(NoticeLevel::Warning, &["a:b"], true)
-                .code
-                .as_str(),
-            "comment-rule-named-not-run"
-        );
-        let rule = RuleId::new("core:cat.rule").unwrap();
-        assert_eq!(
-            not_run_notice(CAPITALIZATION, &[&rule]).code.as_str(),
-            "rule-style-not-implemented"
-        );
-        assert_eq!(
-            not_run_notice("metric", &[&rule]).code.as_str(),
-            "rule-kind-not-implemented"
-        );
-    }
 }
