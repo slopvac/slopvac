@@ -620,7 +620,8 @@ struct Walk {
 /// direction, every vocabulary rule the input authors in a layer must still be there at its
 /// authored level, so a dropped or changed entry fails too. Every authored override block must
 /// match a written one by its `files`, with or without a vocabulary rule. Extra override
-/// blocks that hold only guards are allowed. Returns what it walked, or the first offence.
+/// blocks that hold only guards are allowed. Where the authored layer sets a level for the
+/// `ste-words` category, the matched written layer must set the same one. Returns what it walked, or the first offence.
 fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> {
     let doc = toml::from_str::<toml::Table>(text)
         .map_err(|e| format!("the written config does not parse: {e}\n{text}"))?;
@@ -633,8 +634,12 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> 
     }
     let mut guards = BTreeSet::new();
     // Each layer, with the authored levels of its counterpart and whether it can hold a guard.
-    let mut layers: Vec<(&toml::Table, BTreeMap<String, String>, bool)> =
-        vec![(&doc, authored_top, false)];
+    let mut layers: Vec<(&toml::Table, BTreeMap<String, String>, bool, Option<String>)> = vec![(
+        &doc,
+        authored_top,
+        false,
+        vocabulary_category_level(&authored),
+    )];
     for block in override_blocks(&doc) {
         let counterpart = authored_blocks
             .iter()
@@ -644,9 +649,10 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> 
             Some(c) => vocabulary_levels(c)?,
             None => BTreeMap::new(),
         };
-        layers.push((block, own, true));
+        let category = counterpart.and_then(vocabulary_category_level);
+        layers.push((block, own, true, category));
     }
-    for (layer, own, may_guard) in &layers {
+    for (layer, own, may_guard, category) in &layers {
         let written = vocabulary_levels(layer)?;
         for (id, level) in &written {
             let authored_here = own.get(id) == Some(level);
@@ -657,6 +663,18 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> 
             if guard {
                 guards.insert((files_of(layer), id.clone()));
             }
+        }
+        if let Some(level) = category
+            && vocabulary_category_level(layer).as_ref() != Some(level)
+        {
+            let at = if *may_guard {
+                format!("override {:?}", files_of(layer))
+            } else {
+                "the top level".to_owned()
+            };
+            return Err(format!(
+                "authored category ste-words = {level} is missing from its layer ({at})\n{text}"
+            ));
         }
         for (id, level) in own {
             if written.get(id) != Some(level) {
@@ -693,6 +711,19 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<Walk, String> 
     Ok(Walk {
         layers: layers.len(),
         guards,
+    })
+}
+
+/// The level of the `ste-words` category in one layer, in its bare or `core:` spelling, as a
+/// bare string or a `severity`. `None` when the layer sets no level for it.
+fn vocabulary_category_level(layer: &toml::Table) -> Option<String> {
+    let categories = layer.get("categories")?.as_table()?;
+    ["ste-words", "core:ste-words"].iter().find_map(|key| {
+        let entry = categories.get(*key)?;
+        entry
+            .as_str()
+            .or_else(|| entry.get("severity")?.as_str())
+            .map(str::to_owned)
     })
 }
 
