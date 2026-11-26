@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -303,3 +304,30 @@ def test_trivy_cache_is_outside_the_checkout(where: str, path: str) -> None:
     # would hide findings. The cache must live under the runner temp directory.
     assert path.startswith("${{ runner.temp }}/"), f"{where}: cache path {path}"
     assert "github.workspace" not in path
+
+
+REPORTER = ROOT / SCRIPT
+UNUSABLE = "Trivy report is missing or unreadable\n"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [None, "", "{not json", "[1]", json.dumps({"runs": "x"})],
+    ids=["missing", "empty", "malformed", "wrong-shape", "wrong-runs"],
+)
+def test_reporter_fails_with_a_fixed_message_on_an_unusable_report(
+    content: str | None, tmp_path: Path
+) -> None:
+    report = tmp_path / "secret-dir-name" / "report.sarif"
+    report.parent.mkdir()
+    if content is not None:
+        report.write_text(content)
+    done = subprocess.run(
+        [sys.executable, str(REPORTER), str(report)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode != 0
+    assert done.stdout == UNUSABLE
+    assert done.stderr == ""

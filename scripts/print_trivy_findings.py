@@ -33,7 +33,13 @@ def lines(sarif: dict) -> list[str]:
 
 def main(argv: list[str]) -> int:
     (path,) = argv
-    for line in lines(json.loads(Path(path).read_text())):
+    try:
+        found = lines(json.loads(Path(path).read_text()))
+    except (OSError, ValueError, AttributeError, TypeError, IndexError):
+        # One fixed line: no path, no parser text, no traceback.
+        sys.stdout.write("Trivy report is missing or unreadable\n")
+        return 1
+    for line in found:
         sys.stdout.write(line + "\n")
     return 0
 
