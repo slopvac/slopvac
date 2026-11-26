@@ -458,7 +458,7 @@ fn spelling_rank(key: &str) -> usize {
 }
 
 /// `spellings` in the order that wins a tie, by [`spelling_rank`].
-fn by_rank<'a, T>(mut spellings: Vec<(&'a str, T)>) -> Vec<T> {
+fn by_rank<T>(mut spellings: Vec<(&str, T)>) -> Vec<T> {
     spellings.sort_by_key(|(key, _)| spelling_rank(key));
     spellings.into_iter().map(|(_, v)| v).collect()
 }

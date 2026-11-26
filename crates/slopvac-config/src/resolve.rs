@@ -75,6 +75,9 @@ pub struct Contribution {
     scope: usize,
 }
 
+/// One contribution in a group: the spelling it shows, its tie rank and the contribution.
+type Member = (Vec<String>, usize, Contribution);
+
 /// Where [`Resolved::explain_grouped`] files one contribution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GroupedKey {
@@ -320,8 +323,7 @@ impl Resolved {
         &self,
         identify: impl Fn(&[String], &Contribution) -> GroupedKey,
     ) -> Vec<Explained> {
-        let mut grouped: BTreeMap<Vec<String>, Vec<(Vec<String>, usize, Contribution)>> =
-            BTreeMap::new();
+        let mut grouped: BTreeMap<Vec<String>, Vec<Member>> = BTreeMap::new();
         for (path, history) in &self.entries {
             for contribution in history {
                 let key = identify(path, contribution);
