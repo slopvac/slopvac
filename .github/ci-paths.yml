@@ -129,6 +129,7 @@ package:
   - 'packages/slopvac-lint/src/**'
   - 'packages/slopvac-lint/tests/**'
   - 'packages/slopvac-lint/vale/styles-verified/**'
+  - 'packages/slopvac-lint/docs/rules.md'
   - 'scripts/install_vale.py'
 
 # The composite action at the repository root, run with the binary built from
