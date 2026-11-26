@@ -10,6 +10,7 @@
 # At `normal`, advisory AI rules report as suggestions. Other AI findings can fail
 # a configured gate when its threshold is exceeded; a match does not guarantee
 # that the run fails.
+schema_version = 3
 profile = "normal"
 
 exclude = [
@@ -39,30 +40,16 @@ exclude = [
 [thresholds]
 max_errors = 0
 
+[categories]
 # --- Simplified Technical English --------------------------------------------
-[categories.ste-descriptive]
-severity = "suggestion"
-
-[categories.ste-nouns]
-severity = "suggestion"
-
-[categories.ste-practices]
-severity = "suggestion"
-
-[categories.ste-procedural]
-severity = "suggestion"
-
-[categories.ste-punctuation]
-severity = "suggestion"
-
-[categories.ste-sentences]
-severity = "suggestion"
-
-[categories.ste-verbs]
-severity = "suggestion"
-
-[categories.ste-words]
-severity = "suggestion"
+"core:ste-descriptive" = "suggestion"
+"core:ste-nouns" = "suggestion"
+"core:ste-practices" = "suggestion"
+"core:ste-procedural" = "suggestion"
+"core:ste-punctuation" = "suggestion"
+"core:ste-sentences" = "suggestion"
+"core:ste-verbs" = "suggestion"
+"core:ste-words" = "suggestion"
 
 # The score combines weighted category scores and a bounded suggestion penalty.
 # This README override disables the minimum-score gate. Error and category
