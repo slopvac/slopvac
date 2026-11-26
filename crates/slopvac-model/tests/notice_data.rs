@@ -35,7 +35,7 @@ fn rules_data_writes_a_list_of_rule_ids() {
     let json = notice(
         &Message::Rules,
         NoticeLevel::Warning,
-        NoticeData::rules(["core:a.b", "core:c.d"]),
+        NoticeData::rule_kind_not_implemented(["core:a.b", "core:c.d"]),
     );
     assert_eq!(
         json,
@@ -48,7 +48,7 @@ fn unsupported_data_writes_document_and_kind() {
     let json = notice(
         &Message::Unsupported,
         NoticeLevel::Info,
-        NoticeData::unsupported("docs/a.md", "mermaid"),
+        NoticeData::extract_unsupported("docs/a.md", "mermaid"),
     );
     assert_eq!(
         json,
@@ -61,7 +61,7 @@ fn budget_data_writes_the_cap_name_and_its_numeric_limit() {
     let json = notice(
         &Message::Budget,
         NoticeLevel::Warning,
-        NoticeData::budget("fragments", 1000),
+        NoticeData::extract_budget("fragments", 1000),
     );
     assert_eq!(
         json,
@@ -73,16 +73,19 @@ fn budget_data_writes_the_cap_name_and_its_numeric_limit() {
 fn typed_data_is_readable_through_the_untyped_map() {
     let notice = Notice::try_from_catalog(NoticeLevel::Warning, &Message::Budget)
         .unwrap()
-        .with(NoticeData::budget("xml-nodes", 7))
+        .with(NoticeData::extract_budget("xml-nodes", 7))
         .unwrap();
     assert_eq!(notice.data["budget"], "xml-nodes");
     assert_eq!(notice.data["limit"], 7);
 }
 
 #[rstest]
-#[case::rules_on_a_budget_code(Message::Budget, NoticeData::rules(["core:a.b"]))]
-#[case::budget_on_a_rules_code(Message::Rules, NoticeData::budget("fragments", 1))]
-#[case::unsupported_on_a_budget_code(Message::Budget, NoticeData::unsupported("a.md", "mermaid"))]
+#[case::rules_on_a_budget_code(Message::Budget, NoticeData::rule_kind_not_implemented(["core:a.b"]))]
+#[case::budget_on_a_rules_code(Message::Rules, NoticeData::extract_budget("fragments", 1))]
+#[case::unsupported_on_a_budget_code(
+    Message::Budget,
+    NoticeData::extract_unsupported("a.md", "mermaid")
+)]
 fn data_of_another_shape_is_refused_by_the_setter(
     #[case] message: Message,
     #[case] data: NoticeData,
@@ -90,4 +93,42 @@ fn data_of_another_shape_is_refused_by_the_setter(
     let notice = Notice::try_from_catalog(NoticeLevel::Warning, &message).unwrap();
     let refused = notice.with(data).unwrap_err();
     assert!(matches!(refused, NoticeError::DataShape(_)));
+}
+
+#[test]
+fn a_notice_built_from_data_takes_its_code_from_the_data_and_its_text_from_the_message() {
+    let message = slopvac_model::NoticeMessage::try_from_catalog(&Message::Rules).unwrap();
+    let notice = Notice::from_catalog_data(
+        NoticeLevel::Warning,
+        message,
+        NoticeData::extract_budget("fragments", 1000),
+    );
+    assert_eq!(
+        serde_json::to_string(&notice).unwrap(),
+        r#"{"code":"extract-budget","level":"warning","message":"rules did not run","data":{"budget":"fragments","limit":1000}}"#
+    );
+}
+
+#[rstest]
+#[case::kind(NoticeData::rule_kind_not_implemented(["a:b"]), "rule-kind-not-implemented")]
+#[case::style(NoticeData::rule_style_not_implemented(["a:b"]), "rule-style-not-implemented")]
+#[case::comment(NoticeData::comment_rules_not_run(["a:b"]), "comment-rules-not-run")]
+#[case::named(NoticeData::comment_rule_named_not_run(["a:b"]), "comment-rule-named-not-run")]
+#[case::cases(NoticeData::cases_rule_unchecked(["a:b"]), "cases-rule-unchecked")]
+#[case::unsupported(
+    NoticeData::extract_unsupported("a.md", "mermaid"),
+    "extract-unsupported"
+)]
+#[case::budget(NoticeData::extract_budget("fragments", 1), "extract-budget")]
+fn each_constructor_serves_one_code_and_builds_a_notice_that_reads_back(
+    #[case] data: NoticeData,
+    #[case] code: &str,
+) {
+    assert_eq!(data.code(), code);
+    let message = slopvac_model::NoticeMessage::try_from_catalog(&Message::Rules).unwrap();
+    let notice = Notice::from_catalog_data(NoticeLevel::Warning, message, data);
+    let json = serde_json::to_string(&notice).unwrap();
+    let read: Notice = serde_json::from_str(&json).unwrap();
+    assert_eq!(read, notice);
+    assert_eq!(read.code.as_str(), code);
 }

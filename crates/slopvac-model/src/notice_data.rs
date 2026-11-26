@@ -11,20 +11,28 @@ use serde_json::{Map, Value, json};
 use crate::report::Count;
 use crate::schema::if_then;
 
+const RULE_KIND_NOT_IMPLEMENTED: &str = "rule-kind-not-implemented";
+const RULE_STYLE_NOT_IMPLEMENTED: &str = "rule-style-not-implemented";
+const COMMENT_RULES_NOT_RUN: &str = "comment-rules-not-run";
+const COMMENT_RULE_NAMED_NOT_RUN: &str = "comment-rule-named-not-run";
+const CASES_RULE_UNCHECKED: &str = "cases-rule-unchecked";
+const EXTRACT_UNSUPPORTED: &str = "extract-unsupported";
+const EXTRACT_BUDGET: &str = "extract-budget";
+
 /// Notice codes whose `data` is a [`RulesNoticeData`].
 const RULES_CODES: &[&str] = &[
-    "rule-kind-not-implemented",
-    "rule-style-not-implemented",
-    "comment-rules-not-run",
-    "comment-rule-named-not-run",
-    "cases-rule-unchecked",
+    RULE_KIND_NOT_IMPLEMENTED,
+    RULE_STYLE_NOT_IMPLEMENTED,
+    COMMENT_RULES_NOT_RUN,
+    COMMENT_RULE_NAMED_NOT_RUN,
+    CASES_RULE_UNCHECKED,
 ];
 
 /// Notice codes whose `data` is an [`UnsupportedNoticeData`].
-const UNSUPPORTED_CODES: &[&str] = &["extract-unsupported"];
+const UNSUPPORTED_CODES: &[&str] = &[EXTRACT_UNSUPPORTED];
 
 /// Notice codes whose `data` is a [`BudgetNoticeData`].
-const BUDGET_CODES: &[&str] = &["extract-budget"];
+const BUDGET_CODES: &[&str] = &[EXTRACT_BUDGET];
 
 /// The rules a notice is about.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -55,65 +63,124 @@ pub struct BudgetNoticeData {
     pub limit: u64,
 }
 
-/// The typed `data` of a notice. Attach it with [`crate::Notice::with`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// The data of a typed notice code, with that code. Each constructor serves one code, so a
+/// code and a shape that do not match cannot be built. [`crate::Notice::from_catalog_data`]
+/// takes the notice code from here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoticeData {
+    code: &'static str,
+    shape: Shape,
+}
+
+/// The shape behind a [`NoticeData`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
-#[non_exhaustive]
-pub enum NoticeData {
-    /// The rules a notice names.
+enum Shape {
     Rules(RulesNoticeData),
-    /// An input that no extractor reads.
     Unsupported(UnsupportedNoticeData),
-    /// A cap that stopped an extraction.
     Budget(BudgetNoticeData),
 }
 
 impl NoticeData {
-    /// Data that lists rule ids.
-    #[must_use]
-    pub fn rules<I, S>(rules: I) -> Self
+    fn rules<I, S>(code: &'static str, rules: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        Self::Rules(RulesNoticeData {
-            rules: rules.into_iter().map(Into::into).collect(),
-        })
-    }
-
-    /// Data for content that no extractor reads.
-    #[must_use]
-    pub fn unsupported(document: impl Into<String>, kind: impl Into<String>) -> Self {
-        Self::Unsupported(UnsupportedNoticeData {
-            document: document.into(),
-            kind: kind.into(),
-        })
-    }
-
-    /// Data for an extraction that stopped at a cap.
-    #[must_use]
-    pub fn budget(budget: impl Into<String>, limit: u64) -> Self {
-        Self::Budget(BudgetNoticeData {
-            budget: budget.into(),
-            limit,
-        })
-    }
-
-    /// The notice codes that carry this shape. A debug build checks them in
-    /// [`crate::Notice::with`].
-    #[must_use]
-    pub const fn codes(&self) -> &'static [&'static str] {
-        match self {
-            Self::Rules(_) => RULES_CODES,
-            Self::Unsupported(_) => UNSUPPORTED_CODES,
-            Self::Budget(_) => BUDGET_CODES,
+        Self {
+            code,
+            shape: Shape::Rules(RulesNoticeData {
+                rules: rules.into_iter().map(Into::into).collect(),
+            }),
         }
     }
 
-    /// Whether `code` is a code that carries this shape.
+    /// Data for `rule-kind-not-implemented`: the rules of a kind the engine does not run.
+    #[must_use]
+    pub fn rule_kind_not_implemented<I, S>(rules: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self::rules(RULE_KIND_NOT_IMPLEMENTED, rules)
+    }
+
+    /// Data for `rule-style-not-implemented`: the capitalization rules of a style the engine
+    /// does not run.
+    #[must_use]
+    pub fn rule_style_not_implemented<I, S>(rules: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self::rules(RULE_STYLE_NOT_IMPLEMENTED, rules)
+    }
+
+    /// Data for `comment-rules-not-run`: the default rules that cannot run on comments.
+    #[must_use]
+    pub fn comment_rules_not_run<I, S>(rules: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self::rules(COMMENT_RULES_NOT_RUN, rules)
+    }
+
+    /// Data for `comment-rule-named-not-run`: the rules named by the user that cannot run on
+    /// comments.
+    #[must_use]
+    pub fn comment_rule_named_not_run<I, S>(rules: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self::rules(COMMENT_RULE_NAMED_NOT_RUN, rules)
+    }
+
+    /// Data for `cases-rule-unchecked`: the rules the case runner could not check.
+    #[must_use]
+    pub fn cases_rule_unchecked<I, S>(rules: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self::rules(CASES_RULE_UNCHECKED, rules)
+    }
+
+    /// Data for `extract-unsupported`: content that no extractor reads.
+    #[must_use]
+    pub fn extract_unsupported(document: impl Into<String>, kind: impl Into<String>) -> Self {
+        Self {
+            code: EXTRACT_UNSUPPORTED,
+            shape: Shape::Unsupported(UnsupportedNoticeData {
+                document: document.into(),
+                kind: kind.into(),
+            }),
+        }
+    }
+
+    /// Data for `extract-budget`: an extraction that stopped at a cap.
+    #[must_use]
+    pub fn extract_budget(budget: impl Into<String>, limit: u64) -> Self {
+        Self {
+            code: EXTRACT_BUDGET,
+            shape: Shape::Budget(BudgetNoticeData {
+                budget: budget.into(),
+                limit,
+            }),
+        }
+    }
+
+    /// The notice code this data belongs to.
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
+        self.code
+    }
+
+    /// Whether `code` is the code of this data.
     #[must_use]
     pub fn serves(&self, code: &str) -> bool {
-        self.codes().contains(&code)
+        self.code == code
     }
 
     /// Whether `data` has the shape that `code` declares. A code with no typed shape accepts
@@ -135,7 +202,7 @@ impl NoticeData {
     pub(crate) fn into_map(self) -> Map<String, Value> {
         // The shapes hold only strings and integers, so they always serialize to an object.
         // A failure would drop the data, never panic, and the assertion catches it in tests.
-        let value = serde_json::to_value(self);
+        let value = serde_json::to_value(&self.shape);
         debug_assert!(
             matches!(value, Ok(Value::Object(_))),
             "notice data serializes to an object"

@@ -139,13 +139,10 @@ impl CaseReport {
         if rules.is_empty() {
             return None;
         }
-        let data = NoticeData::rules(rules.iter().map(ToString::to_string));
-        Some(crate::lint::with_data(
-            crate::lint::notice(
-                NoticeLevel::Warning,
-                &crate::messages::EngineNotice::CasesRuleUnchecked { count: rules.len() },
-            ),
-            data,
+        Some(crate::lint::notice_with_data(
+            NoticeLevel::Warning,
+            &crate::messages::EngineNotice::CasesRuleUnchecked { count: rules.len() },
+            NoticeData::cases_rule_unchecked(rules.iter().map(ToString::to_string)),
         ))
     }
 

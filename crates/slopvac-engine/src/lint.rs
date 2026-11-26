@@ -421,23 +421,23 @@ struct DiagramResult {
     notices: Vec<Notice>,
 }
 
-/// The notice with `data` attached. Each call site pairs a code and a shape from local
-/// constants, and a test per site reads the data back. If a pairing were ever wrong, the
-/// notice keeps its code, level and message and goes without data, and the report stays valid.
-pub(crate) fn with_data(notice: Notice, data: NoticeData) -> Notice {
-    notice.clone().with(data).unwrap_or(notice)
-}
-
 /// The notice for rules that code-comment mode cannot run, with their ids in `data.rules`.
 fn comment_not_run(level: NoticeLevel, ids: &[&str], named: bool) -> Notice {
-    let data = NoticeData::rules(ids.iter().copied());
     let (count, rules) = (ids.len(), ids.join(", "));
-    let message = if named {
-        EngineNotice::CommentRuleNamed { count, rules }
+    let ids = ids.iter().copied();
+    if named {
+        notice_with_data(
+            level,
+            &EngineNotice::CommentRuleNamed { count, rules },
+            NoticeData::comment_rule_named_not_run(ids),
+        )
     } else {
-        EngineNotice::CommentRules { count, rules }
-    };
-    with_data(notice(level, &message), data)
+        notice_with_data(
+            level,
+            &EngineNotice::CommentRules { count, rules },
+            NoticeData::comment_rules_not_run(ids),
+        )
+    }
 }
 
 /// Whether the checkers of `kind` only read prose, so a standalone diagram never reaches them
@@ -454,21 +454,27 @@ fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Notice {
     let count = rules.len();
     let mut ids: Vec<&str> = rules.iter().map(|id| id.as_str()).collect();
     ids.sort_unstable();
-    let data = NoticeData::rules(ids);
     // A rule that should have run and did not makes the run incomplete, so the level is a
     // warning. A style that cannot run would otherwise pass in silence.
-    let message = if kind == CAPITALIZATION {
-        EngineNotice::RuleStyle {
-            count,
-            kind: kind.into(),
-        }
+    if kind == CAPITALIZATION {
+        notice_with_data(
+            NoticeLevel::Warning,
+            &EngineNotice::RuleStyle {
+                count,
+                kind: kind.into(),
+            },
+            NoticeData::rule_style_not_implemented(ids),
+        )
     } else {
-        EngineNotice::RuleKind {
-            count,
-            kind: kind.into(),
-        }
-    };
-    with_data(notice(NoticeLevel::Warning, &message), data)
+        notice_with_data(
+            NoticeLevel::Warning,
+            &EngineNotice::RuleKind {
+                count,
+                kind: kind.into(),
+            },
+            NoticeData::rule_kind_not_implemented(ids),
+        )
+    }
 }
 
 fn level_of(settings: &Settings, id: &RuleId, category: &CategoryName, shipped: Severity) -> Level {
@@ -496,6 +502,23 @@ pub(crate) fn notice(level: NoticeLevel, message: &EngineNotice) -> Notice {
     let message = slopvac_model::NoticeMessage::try_from_catalog(message)
         .expect("the private engine catalog supplies valid notice messages");
     Notice::from_catalog(level, message)
+}
+
+/// A notice for a typed code. The code comes from `data`, which only a constructor of one
+/// code builds, and the text from the catalog `message`. The two name the same code at every
+/// call site, and `notice_codes` in the unit tests checks each pair.
+#[expect(
+    clippy::expect_used,
+    reason = "EngineNotice is a private derived catalog with validated codes and bundled nonempty summaries"
+)]
+pub(crate) fn notice_with_data(
+    level: NoticeLevel,
+    message: &EngineNotice,
+    data: NoticeData,
+) -> Notice {
+    let message = slopvac_model::NoticeMessage::try_from_catalog(message)
+        .expect("the private engine catalog supplies valid notice messages");
+    Notice::from_catalog_data(level, message, data)
 }
 
 impl Engine {
@@ -2140,43 +2163,35 @@ impl Run<'_> {
     /// establish a pass, so the run is incomplete. A diagram of an unsupported type gets an
     /// info notice: valid content that the extractor does not read.
     fn extraction_notice(&self, format: DiagramFormat, status: ExtractionStatus) -> Option<Notice> {
-        let (level, message) = match status {
+        let mut n = match status {
             ExtractionStatus::Ok => return None,
-            ExtractionStatus::Unsupported(r) => (
+            ExtractionStatus::Unsupported(r) => notice_with_data(
                 NoticeLevel::Info,
-                EngineNotice::ExtractUnsupported { reason: r.into() },
+                &EngineNotice::ExtractUnsupported { reason: r.into() },
+                NoticeData::extract_unsupported(self.input.path, format_name(format)),
             ),
-            ExtractionStatus::Malformed(r) => (
+            ExtractionStatus::Malformed(r) => notice(
                 NoticeLevel::Warning,
-                EngineNotice::ExtractMalformed { reason: r.into() },
+                &EngineNotice::ExtractMalformed { reason: r.into() },
             ),
-            ExtractionStatus::BudgetExhausted(hit) => (
+            ExtractionStatus::BudgetExhausted(hit) => notice_with_data(
                 NoticeLevel::Warning,
-                EngineNotice::ExtractBudget {
+                &EngineNotice::ExtractBudget {
                     cap: hit.cap.into(),
                     limit: hit.limit,
                 },
+                NoticeData::extract_budget(hit.cap, hit.limit),
             ),
             // A status added later is a failure until this match learns its code.
-            _ => (
+            _ => notice(
                 NoticeLevel::Warning,
-                EngineNotice::ExtractMalformed {
+                &EngineNotice::ExtractMalformed {
                     reason: crate::messages::EnginePhrase::ExtractionFailed.text(),
                 },
             ),
         };
-        let mut n = notice(level, &message);
         n.path = Some(self.input.path.to_owned());
-        Some(match status {
-            ExtractionStatus::Unsupported(_) => with_data(
-                n,
-                NoticeData::unsupported(self.input.path, format_name(format)),
-            ),
-            ExtractionStatus::BudgetExhausted(hit) => {
-                with_data(n, NoticeData::budget(hit.cap, hit.limit))
-            }
-            _ => n,
-        })
+        Some(n)
     }
 
     /// The parsed paragraphs that have prose, each with its analysis. A diagram file has none.
@@ -2386,4 +2401,95 @@ fn preserve_case(original: &str, replacement: &str) -> String {
         }
     }
     replacement.to_owned()
+}
+
+#[cfg(test)]
+mod notice_codes {
+    use slopvac_messages::Catalog;
+    use slopvac_model::{NoticeData, RuleId};
+
+    use super::{CAPITALIZATION, EngineNotice, NoticeLevel, comment_not_run, not_run_notice};
+
+    /// Each typed data code is the code of the catalog message that its site renders.
+    #[test]
+    fn each_data_code_is_the_catalog_code_of_its_message() {
+        let pairs: Vec<(&str, NoticeData)> = vec![
+            (
+                EngineNotice::RuleKind {
+                    count: 1,
+                    kind: "k".into(),
+                }
+                .code(),
+                NoticeData::rule_kind_not_implemented(["a:b"]),
+            ),
+            (
+                EngineNotice::RuleStyle {
+                    count: 1,
+                    kind: "k".into(),
+                }
+                .code(),
+                NoticeData::rule_style_not_implemented(["a:b"]),
+            ),
+            (
+                EngineNotice::CommentRules {
+                    count: 1,
+                    rules: "r".into(),
+                }
+                .code(),
+                NoticeData::comment_rules_not_run(["a:b"]),
+            ),
+            (
+                EngineNotice::CommentRuleNamed {
+                    count: 1,
+                    rules: "r".into(),
+                }
+                .code(),
+                NoticeData::comment_rule_named_not_run(["a:b"]),
+            ),
+            (
+                EngineNotice::CasesRuleUnchecked { count: 1 }.code(),
+                NoticeData::cases_rule_unchecked(["a:b"]),
+            ),
+            (
+                EngineNotice::ExtractUnsupported { reason: "r".into() }.code(),
+                NoticeData::extract_unsupported("a.md", "mermaid"),
+            ),
+            (
+                EngineNotice::ExtractBudget {
+                    cap: "c".into(),
+                    limit: 1,
+                }
+                .code(),
+                NoticeData::extract_budget("c", 1),
+            ),
+        ];
+        for (catalog_code, data) in pairs {
+            assert_eq!(catalog_code, data.code());
+        }
+    }
+
+    #[test]
+    fn the_rule_site_notices_carry_the_code_of_their_message() {
+        assert_eq!(
+            comment_not_run(NoticeLevel::Info, &["a:b"], false)
+                .code
+                .as_str(),
+            "comment-rules-not-run"
+        );
+        assert_eq!(
+            comment_not_run(NoticeLevel::Warning, &["a:b"], true)
+                .code
+                .as_str(),
+            "comment-rule-named-not-run"
+        );
+        let rule = RuleId::new("core:cat.rule").unwrap();
+        assert_eq!(
+            not_run_notice(CAPITALIZATION, &[&rule]).code.as_str(),
+            "rule-style-not-implemented"
+        );
+        assert_eq!(
+            not_run_notice("metric", &[&rule]).code.as_str(),
+            "rule-kind-not-implemented"
+        );
+    }
 }

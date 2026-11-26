@@ -97,6 +97,30 @@ impl Notice {
         }
     }
 
+    /// Build a notice for a typed code. The notice takes its code from `data`, and its text
+    /// from `message`, so a code and a shape that do not match cannot be built. The caller
+    /// passes the message that renders the same code; a test of each caller keeps them equal.
+    #[must_use]
+    pub fn from_catalog_data(
+        level: NoticeLevel,
+        message: crate::NoticeMessage,
+        data: NoticeData,
+    ) -> Self {
+        let (_, message) = message.into_parts();
+        #[expect(
+            clippy::expect_used,
+            reason = "the codes of NoticeData are string constants, and a test checks that each is kebab-case"
+        )]
+        let code = KebabName::new(data.code()).expect("a notice data code is kebab-case");
+        Self {
+            code,
+            level,
+            message,
+            path: None,
+            data: data.into_map(),
+        }
+    }
+
     /// Validate and render an arbitrary catalog before constructing its notice.
     ///
     /// # Errors
@@ -146,7 +170,7 @@ struct NoticeWire {
     message: NonEmptyString,
     #[serde(default, deserialize_with = "present")]
     path: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "present")]
     data: Option<serde_json::Map<String, Value>>,
 }
 

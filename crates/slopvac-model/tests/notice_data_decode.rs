@@ -53,3 +53,10 @@ fn a_typed_code_without_data_is_read(#[case] code: &str) {
 fn a_code_without_a_shape_keeps_any_object() {
     assert!(decodes("config-unknown-rule", Some(json!({"rule": 5}))));
 }
+
+#[rstest]
+#[case::typed("extract-budget")]
+#[case::untyped("config-unknown-rule")]
+fn data_null_is_refused_not_read_as_absent(#[case] code: &str) {
+    assert!(!decodes(code, Some(Value::Null)));
+}
