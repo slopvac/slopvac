@@ -831,6 +831,16 @@ fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[cas
     "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[categories]\nste-words = \"off\"\n",
     "authored override [\"docs/**\"] is missing"
 )]
+#[case::an_override_keeps_its_files_but_drops_its_category(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n",
+    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n",
+    "authored category ste-words = error is missing from its layer"
+)]
+#[case::an_override_keeps_its_files_but_changes_its_category_level(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n",
+    "schema_version = 2\nstyles = [\"core:legacy-normal\", \"core:legacy-normal-vocabulary\"]\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"warning\"\n",
+    "authored category ste-words = error is missing from its layer"
+)]
 #[case::an_entry_has_no_string_level(
     "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
     "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = { other = 1 }\n",
