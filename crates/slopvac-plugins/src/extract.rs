@@ -1268,16 +1268,29 @@ pub(crate) fn open_regular(path: &Path) -> io::Result<File> {
 struct Capture<'a> {
     inner: &'a mut File,
     kept: Vec<u8>,
+    /// Most bytes to keep. A file over it is still hashed, and `over` says it did not fit.
+    cap: usize,
     over: bool,
 }
 
-/// Most bytes a hash pass keeps of one file it is asked to capture.
+/// Most bytes a hash pass keeps of one file it is asked to capture by name. The executable
+/// list has its own bound, the size of the tree, so a valid list over this still verifies.
 const MAX_CAPTURE_BYTES: usize = 1 << 20;
+
+/// What a hash pass keeps besides the executable list.
+enum Keep<'a> {
+    /// Nothing.
+    Nothing,
+    /// The file with this name at the root of the tree, up to [`MAX_CAPTURE_BYTES`].
+    File(&'a str),
+    /// Every file, up to this many bytes in all.
+    All(u64),
+}
 
 impl Read for Capture<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
-        if self.kept.len() + n <= MAX_CAPTURE_BYTES {
+        if self.kept.len() + n <= self.cap {
             self.kept.extend_from_slice(&buf[..n]);
         } else {
             self.over = true;
@@ -1301,6 +1314,19 @@ pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
     tree_hash_observed(dir, &mut |_, _| {})
 }
 
+/// [`tree_hash`], and every file of the tree as the same pass hashed it, by relative path.
+/// A caller that loads the tree from these bytes never opens a file again, so what it loads is
+/// what the hash covers. The files are kept in memory, so `cap` bounds their total size.
+///
+/// # Errors
+/// As [`tree_hash`], and [`ExtractError::Refused`] when the files together are over `cap`.
+pub fn tree_hash_capturing_files(
+    dir: &Path,
+    cap: u64,
+) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
+    hash_walk(dir, &Keep::All(cap), &mut |_, _| {})
+}
+
 /// [`tree_hash`], and the bytes of the file `name` at the root of the tree as the same pass
 /// hashed them, or `None` when the tree has no such file. A caller that parses the file reads
 /// these bytes and never opens the file again, so what it parses is what the hash covers.
@@ -1311,7 +1337,8 @@ pub fn tree_hash_capturing(
     dir: &Path,
     name: &str,
 ) -> Result<(TreeHash, Option<Vec<u8>>), ExtractError> {
-    hash_walk(dir, Some(name), &mut |_, _| {})
+    let (hash, mut kept) = hash_walk(dir, &Keep::File(name), &mut |_, _| {})?;
+    Ok((hash, kept.remove(name)))
 }
 
 /// [`tree_hash`] with a callback after each file is hashed, given its relative name and path.
@@ -1322,20 +1349,20 @@ fn tree_hash_observed(
     dir: &Path,
     after_hash: &mut dyn FnMut(&str, &Path),
 ) -> Result<TreeHash, ExtractError> {
-    hash_walk(dir, None, after_hash).map(|(hash, _)| hash)
+    hash_walk(dir, &Keep::Nothing, after_hash).map(|(hash, _)| hash)
 }
 
-/// The walk behind [`tree_hash`] and [`tree_hash_capturing`]: one pass that hashes every file
-/// and keeps the executable list and, when `capture` names one, that file.
+/// The walk behind [`tree_hash`] and the capturing variants: one pass that hashes every file,
+/// reads the executable list, and keeps what `keep` asks for, by relative path.
 #[expect(
     clippy::too_many_lines,
-    reason = "the catalog calls take more lines than the former literals; the body is unchanged"
+    reason = "one pass: the hash, the executable list and the capture share its state"
 )]
 fn hash_walk(
     dir: &Path,
-    capture: Option<&str>,
+    keep: &Keep<'_>,
     after_hash: &mut dyn FnMut(&str, &Path),
-) -> Result<(TreeHash, Option<Vec<u8>>), ExtractError> {
+) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
     let dir = normalised(dir);
     let dir = dir.as_path();
     let root_meta = fs::symlink_metadata(dir)
@@ -1349,7 +1376,11 @@ fn hash_walk(
     let mut nodes = NodeBudget::new(MAX_TREE_NODES);
     let mut budget = MAX_TREE_BYTES;
     let mut sidecar: Option<Vec<u8>> = None;
-    let mut captured: Option<Vec<u8>> = None;
+    let mut captured = std::collections::BTreeMap::new();
+    let mut keep_left = match keep {
+        Keep::All(total) => *total,
+        _ => 0,
+    };
     let mut on_disk_exec: HashSet<String> = HashSet::new();
     while let Some((path, prefix)) = stack.pop() {
         for entry in fs::read_dir(&path)
@@ -1400,10 +1431,26 @@ fn hash_walk(
                         )
                     }
                 })?;
-                let (sha, len) = if rel == EXEC_SIDECAR || capture == Some(rel.as_str()) {
+                let wanted = match keep {
+                    Keep::Nothing => false,
+                    Keep::File(name) => *name == rel,
+                    Keep::All(_) => true,
+                };
+                let (sha, len) = if wanted || rel == EXEC_SIDECAR {
+                    // The list is bounded by the tree. A file kept for the caller is bounded
+                    // by what the caller allows.
+                    let cap = if wanted {
+                        match keep {
+                            Keep::All(_) => keep_left,
+                            _ => MAX_CAPTURE_BYTES as u64,
+                        }
+                    } else {
+                        budget
+                    };
                     let mut tee = Capture {
                         inner: &mut f,
                         kept: Vec::new(),
+                        cap: usize::try_from(cap).unwrap_or(usize::MAX),
                         over: false,
                     };
                     let hashed = hash_stream(&mut tee, None, &rel, Some(budget))?;
@@ -1412,10 +1459,14 @@ fn hash_walk(
                             TransportText::ExtractTreeSize { path: rel.clone() }.to_string(),
                         ));
                     }
-                    if rel == EXEC_SIDECAR {
-                        sidecar = Some(tee.kept);
+                    if wanted {
+                        keep_left = keep_left.saturating_sub(hashed.1);
+                        if rel == EXEC_SIDECAR {
+                            sidecar = Some(tee.kept.clone());
+                        }
+                        captured.insert(rel.clone(), tee.kept);
                     } else {
-                        captured = Some(tee.kept);
+                        sidecar = Some(tee.kept);
                     }
                     hashed
                 } else {
@@ -1765,7 +1816,7 @@ mod single_read_tests {
 
         // Right after the file is hashed, replace it. A second read would see the new bytes;
         // the capture holds the ones that were hashed.
-        let (hash, kept) = hash_walk(&swapped, Some("m.toml"), &mut |rel, path| {
+        let (hash, kept) = hash_walk(&swapped, &Keep::File("m.toml"), &mut |rel, path| {
             if rel == "m.toml" {
                 fs::write(path, b"second\n").unwrap();
             }
@@ -1773,14 +1824,54 @@ mod single_read_tests {
         .unwrap();
 
         assert_eq!(hash, expected);
-        assert_eq!(kept.as_deref(), Some(&b"first\n"[..]));
+        assert_eq!(kept.get("m.toml").map(Vec::as_slice), Some(&b"first\n"[..]));
     }
 
     #[test]
     fn nothing_is_captured_when_the_named_file_is_absent() {
         let scratch = tempfile::tempdir().unwrap();
         tree(scratch.path());
-        let (_, kept) = hash_walk(scratch.path(), Some("m.toml"), &mut |_, _| {}).unwrap();
-        assert_eq!(kept, None);
+        let (_, kept) = hash_walk(scratch.path(), &Keep::File("m.toml"), &mut |_, _| {}).unwrap();
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn every_file_is_captured_as_it_was_hashed() {
+        let scratch = tempfile::tempdir().unwrap();
+        fs::create_dir_all(scratch.path().join("rules")).unwrap();
+        fs::write(scratch.path().join("m.toml"), b"one\n").unwrap();
+        fs::write(scratch.path().join("rules/a.yml"), b"two\n").unwrap();
+        let expected = tree_hash(scratch.path()).unwrap();
+
+        let (hash, files) = tree_hash_capturing_files(scratch.path(), 1 << 20).unwrap();
+
+        assert_eq!(hash, expected);
+        assert_eq!(files.get("m.toml").map(Vec::as_slice), Some(&b"one\n"[..]));
+        assert_eq!(files.get("rules/a.yml").map(Vec::as_slice), Some(&b"two\n"[..]));
+    }
+
+    #[test]
+    fn files_over_the_capture_total_are_refused() {
+        let scratch = tempfile::tempdir().unwrap();
+        fs::write(scratch.path().join("a"), vec![b'x'; 10]).unwrap();
+        fs::write(scratch.path().join("b"), vec![b'y'; 10]).unwrap();
+
+        assert!(tree_hash_capturing_files(scratch.path(), 15).is_err());
+    }
+
+    #[test]
+    fn an_executable_list_over_the_manifest_cap_still_hashes() {
+        let scratch = tempfile::tempdir().unwrap();
+        let mut list = String::new();
+        for i in 0..40_000 {
+            list.push_str(&format!("bin/{i:06}\n"));
+        }
+        assert!(list.len() > MAX_CAPTURE_BYTES);
+        fs::write(scratch.path().join(EXEC_SIDECAR), list).unwrap();
+
+        // The list is bounded by the tree, not by the capture cap: the refusal here, if any, is
+        // about the listed files being absent, never about the size of the list.
+        let err = tree_hash(scratch.path()).unwrap_err().to_string();
+        assert!(!err.contains(EXEC_SIDECAR) || !err.to_lowercase().contains("size"), "{err}");
     }
 }
