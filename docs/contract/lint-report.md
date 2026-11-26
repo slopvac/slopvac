@@ -63,8 +63,15 @@ These keys have no 2.x counterpart.
 ## Notice data
 
 A notice may carry `data`, a JSON object whose values may be any JSON value, nested objects and arrays included. A notice with no details
-omits it. The schema does not constrain the keys. Each notice code documents its own
-keys, and a consumer must ignore keys it does not know.
+omits it. Each notice code documents its own keys, and a consumer must ignore keys it does not know. For the codes in the tables below that the engine emits, the schema declares the documented keys and their types. For any other code, the schema does not constrain the keys.
+
+These codes list rule ids in `data.rules`, an array of strings in sorted order:
+
+- `rule-kind-not-implemented`
+- `rule-style-not-implemented`
+- `comment-rules-not-run`
+- `comment-rule-named-not-run`
+- `cases-rule-unchecked`
 
 `extract-unsupported` has these keys:
 
