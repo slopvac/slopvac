@@ -946,7 +946,7 @@ pub(crate) mod tests {
     // `ste` preset's `ste-vocabulary` names no core category. Stripping the preset's `core:`
     // would print both under one path, so the preset's entry keeps the qualified spelling.
     #[test]
-    fn a_preset_key_stays_qualified_when_its_bare_spelling_is_another_entrys_path() {
+    fn a_preset_key_stays_qualified_when_its_bare_spelling_is_another_entries_path() {
         let rules = catalog_of(&[("core", "style"), ("alpha", "ste-vocabulary")]);
         let config =
             format!("{HEAD}styles = [\"ste\"]\n\n[categories]\nste-vocabulary = \"error\"\n");
