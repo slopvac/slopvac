@@ -235,3 +235,34 @@ def test_a_partial_all_files_report_fails_the_audit_step(tmp_path, fault) -> Non
     done = run_audit(tmp_path, {"all-files": _ALL_FILES_FAULTS[fault]})
     assert done.returncode != 0
     assert "all-files: the report " in done.stderr
+
+
+_PAYLOAD = "::error::pwned\n##[group]x\n"
+
+
+@pytest.mark.parametrize("scan", ["authored", "configured", "all-files"])
+@pytest.mark.parametrize("code", [1, 2])
+def test_a_failed_linter_with_no_report_fails_with_fixed_text(tmp_path, scan, code) -> None:
+    case = {
+        scan + "-noreport": True,
+        scan + "-exit": code,
+        scan + "-stdout": _PAYLOAD,
+        scan + "-stderr": _PAYLOAD,
+    }
+    done = run_audit(tmp_path, case)
+    assert done.returncode != 0
+    assert f"{scan}: the linter exited {code} and wrote no report" in done.stderr
+    assert "Traceback" not in done.stderr
+    _no_workflow_command(done.stdout + done.stderr)
+    assert "pwned" not in done.stdout + done.stderr
+
+
+@pytest.mark.parametrize("scan", ["authored", "configured", "all-files"])
+def test_a_report_path_outside_the_root_fails_with_fixed_text(tmp_path, scan) -> None:
+    case = {scan: 'report["documents"][0]["path"] = "/outside/::error::pwned.md"'}
+    done = run_audit(tmp_path, case)
+    assert done.returncode != 0
+    assert f"{scan}: document 0 lies outside the repository" in done.stderr
+    assert "Traceback" not in done.stderr
+    _no_workflow_command(done.stdout + done.stderr)
+    assert "pwned" not in done.stdout + done.stderr

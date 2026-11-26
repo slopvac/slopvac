@@ -107,8 +107,8 @@ jobs:
               (out / (name + ".stdout")).write_text(result.stdout)
               (out / (name + ".stderr")).write_text(result.stderr)
               print("COMMAND", name, "EXIT", result.returncode, flush=True)
-              if result.returncode not in (0, 1):
-                  print(escape(result.stdout[-4000:]), escape(result.stderr[-4000:]), flush=True)
+              # The linter's output is kept in the files above and never printed: it can hold
+              # text from the repository that the Actions log would act on.
               return result
 
           source = Path("slopvac.toml").read_text()
@@ -132,10 +132,12 @@ jobs:
                   args = [binary, "lint", "--config", config, "--format", "json", "--out", str(target)]
                   result = command(name, [*args, *selected_files])
                   exits[name] = result.returncode
-                  if not target.exists():
-                      detail = result.stdout[-2000:] + result.stderr[-2000:]
-                      raise RuntimeError(name + " did not produce a report: " + detail)
-                  reports[name] = json.loads(target.read_text())
+                  try:
+                      reports[name] = json.loads(target.read_text())
+                  except (OSError, ValueError):
+                      raise SystemExit(
+                          f"{name}: the linter exited {result.returncode} and wrote no report"
+                      ) from None
                   # Every document needs a boolean gate verdict. `false` is allowed in the
                   # diagnostic scans, which may fail, and not in the authored scan.
                   bad = gate_problems(
@@ -148,28 +150,36 @@ jobs:
           finally:
               audit_config.unlink(missing_ok=True)
 
-          def relative(document):
-              return str(Path(document["path"]).resolve().relative_to(root))
+          def relative(name, index, document):
+              try:
+                  return str(Path(document["path"]).resolve().relative_to(root))
+              except ValueError:
+                  raise SystemExit(f"{name}: document {index} lies outside the repository") from None
 
-          configured = {relative(d): d for d in reports["configured"]["documents"]}
-          scanned = {relative(d): d for d in reports["all-files"]["documents"]}
-          authored = {relative(d): d for d in reports["authored"]["documents"]}
+          # Resolve every path once, so a path outside the root stops the audit with fixed text.
+          paths = {
+              name: [relative(name, i, d) for i, d in enumerate(report["documents"])]
+              for name, report in reports.items()
+          }
+          configured = dict(zip(paths["configured"], reports["configured"]["documents"]))
+          scanned = dict(zip(paths["all-files"], reports["all-files"]["documents"]))
+          authored = dict(zip(paths["authored"], reports["authored"]["documents"]))
           # The authored report must hold exactly the authored documents. An empty or
           # partial report is a failure, and the messages hold counts and no paths.
           bad = document_set_problems(
               "authored",
-              [relative(d) for d in reports["authored"]["documents"]],
+              paths["authored"],
               {canonical[p] for p in authored_files},
           )
           if bad:
               raise SystemExit("\n".join(bad))
           # The all-files report must hold every tracked document: it is the coverage guarantee.
-          bad = document_set_problems("all-files", [relative(d) for d in reports["all-files"]["documents"]], expected_paths)
+          bad = document_set_problems("all-files", paths["all-files"], expected_paths)
           if bad:
               raise SystemExit("\n".join(bad))
           # Coverage comes from the all-files scan. The configured report may be a subset.
           bad = configured_problems(
-              [relative(d) for d in reports["configured"]["documents"]],
+              paths["configured"],
               set(scanned),
               len(authored_files),
           )

@@ -52,7 +52,9 @@ report = {{
     }},
 }}
 exec(case.get(scan, ""), {{"report": report}})
-out.write_text(json.dumps(report))
+if not case.get(scan + "-noreport"):
+    out.write_text(json.dumps(report))
+print(case.get(scan + "-stderr", ""), end="", file=sys.stderr)
 print(case.get(scan + "-stdout", ""), end="")
 sys.exit(case.get(scan + "-exit", 0))
 """
