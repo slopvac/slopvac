@@ -1412,7 +1412,8 @@ fn hash_captured<R: Read>(
     let mut limited = src.take(bound);
     // The buffer holds what was read, which is at most the smaller of the cap and the budget plus
     // the chunk that crossed it.
-    let limit = usize::try_from(cap.min(budget).saturating_add(1 + HASH_CHUNK as u64)).unwrap_or(usize::MAX);
+    let limit = usize::try_from(cap.min(budget).saturating_add(1 + HASH_CHUNK as u64))
+        .unwrap_or(usize::MAX);
     let mut tee = Capture::new(&mut limited, cap, limit);
     let hashed = hash_stream(&mut tee, None, rel, Some(budget));
     // Only a budget refusal is probed. A read error is kept as it was.
