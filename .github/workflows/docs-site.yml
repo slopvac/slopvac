@@ -70,6 +70,12 @@ jobs:
           SLOPVAC_OFFLINE: "1"
         run: |
           set -uo pipefail
+          # An empty or missing page directory would lint nothing and pass. The message
+          # names no path.
+          if [ -z "$(find "$RUNNER_TEMP/site-src" -type f -name '*.md' -print -quit 2>/dev/null)" ]; then
+            echo "Docs site lint: no generated pages found"
+            exit 1
+          fi
           status=0
           target/debug/slopvac lint "$RUNNER_TEMP/site-src" \
             --config docs/site-lint.toml || status=$?
