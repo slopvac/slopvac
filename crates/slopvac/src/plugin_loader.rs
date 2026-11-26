@@ -13,11 +13,11 @@ use std::path::{Path, PathBuf};
 use slopvac_packs::{CodePluginContext, CodePluginError, SyncedError, load_code_plugin};
 use slopvac_plugins::extract::{ExtractError, Limits, TreeHash, tree_hash_capturing};
 use slopvac_plugins::host::PluginSpec;
-use slopvac_plugins::lock::{LockedPack, PackId, SourceKind, read_project_lock};
+use slopvac_plugins::lock::{LockReadError, LockedPack, PackId, SourceKind, read_project_lock};
 use slopvac_plugins::sign::{KeyPolicy, PublicKey};
 use slopvac_plugins::sync::{Store, SyncError};
 use slopvac_plugins::trust::VerifiedPlugin;
-use slopvac_plugins::{PluginLoader, RunError};
+use slopvac_plugins::PluginLoader;
 
 /// The `PATH` of a plugin child. The host never passes its own, and the value enters the trust
 /// hash, so it is the same on every machine: the system directories only.
@@ -34,7 +34,7 @@ pub(crate) enum LoadRefusal {
     Code(#[from] CodePluginError),
     /// The lock could not be read or is not valid.
     #[error(transparent)]
-    Lock(#[from] RunError),
+    Lock(#[from] LockReadError),
 }
 
 impl LoadRefusal {
@@ -420,7 +420,7 @@ mod tests {
         fs::create_dir_all(world.lock_path()).unwrap();
         let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
         assert!(
-            matches!(refusal, LoadRefusal::Lock(RunError::LockUnreadable { .. })),
+            matches!(&refusal, LoadRefusal::Lock(e) if e.code() == "plugins-lock-unreadable"),
             "{refusal:?}"
         );
     }
@@ -431,7 +431,7 @@ mod tests {
         fs::write(world.lock_path(), "schema_version = [\n").unwrap();
         let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
         assert!(
-            matches!(refusal, LoadRefusal::Lock(RunError::LockInvalid { .. })),
+            matches!(&refusal, LoadRefusal::Lock(e) if e.code() == "plugins-lock-invalid"),
             "{refusal:?}"
         );
     }
