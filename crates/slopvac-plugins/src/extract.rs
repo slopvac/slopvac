@@ -1126,6 +1126,8 @@ fn write_entry(
         .size()
         .map_err(|e| ExtractError::Malformed(e.to_string()))?;
     let cap = if keep { MAX_CAPTURE_BYTES } else { 0 };
+    // `cap` is 0 or `MAX_CAPTURE_BYTES` (1 MiB), a constant that fits every `usize`, so the
+    // fallback is unreachable and no fallible path is added.
     let mut tee = Capture::new(&mut *entry, cap, usize::try_from(cap).unwrap_or(usize::MAX));
     let hashed = hash_stream(&mut tee, out.as_mut(), &rel, None);
     if keep && tee.over {
@@ -1412,8 +1414,19 @@ fn hash_captured<R: Read>(
     let mut limited = src.take(bound);
     // The buffer holds what was read, which is at most the smaller of the cap and the budget plus
     // the chunk that crossed it.
-    let limit = usize::try_from(cap.min(budget).saturating_add(1 + HASH_CHUNK as u64))
-        .unwrap_or(usize::MAX);
+    // `budget` and `cap` are caller values and need not fit a `usize`, so the conversion is
+    // checked and a failure is a refusal of the file, never a silently smaller or larger buffer.
+    let Ok(limit) = usize::try_from(cap.min(budget).saturating_add(1 + HASH_CHUNK as u64)) else {
+        return Captured {
+            hashed: Err(refused(
+                TransportText::ExtractTreeSize { path: rel.to_owned() }.to_string(),
+            )),
+            kept: Vec::new(),
+            over: false,
+            #[cfg(feature = "test-support")]
+            seen: 0,
+        };
+    };
     let mut tee = Capture::new(&mut limited, cap, limit);
     let hashed = hash_stream(&mut tee, None, rel, Some(budget));
     // Only a budget refusal is probed. A read error is kept as it was.
@@ -1436,7 +1449,7 @@ fn hash_captured<R: Read>(
 #[derive(Default)]
 struct Hooks<'a> {
     before_read: Option<&'a mut dyn FnMut(&str, &Path)>,
-    after_read: Option<&'a mut dyn FnMut(u64, usize)>,
+    after_read: Option<&'a mut dyn FnMut(u64, usize, usize)>,
 }
 
 #[cfg(feature = "test-support")]
@@ -1450,7 +1463,7 @@ impl Hooks<'_> {
     /// Report the bytes pulled from a captured file and the capacity of its buffer.
     fn after_read(&mut self, c: &Captured) {
         if let Some(f) = self.after_read.as_mut() {
-            f(c.seen, c.kept.capacity());
+            f(c.seen, c.kept.capacity(), c.kept.len());
         }
     }
 }
@@ -1554,7 +1567,7 @@ pub fn tree_hash_capturing_files_observed(
 
 /// Test seam: [`tree_hash_capturing`] with the tree byte budget given, `before_read` called with
 /// each file's path after its metadata was checked and before it is read, and `after_read` called
-/// with the bytes pulled from each captured file and the capacity of the buffer that kept them.
+/// with the bytes pulled from each captured file the capacity of the buffer that kept them and the number of bytes it retained.
 ///
 /// # Errors
 /// As [`tree_hash_capturing`].
@@ -1565,7 +1578,7 @@ pub fn tree_hash_capturing_probed(
     name: &str,
     tree_budget: u64,
     before_read: &mut dyn FnMut(&Path),
-    after_read: &mut dyn FnMut(u64, usize),
+    after_read: &mut dyn FnMut(u64, usize, usize),
 ) -> Result<(TreeHash, Option<Vec<u8>>), ExtractError> {
     let mut before = |_: &str, p: &Path| before_read(p);
     let (hash, mut kept) = hash_walk_with(
@@ -1592,7 +1605,7 @@ pub fn tree_hash_capturing_files_probed(
     cap: u64,
     tree_budget: u64,
     before_read: &mut dyn FnMut(&Path),
-    after_read: &mut dyn FnMut(u64, usize),
+    after_read: &mut dyn FnMut(u64, usize, usize),
 ) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
     let mut before = |_: &str, p: &Path| before_read(p);
     hash_walk_with(
@@ -2296,7 +2309,7 @@ mod single_read_tests {
             "m.toml",
             MAX_CAPTURE_BYTES - 1024,
             &mut |_| grow(&manifest, 3 << 20),
-            &mut |_, _| {},
+            &mut |_, _, _| {},
         )
         .unwrap_err();
 
@@ -2314,6 +2327,7 @@ mod single_read_tests {
         let budget: u64 = 256 << 10;
         let mut seen = Vec::new();
         let mut capacity = Vec::new();
+        let mut retained = Vec::new();
 
         // The caller's cap is 64 MiB, far above the budget. The file grows to 3 MiB, so the
         // budget trips and the cap cannot be shown crossed: the original refusal stands, and the
@@ -2324,9 +2338,10 @@ mod single_read_tests {
             64 << 20,
             budget,
             &mut |_| grow(&big, 3 << 20),
-            &mut |n, cap| {
+            &mut |n, cap, kept| {
                 seen.push(n);
                 capacity.push(cap);
+                retained.push(kept);
             },
         )
         .unwrap_err();
@@ -2343,6 +2358,19 @@ mod single_read_tests {
             capacity[0] as u64 <= budget + 2 * (64 << 10),
             "a buffer of {} bytes for a file over a {budget} byte budget",
             capacity[0]
+        );
+        // The probe counts its bytes and drops them: what is retained stops at the hash read,
+        // which ends with the chunk that crossed the budget, and the probe read more than that.
+        assert!(
+            retained[0] as u64 <= budget + HASH_CHUNK as u64,
+            "{} bytes retained for a file over a {budget} byte budget",
+            retained[0]
+        );
+        assert!(
+            seen[0] > retained[0] as u64,
+            "the probe read nothing past the hash read ({} of {} bytes)",
+            retained[0],
+            seen[0]
         );
     }
 
@@ -2380,15 +2408,14 @@ mod single_read_tests {
         );
     }
 
-    /// The first absolute path in `text`: a `/` that starts a path segment, that is one at the
-    /// start of the text or right after white space or an opening or quoting character. The `/`
-    /// of `<external>/name` follows `>` and a relative `a/b` follows a letter, so neither counts.
+    /// The first absolute path in `text`: a `/` that starts a path segment, that is, one that does
+    /// not follow a letter, digit or one of `._-~`. The one exemption is the exact marker
+    /// `<external>/`. A relative `a/b` follows a letter, so it does not count.
     fn absolute_path_in(text: &str) -> Option<&str> {
         let mut prev: Option<char> = None;
         for (i, c) in text.char_indices() {
-            if c == '/'
-                && prev.is_none_or(|p| p.is_whitespace() || "'\"`([{=:,;".contains(p))
-            {
+            let starts_segment = prev.is_none_or(|p| !(p.is_alphanumeric() || "._-~".contains(p)));
+            if c == '/' && starts_segment && !text[..i].ends_with("<external>") {
                 return Some(&text[i..]);
             }
             prev = Some(c);
@@ -2404,11 +2431,19 @@ mod single_read_tests {
             "(/abs/path)",
             "\"/abs/path\"",
             "[/abs/path]",
+            ">/abs/path",
+            "|/abs/path",
+            "<external>/ok then >/abs/path",
             "/abs/path",
         ] {
             assert!(absolute_path_in(bad).is_some(), "missed in {bad}");
         }
-        for good in ["cached tree <external>/tree does not match", "see a/b", ""] {
+        for good in [
+            "cached tree <external>/tree does not match",
+            "<external>/tree/sub",
+            "see a/b",
+            "",
+        ] {
             assert!(absolute_path_in(good).is_none(), "false hit in {good}");
         }
     }
