@@ -1651,9 +1651,11 @@ fn an_online_syncer_with_a_cache_miss_checks_the_cache_only_and_makes_no_request
         .verify_cached_signature(locked_style(&lock))
         .unwrap_err();
 
-    assert_eq!(err.code(), "offline-plugin-missing");
+    // The counters come first: a fetch the client refuses would otherwise show up only as a
+    // different error code.
     assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert_eq!(touched.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(err.code(), "offline-plugin-missing");
     assert!(server.requests().is_empty(), "{:?}", server.requests());
     assert!(
         env.list.server.requests().is_empty(),

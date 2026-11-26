@@ -1502,7 +1502,9 @@ fn hash_walk(
                     }
                     if wanted {
                         // The capture held at most `keep_left` bytes, so this cannot underflow.
-                        keep_left -= tee.kept.len() as u64;
+                        if matches!(keep, Keep::All(_)) {
+                            keep_left -= tee.kept.len() as u64;
+                        }
                         if rel == EXEC_SIDECAR {
                             sidecar = Some(tee.kept.clone());
                         }
