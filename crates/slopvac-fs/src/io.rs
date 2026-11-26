@@ -156,7 +156,7 @@ pub fn write_atomic(root: &Dir, rel: &Path, bytes: &[u8], opts: WriteOptions) ->
 /// Return `Ok(true)` to let the replace go on. Return `Ok(false)` to refuse: the staged file is
 /// removed, the destination stays as it was, and the write fails with [`Error::Precondition`].
 /// A guard error removes the staged file too, and fails with [`Error::Io`] and
-/// [`Op::Precondition`](crate::Op::Precondition).
+/// [`Op::Precondition`].
 ///
 /// This lets a caller that read the destination earlier compare it again after the slow steps,
 /// so a change made while the file was staged is kept. It narrows the lost-update window to the
