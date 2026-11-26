@@ -11,8 +11,9 @@ use crate::messages::{PackMessage, code_of};
 /// File name of the manifest at the root of a pack.
 pub const MANIFEST_FILE: &str = "slopvac-plugin.toml";
 
-/// Largest pack file the directory source reads, in bytes.
-const MAX_FILE_BYTES: u64 = 1024 * 1024;
+/// Largest plugin file the directory source reads, in bytes: the cap of a rule or category file
+/// (policies, section 1.9), which is also the largest file a plugin may ship.
+const MAX_FILE_BYTES: u64 = slopvac_rules::MAX_RULE_FILE_BYTES;
 
 /// Why a pack file could not be read.
 #[derive(Debug, thiserror::Error)]
@@ -27,6 +28,21 @@ pub enum SourceError {
     /// The file exists but could not be read.
     #[error("cannot read a pack file")]
     Read(#[from] slopvac_fs::Error),
+    /// A plugin file is over the file cap. The code and the text are those of `slopvac-rules`.
+    #[error("{}", slopvac_rules::LoadErrorKind::TooLarge(*.cap))]
+    TooLarge {
+        /// The cap the file went over, in bytes.
+        cap: u64,
+    },
+    /// A style file is over the style cap. The code and the text are those of the styles
+    /// catalog, with the file stem as the style name.
+    #[error("{}", slopvac_styles::StyleError::TooLarge { style: slopvac_sanitize::line(.style), cap: *.cap })]
+    StyleTooLarge {
+        /// The file stem of the style.
+        style: String,
+        /// The cap the file went over, in bytes.
+        cap: u64,
+    },
     /// The pack holds a link.
     #[error("{}", PackMessage::FileLink { path: slopvac_sanitize::line(.path) })]
     Link {
@@ -49,6 +65,8 @@ impl SourceError {
         match self {
             Self::Link { .. } => Some(code_of!(FileLink { path })),
             Self::TooManyEntries => Some(code_of!(TooManyEntries { limit })),
+            Self::TooLarge { cap } => slopvac_rules::LoadErrorKind::TooLarge(*cap).code(),
+            Self::StyleTooLarge { .. } => Some(slopvac_config::Code::StyleTooLarge.as_str()),
             _ => None,
         }
     }
@@ -67,6 +85,20 @@ pub trait PackSource {
     /// # Errors
     /// [`SourceError::Missing`] when the pack has no such file.
     fn read(&self, path: &PackPath) -> Result<String, SourceError>;
+
+    /// Like [`PackSource::read`], and refuses a file over `cap` bytes with
+    /// [`SourceError::TooLarge`]. A source that reads a file from disk applies the cap to the
+    /// bytes, before they are decoded as UTF-8.
+    ///
+    /// # Errors
+    /// As [`PackSource::read`], and [`SourceError::TooLarge`] for a file over `cap`.
+    fn read_capped(&self, path: &PackPath, cap: u64) -> Result<String, SourceError> {
+        let text = self.read(path)?;
+        if text.len() as u64 > cap {
+            return Err(SourceError::TooLarge { cap });
+        }
+        Ok(text)
+    }
 
     /// Every file of the pack except the manifest, as pack-relative paths with `/`
     /// separators, sorted. The loader matches a glob in `provides` against this list.
@@ -134,7 +166,7 @@ impl DirSource {
         Self { root: root.into() }
     }
 
-    fn read_file(&self, rel: &str) -> Result<String, SourceError> {
+    fn read_file(&self, rel: &str, cap: u64) -> Result<String, SourceError> {
         // Each read opens the root again and then walks down without following links, so a
         // link that appears between two reads cannot carry a later read outside the pack.
         let root =
@@ -144,11 +176,12 @@ impl DirSource {
                 },
                 _ => SourceError::Read(slopvac_fs::Error::read(&e)),
             })?;
-        slopvac_fs::read_capped_regular_to_string_in(&root, Path::new(rel), MAX_FILE_BYTES).map_err(
+        slopvac_fs::read_capped_regular_to_string_in(&root, Path::new(rel), cap).map_err(
             |e| match e.input_kind() {
                 Some(slopvac_fs::InputKind::NotFound) => SourceError::Missing {
                     path: rel.to_owned(),
                 },
+                Some(slopvac_fs::InputKind::TooLarge) => SourceError::TooLarge { cap },
                 _ => SourceError::Read(e),
             },
         )
@@ -157,11 +190,15 @@ impl DirSource {
 
 impl PackSource for DirSource {
     fn manifest_text(&self) -> Result<String, SourceError> {
-        self.read_file(MANIFEST_FILE)
+        self.read_file(MANIFEST_FILE, MAX_FILE_BYTES)
     }
 
     fn read(&self, path: &PackPath) -> Result<String, SourceError> {
-        self.read_file(path.as_str())
+        self.read_file(path.as_str(), MAX_FILE_BYTES)
+    }
+
+    fn read_capped(&self, path: &PackPath, cap: u64) -> Result<String, SourceError> {
+        self.read_file(path.as_str(), cap.min(MAX_FILE_BYTES))
     }
 
     fn files(&self) -> Result<Vec<String>, SourceError> {

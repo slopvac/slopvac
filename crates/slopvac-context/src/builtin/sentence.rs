@@ -62,6 +62,10 @@ impl Tagger for RequirementTagger {
         "requirement"
     }
 
+    fn emitted_tags(&self) -> Vec<&str> {
+        vec!["requirement"]
+    }
+
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
         let mut sink = TagSink::unbounded();
         self.tag_into(doc, &mut sink)?;
@@ -208,6 +212,10 @@ fn is_negator(token: &str) -> bool {
 impl Tagger for EnforcedInvariantTagger {
     fn id(&self) -> &'static str {
         "enforced-invariant"
+    }
+
+    fn emitted_tags(&self) -> Vec<&str> {
+        vec!["enforced-invariant"]
     }
 
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {

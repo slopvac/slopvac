@@ -12,7 +12,9 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 use crate::schema::{Extensions, present};
-use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, TagSink, normalize_path};
+use crate::{
+    BlockKind, BlockView, DocumentView, Error, Pattern, PatternBudget, Tag, TagSink, normalize_path,
+};
 
 /// How far a matching condition spreads its tag.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -86,7 +88,11 @@ impl When {
     }
 
     /// Compile into a tagger.
-    pub(crate) fn compile(&self, s: &Settings<'_>) -> Result<StructuralTagger, Error> {
+    pub(crate) fn compile(
+        &self,
+        s: &Settings<'_>,
+        budget: &mut dyn PatternBudget,
+    ) -> Result<StructuralTagger, Error> {
         let fail = |msg: &str| Error::Parse(format!("tagger `{}`: {msg}", s.id));
         if self.is_empty() {
             return Err(fail("`when` needs at least one condition"));
@@ -110,15 +116,8 @@ impl When {
         {
             crate::pattern::check_authored(authored)?;
         }
-        let c = |o: &Option<String>| o.as_deref().map(Pattern::new_caseless).transpose();
         let fm = match fm {
-            Some(f) => Some((
-                f.key.clone(),
-                f.matches
-                    .as_deref()
-                    .map(Pattern::new_caseless)
-                    .transpose()?,
-            )),
+            Some(f) => Some((f.key.clone(), charged(f.matches.as_deref(), budget)?)),
             None => None,
         };
         Ok(StructuralTagger {
@@ -132,13 +131,20 @@ impl When {
                 || self.admonition_title.is_some()
                 || self.sentence.is_some()
                 || self.block_kind.is_some(),
-            heading: c(&self.heading_path)?,
-            admonition: c(&self.admonition_title)?,
-            path: c(&self.path)?,
-            sentence: c(&self.sentence)?,
+            heading: charged(self.heading_path.as_deref(), budget)?,
+            admonition: charged(self.admonition_title.as_deref(), budget)?,
+            path: charged(self.path.as_deref(), budget)?,
+            sentence: charged(self.sentence.as_deref(), budget)?,
             fm,
         })
     }
+}
+
+/// Compile one optional condition pattern, caseless, under the budget.
+fn charged(source: Option<&str>, budget: &mut dyn PatternBudget) -> Result<Option<Pattern>, Error> {
+    source
+        .map(|p| Pattern::new_charged(p, true, budget))
+        .transpose()
 }
 
 /// A compiled structural tagger.

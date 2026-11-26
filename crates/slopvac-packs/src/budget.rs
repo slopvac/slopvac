@@ -154,7 +154,11 @@ impl CompileBudget for Budget {
 }
 
 pub(crate) fn refusal(budget: PackBudget, limit: u64) -> PackError {
-    PackError::Budget { budget, limit }
+    PackError::Budget {
+        budget,
+        limit,
+        plugin: None,
+    }
 }
 
 #[cfg(test)]

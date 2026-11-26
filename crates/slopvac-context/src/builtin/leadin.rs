@@ -23,6 +23,10 @@ impl Tagger for ListLeadInTagger {
         "change-note-list-lead-in"
     }
 
+    fn emitted_tags(&self) -> Vec<&str> {
+        vec!["change-note"]
+    }
+
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
         let mut sink = TagSink::unbounded();
         self.tag_into(doc, &mut sink)?;

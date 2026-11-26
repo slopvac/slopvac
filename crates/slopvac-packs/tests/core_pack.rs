@@ -45,6 +45,25 @@ fn embedded_and_on_disk_copies_load_the_same_rule_ids() {
 }
 
 #[test]
+fn owned_rule_sets_keep_load_order_and_the_rules_of_each_plugin() {
+    let packs = Packs::core().unwrap();
+    let expected: Vec<(String, usize)> = packs
+        .rule_sets()
+        .map(|s| (s.pack().to_string(), s.rules().count()))
+        .collect();
+
+    let owned = Packs::core().unwrap().into_rule_sets();
+
+    let got: Vec<(String, usize)> = owned
+        .iter()
+        .map(|s| (s.pack().to_string(), s.rules().count()))
+        .collect();
+    assert_eq!(got, expected);
+    assert_eq!(got[0].0, "core");
+    assert!(got[0].1 > 100);
+}
+
+#[test]
 fn core_genres_keep_the_registration_order_of_the_built_ins() {
     let packs = Packs::core().unwrap();
     let ids: Vec<&str> = packs.genres().map(|g| g.id.as_str()).collect();
@@ -129,14 +148,18 @@ fn write_pack(provides: &str) -> tempfile::TempDir {
     );
     fs::write(dir.path().join(MANIFEST_FILE), manifest).unwrap();
     fs::create_dir(dir.path().join("taggers")).unwrap();
-    // Valid YAML that would fail the tagger schema: the loader must not read it.
-    fs::write(dir.path().join("taggers/t.yaml"), "not: a tagger\n").unwrap();
+    fs::write(
+        dir.path().join("taggers/t.yaml"),
+        "schema_version: 3\nid: t\ntag: procedure\nmatch:\n  - pattern: 'a'\n",
+    )
+    .unwrap();
     dir
 }
 
 #[test]
-fn a_non_core_pack_loads_no_taggers() {
+fn a_non_core_plugin_loads_its_taggers() {
     let dir = write_pack("taggers = [\"taggers/t.yaml\"]");
     let pack = LoadedPack::load(&DirSource::new(dir.path()), Source::Pack).unwrap();
-    assert!(pack.taggers().is_empty());
+    let ids: Vec<&str> = pack.taggers().iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["t"]);
 }

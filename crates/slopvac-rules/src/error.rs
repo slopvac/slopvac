@@ -140,6 +140,18 @@ pub enum LoadErrorKind {
     Match(String),
 }
 
+impl LoadErrorKind {
+    /// The stable code of a refusal that has one of its own: a file over the size cap.
+    #[must_use]
+    pub fn code(&self) -> Option<&'static str> {
+        use slopvac_messages::Catalog as _;
+        match self {
+            Self::TooLarge(cap) => Some(messages::file_too_large(*cap).code()),
+            _ => None,
+        }
+    }
+}
+
 /// One problem, with where it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadError {

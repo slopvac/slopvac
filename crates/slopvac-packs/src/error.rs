@@ -16,6 +16,7 @@ impl From<slopvac_rules::BudgetHit> for PackError {
         Self::Budget {
             budget: hit.budget,
             limit: hit.limit,
+            plugin: None,
         }
     }
 }
@@ -26,8 +27,36 @@ impl PackError {
     #[must_use]
     pub const fn budget(&self) -> Option<(slopvac_rules::PackBudget, u64)> {
         match self {
-            Self::Budget { budget, limit } => Some((*budget, *limit)),
+            Self::Budget { budget, limit, .. } => Some((*budget, *limit)),
             _ => None,
+        }
+    }
+
+    /// The id of the plugin whose load crossed the budget, when the refusal names one. A caller
+    /// shows it as the `data.path` of a `rules-budget-exceeded` report, in its own path form.
+    /// `None` for any other error, and for a budget crossed before the manifest was read.
+    #[must_use]
+    pub fn budget_plugin(&self) -> Option<&str> {
+        match self {
+            Self::Budget { plugin, .. } => plugin.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Name `plugin` in a budget refusal that does not name one yet.
+    #[must_use]
+    pub(crate) fn in_plugin(self, plugin: &slopvac_model::PackId) -> Self {
+        match self {
+            Self::Budget {
+                budget,
+                limit,
+                plugin: None,
+            } => Self::Budget {
+                budget,
+                limit,
+                plugin: Some(plugin.to_string()),
+            },
+            other => other,
         }
     }
 
@@ -40,6 +69,17 @@ impl PackError {
             Self::Source(e) => e.code(),
             Self::Registry(e) => e.code(),
             Self::Budget { budget, .. } => Some(budget.code()),
+            Self::TaggerPatternTooLong { len, max, .. } => Some(
+                slopvac_context::Error::PatternTooLong {
+                    len: *len,
+                    max: *max,
+                }
+                .code(),
+            ),
+            Self::RuleIdCollision { .. } => Some(code_of!(RuleIdCollision { plugin, rule })),
+            Self::CategoryIdCollision { .. } => {
+                Some(code_of!(CategoryIdCollision { plugin, category }))
+            }
             Self::GlobTooComplex => Some(code_of!(GlobTooComplex {
                 depth,
                 alternatives,
@@ -90,6 +130,22 @@ pub enum PackError {
         /// What went wrong, without file text.
         fault: ArtifactFault,
     },
+    /// A tagger file of a plugin holds a pattern over the pattern cap (policies, section 1.9),
+    /// found while the plugin loads. The code is `tagger-pattern-too-long`, that of the context
+    /// crate's refusal. The text is the plugin's file-not-loaded sentence for the file, with
+    /// that refusal as the reason. It holds the two sizes and never the pattern.
+    #[error("{}", crate::messages::PackMessage::FileNotLoaded {
+        path: slopvac_sanitize::line(.path),
+        reason: slopvac_context::Error::PatternTooLong { len: *.len, max: *.max }.to_string(),
+    })]
+    TaggerPatternTooLong {
+        /// The plugin-relative path.
+        path: String,
+        /// The length of the pattern, in bytes.
+        len: usize,
+        /// The cap, in bytes.
+        max: usize,
+    },
     /// Two packs supply the same name.
     #[error(transparent)]
     Registry(#[from] RegistryError),
@@ -124,6 +180,32 @@ pub enum PackError {
         )
     )]
     GlobTooComplex,
+    /// A plugin supplies a rule whose id an earlier plugin supplies already. The engine keys
+    /// scoring by the local id, so a merge would change the earlier plugin's metadata. The load
+    /// refuses the plugin whole.
+    #[error("{}", crate::messages::PackMessage::RuleIdCollision {
+        plugin: slopvac_sanitize::line(.plugin),
+        rule: slopvac_sanitize::line(.rule),
+    })]
+    RuleIdCollision {
+        /// The plugin id.
+        plugin: String,
+        /// The colliding id without the plugin part: `<category>.<rule>`.
+        rule: String,
+    },
+    /// A plugin supplies a category with the id of a core category, and shares no rule id. The
+    /// engine keys category settings by the category id, so the plugin would overwrite the
+    /// core's. The load refuses the plugin whole.
+    #[error("{}", crate::messages::PackMessage::CategoryIdCollision {
+        plugin: slopvac_sanitize::line(.plugin),
+        category: slopvac_sanitize::line(.category),
+    })]
+    CategoryIdCollision {
+        /// The plugin id.
+        plugin: String,
+        /// The colliding category id.
+        category: String,
+    },
     /// A pack or the run is over a budget (X3). The code is `rules-budget-exceeded`, with
     /// `data.budget` the name of the budget (`plugin-files`, `plugin-bytes`, `plugin-run-bytes`,
     /// `plugin-run-rules` or `plugin-run-pattern-bytes`) and `data.limit` the limit.
@@ -133,6 +215,8 @@ pub enum PackError {
         budget: slopvac_rules::PackBudget,
         /// Its limit, in the unit of the budget.
         limit: u64,
+        /// The id of the plugin whose load crossed it, when known.
+        plugin: Option<String>,
     },
     /// An artifact name is not valid.
     #[error(transparent)]

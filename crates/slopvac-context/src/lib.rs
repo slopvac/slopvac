@@ -40,7 +40,7 @@ pub use genre::{
 };
 pub use messages::message_entries;
 pub use mixed::mixed_types_entry;
-pub use pattern::{Pattern, normalize_path};
+pub use pattern::{BudgetStop, Pattern, PatternBudget, normalize_path};
 pub use reference::reference_pages;
 pub use schema::{GENRE_SCHEMA_VERSION, TAGGER_SCHEMA_VERSION};
 pub use structural::{FrontMatterCondition, Scope, When};

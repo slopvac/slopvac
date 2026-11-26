@@ -90,6 +90,10 @@ pub(crate) enum ContextMessage {
     #[code("context-data-invalid")]
     #[text("{reason}")]
     DataInvalid { reason: String },
+    /// A pattern budget stopped a compile before it finished.
+    #[code("context-pattern-budget-stopped")]
+    #[text("a pattern budget stopped the compile")]
+    PatternBudgetStopped,
 }
 
 /// The entries of the context catalog.
@@ -160,6 +164,10 @@ mod tests {
         "a.md: cannot read"
     )]
     #[case::data_invalid(ContextMessage::DataInvalid { reason: "bad file".to_owned() }, "bad file")]
+    #[case::pattern_budget_stopped(
+        ContextMessage::PatternBudgetStopped,
+        "a pattern budget stopped the compile"
+    )]
     fn each_message_renders_its_published_text(
         #[case] message: ContextMessage,
         #[case] expected: &str,
@@ -187,6 +195,7 @@ mod tests {
                 ("context-file-too-large", Kind::Text),
                 ("context-file-unreadable", Kind::Text),
                 ("context-data-invalid", Kind::Text),
+                ("context-pattern-budget-stopped", Kind::Text),
             ]
         );
     }

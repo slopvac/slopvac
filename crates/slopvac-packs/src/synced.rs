@@ -224,7 +224,7 @@ fn check_requirements(pack: &LoadedPack, loaded: &[LoadedPack]) -> Result<(), Sy
 /// Load the plugins in `requested`, and the plugins they require, from `lock` and `store`.
 ///
 /// The result is in dependency order. The built-in core is not part of it: put it first with
-/// [`Packs::with_synced`]. Pack taggers are not registered (see [`LoadedPack::load`]).
+/// [`Packs::with_synced`].
 ///
 /// # Errors
 /// [`SyncedError`]: a plugin the lock does not pin ([`SyncedError::NotLocked`]), a tree that is

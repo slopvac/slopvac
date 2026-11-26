@@ -394,3 +394,16 @@ fn sentence_scope_tags_each_sentence_not_the_whole_block(
     let spans: Vec<&str> = idx.tags().iter().map(|t| &src[t.span.clone()]).collect();
     assert_eq!(spans, expected);
 }
+
+// The registry reports what its taggers emit through `emitted_tags`; a plugin check relies on it
+// to know that `change-note` is taken. The lead-in tagger emits it under another id, so only its
+// own accessor can report it.
+#[test]
+fn a_registry_with_only_the_lead_in_tagger_reports_change_note_as_emitted() {
+    let mut reg = TagRegistry::new();
+    reg.register(Box::new(slopvac_context::ListLeadInTagger::new().unwrap()))
+        .unwrap();
+
+    assert_eq!(reg.ids(), ["change-note-list-lead-in"]);
+    assert_eq!(reg.emitted_tags(), ["change-note"]);
+}
