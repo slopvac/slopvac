@@ -446,8 +446,9 @@ fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
 ///
 /// A core clash outranks a duplicate qualified id. Within each class, the error names the
 /// lowest qualified id, compared as the whole `<plugin>:<category>.<rule>` text byte by byte, so
-/// the plugin and the rule it names depend on the set of plugins and never on the order of the
-/// plugins or of their categories. Nothing from the plugin loads.
+/// the plugin and the rule it names are the same for any reordering of the same loaded entries,
+/// whether the entries are plugins or the categories inside them. A plugin loaded twice counts
+/// as two entries. Nothing from the plugin loads.
 fn check_rule_ids(packs: &[LoadedPack]) -> Result<(), PackError> {
     // Each rule of each plugin or core, with the id of the plugin that supplies it.
     let rules_of = |pack: &LoadedPack| -> Vec<(String, slopvac_model::RuleId)> {
