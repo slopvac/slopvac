@@ -827,6 +827,37 @@ fn the_sweep_rejects_a_written_config_that_departs_from_the_authored_input(
     assert!(err.contains(reason), "{err}");
 }
 
+/// The E4 input: a top-level rule, and an authored override that turns the whole category off.
+/// E4 keeps the rule for the files outside `docs/**` and guards it inside.
+const E4_GUARDED: &str = "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n";
+
+/// The written config must hold an `off` guard for `rule` in the override block with `files`.
+fn require_guard(text: &str, authored: &str, files: &[&str], rule: &str) -> Result<(), String> {
+    let _ = (files, rule);
+    check_vocabulary_entries(text, authored).map(|_| ())
+}
+
+#[test]
+fn an_e4_guard_sits_at_the_override_it_guards() {
+    let rw = preserve(E4_GUARDED).unwrap();
+    require_guard(&rw.text, E4_GUARDED, &["docs/**"], VOCABULARY_RULE)
+        .unwrap_or_else(|why| panic!("written config: {why}"));
+}
+
+#[rstest]
+#[case::no_guard_is_written(
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n"
+)]
+#[case::the_guard_is_in_another_override(
+    "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"src/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n"
+)]
+fn a_written_config_without_the_e4_guard_at_its_override_fails(#[case] written: &str) {
+    let outcome = require_guard(written, E4_GUARDED, &["docs/**"], VOCABULARY_RULE);
+    assert!(outcome.is_err(), "the guard check accepted\n{written}");
+    let err = outcome.unwrap_err();
+    assert!(err.contains("has no off guard"), "{err}");
+}
+
 #[rstest]
 // The companion follows the profile that the legacy style reproduces.
 #[case::default_profile("", "normal")]
