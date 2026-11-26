@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import shutil
 import stat
 import subprocess
@@ -98,12 +99,6 @@ def test_trivy_comes_from_the_pinned_setup_action_at_the_main_version(
     ref = setup["uses"].split("@")[1].split()[0]
     assert len(ref) == 40 and set(ref) <= set("0123456789abcdef")
     assert setup["with"]["version"] == MAIN_POLICY[job]["version"]
-
-
-def test_no_workflow_uses_trivy_action() -> None:
-    # The action runs Trivy inside itself, so its streams cannot be redirected.
-    for path in WORKFLOWS.glob("*.y*ml"):
-        assert "aquasecurity/trivy-action" not in path.read_text(), path.name
 
 
 @pytest.mark.parametrize("job", JOBS)
@@ -459,3 +454,91 @@ def test_a_file_under_trivy_dir_reaches_the_scan(job: str, tmp_path: Path) -> No
     assert probe.exists(), f"{job}: a file under trivy/ was removed before the scan"
     assert probe.read_text() == "a file under trivy/\n"
     assert (tmp_path / "main.txt").exists()
+
+
+# --- every Trivy call goes through the output boundary -----------------------------
+
+# A command word: at a line start or after ; & | ( , past sudo, env and VAR=value.
+TRIVY_CALL = re.compile(
+    r"(?:^|[;&|(])\s*(?:sudo\s+|env\s+|\w+=\S+\s+)*trivy(?:\s|$)|aquasec/trivy"
+)
+
+
+def unsafe_trivy_steps(workflow: dict, file: str) -> list[str]:
+    """Label (file:job:step) of each step that runs Trivy outside run_trivy.sh.
+
+    The boundary script is the one place that calls trivy, with both streams in files.
+    A trivy-action step runs Trivy inside the action, and a bare trivy command in a run
+    step prints to the job log, so both are unsafe.
+    """
+    bad = []
+    for job_name, job in (workflow.get("jobs") or {}).items():
+        for step in job.get("steps") or []:
+            label = f"{file}:{job_name}:{step.get('name', step.get('uses', '?'))}"
+            uses = str(step.get("uses", ""))
+            if "trivy-action" in uses or "aquasec/trivy" in uses:
+                bad.append(label)
+                continue
+            lines = [
+                line
+                for line in str(step.get("run", "")).splitlines()
+                if not line.lstrip().startswith("#")
+            ]
+            if any(TRIVY_CALL.search(line) for line in lines):
+                bad.append(label)
+    return bad
+
+
+def workflow_with_step(step: dict) -> dict:
+    return {"jobs": {"scan": {"steps": [{"name": "Checkout"}, step]}}}
+
+
+BAD_STEPS = {
+    "trivy-action": {
+        "name": "Scan",
+        "uses": "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25",
+    },
+    "bare-trivy-fs": {"name": "Scan", "run": "trivy fs ."},
+    "trivy-after-sudo": {"name": "Scan", "run": "set -e\nsudo trivy fs --quiet ."},
+    "trivy-in-a-pipe": {"name": "Scan", "run": "echo go && trivy fs . | tee out"},
+    "docker-image": {"name": "Scan", "uses": "docker://aquasec/trivy:0.76.0"},
+}
+
+
+@pytest.mark.parametrize("step", BAD_STEPS.values(), ids=list(BAD_STEPS))
+def test_a_trivy_call_outside_the_boundary_is_reported_with_its_step(
+    step: dict,
+) -> None:
+    assert unsafe_trivy_steps(workflow_with_step(step), "bad.yml") == [
+        "bad.yml:scan:Scan"
+    ]
+
+
+@pytest.mark.parametrize(
+    "step",
+    [
+        {"name": "Scan", "run": "bash scripts/ci/run_trivy.sh secret HIGH out.sarif"},
+        {"name": "Install", "uses": "aquasecurity/setup-trivy@abc"},
+        {"name": "Note", "run": "# trivy fs . is run by the script\necho done"},
+    ],
+    ids=["boundary-script", "installer", "comment"],
+)
+def test_the_boundary_script_and_the_installer_are_allowed(step: dict) -> None:
+    assert unsafe_trivy_steps(workflow_with_step(step), "ok.yml") == []
+
+
+@pytest.mark.parametrize("path", sorted(WORKFLOWS.glob("*.y*ml")), ids=lambda p: p.name)
+def test_every_trivy_call_in_the_repository_goes_through_the_boundary(
+    path: Path,
+) -> None:
+    assert unsafe_trivy_steps(yaml.safe_load(path.read_text()), path.name) == []
+
+
+@pytest.mark.parametrize("job", JOBS)
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_the_boundary_keeps_trivy_streams_in_files_under_the_runner_temp(
+    job: str, stream: str, tmp_path: Path
+) -> None:
+    scan = Scan(job, tmp_path, 1, sarif=True)
+    kept = scan.runner_temp / "trivy-logs" / f"{stream}.txt"
+    assert kept.read_text() == f"{HOSTILE}\n{GROUP}\n"
