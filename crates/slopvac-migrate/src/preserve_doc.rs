@@ -112,28 +112,28 @@ fn has_blocklist(t: &dyn TableLike) -> bool {
         .is_some_and(|v| v.contains_key("path"))
 }
 
-/// Refuse the layouts where the companion style cannot keep the 2.x vocabulary levels. Five
-/// layouts are refused, each with its own reason:
+/// Refuse the layouts where the companion style cannot keep the 2.x vocabulary levels. Each of
+/// the five layouts has its own reason:
 ///
-/// - the blocklist is set only in an override (`ReasonBlocklistInOverride`);
-/// - the blocklist comes with any profile switch (`ReasonBlocklistUnderSwitch`). A switch block
+/// - Only an override sets the blocklist (`ReasonBlocklistInOverride`).
+/// - The blocklist comes with any profile switch (`ReasonBlocklistUnderSwitch`). A switch block
 ///   restates the category levels of the target profile, and those outrank the companion
-///   style's rule levels;
+///   style's rule levels.
 /// - L1: a later category sets a level other than `off` after an earlier layer set an active
-///   vocabulary rule of that category (`ReasonBlocklistCategoryOverRule`);
+///   vocabulary rule of that category (`ReasonBlocklistCategoryOverRule`).
 /// - L2: a later category sets no `severity` after an earlier layer turned that category off
-///   (`ReasonBlocklistCategoryOverOff`);
-/// - widened L2: a later category sets no `severity` after an earlier layer set a rule of that
+///   (`ReasonBlocklistCategoryOverOff`).
+/// - Widened L2: a later category sets no `severity` after an earlier layer set a rule of that
 ///   category (`ReasonBlocklistCategoryNoSeverityOverRule`).
 ///
-/// When a later category with no `severity` follows both an earlier `off` category and an
-/// earlier rule, L2 wins, because it names the more specific cause.
+/// A later category with no `severity` can follow both an earlier `off` category and an
+/// earlier rule. L2 wins then, because it names the more specific cause.
 ///
 /// The category checks treat every earlier override as one that can merge with the later one.
-/// 2.x merges only the overrides whose `files` match a file, so a disjoint pair, such as one
-/// override for `a.md` and a later one for `b.md`, is refused too. That over-refusal fails
-/// closed, and telling disjoint scopes apart would need glob overlap analysis, so the check
-/// keeps it.
+/// 2.x merges only the overrides whose `files` match a file. A disjoint pair, such as one
+/// override for `a.md` and a later one for `b.md`, therefore gets refused too. That
+/// over-refusal fails closed. Telling disjoint scopes apart needs glob overlap analysis, so
+/// the check keeps the refusal.
 fn check_blocklist_layout(
     original: &DocumentMut,
     config: &Config2,
