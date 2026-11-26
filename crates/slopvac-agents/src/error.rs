@@ -73,7 +73,7 @@ pub enum AgentsError {
     Context(#[from] slopvac_context::Error),
     /// An input passed a context budget. `shown` is its path as the user gave it, under the
     /// working directory, or `<external>/<file name>` outside it.
-    #[error("{source}")]
+    #[error("{}: {source}", slopvac_sanitize::line(.shown))]
     InputBudget {
         /// The input, as shown to the user.
         shown: String,

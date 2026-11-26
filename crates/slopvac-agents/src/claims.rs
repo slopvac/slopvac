@@ -680,9 +680,11 @@ pub fn run(matches: &ArgMatches) -> Result<String, AgentsError> {
                     Side::Original => path_of("original"),
                     Side::Revised => path_of("revised"),
                 };
-                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                // `display_physical` takes absolute paths, so a relative input joins the
+                // working directory first.
+                let cwd = std::env::current_dir().unwrap_or_default();
                 AgentsError::InputBudget {
-                    shown: slopvac_fs::display_under_root(&path, &cwd),
+                    shown: slopvac_fs::display_physical(&cwd.join(&path), &cwd),
                     source: Box::new(source),
                 }
             }
