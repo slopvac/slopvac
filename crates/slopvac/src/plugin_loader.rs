@@ -14,7 +14,7 @@ use slopvac_packs::{CodePluginContext, CodePluginError, SyncedError, load_code_p
 use slopvac_plugins::PluginLoader;
 use slopvac_plugins::extract::{ExtractError, Limits, TreeHash, tree_hash_capturing};
 use slopvac_plugins::host::PluginSpec;
-use slopvac_plugins::lock::{LockReadError, LockedPack, PackId, SourceKind, read_project_lock};
+use slopvac_plugins::lock::{LockedPack, SourceKind};
 use slopvac_plugins::sign::{KeyPolicy, PublicKey};
 use slopvac_plugins::sync::{Store, SyncError};
 use slopvac_plugins::trust::VerifiedPlugin;
@@ -32,9 +32,6 @@ pub(crate) enum LoadRefusal {
     /// The installed files break the plugin contract.
     #[error(transparent)]
     Code(#[from] CodePluginError),
-    /// The lock could not be read or is not valid.
-    #[error(transparent)]
-    Lock(#[from] LockReadError),
 }
 
 impl LoadRefusal {
@@ -43,7 +40,6 @@ impl LoadRefusal {
         match self {
             Self::Synced(e) => e.code().unwrap_or("plugin-not-loaded"),
             Self::Code(e) => e.code(),
-            Self::Lock(e) => e.code(),
         }
     }
 }
@@ -108,13 +104,9 @@ impl<'a> InstalledPlugins<'a> {
     /// Load the plugin with the cause of a refusal kept typed.
     pub(crate) fn try_load(
         &self,
-        id: &PackId,
+        locked: &LockedPack,
     ) -> Result<(VerifiedPlugin, PluginSpec), LoadRefusal> {
-        let name = id.to_string();
-        let lock = read_project_lock(&self.project_root, false)?;
-        let locked = lock
-            .get(id)
-            .ok_or_else(|| SyncedError::NotLocked { id: name.clone() })?;
+        let name = locked.id.to_string();
         let (root, expected) = self.synced_tree(locked)?;
         // One pass hashes the tree and keeps the manifest bytes it read. The hash is checked
         // before anything is parsed, and the parse reads only the kept bytes.
@@ -151,9 +143,9 @@ impl<'a> InstalledPlugins<'a> {
 impl PluginLoader for InstalledPlugins<'_> {
     /// The command withholds the text of a refusal, so the cause is logged here, as a code and a
     /// plugin id only.
-    fn load(&self, id: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
-        self.try_load(id).map_err(|refusal| {
-            tracing::debug!(code = refusal.code(), plugin = %id, "plugin loader refused");
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
+        self.try_load(locked).map_err(|refusal| {
+            tracing::debug!(code = refusal.code(), plugin = %locked.id, "plugin loader refused");
             refusal.to_string()
         })
     }
@@ -174,6 +166,7 @@ mod tests {
 
     use rstest::rstest;
     use slopvac_plugins::extract::{Extracted, Limits, extract_targz};
+    use slopvac_plugins::lock::read_project_lock;
     use slopvac_plugins::oci::Digest;
 
     /// The tree hash of the fixture below (`bin/fmt` empty, `PLUGIN_TOML` as the manifest),
@@ -261,8 +254,10 @@ mod tests {
             )
         }
 
-        fn fmt() -> PackId {
-            "fmt".parse().unwrap()
+        /// The lock entry of `fmt`, as the command reads it once and hands it to the loader.
+        fn fmt(&self) -> LockedPack {
+            let lock = read_project_lock(&self.project(), false).unwrap();
+            lock.get(&"fmt".parse().unwrap()).unwrap().clone()
         }
     }
 
@@ -327,7 +322,7 @@ mod tests {
         fs::create_dir_all(&refs).unwrap();
         fs::write(refs.join(&digest[7..]), forged.hex()).unwrap();
 
-        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+        let refusal = world.loader().try_load(&world.fmt()).unwrap_err();
 
         assert!(
             matches!(refusal, LoadRefusal::Synced(SyncedError::Tampered { .. })),
@@ -346,7 +341,7 @@ mod tests {
             "not toml [[[",
         )
         .unwrap();
-        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+        let refusal = world.loader().try_load(&world.fmt()).unwrap_err();
         assert!(
             matches!(refusal, LoadRefusal::Synced(SyncedError::Tampered { .. })),
             "{refusal:?}"
@@ -363,7 +358,7 @@ mod tests {
         if fs::File::open(&script).is_ok() {
             return; // the test runs with rights that ignore modes
         }
-        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+        let refusal = world.loader().try_load(&world.fmt()).unwrap_err();
         assert!(
             matches!(
                 refusal,
@@ -383,7 +378,7 @@ mod tests {
              digest = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n",
         )
         .unwrap();
-        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+        let refusal = world.loader().try_load(&world.fmt()).unwrap_err();
         assert!(
             matches!(
                 refusal,
@@ -397,7 +392,7 @@ mod tests {
     fn an_intact_in_place_plugin_carries_the_hash_the_lock_pins() {
         let world = World::new();
         let digest = world.path_plugin();
-        let (plugin, _) = world.loader().try_load(&World::fmt()).unwrap();
+        let (plugin, _) = world.loader().try_load(&world.fmt()).unwrap();
         assert_eq!(plugin.tree.as_str(), digest);
     }
 
@@ -407,31 +402,9 @@ mod tests {
         world.path_plugin();
         let manifest = world.project().join("plugins/fmt/slopvac-plugin.toml");
         fs::write(&manifest, PLUGIN_TOML.replace("--serve", "--other")).unwrap();
-        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
+        let refusal = world.loader().try_load(&world.fmt()).unwrap_err();
         assert!(
             matches!(refusal, LoadRefusal::Synced(SyncedError::Tampered { .. })),
-            "{refusal:?}"
-        );
-    }
-
-    #[test]
-    fn an_unreadable_lock_is_refused_as_unreadable_and_not_as_unlocked() {
-        let world = World::new();
-        fs::create_dir_all(world.lock_path()).unwrap();
-        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
-        assert!(
-            matches!(&refusal, LoadRefusal::Lock(e) if e.code() == "plugins-lock-unreadable"),
-            "{refusal:?}"
-        );
-    }
-
-    #[test]
-    fn an_invalid_lock_is_refused_as_invalid_and_not_as_unlocked() {
-        let world = World::new();
-        fs::write(world.lock_path(), "schema_version = [\n").unwrap();
-        let refusal = world.loader().try_load(&World::fmt()).unwrap_err();
-        assert!(
-            matches!(&refusal, LoadRefusal::Lock(e) if e.code() == "plugins-lock-invalid"),
             "{refusal:?}"
         );
     }

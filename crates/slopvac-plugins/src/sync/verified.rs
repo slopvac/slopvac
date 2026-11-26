@@ -125,7 +125,7 @@ impl Store {
 
     /// The bytes of a cached small blob if they hash to `digest`. A blob that does not is
     /// removed, as [`Store::blob`] does.
-    fn read_cached(&self, digest: &Digest, max: u64) -> Option<Vec<u8>> {
+    pub(super) fn read_cached(&self, digest: &Digest, max: u64) -> Option<Vec<u8>> {
         let path = self.blob_path(digest);
         let mut bytes = Vec::new();
         open_regular(&path)
@@ -134,6 +134,7 @@ impl Store {
             .read_to_end(&mut bytes)
             .ok()?;
         if bytes.len() as u64 <= max && Digest::of(&bytes) == *digest {
+            self.observe(&path);
             Some(bytes)
         } else {
             let _ = fs::remove_file(&path);

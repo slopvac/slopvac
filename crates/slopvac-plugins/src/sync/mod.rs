@@ -486,6 +486,7 @@ impl<'a> Syncer<'a> {
         &self,
         pack: &LockedPack,
         text: &str,
+        fetch: bool,
     ) -> Result<(Reference, Manifest, String), SyncError> {
         let id = &pack.id;
         let layout = |why: &str| SyncError::Layout {
@@ -520,7 +521,7 @@ impl<'a> Syncer<'a> {
             .unwrap_or_default()
             .to_owned();
 
-        let body = self.manifest_bytes(pack, &reference, &locked)?;
+        let body = self.manifest_bytes(pack, &reference, &locked, fetch)?;
         let manifest: Manifest =
             serde_json::from_slice(&body).map_err(|e| layout(&messages::manifest_parse(&e)))?;
         if manifest
@@ -534,22 +535,37 @@ impl<'a> Syncer<'a> {
         Ok((reference, manifest, namespace))
     }
 
-    /// Check the signature of a cached OCI entry again, without the network. The cache is not
-    /// trusted (threat model E8), so `plugins trust` calls this before it records trust: a lock
-    /// edited to name a planted artifact has no signature that sync ever checked. An entry from
-    /// another kind of source has no signature to check.
+    /// Check the signature of a cached OCI entry again. The cache is not trusted (threat model
+    /// E8), so `plugins trust` calls this before it records trust: a lock edited to name a
+    /// planted artifact has no signature that sync ever checked.
+    ///
+    /// It reads the cache and nothing else, whatever the network mode of this syncer: no
+    /// request, and no write into the cache. Each cached file is read once, checked against its
+    /// digest in memory, and the check uses those bytes. Returns the key id of the signature
+    /// that verified, or `None` for an entry from a source that has no signature (a directory,
+    /// an archive or a git commit).
     ///
     /// # Errors
-    /// [`SyncError::Unsigned`] when the lock records no signature, [`SyncError::OfflinePackMissing`]
-    /// when the cache lacks the manifest or a signature file, and [`SyncError::Sign`] or
-    /// [`SyncError::SignatureDiffersFromLock`] when the signature does not verify.
-    pub fn verify_cached_signature(&self, pack: &LockedPack) -> Result<(), SyncError> {
+    /// [`SyncError::Unsigned`] when the lock records no signature for an OCI entry,
+    /// [`SyncError::OfflinePackMissing`] when the cache lacks the manifest or a signature file,
+    /// and [`SyncError::Sign`] or [`SyncError::SignatureDiffersFromLock`] when the signature
+    /// does not verify.
+    pub fn verify_cached_signature(&self, pack: &LockedPack) -> Result<Option<String>, SyncError> {
         let SourceKind::Oci(text) = pack.source.kind() else {
-            return Ok(());
+            return Ok(None);
         };
-        let (reference, manifest, namespace) = self.oci_manifest(pack, text)?;
-        self.verify_signature(pack, &reference, &manifest, &namespace)
-            .map(drop)
+        let (reference, manifest, namespace) = self.oci_manifest(pack, text, false)?;
+        self.verify_signature(pack, &reference, &manifest, &namespace, false)
+            .map(Some)
+    }
+
+    /// The failure for content that only the network could supply.
+    fn missing(pack: &LockedPack, what: &str) -> SyncError {
+        SyncError::OfflinePackMissing {
+            id: pack.id.clone(),
+            digest: pack.digest.to_string(),
+            what: what.to_owned(),
+        }
     }
 
     fn acquire_oci(
@@ -567,9 +583,9 @@ impl<'a> Syncer<'a> {
             id: id.clone(),
             source,
         };
-        let (reference, manifest, namespace) = self.oci_manifest(pack, text)?;
+        let (reference, manifest, namespace) = self.oci_manifest(pack, text, true)?;
 
-        let key_id = self.verify_signature(pack, &reference, &manifest, &namespace)?;
+        let key_id = self.verify_signature(pack, &reference, &manifest, &namespace, true)?;
         if revoked.revokes_key(&key_id) {
             return Err(SyncError::Revoked {
                 id: id.clone(),
@@ -599,6 +615,7 @@ impl<'a> Syncer<'a> {
         reference: &Reference,
         manifest: &Manifest,
         namespace: &str,
+        fetch: bool,
     ) -> Result<String, SyncError> {
         let id = &pack.id;
         let layout = |why: &str| SyncError::Layout {
@@ -620,6 +637,7 @@ impl<'a> Syncer<'a> {
             statement,
             MAX_STATEMENT_BYTES as u64,
             SyncPhrase::WhatStatement.as_static(),
+            fetch,
         )?;
         let minisig_bytes = self.small_blob(
             pack,
@@ -627,6 +645,7 @@ impl<'a> Syncer<'a> {
             minisig,
             MAX_MINISIG_BYTES,
             SyncPhrase::WhatSignature.as_static(),
+            fetch,
         )?;
         let minisig_text = String::from_utf8(minisig_bytes)
             .map_err(|_| layout(SyncPhrase::SignatureNotText.as_static()))?;
@@ -675,11 +694,13 @@ impl<'a> Syncer<'a> {
         pack: &LockedPack,
         reference: &Reference,
         locked: &Digest,
+        fetch: bool,
     ) -> Result<Vec<u8>, SyncError> {
-        if let Some(path) = self.store.blob(locked, MAX_MANIFEST_BYTES as u64)
-            && let Ok(bytes) = fs::read(path)
-        {
+        if let Some(bytes) = self.store.read_cached(locked, MAX_MANIFEST_BYTES as u64) {
             return Ok(bytes);
+        }
+        if !fetch {
+            return Err(Self::missing(pack, SyncPhrase::WhatManifest.as_static()));
         }
         let client = self.client(pack, SyncPhrase::WhatManifest.as_static())?;
         let fetched = client
@@ -699,11 +720,13 @@ impl<'a> Syncer<'a> {
         desc: &Descriptor,
         max: u64,
         what: &str,
+        fetch: bool,
     ) -> Result<Vec<u8>, SyncError> {
-        if let Some(path) = self.store.blob(&desc.digest, max)
-            && let Ok(bytes) = fs::read(path)
-        {
+        if let Some(bytes) = self.store.read_cached(&desc.digest, max) {
             return Ok(bytes);
+        }
+        if !fetch {
+            return Err(Self::missing(pack, what));
         }
         let client = self.client(pack, what)?;
         let bytes = client
