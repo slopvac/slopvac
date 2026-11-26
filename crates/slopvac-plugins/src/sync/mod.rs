@@ -99,7 +99,10 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// The one layer of a pack manifest that holds the pack, or the sentence that says why it has
 /// none. The signature layers do not count.
-fn payload_layer<'m>(manifest: &'m Manifest, limits: &Limits) -> Result<&'m Descriptor, &'static str> {
+fn payload_layer<'m>(
+    manifest: &'m Manifest,
+    limits: &Limits,
+) -> Result<&'m Descriptor, &'static str> {
     let mut payload = manifest
         .layers
         .iter()

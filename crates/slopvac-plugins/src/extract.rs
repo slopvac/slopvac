@@ -1752,35 +1752,35 @@ mod single_read_tests {
         assert_eq!(seen, [EXEC_SIDECAR, "run.sh"]);
     }
 
-#[test]
-fn a_captured_file_holds_the_bytes_that_were_hashed() {
-    let scratch = tempfile::tempdir().unwrap();
-    let plain = scratch.path().join("plain");
-    let swapped = scratch.path().join("swapped");
-    for root in [&plain, &swapped] {
-        fs::create_dir_all(root).unwrap();
-        fs::write(root.join("m.toml"), b"first\n").unwrap();
-    }
-    let expected = tree_hash(&plain).unwrap();
-
-    // Right after the file is hashed, replace it. A second read would see the new bytes;
-    // the capture holds the ones that were hashed.
-    let (hash, kept) = hash_walk(&swapped, Some("m.toml"), &mut |rel, path| {
-        if rel == "m.toml" {
-            fs::write(path, b"second\n").unwrap();
+    #[test]
+    fn a_captured_file_holds_the_bytes_that_were_hashed() {
+        let scratch = tempfile::tempdir().unwrap();
+        let plain = scratch.path().join("plain");
+        let swapped = scratch.path().join("swapped");
+        for root in [&plain, &swapped] {
+            fs::create_dir_all(root).unwrap();
+            fs::write(root.join("m.toml"), b"first\n").unwrap();
         }
-    })
-    .unwrap();
+        let expected = tree_hash(&plain).unwrap();
 
-    assert_eq!(hash, expected);
-    assert_eq!(kept.as_deref(), Some(&b"first\n"[..]));
-}
+        // Right after the file is hashed, replace it. A second read would see the new bytes;
+        // the capture holds the ones that were hashed.
+        let (hash, kept) = hash_walk(&swapped, Some("m.toml"), &mut |rel, path| {
+            if rel == "m.toml" {
+                fs::write(path, b"second\n").unwrap();
+            }
+        })
+        .unwrap();
 
-#[test]
-fn nothing_is_captured_when_the_named_file_is_absent() {
-    let scratch = tempfile::tempdir().unwrap();
-    tree(scratch.path());
-    let (_, kept) = hash_walk(scratch.path(), Some("m.toml"), &mut |_, _| {}).unwrap();
-    assert_eq!(kept, None);
-}
+        assert_eq!(hash, expected);
+        assert_eq!(kept.as_deref(), Some(&b"first\n"[..]));
+    }
+
+    #[test]
+    fn nothing_is_captured_when_the_named_file_is_absent() {
+        let scratch = tempfile::tempdir().unwrap();
+        tree(scratch.path());
+        let (_, kept) = hash_walk(scratch.path(), Some("m.toml"), &mut |_, _| {}).unwrap();
+        assert_eq!(kept, None);
+    }
 }

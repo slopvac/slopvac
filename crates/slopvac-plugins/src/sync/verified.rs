@@ -16,11 +16,11 @@ use sha2::{Digest as _, Sha256};
 
 use super::cache::Store;
 use super::error::SyncError;
-use super::{payload_layer, Syncer};
-use crate::extract::{hash_targz, open_regular, ExtractError, Limits, TreeHash};
+use super::{Syncer, payload_layer};
+use crate::extract::{ExtractError, Limits, TreeHash, hash_targz, open_regular};
 use crate::lock::{LockedPack, SourceKind};
 use crate::messages::sync as messages;
-use crate::oci::{Digest, Manifest, MAX_MANIFEST_BYTES};
+use crate::oci::{Digest, MAX_MANIFEST_BYTES, Manifest};
 
 /// A tree directory and the hash that the lock and the cached archive give it.
 ///

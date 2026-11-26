@@ -306,7 +306,10 @@ mod tests {
         let honest_tree = extract(&honest, &world.dir.path().join("honest")).hash;
         let (source, digest) = match origin {
             Origin::Git => (
-                format!("git+https://example.invalid/acme/fmt.git@{}", "0".repeat(40)),
+                format!(
+                    "git+https://example.invalid/acme/fmt.git@{}",
+                    "0".repeat(40)
+                ),
                 honest_tree.as_str().to_owned(),
             ),
             Origin::Archive => {

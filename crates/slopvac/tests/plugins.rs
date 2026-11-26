@@ -734,7 +734,7 @@ fn trust_of_an_archive_plugin_with_a_swapped_tree_and_a_forged_record_exits_2() 
 /// the point where a person decides, so it checks the cached signature again.
 #[test]
 fn trust_of_a_planted_registry_plugin_without_a_valid_signature_exits_2() {
-    use slopvac_plugins::oci::{Descriptor, Digest, Manifest, MEDIA_EMPTY, MEDIA_MANIFEST};
+    use slopvac_plugins::oci::{Descriptor, Digest, MEDIA_EMPTY, MEDIA_MANIFEST, Manifest};
     use slopvac_plugins::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER};
     let sandbox = Sandbox::new();
     let archive = plugin_targz(PLUGIN_MANIFEST);
