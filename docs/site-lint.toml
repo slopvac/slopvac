@@ -1,5 +1,8 @@
+schema_version = 3
 # Gate config for the generated reference pages (see .github/workflows/docs-site.yml).
 # The pages are rule data rendered as Markdown. They run on the relaxed profile, and
 # the page for the Unicode-dash rule must quote one dash in its example.
+profile = "relaxed"
+
 [thresholds]
 max_unicode_dashes = 1
