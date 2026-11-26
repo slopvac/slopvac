@@ -270,7 +270,7 @@ models in `slopvac.report` and `slopvac.model`.
 | `RunSummary.categories` | preserve | Unchanged. |
 | `RunSummary.ai_register` | preserve | Unchanged. |
 | `RunSummary.prose` | preserve | Unchanged. |
-| `CategorySummary.category` | preserve | Unchanged for a `core` category. The value is the bare id for a `core` category and `<plugin>:<category>` for a category of another plugin, such as `acme:style`. |
+| `CategorySummary.category` | preserve | The value is the bare id for a `core` category and `<plugin>:<category>` for a category of another plugin, such as `acme:style`. |
 | `CategorySummary.findings` | preserve | Unchanged. |
 | `CategorySummary.errors` | preserve | Unchanged. |
 | `CategorySummary.warnings` | preserve | Unchanged. |
