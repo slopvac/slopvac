@@ -4,7 +4,7 @@
 //! [`RPC_CODES`] maps the numeric JSON-RPC codes to their `slopvac_code`.
 //! [`RpcError::code_name`](crate::RpcError::code_name) reads it, so a code the host reports has a
 //! row. [`HOST_CODES`] lists the codes the host raises in diagnostics with no numeric code.
-//! [`protocol_error_tables`] renders both as the two Markdown tables of section 10. A test
+//! `protocol_error_tables` renders both as the two Markdown tables of section 10. A test
 //! compares that text with the committed document, so a row without a mapping and a mapping
 //! without a row both fail the build.
 
@@ -34,6 +34,7 @@ impl RpcCode {
 }
 
 /// One row of the table of codes with no numeric code.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HostCode {
     /// The stable code.
@@ -45,6 +46,7 @@ pub(crate) struct HostCode {
     pub(crate) cause: &'static str,
 }
 
+#[cfg(test)]
 impl HostCode {
     const fn new(name: &'static str, registered_here: bool, cause: &'static str) -> Self {
         Self {
@@ -146,6 +148,7 @@ pub(crate) const RPC_CODES: &[RpcCode] = &[
 ];
 
 /// The codes the host raises with no numeric code, in document order.
+#[cfg(test)]
 pub(crate) const HOST_CODES: &[HostCode] = &[
     HostCode::new(
         "plugin-untrusted",
@@ -256,14 +259,16 @@ pub(crate) const HOST_CODES: &[HostCode] = &[
     ),
 ];
 
+#[cfg(test)]
 const RPC_HEADER: &str = "| Code | `slopvac_code` | Meaning |\n|---|---|---|\n";
+#[cfg(test)]
 const HOST_HEADER: &str = "| `slopvac_code` | Cause |\n|---|---|\n";
 
 /// The two tables of plugin-protocol.md section 10: the numeric JSON-RPC codes, then the
 /// host codes with no number. Rows come from the same constants the host reads, so the
-/// document cannot list a code the host does not know.
-#[must_use]
-pub fn protocol_error_tables() -> (String, String) {
+/// document cannot list a code the host does not know. The drift test is the only caller.
+#[cfg(test)]
+fn protocol_error_tables() -> (String, String) {
     let rpc = RPC_CODES
         .iter()
         .fold(String::from(RPC_HEADER), |text, row| {
@@ -310,6 +315,55 @@ mod tests {
             panic!("no `{end}` marker");
         };
         &DOC[start..start + len]
+    }
+
+    /// Table rows in section 10 that sit outside the generated blocks. The site generator
+    /// (`scripts/docs/plugin_pages.py`) publishes every table row of section 10, so a row
+    /// outside a block would ship without the drift check ever seeing it.
+    fn rows_outside_blocks(doc: &str) -> Vec<String> {
+        let Some(start) = doc.find("\n## 10. Error codes\n") else {
+            return vec!["no section 10".to_owned()];
+        };
+        let section = &doc[start + 1..];
+        let section = section
+            .find("\n## 11.")
+            .map_or(section, |end| &section[..end]);
+        let mut inside = false;
+        let mut stray = Vec::new();
+        for line in section.lines() {
+            if line.starts_with("<!-- generated:") && line.ends_with(" begin -->") {
+                inside = true;
+            } else if line.starts_with("<!-- generated:") && line.ends_with(" end -->") {
+                inside = false;
+            } else if !inside && line.starts_with('|') {
+                stray.push(line.to_owned());
+            }
+        }
+        stray
+    }
+
+    #[test]
+    fn the_real_section_has_no_table_row_outside_the_blocks() {
+        assert_eq!(rows_outside_blocks(DOC), Vec::<String>::new());
+    }
+
+    #[rstest]
+    #[case::after_the_blocks(
+        "## 10. Error codes\n<!-- generated:rpc-codes begin -->\n| -1 | `a` | m |\n<!-- generated:rpc-codes end -->\n| -2 | `b` | extra |\n## 11. Security\n"
+    )]
+    #[case::before_the_blocks(
+        "## 10. Error codes\n| -2 | `b` | extra |\n<!-- generated:rpc-codes begin -->\n| -1 | `a` | m |\n<!-- generated:rpc-codes end -->\n## 11. Security\n"
+    )]
+    fn a_row_outside_the_blocks_is_reported(#[case] doc: &str) {
+        let doc = format!("# P\n\n{doc}");
+        assert_eq!(rows_outside_blocks(&doc), ["| -2 | `b` | extra |"]);
+    }
+
+    #[test]
+    fn a_row_in_another_section_is_not_reported() {
+        let doc =
+            "# P\n\n## 9. Rules\n| x | y |\n## 10. Error codes\ntext\n## 11. Security\n| z |\n";
+        assert_eq!(rows_outside_blocks(doc), Vec::<String>::new());
     }
 
     #[rstest]
