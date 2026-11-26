@@ -29,12 +29,12 @@ pub struct Project {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Stage {
     /// The final look at the target comes next, and its open follows.
-    BeforeFinalOpen,
+    FinalOpen,
     /// The path is resolved, and the open comes next.
-    BeforeOpen,
+    Open,
     /// The new state is ready, and the final check against the expected bytes
     /// comes next.
-    BeforeCommit,
+    Commit,
 }
 
 /// The I/O cause of a failed confined read, or a plain error when it carries none. Only the
@@ -192,7 +192,7 @@ impl Project {
         hook: &mut dyn FnMut(Stage),
     ) -> Result<Option<Vec<u8>>, AgentsError> {
         let rel = self.resolve(rel)?;
-        hook(Stage::BeforeOpen);
+        hook(Stage::Open);
         match slopvac_fs::read_capped_regular_in_with(
             &self.dir,
             &rel,
@@ -244,7 +244,7 @@ impl Project {
         rel: &Path,
         hook: &mut dyn FnMut(Stage),
     ) -> Result<Option<Vec<u8>>, AgentsError> {
-        hook(Stage::BeforeFinalOpen);
+        hook(Stage::FinalOpen);
         match slopvac_fs::read_capped_regular_in_with(
             parent,
             Path::new(name),
@@ -314,7 +314,7 @@ impl Project {
             after,
             slopvac_fs::WriteOptions::new().create_parents(true),
             |parent, name| {
-                hook(Stage::BeforeCommit);
+                hook(Stage::Commit);
                 match Self::current(parent, name, &rel, hook) {
                     Ok(now) => Ok(now.as_deref() == before),
                     Err(AgentsError::Conflict(_)) => Ok(false),
@@ -362,7 +362,7 @@ impl Project {
         let name = rel
             .file_name()
             .ok_or_else(|| AgentsError::UnsafeTarget(rel.display().to_string()))?;
-        hook(Stage::BeforeCommit);
+        hook(Stage::Commit);
         if Self::current(&parent, name, &rel, hook)?.as_deref() != Some(expected) {
             return Err(AgentsError::Conflict(rel));
         }
@@ -408,7 +408,7 @@ mod tests {
             before.map(str::as_bytes),
             b"ours",
             &mut |stage| {
-                if stage == Stage::BeforeCommit {
+                if stage == Stage::Commit {
                     std::fs::write(&target, "theirs").unwrap();
                 }
             },
@@ -427,7 +427,7 @@ mod tests {
         let project = Project::open(tmp.path()).unwrap();
 
         let got = project.remove_file_staged(Path::new("a.md"), b"checked", &mut |stage| {
-            if stage == Stage::BeforeCommit {
+            if stage == Stage::Commit {
                 std::fs::write(&target, "theirs").unwrap();
             }
         });
@@ -501,7 +501,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let got = project.read_staged(Path::new("a.md"), &mut |stage| {
-                if stage == Stage::BeforeOpen {
+                if stage == Stage::Open {
                     std::fs::remove_file(&file).unwrap();
                     mkfifo(&file);
                 }
@@ -534,7 +534,7 @@ mod tests {
         let swap = file.clone();
         std::thread::spawn(move || {
             let got = op(&project, &mut |stage| {
-                if stage == Stage::BeforeFinalOpen {
+                if stage == Stage::FinalOpen {
                     std::fs::remove_file(&swap).unwrap();
                     mkfifo(&swap);
                 }
