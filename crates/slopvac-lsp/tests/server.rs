@@ -870,13 +870,13 @@ fn metric_rule() -> Value {
 
 #[test]
 fn a_skipped_rule_kind_of_the_real_engine_shows_as_a_diagnostic() {
-    // The engine does not run metric rules yet and says so in `Document.unchecked`.
+    // The engine does not run metric rules yet and says so in a warning in `Document.unchecked`.
     let linter = engine_linter_with(vec![metric_rule()]);
     let mut client = Client::start(Server::new(Arc::new(linter)), None);
     let published = client.open("Clean prose.\n");
     let d = &published["diagnostics"][0];
     assert_eq!(d["code"], "rule-kind-not-implemented");
-    assert_eq!(d["severity"], 3);
+    assert_eq!(d["severity"], 2);
     assert!(
         d["message"]
             .as_str()

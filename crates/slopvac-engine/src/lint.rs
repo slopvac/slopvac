@@ -190,7 +190,8 @@ impl<'a> Input<'a> {
     ///   engine runs. A comment is the unit for every one of them, whatever the `scope` of
     ///   the rule, and its text carries the context `code-comment`.
     /// - Every other active rule is listed in one `info` notice, `comment-rules-not-run`,
-    ///   with their ids in `data.rules`. The run stays complete.
+    ///   with their ids in `data.rules`. The run stays complete. A rule the user enabled by name
+    ///   goes into a `warning` notice, `comment-rule-named-not-run`, and the run is incomplete.
     /// - An inline directive in a comment covers the comment block it starts or precedes. A
     ///   directive indented as a Markdown code example is an example and does nothing.
     ///
@@ -420,22 +421,34 @@ struct DiagramResult {
     notices: Vec<Notice>,
 }
 
+/// The notice for rules that code-comment mode cannot run, with their ids in `data.rules`.
+fn comment_not_run(level: NoticeLevel, ids: &[&str], named: bool) -> Notice {
+    let rules = ids
+        .iter()
+        .map(|id| serde_json::Value::String((*id).to_owned()))
+        .collect();
+    let data = serde_json::Map::from_iter([("rules".to_owned(), rules)]);
+    let (count, rules) = (ids.len(), ids.join(", "));
+    let message = if named {
+        EngineNotice::CommentRuleNamed { count, rules }
+    } else {
+        EngineNotice::CommentRules { count, rules }
+    };
+    notice(level, &message).with_data(data)
+}
+
+/// Whether the checkers of `kind` only read prose, so a standalone diagram never reaches them
+/// and a rule of that kind is not applicable to one. A kind that is not listed may have a
+/// diagram checker, so its not-run warning stays.
+fn reads_no_diagram(kind: &str) -> bool {
+    matches!(kind, "metric" | CAPITALIZATION)
+}
+
 /// The `unrun` key of capitalization rules in a style the engine does not run.
 const CAPITALIZATION: &str = "capitalization";
 
 fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Notice {
     let count = rules.len();
-    if kind == CAPITALIZATION {
-        // A style that cannot run would otherwise pass in silence, so the check is incomplete.
-        return notice(
-            NoticeLevel::Warning,
-            &EngineNotice::RuleStyle {
-                count,
-                kind: kind.into(),
-            },
-        );
-    }
-    // The rules are an info notice's data: the run read the input, so it stays complete.
     let mut ids: Vec<&str> = rules.iter().map(|id| id.as_str()).collect();
     ids.sort_unstable();
     let data = serde_json::Map::from_iter([(
@@ -444,14 +457,20 @@ fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Notice {
             .map(|id| serde_json::Value::String((*id).to_owned()))
             .collect(),
     )]);
-    notice(
-        NoticeLevel::Info,
-        &EngineNotice::RuleKind {
+    // A rule that should have run and did not makes the run incomplete, so the level is a
+    // warning. A style that cannot run would otherwise pass in silence.
+    let message = if kind == CAPITALIZATION {
+        EngineNotice::RuleStyle {
             count,
             kind: kind.into(),
-        },
-    )
-    .with_data(data)
+        }
+    } else {
+        EngineNotice::RuleKind {
+            count,
+            kind: kind.into(),
+        }
+    };
+    notice(NoticeLevel::Warning, &message).with_data(data)
 }
 
 fn level_of(settings: &Settings, id: &RuleId, category: &CategoryName, shipped: Severity) -> Level {
@@ -963,9 +982,9 @@ impl Engine {
         // Notices about rules that cannot run come first, then the ones the parse raised.
         // Code-comment mode lists every rule it cannot read in one notice of its own.
         let mut notices = if matches!(input.kind, Kind::Comments(_)) {
-            self.comment_notice().into_iter().collect()
+            self.comment_notices(&genre.id)
         } else {
-            self.not_run_notices(&genre.id)
+            self.not_run_notices(&genre.id, input.kind)
         };
         notices.extend(extra);
         let document = self.document(input, &prepared, seen, genre, findings, notices);
@@ -1010,11 +1029,14 @@ impl Engine {
 
     /// The notices about active rules the engine does not run and that apply to a document of
     /// `genre`.
-    fn not_run_notices(&self, genre: &GenreId) -> Vec<Notice> {
+    fn not_run_notices(&self, genre: &GenreId, kind: Kind) -> Vec<Notice> {
         let mut ids: std::collections::BTreeMap<&str, Vec<&RuleId>> =
             std::collections::BTreeMap::new();
         for n in &self.not_run {
-            if n.genres.as_ref().is_none_or(|g| g.contains(genre)) {
+            let on_diagram = matches!(kind, Kind::Diagram(_));
+            if n.genres.as_ref().is_none_or(|g| g.contains(genre))
+                && !(on_diagram && reads_no_diagram(n.kind))
+            {
                 ids.entry(n.kind).or_default().push(&n.id);
             }
         }
@@ -1140,17 +1162,17 @@ impl Engine {
         }
     }
 
-    /// The notice for the active rules that code-comment mode does not run, or `None` when it
-    /// runs them all. As in 2.x, only the lexical rules read comments. Every other active
+    /// The notices for the active rules that code-comment mode does not run on a `genre`
+    /// document, none when it runs them all. A rule that `applies_to` other genres is not
+    /// applicable, so it is not listed. As in 2.x, only the lexical rules read comments. Every other active
     /// checker is listed in `data.rules`, diagram rules and the rules of a custom checker
     /// included, so none passes in silence. A judgement rule never produces a finding, so it
     /// is not listed.
     ///
-    /// The notice is `info`, so the run stays complete. The contract asks for a `warning`
-    /// (an incomplete run) when the user enabled such a rule by name, but the engine sees one
-    /// level per rule and not the configuration layer it came from, so it cannot tell that
-    /// apart from a rule the profile or a style turns on.
-    fn comment_notice(&self) -> Option<Notice> {
+    /// A rule that is on by default goes into one `info` notice, so the run stays complete:
+    /// it cannot apply to comments, which is not a failed check. A rule the user enabled by
+    /// name (`Settings::named_rules`) goes into a `warning` notice, so the run is incomplete.
+    fn comment_notices(&self, genre: &GenreId) -> Vec<Notice> {
         let runs: HashSet<&RuleId> = self
             .active
             .iter()
@@ -1163,39 +1185,41 @@ impl Engine {
                 if self.running.contains(id.as_str())
                     && !runs.contains(id)
                     && rule.kind() != MatchKind::Judgement
+                    && rule
+                        .rule()
+                        .applies_to
+                        .as_ref()
+                        .and_then(|a| a.genres.as_ref())
+                        .is_none_or(|g| g.contains(genre))
                     && !skipped.contains(&id.as_str())
                 {
                     skipped.push(id.as_str());
                 }
             }
         }
-        // The rules of a custom checker have no loaded rule.
+        // The rules of a custom checker have no loaded rule, so no genre limits them. Every
+        // other diagram rule went through the genre filter above.
         let mut custom: Vec<&str> = self
             .diagram_rules
-            .keys()
-            .map(RuleId::as_str)
+            .iter()
+            .filter(|(_, active)| active.at.is_none())
+            .map(|(id, _)| id.as_str())
             .filter(|id| !skipped.contains(id))
             .collect();
         custom.sort_unstable();
         skipped.extend(custom);
-        if skipped.is_empty() {
-            return None;
+        skipped.sort_unstable();
+        let (named, by_default): (Vec<&str>, Vec<&str>) = skipped.into_iter().partition(|id| {
+            RuleId::new(*id).is_ok_and(|id| self.settings.named_rules.contains(&id))
+        });
+        let mut out = Vec::new();
+        if !by_default.is_empty() {
+            out.push(comment_not_run(NoticeLevel::Info, &by_default, false));
         }
-        let rules = skipped
-            .iter()
-            .map(|id| serde_json::Value::String((*id).to_owned()))
-            .collect();
-        let data = serde_json::Map::from_iter([("rules".to_owned(), rules)]);
-        Some(
-            notice(
-                NoticeLevel::Info,
-                &EngineNotice::CommentRules {
-                    count: skipped.len(),
-                    rules: skipped.join(", "),
-                },
-            )
-            .with_data(data),
-        )
+        if !named.is_empty() {
+            out.push(comment_not_run(NoticeLevel::Warning, &named, true));
+        }
+        out
     }
 
     /// Read an RST file. A file that cannot be read is an empty document with a warning

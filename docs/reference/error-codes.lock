@@ -44,6 +44,7 @@ claims-literal-removed text
 claims-negation-changed text
 claims-text-failed error
 command-not-wired error
+comment-rule-named-not-run notice
 comment-rules-not-run notice
 config-already-migrated error
 config-budget-applied-bytes text

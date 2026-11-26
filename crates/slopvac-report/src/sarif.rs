@@ -121,12 +121,13 @@ pub(crate) fn render(
             "message": {"text": n.message},
         }));
     }
-    // An unchecked entry or a warning root notice means the run did not finish cleanly.
+    // Only a warning notice, at the root or in a document, means the run did not finish
+    // cleanly. An info notice reports a rule that does not apply and leaves it complete.
     let complete = !report
         .notices
         .iter()
-        .any(|n| n.level == NoticeLevel::Warning)
-        && !report.documents.iter().any(|d| !d.unchecked.is_empty());
+        .chain(report.documents.iter().flat_map(|d| &d.unchecked))
+        .any(|n| n.level == NoticeLevel::Warning);
     let sarif = json!({
         "$schema": SCHEMA,
         "version": "2.1.0",

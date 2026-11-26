@@ -252,6 +252,7 @@ fn styles_other_than_sentence_leave_the_check_incomplete() {
             .as_str()
             .starts_with("1 active capitalization rule(s) did not run")
     );
+    assert_eq!(n.data["rules"], json!(["core:cat.title"]));
     assert!(!doc.gate.is_passed());
     assert_eq!(doc.gate.reasons().len(), 1);
     assert!(doc.gate.reasons()[0].starts_with("incomplete check:"));
@@ -270,4 +271,28 @@ fn escaped_backticks_in_a_markdown_heading_are_literal_text() {
         .map(|f| (f.start.line(), f.matched_text.as_str()))
         .collect();
     assert_eq!(got, [(1, "`Alpha Beta` Gamma"), (3, "`Alpha` Beta Gamma")]);
+}
+
+#[test]
+fn the_unrun_style_notice_lists_its_rule_ids_in_sorted_order() {
+    let styled = |id: &str| {
+        rule(
+            id,
+            &json!({"kind": "capitalization", "style": "title"}),
+            &json!({"scope": "heading"}),
+        )
+    };
+    let e = Engine::new(
+        vec![ruleset(vec![category(
+            "cat",
+            &[styled("zeta"), styled("alpha")],
+        )])],
+        settings(),
+    )
+    .unwrap();
+    let doc = e.lint(&Input::markdown("a.md", "# Heading\n")).unwrap();
+    let [n] = doc.unchecked.as_slice() else {
+        panic!("{:?}", doc.unchecked)
+    };
+    assert_eq!(n.data["rules"], json!(["core:cat.alpha", "core:cat.zeta"]));
 }

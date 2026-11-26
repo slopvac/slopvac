@@ -457,6 +457,11 @@ use slopvac_messages::Kind;
     Kind::Notice,
     "{count} active rule(s) do not run on code comments, which only the tokens, pattern, substitution and capitalization rules read: {rules}"
 )]
+#[case::comment_rule_named(
+    "comment-rule-named-not-run",
+    Kind::Notice,
+    "{count} rule(s) you enabled by name do not run on code comments, which only the tokens, pattern, substitution and capitalization rules read: {rules}"
+)]
 #[case::cases_rule_unchecked(
     "cases-rule-unchecked",
     Kind::Notice,

@@ -885,6 +885,16 @@ pub(crate) enum EngineNotice {
         count: usize,
         rules: String,
     },
+    /// Rules the user enabled by name cannot run on comments.
+    #[code("comment-rule-named-not-run")]
+    #[notice(
+        "{count} rule(s) you enabled by name do not run on code comments, which only the tokens, pattern, substitution and capitalization rules read: {rules}"
+    )]
+    CommentRuleNamed {
+        #[count]
+        count: usize,
+        rules: String,
+    },
     /// The case runner could not check active rules of a checkable kind.
     #[code("cases-rule-unchecked")]
     #[notice("{count} active rule(s) of a mechanically checkable kind were not checked by the case runner")]

@@ -551,3 +551,25 @@ fn sarif_run_with_a_warning_root_notice_is_not_successful() {
 fn sarif_run_with_only_an_info_root_notice_is_successful() {
     assert_eq!(sarif_successful("info"), json!(true));
 }
+
+#[rstest::rstest]
+#[case::info("info", true)]
+#[case::warning("warning", false)]
+fn sarif_success_follows_the_level_of_a_document_unchecked_entry(
+    #[case] level: &str,
+    #[case] successful: bool,
+) {
+    let mut value = serde_json::to_value(report()).unwrap();
+    value["notices"] = json!([]);
+    for doc in value["documents"].as_array_mut().unwrap() {
+        doc["unchecked"] = json!([]);
+    }
+    value["documents"][0]["unchecked"] = json!([{"code": "comment-rules-not-run", "level": level, "message": "x", "path": DOC1_PATH}]);
+    let report: Report = serde_json::from_value(value).unwrap();
+    let sarif: Value =
+        serde_json::from_str(&render(Format::Sarif, &report, &sources()).unwrap()).unwrap();
+    assert_eq!(
+        sarif["runs"][0]["invocations"][0]["executionSuccessful"],
+        json!(successful)
+    );
+}

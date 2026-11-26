@@ -114,7 +114,7 @@ fn applies_to_limits_a_rule_to_modes_and_genres() {
 }
 
 #[test]
-fn rules_of_kinds_the_engine_does_not_run_are_reported_in_an_info_notice() {
+fn rules_of_kinds_the_engine_does_not_run_are_reported_in_a_warning_notice() {
     let metric = rule(
         "long",
         &json!({"kind": "metric", "metric": "syllables_per_word", "threshold": 2, "comparison": "gt"}),
@@ -124,15 +124,15 @@ fn rules_of_kinds_the_engine_does_not_run_are_reported_in_an_info_notice() {
     assert_eq!(doc.unchecked.len(), 1);
     let n = &doc.unchecked[0];
     assert_eq!(n.code.as_str(), "rule-kind-not-implemented");
-    assert_eq!(n.level, NoticeLevel::Info);
+    assert_eq!(n.level, NoticeLevel::Warning);
     assert!(
         n.message
             .as_str()
             .starts_with("1 active metric rule(s) did not run")
     );
     assert!(
-        doc.gate.is_passed(),
-        "an info notice does not fail the gate"
+        !doc.gate.is_passed(),
+        "a warning notice makes the run incomplete"
     );
 }
 
@@ -145,7 +145,7 @@ fn rules_of_kinds_the_engine_does_not_run_are_reported_in_an_info_notice() {
     json!({"kind": "structure", "check": "mystery-check"}),
     json!({}),
 )]
-fn rule_kind_not_implemented_lists_its_rules_in_an_info_notice(
+fn rule_kind_not_implemented_lists_its_rules_in_a_warning_notice(
     #[case] matcher: serde_json::Value,
     #[case] extra: serde_json::Value,
 ) {
@@ -157,8 +157,9 @@ fn rule_kind_not_implemented_lists_its_rules_in_an_info_notice(
         panic!("{:?}", doc.unchecked)
     };
     assert_eq!(n.code.as_str(), "rule-kind-not-implemented");
-    assert_eq!(n.level, NoticeLevel::Info);
+    assert_eq!(n.level, NoticeLevel::Warning);
     assert_eq!(n.data["rules"], json!(["core:cat.pending"]));
+    assert!(!doc.gate.is_passed());
 }
 
 #[test]
