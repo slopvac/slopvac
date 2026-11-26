@@ -226,12 +226,27 @@ def _result_problems(where: str, result: dict) -> list[str]:
     text = (result.get("message") or {}).get("text")
     if not isinstance(text, str) or not text:
         problems.append(f"{where}: message.text")
+    locations = result.get("locations")
+    if not isinstance(locations, list) or not locations:
+        problems.append(f"{where}: locations is missing or empty")
+        locations = []
+    # reviewdog reads every entry of `locations`, and carries `relatedLocations` into
+    # the diagnostic with their paths, so both lists get the same checks.
+    related = result.get("relatedLocations") or []
+    for kind, entries in (("locations", locations), ("relatedLocations", related)):
+        for n, entry in enumerate(entries):
+            problems.extend(_location_problems(f"{where} {kind}[{n}]", entry))
+    return problems
+
+
+def _location_problems(where: str, location: dict) -> list[str]:
     try:
-        physical = result["locations"][0]["physicalLocation"]
+        physical = location["physicalLocation"]
         uri = physical["artifactLocation"]["uri"]
         region = physical["region"]
-    except (KeyError, IndexError, TypeError):
-        return [*problems, f"{where}: no physical location"]
+    except (KeyError, TypeError):
+        return [f"{where}: no physical location"]
+    problems = []
     if (problem := _uri_problem(uri)) is not None:
         problems.append(f"{where}: {problem}")
     line = region.get("startLine")
