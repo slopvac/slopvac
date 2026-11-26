@@ -71,6 +71,7 @@ rust:
   - 'about.toml'
   - 'keys/**'
   - 'docs/contract/compat/**'
+  - 'docs/contract/plugin-protocol.md'
   - 'docs/reference/cli.md'
   - 'docs/site.toml'
   - 'docs/model-recommendations.md'
