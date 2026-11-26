@@ -43,16 +43,6 @@ jobs:
           node-version: "24.22.3"
           cache: npm
           cache-dependency-path: site/package-lock.json
-      # The 2.x linter runs Vale and exits 2 without it.
-      - name: Cache Vale download
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/vale-cache
-          key: vale-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_vale.py') }}
-      - name: Install vale
-        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
-      - name: Add vale to PATH
-        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Cache cargo
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -68,11 +58,30 @@ jobs:
         run: >-
           uv run python scripts/docs/build_site.py
           --out "$RUNNER_TEMP/site-src" --starlight site
-      # STUB(slopvac-8l4.19.14): this step calls the 2.x CLI and config format; port it to 3.0.
+      - name: Build the slopvac binary
+        run: cargo build --locked -p slopvac
+      # The step fails on exit 1 (a gate failed) and on exit 2 (the run was incomplete or
+      # the invocation was invalid). Exit 2 is never a pass. The step prints the real exit
+      # code and re-raises it. The pages sit outside the checkout; the binary lints them
+      # and reports them as <external>/<file>.
       - name: Lint the generated Markdown
-        run: >-
-          uvx --from ./packages/slopvac-lint slopvac lint
-          "$RUNNER_TEMP/site-src" --profile relaxed --config docs/site-lint.toml
+        env:
+          SLOPVAC_NO_UPDATE_CHECK: "1"
+          SLOPVAC_OFFLINE: "1"
+        run: |
+          set -uo pipefail
+          # Fail when no *.md file exists anywhere below the page directory. That covers a
+          # missing directory, an empty one and one with only other files. The message
+          # names no path.
+          if [ -z "$(find "$RUNNER_TEMP/site-src" -type f -name '*.md' -print -quit 2>/dev/null)" ]; then
+            echo "Docs site lint: no generated pages found"
+            exit 1
+          fi
+          status=0
+          target/debug/slopvac lint "$RUNNER_TEMP/site-src" \
+            --config docs/site-lint.toml || status=$?
+          echo "slopvac exited $status"
+          exit "$status"
       - name: Build the site
         working-directory: site
         env:
