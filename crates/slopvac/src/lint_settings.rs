@@ -431,18 +431,36 @@ pub(crate) fn explain(resolved: &Resolved, catalog: &Catalog) -> Vec<slopvac_con
     resolved.explain_grouped(|path, contribution| {
         let mut shown = path.to_vec();
         let mut group = path.to_vec();
+        let mut rank = 0;
         if let [head, key, ..] = shown.as_mut_slice()
-            && let Some(identity) = identity_of(catalog, head, key)
+            && (head == "categories" || head == "rules")
         {
+            rank = spelling_rank(key);
+            // A preset key keeps the spelling its author wrote, whether or not it resolves.
             if is_inherited(contribution.source.layer)
                 && let Some(bare) = key.strip_prefix(&format!("{RESERVED_ID}:"))
             {
                 *key = bare.to_owned();
             }
-            group[1] = identity;
+            if let Some(identity) = identity_of(catalog, head, &path[1]) {
+                group[1] = identity;
+            }
         }
-        GroupedKey { group, shown }
+        GroupedKey { group, shown, rank }
     })
+}
+
+/// The rank of a spelling of a `categories` or `rules` key when one layer writes a key more
+/// than one way: the qualified spelling (0) wins over the bare one (1). `build` lists the
+/// spellings it reads in this order, and `explain` ranks by it, so both report one value.
+fn spelling_rank(key: &str) -> usize {
+    usize::from(!key.contains(':'))
+}
+
+/// `spellings` in the order that wins a tie, by [`spelling_rank`].
+fn by_rank<'a, T>(mut spellings: Vec<(&'a str, T)>) -> Vec<T> {
+    spellings.sort_by_key(|(key, _)| spelling_rank(key));
+    spellings.into_iter().map(|(_, v)| v).collect()
 }
 
 /// The `<plugin>:<id>` of the one category or rule that `key` names under `section`.
@@ -667,11 +685,14 @@ pub fn build(
         // shipped presets are qualified to `core` when they load.
         let bare_category = rules.categories_named(name).len() == 1;
         let field = |f: &'static str| {
-            let mut paths = vec![vec!["categories", qualified.as_str(), f]];
+            let mut paths = vec![(
+                qualified.as_str(),
+                vec!["categories", qualified.as_str(), f],
+            )];
             if bare_category {
-                paths.push(vec!["categories", name, f]);
+                paths.push((name, vec!["categories", name, f]));
             }
-            paths
+            by_rank(paths)
         };
         // `"none"` clears the budget; it is stored as null and must not fall back to the
         // budget in the rule data.
@@ -690,17 +711,19 @@ pub fn build(
             let id = rule.id();
             // A judgement rule has no finding to grade: a category entry never sets its
             // level, only a `rules` entry does (docs/contract/profiles.md).
-            let mut categories: Vec<&str> = Vec::new();
+            let mut categories: Vec<(&str, &str)> = Vec::new();
             if rule.kind() != MatchKind::Judgement {
-                categories.push(qualified.as_str());
+                categories.push((qualified.as_str(), qualified.as_str()));
                 if bare_category {
-                    categories.push(name);
+                    categories.push((name, name));
                 }
             }
-            let mut keys = vec![id.as_str()];
+            let categories = by_rank(categories);
+            let mut keys = vec![(id.as_str(), id.as_str())];
             if rules.rules_named(id.local()).len() == 1 {
-                keys.push(id.local());
+                keys.push((id.local(), id.local()));
             }
+            let keys = by_rank(keys);
             let named = resolved.level_by_any_unfloored(&keys, &categories);
             // `severity_shift` moves levels that come from rule definitions, styles and the
             // genre chain. A level that the config sets is final. A category floor holds

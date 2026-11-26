@@ -82,6 +82,10 @@ pub struct GroupedKey {
     pub group: Vec<String>,
     /// The spelling the entry shows when this contribution wins.
     pub shown: Vec<String>,
+    /// Which spelling wins a tie between contributions of one layer instance: the lower rank.
+    /// The layer order decides first. A caller that reads the same key by [`Resolved::level_by_any`]
+    /// ranks its spellings by their order in that slice.
+    pub rank: usize,
 }
 
 /// The merged settings of one file, with the history of each key.
@@ -316,27 +320,30 @@ impl Resolved {
         &self,
         identify: impl Fn(&[String], &Contribution) -> GroupedKey,
     ) -> Vec<Explained> {
-        let mut grouped: BTreeMap<Vec<String>, Vec<(Vec<String>, Contribution)>> = BTreeMap::new();
+        let mut grouped: BTreeMap<Vec<String>, Vec<(Vec<String>, usize, Contribution)>> =
+            BTreeMap::new();
         for (path, history) in &self.entries {
             for contribution in history {
                 let key = identify(path, contribution);
-                grouped
-                    .entry(key.group)
-                    .or_default()
-                    .push((key.shown, contribution.clone()));
+                grouped.entry(key.group).or_default().push((
+                    key.shown,
+                    key.rank,
+                    contribution.clone(),
+                ));
             }
         }
         grouped
             .into_iter()
             .filter_map(|(path, mut members)| {
-                members.sort_by_key(|(_, c)| c.scope);
-                let history: Vec<Contribution> = members.iter().map(|(_, c)| c.clone()).collect();
+                members.sort_by_key(|(_, rank, c)| (c.scope, std::cmp::Reverse(*rank)));
+                let history: Vec<Contribution> =
+                    members.iter().map(|(_, _, c)| c.clone()).collect();
                 let win = Self::winner(&path, &history)?;
                 let shown = members
                     .iter()
                     .zip(&history)
                     .find(|(_, c)| std::ptr::eq(*c, win))
-                    .map(|((shown, _), _)| shown.clone())?;
+                    .map(|((shown, _, _), _)| shown.clone())?;
                 Some(Explained {
                     path: display_path(&shown),
                     value: win.value.clone(),
