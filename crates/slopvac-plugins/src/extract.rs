@@ -1986,11 +1986,11 @@ mod single_read_tests {
 
     #[test]
     fn an_executable_list_over_the_manifest_cap_still_hashes() {
-        // A sorted, unique list of files that exist, over 1 MiB: 4,300 names of 240 bytes.
+        // A sorted, unique list of files that exist, over 1 MiB: 4,300 names of 241 bytes.
         let scratch = tempfile::tempdir().unwrap();
         let bin = scratch.path().join("bin");
         fs::create_dir(&bin).unwrap();
-        let pad = "x".repeat(233);
+        let pad = "x".repeat(236);
         let mut list = String::new();
         for i in 0..4_300 {
             let name = format!("{i:04}-{pad}");

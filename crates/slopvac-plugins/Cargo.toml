@@ -16,6 +16,11 @@ path = "src/bin/slopvac-plugin-launcher.rs"
 test = false
 doc = false
 
+[features]
+# Test seams: hooks that count or observe the reads, requests and source uses of one test. Only
+# the dev-dependency below turns it on, so a release build carries none of them.
+test-support = []
+
 # Polling a pidfd shows whether its process exited. The launcher points its
 # own standard streams at /dev/null once the plugin holds them.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -59,11 +64,6 @@ toml.workspace = true
 tracing.workspace = true
 unicode-normalization.workspace = true
 ureq.workspace = true
-
-[features]
-# Test seams: hooks that count or observe the reads, requests and source uses of one test. Only
-# the dev-dependency below turns it on, so a release build carries none of them.
-test-support = []
 
 [dev-dependencies]
 base64.workspace = true

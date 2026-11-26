@@ -1578,16 +1578,19 @@ mod python {
         let revs = t.env.revocations(NOW);
         let pol = KeyPolicy::default();
 
-        let report = Syncer::new(&store, Network::Offline, &pol, t.env.project.path(), &revs)
+        let result = Syncer::new(&store, Network::Offline, &pol, t.env.project.path(), &revs)
             .with_python(t.build())
-            .sync(&t.lock)
-            .unwrap();
+            .sync(&t.lock);
 
-        // The accepted manifest asks for 3.12 and the tree hashed to `t.hash`.
-        assert_eq!(
-            report.packs[0].python_env,
-            Some(EnvStore::key(&t.hash, "3.12"))
+        // The accepted manifest asks for 3.12 and the tree hashed to `t.hash`. The tree on disk
+        // no longer matches that hash, so the environment is refused as tampered. A sync that
+        // read the manifest again would build the environment of the swapped bytes instead.
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, SyncError::PythonEnv { source: PyEnvError::Tree(_), .. }),
+            "{err:?}"
         );
+        assert!(t.envs.load(&t.hash, "3.12").unwrap().is_none());
     }
 
     #[test]
