@@ -661,7 +661,46 @@ fn check_vocabulary_entries(text: &str, authored: &str) -> Result<usize, String>
             ));
         }
     }
+    // The layer checks above name the exact entry that went missing. This one catches the rest:
+    // an input that authors a blocklist or a category, where the output keeps none of it.
+    if has_vocabulary_content(&authored) && !has_vocabulary_content(&doc) {
+        return Err(format!(
+            "the written config has no vocabulary content, but the authored input has some\n{text}"
+        ));
+    }
     Ok(layers.len())
+}
+
+/// Whether a config, or any of its override blocks, carries anything that a word blocklist
+/// leaves behind: a `[vocabulary]` table (2.x), a blocklist in `terms` or a companion style
+/// (3.0), a vocabulary rule entry, or a category entry for `ste-words`.
+fn has_vocabulary_content(doc: &toml::Table) -> bool {
+    let in_layer = |layer: &toml::Table| -> bool {
+        let companion = layer
+            .get("styles")
+            .and_then(toml::Value::as_array)
+            .is_some_and(|styles| {
+                styles
+                    .iter()
+                    .any(|s| s.as_str().is_some_and(|s| s.ends_with("-vocabulary")))
+            });
+        let blocklist = layer
+            .get("terms")
+            .and_then(|t| t.get("blocklists"))
+            .and_then(toml::Value::as_array)
+            .is_some_and(|b| !b.is_empty());
+        let category = layer
+            .get("categories")
+            .and_then(toml::Value::as_table)
+            .is_some_and(|c| {
+                c.keys()
+                    .any(|k| k.strip_prefix("core:").unwrap_or(k) == "ste-words")
+            });
+        let rule = rule_levels(layer)
+            .is_ok_and(|l| l.keys().any(|id| VOCABULARY_RULES.contains(&id.as_str())));
+        layer.contains_key("vocabulary") || companion || blocklist || category || rule
+    };
+    in_layer(doc) || override_blocks(doc).into_iter().any(in_layer)
 }
 
 /// The vocabulary rules among the rule levels of one layer.
