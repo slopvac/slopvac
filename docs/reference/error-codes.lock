@@ -683,6 +683,10 @@ plugin-file-link error
 plugin-file-not-loaded text
 plugin-glob-too-complex error
 plugin-hash-mismatch error
+plugin-loader-manifest-invalid error
+plugin-loader-manifest-unreadable error
+plugin-loader-mismatch error
+plugin-loader-not-code error
 plugin-manifest-mismatch error
 plugin-not-code error
 plugin-not-installed error

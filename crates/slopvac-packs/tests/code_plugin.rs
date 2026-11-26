@@ -58,28 +58,28 @@ fn install(root: &Path, manifest_text: &str) -> CodePluginContext {
 }
 
 #[rstest]
-#[case::data_plugin("data", manifest("acme", "1.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::NotCode))]
-#[case::id_differs("code", manifest("other", "1.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::Mismatch { field: "id" }))]
-#[case::version_differs("code", manifest("acme", "2.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::Mismatch { field: "version" }))]
+#[case::data_plugin("data", manifest("acme", "1.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::NotCode { .. }))]
+#[case::id_differs("code", manifest("other", "1.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::Mismatch { field: "id", .. }))]
+#[case::version_differs("code", manifest("acme", "2.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::Mismatch { field: "version", .. }))]
 #[case::no_plugin_table(
     "code",
     "schema_version = 3\nid = \"acme\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[provides]\n".to_owned(),
-    |e: &CodePluginError| matches!(e, CodePluginError::Manifest(_))
+    |e: &CodePluginError| matches!(e, CodePluginError::Manifest { .. })
 )]
 #[case::command_leaves_the_tree(
     "code",
     manifest("acme", "1.0.0", &TABLE.replace("bin/acme", "../x")),
-    |e: &CodePluginError| matches!(e, CodePluginError::Manifest(_))
+    |e: &CodePluginError| matches!(e, CodePluginError::Manifest { .. })
 )]
 #[case::command_with_backslash(
     "code",
     manifest("acme", "1.0.0", &TABLE.replace("bin/acme", "a\\\\b")),
-    |e: &CodePluginError| matches!(e, CodePluginError::Manifest(_))
+    |e: &CodePluginError| matches!(e, CodePluginError::Manifest { .. })
 )]
 #[case::command_with_leading_dash(
     "code",
     manifest("acme", "1.0.0", &TABLE.replace("bin/acme", "-x")),
-    |e: &CodePluginError| matches!(e, CodePluginError::Manifest(_))
+    |e: &CodePluginError| matches!(e, CodePluginError::Manifest { .. })
 )]
 fn a_plugin_that_breaks_the_contract_is_refused(
     #[case] lock_kind: &str,

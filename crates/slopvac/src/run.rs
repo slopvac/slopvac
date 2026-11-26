@@ -394,6 +394,7 @@ fn plugins(
     let offline = offline::resolve(offline, env, config_offline);
     let dirs = plugin_dirs(env, root.clone())?;
     let dirs_state = dirs.state_dir.clone();
+    let store_dir = dirs.cache_dir.clone();
     let (mut ranges, mut configured) = (std::collections::BTreeMap::new(), Vec::new());
     if let Some(serde_json::Value::Array(entries)) =
         config.as_ref().and_then(|c| c.project_value(&["plugins"]))
@@ -431,10 +432,12 @@ fn plugins(
     };
     // CI runs `sync` from the lock only (policies.md, 1.4).
     let ci = env.var("CI").is_some();
+    let loader = crate::plugin_loader::InstalledPlugins::new(&root, &store_dir, &policy);
     let runner = Runner::new(dirs, network, &policy, &revocations, now)
         .with_ranges(ranges)
         .with_configured(configured)
         .with_core_version(env!("CARGO_PKG_VERSION"))
+        .with_loader(&loader)
         .with_locked(ci);
     slopvac_plugins::run(m, &runner, out).map_err(|e| CliError::new(e.code(), e.to_string()))
 }

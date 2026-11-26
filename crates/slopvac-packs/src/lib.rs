@@ -5,6 +5,7 @@
 //! name (`<pack>:<name>`) with the [`Provenance`] that supplied each one.
 
 mod budget;
+mod code_plugin;
 mod core;
 mod error;
 mod expand;
@@ -24,6 +25,7 @@ pub use budget::{
     Budget, Limits, MAX_PACK_BYTES, MAX_PACK_FILES, MAX_RUN_BYTES, MAX_RUN_PATTERN_BYTES,
     MAX_RUN_RULES,
 };
+pub use code_plugin::{CodePluginContext, CodePluginError, load_code_plugin};
 pub use core::core_source;
 pub use error::PackError;
 pub use expand::{GLOB_MAX_ALTERNATIVES, GLOB_MAX_BYTES, GLOB_MAX_DEPTH};

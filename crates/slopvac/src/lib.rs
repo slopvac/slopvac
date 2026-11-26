@@ -26,6 +26,7 @@ pub mod logging;
 mod lsp_project;
 pub mod messages;
 mod migrate_lint;
+mod plugin_loader;
 pub mod offline;
 pub mod output;
 pub mod owners;
