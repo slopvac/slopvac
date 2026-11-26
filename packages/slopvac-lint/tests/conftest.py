@@ -46,3 +46,16 @@ def _isolated_session_cache(tmp_path_factory):
 @pytest.fixture(autouse=True)
 def _isolated_cache(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("SLOPVAC_CACHE_DIR", str(tmp_path_factory.mktemp("slopvac-cache")))
+
+
+@pytest.fixture(autouse=True)
+def _outside_the_repository(tmp_path_factory, monkeypatch):
+    """Start every test outside the repository checkout.
+
+    The repository's own `slopvac.toml` is a 3.x file with `schema_version`, which this
+    2.x reference package rejects. The 2.x CLI discovers a config by walking up from the
+    working directory, so a test that never writes a config of its own would otherwise
+    read the repository root file. A test that needs another directory calls
+    `monkeypatch.chdir` itself.
+    """
+    monkeypatch.chdir(tmp_path_factory.mktemp("cwd"))
