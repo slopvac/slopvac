@@ -736,6 +736,7 @@ fn trust_records_the_content_hash_and_says_trust_is_not_containment() {
         ran.out,
         format!(
             "trusted `fake` with content hash {}\n\
+             source: path plugins/fake; unsigned\n\
              Trust is not containment: a trusted plugin runs with your rights, and slopvac has no sandbox.\n",
             records[0].hash
         )
