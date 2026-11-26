@@ -823,10 +823,6 @@ impl StagedTree {
     }
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "the catalog calls take more lines than the former literals; the body is unchanged"
-)]
 fn scan_archive<S: std::hash::BuildHasher>(
     archive: impl Read,
     root: Option<&Path>,

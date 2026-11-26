@@ -8,7 +8,7 @@
 //! store records enters the result.
 
 use std::collections::HashSet;
-use std::fs::{self, File};
+use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
