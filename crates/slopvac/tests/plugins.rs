@@ -572,8 +572,12 @@ fn move_tree_to(
 fn assert_debug_line(stderr: &str, code: &str, sandbox: &Sandbox) {
     let line = stderr
         .lines()
-        .find(|l| l.contains(code) && l.contains("fmt"))
-        .unwrap_or_else(|| panic!("no debug line with `{code}` and `fmt`:\n{stderr}"));
+        .find(|l| l.contains(code) && l.contains("fmt"));
+    assert!(
+        line.is_some(),
+        "no debug line with `{code}` and `fmt`:\n{stderr}"
+    );
+    let line = line.unwrap();
     for text in [
         "differs from",
         "locked but not installed",
