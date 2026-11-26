@@ -13,13 +13,13 @@ use std::fmt::Write as _;
 use common::{category, ruleset, settings};
 use slopvac_diagrams::Format;
 use slopvac_engine::{
-    DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Engine, Input,
+    CORE_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Engine, Input,
     diagram_rule_set,
 };
 use slopvac_model::{Document, Notice, NoticeLevel, PackId, RuleId, Severity};
 
 fn engine() -> Engine {
-    let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    let pack = diagram_rule_set(&PackId::new(CORE_PACK).unwrap()).unwrap();
     Engine::new(vec![ruleset(vec![category("cat", &[])]), pack], settings()).unwrap()
 }
 

@@ -66,7 +66,7 @@ fn rule_ids(path: &Path) -> Vec<String> {
 fn a_project_terms_file_enforces_its_casing() {
     let config = "schema_version = 3\n\n[terms]\nfiles = [\"terms.toml\"]\n";
     let (_dir, path) = project(config, &[("terms.toml", TERMS_FILE)], MISCASED);
-    assert_eq!(rule_ids(&path), ["terms:terms.casing"]);
+    assert_eq!(rule_ids(&path), ["core:terms.casing"]);
     slopvac()
         .arg("lint")
         .arg(&path)
@@ -84,7 +84,7 @@ fn without_the_terms_file_the_term_is_not_known() {
 fn terms_file_paths_are_relative_to_the_config_that_names_them() {
     let config = "schema_version = 3\n\n[terms]\nfiles = [\"data/terms.toml\"]\n";
     let (_dir, path) = project(config, &[("data/terms.toml", TERMS_FILE)], MISCASED);
-    assert_eq!(rule_ids(&path), ["terms:terms.casing"]);
+    assert_eq!(rule_ids(&path), ["core:terms.casing"]);
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn the_built_in_terms_still_apply_next_to_project_terms() {
     let config = "schema_version = 3\n\n[terms]\nfiles = [\"terms.toml\"]\n";
     let doc = "# Title\n\nThe team uses Github for the code.\n";
     let (_dir, path) = project(config, &[("terms.toml", TERMS_FILE)], doc);
-    assert_eq!(rule_ids(&path), ["terms:terms.casing"]);
+    assert_eq!(rule_ids(&path), ["core:terms.casing"]);
 }
 
 #[test]
@@ -281,7 +281,7 @@ fn a_category_qualified_with_its_own_pack_still_resolves() {
 
 #[test]
 fn the_term_casing_rule_can_be_turned_off_by_its_id() {
-    let config = "schema_version = 3\n\n[terms]\nfiles = [\"terms.toml\"]\n\n[rules]\n\"terms:terms.casing\" = \"off\"\n";
+    let config = "schema_version = 3\n\n[terms]\nfiles = [\"terms.toml\"]\n\n[rules]\n\"core:terms.casing\" = \"off\"\n";
     let (_dir, path) = project(config, &[("terms.toml", TERMS_FILE)], MISCASED);
     assert_eq!(rule_ids(&path), Vec::<String>::new());
 }
@@ -327,11 +327,11 @@ fn the_language_server_reports_a_project_term_and_honours_terms_allow() {
     let config = "schema_version = 3\n\n[terms]\nfiles = [\"terms.toml\"]\n";
     let (dir, _) = project(config, &[("terms.toml", TERMS_FILE)], MISCASED);
     let reported = lsp_output(dir.path(), MISCASED);
-    assert!(reported.contains("terms:terms.casing"), "{reported}");
+    assert!(reported.contains("core:terms.casing"), "{reported}");
 
     let allowed =
         "schema_version = 3\n\n[terms]\nfiles = [\"terms.toml\"]\nallow = [\"zorblax\"]\n";
     let (dir2, _) = project(allowed, &[("terms.toml", TERMS_FILE)], MISCASED);
     let quiet = lsp_output(dir2.path(), MISCASED);
-    assert!(!quiet.contains("terms:terms.casing"), "{quiet}");
+    assert!(!quiet.contains("core:terms.casing"), "{quiet}");
 }

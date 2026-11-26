@@ -858,22 +858,22 @@ fn an_extends_cycle_through_an_external_file_hides_its_directories() {
     }
 }
 
-const TERM_CASING: &str = "terms:terms.casing";
+const TERM_CASING: &str = "core:terms.casing";
 
 #[test]
-fn a_terms_only_listing_names_the_terms_plugin() {
+fn a_terms_only_listing_names_the_core_plugin() {
     let v = json(&["rules", "--category", "terms", "--format", "json"]);
-    assert_eq!(v["plugin"], "terms");
-    assert_eq!(v["plugins"], serde_json::json!(["terms"]));
+    assert_eq!(v["plugin"], "core");
+    assert_eq!(v["plugins"], serde_json::json!(["core"]));
     let rules = v["rules"].as_array().unwrap();
     assert_eq!(rules.len(), 1);
-    assert_eq!(rules[0]["plugin"], "terms");
+    assert_eq!(rules[0]["plugin"], "core");
 }
 
 #[test]
-fn a_mixed_listing_names_every_plugin_and_each_entry_its_own() {
+fn the_full_listing_names_core_once_and_each_entry_its_own() {
     let v = json(&["rules", "--format", "json"]);
-    assert_eq!(v["plugins"], serde_json::json!(["core", "terms"]));
+    assert_eq!(v["plugins"], serde_json::json!(["core"]));
     let plugin_of = |list: &str, id: &str| {
         v[list]
             .as_array()
@@ -884,9 +884,9 @@ fn a_mixed_listing_names_every_plugin_and_each_entry_its_own() {
             .clone()
     };
     assert_eq!(plugin_of("rules", CHAT_LEAKAGE), "core");
-    assert_eq!(plugin_of("rules", TERM_CASING), "terms");
+    assert_eq!(plugin_of("rules", TERM_CASING), "core");
     assert_eq!(plugin_of("categories", "ai-residue"), "core");
-    assert_eq!(plugin_of("categories", "terms"), "terms");
+    assert_eq!(plugin_of("categories", "terms"), "core");
 }
 
 #[test]
@@ -907,7 +907,7 @@ fn explain_finds_the_term_casing_rule() {
     assert!(text.starts_with(TERM_CASING), "{text}");
 }
 
-const CASING: &str = "terms:terms.casing";
+const CASING: &str = "core:terms.casing";
 
 fn rule_ids(args: &[&str]) -> Vec<String> {
     json(args)["rules"]
@@ -920,37 +920,6 @@ fn rule_ids(args: &[&str]) -> Vec<String> {
 
 #[test]
 fn a_qualified_category_filter_lists_the_rules_of_that_plugin() {
-    let ids = rule_ids(&["rules", "--category", "terms:terms", "--format", "json"]);
-    assert_eq!(ids, [CASING]);
-}
-
-#[test]
-fn a_qualified_category_filter_does_not_match_a_category_of_another_plugin() {
-    // `terms` is a category of the plugin `terms`, not of `core`.
     let ids = rule_ids(&["rules", "--category", "core:terms", "--format", "json"]);
-    assert!(ids.is_empty(), "{ids:?}");
-}
-
-#[test]
-fn a_rule_of_another_plugin_has_no_url_in_json() {
-    let listed = json(&["rules", "--category", "terms:terms", "--format", "json"]);
-    assert_eq!(listed["rules"][0]["id"], CASING, "{listed}");
-    assert!(listed["rules"][0].get("url").is_none(), "{listed}");
-    let explained = json(&["explain", CASING, "--format", "json"]);
-    assert_eq!(explained["id"], CASING, "{explained}");
-    assert!(explained.get("url").is_none(), "{explained}");
-    // A rule of `core` keeps its page.
-    let core = json(&["explain", CHAT_LEAKAGE, "--format", "json"]);
-    assert!(core["url"].as_str().is_some(), "{core}");
-}
-
-#[rstest::rstest]
-#[case::rules_text(&["rules", "--category", "terms:terms"])]
-#[case::rules_markdown(&["rules", "--category", "terms:terms", "--format", "md"])]
-#[case::explain_text(&["explain", CASING])]
-#[case::explain_markdown(&["explain", CASING, "--format", "md"])]
-fn a_rule_of_another_plugin_has_no_page_link_in_text_and_markdown(#[case] args: &[&str]) {
-    let out = stdout(args);
-    assert!(out.contains(CASING), "the rule is listed: {out}");
-    assert!(!out.contains("Page:"), "{out}");
+    assert_eq!(ids, [CASING]);
 }

@@ -12,12 +12,9 @@ use slopvac_rules::{CompileOptions, LoadErrors, RuleSet, VocabularyMatch};
 /// The `check` name of the vocabulary rule that runs the term casing check.
 pub(crate) const CHECK: &str = "term-casing";
 
-/// The pack id to give [`terms_rule_set`] when a caller has no other.
-pub const TERMS_PACK: &str = "terms";
-
 const PACK: &str = include_str!("../data/terms-pack.json");
 
-/// The term rule pack as a rule set under `pack`: `terms.casing`.
+/// The term rule pack as a rule set under `pack`: `terms.casing`, which is `core:terms.casing` under the core pack id [`crate::CORE_PACK`].
 ///
 /// Pass this set to [`crate::Engine::new`] with the other sets. The engine runs the rule on
 /// the prose of each document, never inside code, and applies its level, category and

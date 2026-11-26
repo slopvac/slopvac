@@ -1,5 +1,5 @@
 //! The checks the binary registers next to the engine: front-matter validation. Term casing
-//! needs none: the engine reports it as `terms:terms.casing`.
+//! needs none: the engine reports it as `core:terms.casing`.
 
 use slopvac_config::frontmatter::{self, Policy};
 use slopvac_model::{Severity, Span};

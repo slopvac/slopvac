@@ -16,7 +16,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use common::{category, ruleset, settings};
 use slopvac_diagrams::prose_analyses;
-use slopvac_engine::{DIAGRAM_PACK, Engine, Input, diagram_rule_set, prose_finding_bytes};
+use slopvac_engine::{CORE_PACK, Engine, Input, diagram_rule_set, prose_finding_bytes};
 use slopvac_model::{Finding, PackId};
 
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -29,7 +29,7 @@ const LABELS: &str = "flowchart TD\n  A[Load Balancer] --> B[API Gateway]\n  B -
 const PARAGRAPH: &str = "As shown in the diagram below, requests reach the load balancer first. The balancer forwards each request to the API gateway. The gateway asks the auth service to check the token, and then the user database returns the account record for that user. Responses travel back through the same path to the client over the network connection.";
 
 fn engine() -> Engine {
-    let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    let pack = diagram_rule_set(&PackId::new(CORE_PACK).unwrap()).unwrap();
     Engine::new(vec![ruleset(vec![category("cat", &[])]), pack], settings()).unwrap()
 }
 
@@ -88,7 +88,7 @@ fn a_paragraph_beside_many_fences_is_analysed_once() {
 #[test]
 fn a_restatement_of_a_shared_paragraph_is_reported_once() {
     let (_guard, run) = run();
-    let found = of_rule(&run, "diagrams:diagram.prose-restates-labels");
+    let found = of_rule(&run, "core:diagram.prose-restates-labels");
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].matched_text, PARAGRAPH);
 }
@@ -96,7 +96,7 @@ fn a_restatement_of_a_shared_paragraph_is_reported_once() {
 #[test]
 fn a_meta_reference_in_a_shared_paragraph_is_reported_once() {
     let (_guard, run) = run();
-    let found = of_rule(&run, "diagrams:diagram.meta-reference");
+    let found = of_rule(&run, "core:diagram.meta-reference");
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].matched_text, META);
 }

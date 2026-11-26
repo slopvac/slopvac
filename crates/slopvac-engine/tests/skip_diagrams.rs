@@ -22,7 +22,7 @@ use common::{category, id, ruleset, settings};
 use rstest::rstest;
 use slopvac_diagrams::Format;
 use slopvac_engine::{
-    DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Engine, Input, Level,
+    CORE_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Engine, Input, Level,
     diagram_rule_set, skip_ranges,
 };
 use slopvac_model::{PackId, Severity, Span};
@@ -72,7 +72,7 @@ fn skip_ranges_hold_list_items_and_quotes() {
 const MERMAID: &str = "Intro text.\n\n```mermaid\nflowchart TD\n  A[This label has far too many words in it] --> B[End]\n```\n";
 
 fn diagram_engine(settings: slopvac_engine::Settings) -> Engine {
-    let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    let pack = diagram_rule_set(&PackId::new(CORE_PACK).unwrap()).unwrap();
     Engine::new(vec![ruleset(vec![category("cat", &[])]), pack], settings).unwrap()
 }
 
@@ -83,8 +83,8 @@ fn a_fenced_diagram_is_checked_and_positioned_in_the_host_file() {
         .unwrap();
     assert_eq!(doc.findings.len(), 1);
     let f = &doc.findings[0];
-    assert_eq!(f.rule_id, id("diagrams:diagram.label-run-on"));
-    assert_eq!(f.category.as_str(), "diagrams:diagram");
+    assert_eq!(f.rule_id, id("core:diagram.label-run-on"));
+    assert_eq!(f.category.as_str(), "diagram");
     assert_eq!(f.severity, Severity::Warning);
     assert_eq!(f.matched_text, "This label has far too many words in it");
     // Line 5 is `  A[This ...`, and the label starts after the two spaces and `A[`.
@@ -119,7 +119,7 @@ fn rules_disabled() -> Engine {
     let mut off = settings();
     for rule in DIAGRAM_RULES {
         off.rule_levels
-            .insert(id(&format!("diagrams:diagram.{rule}")), Level::Off);
+            .insert(id(&format!("core:diagram.{rule}")), Level::Off);
     }
     diagram_engine(off)
 }
@@ -150,7 +150,7 @@ fn contexts_seen_lists_the_diagram_context_whether_or_not_a_checker_runs(#[case]
 
 #[test]
 fn contexts_seen_lists_every_context_of_a_document_in_order() {
-    let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    let pack = diagram_rule_set(&PackId::new(CORE_PACK).unwrap()).unwrap();
     let dull = common::tokens("dull", "leverage", &serde_json::json!({}));
     let engine = Engine::new(
         vec![ruleset(vec![category("cat", &[dull])]), pack],
@@ -207,7 +207,7 @@ fn a_diagram_file_is_checked_without_prose() {
 fn a_diagram_rule_obeys_its_level_and_a_disabled_region() {
     let mut off = settings();
     off.rule_levels
-        .insert(id("diagrams:diagram.label-run-on"), Level::Off);
+        .insert(id("core:diagram.label-run-on"), Level::Off);
     assert!(
         diagram_engine(off)
             .lint(&Input::markdown("a.md", MERMAID))
@@ -216,10 +216,9 @@ fn a_diagram_rule_obeys_its_level_and_a_disabled_region() {
             .is_empty()
     );
     let mut error = settings();
-    error.rule_levels.insert(
-        id("diagrams:diagram.label-run-on"),
-        Level::On(Severity::Error),
-    );
+    error
+        .rule_levels
+        .insert(id("core:diagram.label-run-on"), Level::On(Severity::Error));
     let doc = diagram_engine(error)
         .lint(&Input::markdown("a.md", MERMAID))
         .unwrap();
@@ -248,24 +247,21 @@ fn a_fence_without_a_diagram_language_is_not_a_diagram() {
 
 #[test]
 fn the_shipped_pack_holds_five_signal_rules_and_three_judgement_rules() {
-    let set = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    let set = diagram_rule_set(&PackId::new(CORE_PACK).unwrap()).unwrap();
     let mut got: Vec<_> = set
         .rules()
         .map(|r| (r.id().to_string(), r.rule().severity))
         .collect();
     got.sort_by(|a, b| a.0.cmp(&b.0));
     let want = [
-        ("diagrams:diagram.label-run-on", Severity::Warning),
-        (
-            "diagrams:diagram.label-title-plus-gloss",
-            Severity::Suggestion,
-        ),
-        ("diagrams:diagram.meta-reference", Severity::Warning),
-        ("diagrams:diagram.note-long", Severity::Warning),
-        ("diagrams:diagram.note-needed", Severity::Suggestion),
-        ("diagrams:diagram.over-explained", Severity::Suggestion),
-        ("diagrams:diagram.prose-restates", Severity::Suggestion),
-        ("diagrams:diagram.prose-restates-labels", Severity::Warning),
+        ("core:diagram.label-run-on", Severity::Warning),
+        ("core:diagram.label-title-plus-gloss", Severity::Suggestion),
+        ("core:diagram.meta-reference", Severity::Warning),
+        ("core:diagram.note-long", Severity::Warning),
+        ("core:diagram.note-needed", Severity::Suggestion),
+        ("core:diagram.over-explained", Severity::Suggestion),
+        ("core:diagram.prose-restates", Severity::Suggestion),
+        ("core:diagram.prose-restates-labels", Severity::Warning),
     ];
     assert_eq!(got, want.map(|(i, s)| (i.to_owned(), s)));
 }
@@ -278,7 +274,7 @@ fn the_pack_severity_is_the_shipped_level_and_a_category_level_replaces_it() {
     assert_eq!(shipped.findings[0].severity, Severity::Warning);
     let mut capped = settings();
     capped.categories.insert(
-        slopvac_model::CategoryName::new("diagrams:diagram").unwrap(),
+        slopvac_model::CategoryName::new("diagram").unwrap(),
         slopvac_engine::CategoryDials::default().with_level(Some(Level::On(Severity::Suggestion))),
     );
     let doc = diagram_engine(capped).lint(&input).unwrap();
@@ -294,7 +290,7 @@ fn a_title_plus_gloss_label_ships_as_a_suggestion() {
     assert_eq!(doc.findings.len(), 1);
     assert_eq!(
         doc.findings[0].rule_id,
-        id("diagrams:diagram.label-title-plus-gloss")
+        id("core:diagram.label-title-plus-gloss")
     );
     assert_eq!(doc.findings[0].severity, Severity::Suggestion);
 }
@@ -311,7 +307,7 @@ fn a_compressed_drawio_label_reports_its_text_at_the_payload_span() {
         .unwrap();
     assert_eq!(doc.findings.len(), 1);
     let f = &doc.findings[0];
-    assert_eq!(f.rule_id, id("diagrams:diagram.label-run-on"));
+    assert_eq!(f.rule_id, id("core:diagram.label-run-on"));
     assert_eq!(f.matched_text, "This label has far too many words in it");
     let start = source.find(COMPRESSED_PAGE).unwrap();
     let span = f.extent.unwrap().span;
@@ -393,7 +389,7 @@ fn reference_texts(source: &str) -> Vec<(String, usize, usize)> {
         .unwrap();
     doc.findings
         .iter()
-        .filter(|f| f.rule_id == id("diagrams:diagram.meta-reference"))
+        .filter(|f| f.rule_id == id("core:diagram.meta-reference"))
         .map(|f| {
             let span = f.extent.unwrap().span;
             (f.matched_text.clone(), span.start(), span.end())
@@ -549,7 +545,7 @@ fn note_long_flags_a_six_word_note_and_not_a_five_word_one() {
     let flag = |n: &str| found(&engine, &Input::diagram("s.mmd", &note(n), Format::Mermaid));
     assert_eq!(
         flag("keys rotate every night at midnight"),
-        ["diagrams:diagram.note-long"]
+        ["core:diagram.note-long"]
     );
     assert_eq!(flag("keys rotate every night here"), Vec::<String>::new());
 }
@@ -563,7 +559,7 @@ fn prose_that_restates_the_labels_is_flagged_and_prose_that_adds_a_reason_is_not
     let doc = |prose: &str| format!("{prose}\n\n```mermaid\n{labels}```\n");
     assert_eq!(
         found(&engine, &Input::markdown("a.md", &doc(restating))),
-        ["diagrams:diagram.prose-restates-labels"]
+        ["core:diagram.prose-restates-labels"]
     );
     assert_eq!(
         found(&engine, &Input::markdown("a.md", &doc(adding))),
@@ -758,7 +754,7 @@ const ESCAPED_BREAK_LABEL: &str = r"Order Service\nhandles checkout and refunds"
 fn one_gloss_finding(doc: &slopvac_model::Document, line: usize, column: usize) {
     assert_eq!(doc.findings.len(), 1, "{:?}", doc.findings);
     let f = &doc.findings[0];
-    assert_eq!(f.rule_id, id("diagrams:diagram.label-title-plus-gloss"));
+    assert_eq!(f.rule_id, id("core:diagram.label-title-plus-gloss"));
     assert_eq!(f.matched_text, ESCAPED_BREAK_LABEL);
     assert_eq!((f.start.line(), f.start.column()), (line, column));
 }

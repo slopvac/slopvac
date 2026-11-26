@@ -16,13 +16,13 @@ mod common;
 
 use common::{matched, settings};
 use serde_json::{Value, json};
-use slopvac_engine::{Engine, Input, TERMS_PACK, fix_document, terms_rule_set};
+use slopvac_engine::{CORE_PACK, Engine, Input, fix_document, terms_rule_set};
 use slopvac_model::PackId;
 
 const PROJECT_TERMS: &str = "schema_version = 3\n\n[[terms]]\nterm = \"AcmeCloud\"\n\n[[terms]]\nterm = \"Zorbix\"\nvariants = [\"Zx\"]\n";
 
 fn pack() -> PackId {
-    PackId::new(TERMS_PACK).unwrap()
+    PackId::new(CORE_PACK).unwrap()
 }
 
 fn base() -> Engine {

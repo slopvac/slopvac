@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value as Json;
 use slopvac_config::Resolved;
-use slopvac_engine::{Engine, Settings, TERMS_PACK, terms_rule_set};
+use slopvac_engine::{CORE_PACK, Engine, Settings, terms_rule_set};
 use slopvac_model::PackId;
 use slopvac_rules::RuleSet;
 use slopvac_terms::{Blocklist, TermsError, TermsFile};
@@ -31,7 +31,7 @@ pub struct TermInputs {
 /// # Errors
 /// `engine-unavailable` when the shipped term pack does not load.
 pub fn casing_rule_set() -> Result<RuleSet, CliError> {
-    terms_rule_set(&PackId::new(TERMS_PACK).expect("the terms pack id is valid"))
+    terms_rule_set(&PackId::new(CORE_PACK).expect("the core pack id is valid"))
         .map_err(|e| CliError::new("engine-unavailable", e.to_string()))
 }
 
@@ -199,7 +199,7 @@ mod tests {
         let matched: Vec<&str> = doc
             .findings
             .iter()
-            .filter(|f| f.rule_id.as_str() == "terms:terms.casing")
+            .filter(|f| f.rule_id.as_str() == "core:terms.casing")
             .map(|f| f.matched_text.as_str())
             .collect();
         assert_eq!(matched, ["zorblax"]);

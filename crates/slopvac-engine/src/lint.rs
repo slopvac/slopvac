@@ -56,7 +56,7 @@ use vocabulary::Vocabulary;
 /// The id of the finding for a directive that does not hold.
 const INVALID_SUPPRESSION: &str = "meta.invalid-suppression";
 /// The pack that owns the findings of the engine itself.
-const ENGINE_PACK: &str = "core";
+const ENGINE_PACK: &str = crate::CORE_PACK;
 
 /// What kind of file an [`Input`] is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
