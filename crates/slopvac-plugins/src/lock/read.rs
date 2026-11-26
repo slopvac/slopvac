@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use slopvac_fs::{read_capped_regular_to_string, InputKind, ReadOptions};
+use slopvac_fs::{InputKind, ReadOptions, read_capped_regular_to_string};
 
 use super::{LockError, Lockfile, MAX_LOCK_BYTES};
 use crate::messages::cli::{Redacted, RunError};

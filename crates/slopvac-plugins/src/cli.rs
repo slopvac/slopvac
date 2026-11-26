@@ -13,8 +13,8 @@ use slopvac_update::messages::UpdateMessage;
 use crate::PluginSpec;
 use crate::cause::{self, withheld};
 use crate::lock::{
-    LockedPack, Lockfile, PackId, PackKind, VersionReq, config_drift,
-    outdated as lock_outdated, read_project_lock,
+    LockedPack, Lockfile, PackId, PackKind, VersionReq, config_drift, outdated as lock_outdated,
+    read_project_lock,
 };
 use crate::messages::cli::{CliText, Redacted, RunError};
 use crate::oci::Digest;

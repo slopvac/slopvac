@@ -2442,6 +2442,7 @@ dependencies = [
  "slopvac-update",
  "snapbox",
  "tempfile",
+ "thiserror",
  "toml",
  "tracing",
  "tracing-subscriber",

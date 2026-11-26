@@ -7,10 +7,10 @@
 
 use std::path::{Path, PathBuf};
 
-use slopvac_packs::{load_code_plugin, CodePluginContext, CodePluginError, SyncedError};
-use slopvac_plugins::extract::{tree_hash, TreeHash};
+use slopvac_packs::{CodePluginContext, CodePluginError, SyncedError, load_code_plugin};
+use slopvac_plugins::extract::{TreeHash, tree_hash};
 use slopvac_plugins::host::PluginSpec;
-use slopvac_plugins::lock::{read_project_lock, LockedPack, PackId, SourceKind};
+use slopvac_plugins::lock::{LockedPack, PackId, SourceKind, read_project_lock};
 use slopvac_plugins::sign::{KeyPolicy, PublicKey};
 use slopvac_plugins::sync::{Store, TreeState};
 use slopvac_plugins::trust::VerifiedPlugin;
