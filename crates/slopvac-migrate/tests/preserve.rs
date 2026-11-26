@@ -746,6 +746,11 @@ fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[cas
     "",
     "authored vocabulary rule ste-words.word-outside-controlled-vocabulary"
 )]
+#[case::an_empty_output_for_an_authored_blocklist(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n",
+    "",
+    "no vocabulary content"
+)]
 #[case::an_entry_has_no_string_level(
     "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n",
     "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = { other = 1 }\n",
