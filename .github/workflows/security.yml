@@ -259,18 +259,21 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
       # Trivy runs here and not through trivy-action, so its output goes to files
       # and never raw to the job log. The setup action is the one trivy-action
       # calls (v0.36.0 action.yaml, step Install Trivy), at the same Trivy version.
+      # It checks the Trivy repository out into ./trivy and then removes that
+      # directory, with no input to move it. It runs before the repository checkout,
+      # so a ./trivy in the scanned change is never touched.
       - name: Install Trivy
         uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
         with:
           version: v0.76.0
           cache: false
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Trivy reads ./trivy.yaml and ./trivy-secret.yaml from the checkout unless
       # told otherwise, so a change under review could plant either file.
       # This step writes both from fixed text to a path outside the checkout.
@@ -307,18 +310,21 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
       # Trivy runs here and not through trivy-action, so its output goes to files
       # and never raw to the job log. The setup action is the one trivy-action
       # calls (v0.36.0 action.yaml, step Install Trivy), at the same Trivy version.
+      # It checks the Trivy repository out into ./trivy and then removes that
+      # directory, with no input to move it. It runs before the repository checkout,
+      # so a ./trivy in the scanned change is never touched.
       - name: Install Trivy
         uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
         with:
           version: v0.76.0
           cache: false
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Trivy reads ./trivy.yaml and ./trivy-secret.yaml from the checkout unless
       # told otherwise, so a change under review could plant either file.
       # This step writes both from fixed text to a path outside the checkout.

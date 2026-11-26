@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import shutil
 import stat
 import subprocess
 import sys
@@ -389,3 +390,72 @@ def test_reporter_escapes_every_field(field: str, tmp_path: Path) -> None:
     assert done.returncode == 0
     assert "::" not in done.stdout
     assert len(done.stdout.splitlines()) == 1
+
+
+# --- the installer must not remove files from the scanned checkout ---------------
+#
+# aquasecurity/setup-trivy@3fb12ec (action.yaml, steps "Checkout install script" and
+# "Install Trivy") checks the Trivy repository out into ./trivy under the workspace,
+# and later runs `rm -rf ./trivy`. Its only path input moves the install directory,
+# not that checkout. Run before the repository checkout, it removes nothing of ours.
+
+DESTRUCTIVE = ("rm ", "git clean", "git checkout", "git reset", "mv ")
+
+
+def index_of(steps: list[dict], prefix: str) -> int:
+    found = [
+        i for i, s in enumerate(steps) if str(s.get("uses", "")).startswith(prefix)
+    ]
+    assert len(found) == 1, f"expected one step that uses {prefix}"
+    return found[0]
+
+
+def scan_index(steps: list[dict]) -> int:
+    found = [i for i, s in enumerate(steps) if SCAN in str(s.get("run", ""))]
+    assert len(found) == 1, f"expected one step that runs {SCAN}"
+    return found[0]
+
+
+@pytest.mark.parametrize("job", JOBS)
+def test_no_step_between_checkout_and_scan_can_remove_workspace_files(
+    job: str,
+) -> None:
+    steps = steps_of(job)
+    checkout = index_of(steps, "actions/checkout@")
+    between = steps[checkout + 1 : scan_index(steps)]
+    for step in between:
+        name = step.get("name", step.get("uses"))
+        # The installer deletes ./trivy from the workspace (see above).
+        assert not str(step.get("uses", "")).startswith("aquasecurity/setup-trivy@"), (
+            f"{job}: step {name} runs after the checkout and removes ./trivy"
+        )
+        for token in DESTRUCTIVE:
+            assert token not in str(step.get("run", "")), f"{job}: step {name}"
+
+
+def apply_effects(steps: list[dict], workspace: Path) -> None:
+    """Model what each step does to the workspace, from the cited action sources.
+
+    actions/checkout puts the repository files in; setup-trivy makes ./trivy and then
+    removes it. Every other step in these jobs leaves the workspace alone, which the
+    test above checks for the run steps.
+    """
+    for step in steps:
+        uses = str(step.get("uses", ""))
+        if uses.startswith("actions/checkout@"):
+            (workspace / "trivy").mkdir(exist_ok=True)
+            (workspace / "trivy" / "probe.txt").write_text("a file under trivy/\n")
+            (workspace / "main.txt").write_text("another file\n")
+        elif uses.startswith("aquasecurity/setup-trivy@"):
+            (workspace / "trivy").mkdir(exist_ok=True)
+            shutil.rmtree(workspace / "trivy")
+
+
+@pytest.mark.parametrize("job", JOBS)
+def test_a_file_under_trivy_dir_reaches_the_scan(job: str, tmp_path: Path) -> None:
+    steps = steps_of(job)
+    apply_effects(steps[: scan_index(steps)], tmp_path)
+    probe = tmp_path / "trivy" / "probe.txt"
+    assert probe.exists(), f"{job}: a file under trivy/ was removed before the scan"
+    assert probe.read_text() == "a file under trivy/\n"
+    assert (tmp_path / "main.txt").exists()
