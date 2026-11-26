@@ -9,7 +9,6 @@ the diagnostic scans, which may fail, and not in the authored scan.
 from __future__ import annotations
 
 import importlib.util
-import re
 from pathlib import Path
 
 import pytest
@@ -63,23 +62,9 @@ def test_a_report_without_a_documents_list_fails(report) -> None:
     assert audit.gate_problems("scan", report, allow_false=True)
 
 
-def _audit_script() -> str:
-    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["inventory-and-audit"]["steps"]
-    (step,) = [s for s in steps if s.get("name") == "Audit tracked Markdown"]
-    return step["run"]
-
-
-def test_the_audit_step_checks_every_report() -> None:
-    script = _audit_script()
-    assert "from markdown_audit_reports import document_set_problems, gate_problems" in script
-    # One call per report, with the authored scan the only one that rejects `false`.
-    assert re.search(r"gate_problems\(\s*name,\s*reports\[name\],\s*allow_false=name != \"authored\"\s*\)", script)
-    assert "raise SystemExit" in script.split("gate_problems", 1)[1]
-
-
 def test_the_cargo_cache_is_saved_only_by_a_push_to_main() -> None:
-    # The workflow is called from test.yml, where `github.event_name` is the caller's event:
-    # `pull_request`, `merge_group` or `push`. Only the push to main may save the cache.
+    # The workflow is called from test.yml, where `github.event_name` is the caller's event.
+    # Only the push to main may save the cache.
     steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["inventory-and-audit"]["steps"]
     (cache,) = [s for s in steps if str(s.get("uses", "")).startswith("Swatinem/rust-cache@")]
     assert cache["with"]["save-if"] == (
@@ -109,7 +94,7 @@ def test_the_authored_report_holds_exactly_the_authored_documents(reported, prob
 
 # ---- the audit step's real script, against a stub linter ---------------------------
 
-from markdown_audit_harness import HOSTILE_NAME, run_audit  # noqa: E402
+from markdown_audit_harness import run_audit  # noqa: E402
 
 HOSTILE_PATH = "::error::pwned\n::add-mask::x"
 
@@ -179,3 +164,25 @@ def test_the_set_messages_carry_no_path() -> None:
     for message in messages:
         _no_workflow_command(message)
         assert "pwned" not in message
+
+
+_MALFORMED = {
+    "gate-key-missing": 'del report["documents"][0]["gate"]',
+    "passed-null": 'report["documents"][0]["gate"]["passed"] = None',
+    "passed-string": 'report["documents"][0]["gate"]["passed"] = "true"',
+}
+
+
+@pytest.mark.parametrize("fault", list(_MALFORMED))
+@pytest.mark.parametrize("scan", ["authored", "configured", "all-files"])
+def test_a_malformed_report_fails_the_audit_step(tmp_path, scan, fault) -> None:
+    done = run_audit(tmp_path, {scan: _MALFORMED[fault]})
+    assert done.returncode != 0
+    assert f"{scan}: " in done.stderr
+    _no_workflow_command(done.stderr)
+
+
+def test_an_empty_authored_report_fails_the_audit_step(tmp_path) -> None:
+    done = run_audit(tmp_path, {"authored": 'report["documents"] = []'})
+    assert done.returncode != 0
+    assert "authored: the report omits" in done.stderr
