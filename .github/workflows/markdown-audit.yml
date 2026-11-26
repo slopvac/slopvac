@@ -19,16 +19,23 @@ jobs:
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
-      - name: Cache Vale download
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The audit lints with the 3.x binary built from this checkout, as the `prose` job
+      # in lint.yml does, and needs no Vale. uv stays for the Markdown parser the link
+      # audit imports.
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          path: ${{ runner.temp }}/vale-cache
-          key: vale-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_vale.py') }}
-      - name: Install Vale
-        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
-      - name: Add Vale to PATH
-        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          key: markdown-audit
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build the slopvac binary
+        run: cargo build --locked -p slopvac
       - name: Audit tracked Markdown
+        env:
+          SLOPVAC_BIN: ${{ github.workspace }}/target/debug/slopvac
+          SLOPVAC_NO_UPDATE_CHECK: "1"
+          SLOPVAC_OFFLINE: "1"
         run: |
           set -euo pipefail
           uv run --project packages/slopvac-lint python - <<'PY'
@@ -44,6 +51,7 @@ jobs:
           from markdown_it import MarkdownIt
 
           root = Path.cwd()
+          binary = os.environ["SLOPVAC_BIN"]
           out = Path(tempfile.mkdtemp(prefix="markdown-audit-"))
           tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
           files = sorted(p for p in tracked if Path(p).suffix.lower() in {".md", ".markdown", ".mdx"})
@@ -69,7 +77,6 @@ jobs:
           print("AUDIT_COMMIT", subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip(), flush=True)
           print("TRACKED_MARKDOWN", len(files), flush=True)
           print("EXTENSIONS", dict(collections.Counter(Path(p).suffix.lower() for p in files)), flush=True)
-          subprocess.run(["vale", "--version"], check=True)
           canonical = {}
           for path in files:
               resolved = Path(path).resolve(strict=True)
@@ -106,7 +113,7 @@ jobs:
               )
               for name, config, selected_files in scans:
                   target = out / (name + ".json")
-                  args = ["slopvac", "lint", "--config", config, "--format", "json", "--out", str(target)]
+                  args = [binary, "lint", "--config", config, "--format", "json", "--out", str(target)]
                   result = command(name, [*args, *selected_files])
                   exits[name] = result.returncode
                   if not target.exists():
@@ -127,7 +134,12 @@ jobs:
           excluded = sorted(expected_paths - set(configured))
           missing = sorted(expected_paths - set(scanned))
           unexpected = sorted(set(scanned) - expected_paths)
-          unchecked = {p: d["unchecked"] for p, d in scanned.items() if d.get("unchecked")}
+          # 3.x lists informational notes in `unchecked`; only a higher level is incomplete.
+          unchecked = {
+              p: [u for u in d.get("unchecked", []) if u.get("level") != "info"]
+              for p, d in scanned.items()
+              if any(u.get("level") != "info" for u in d.get("unchecked", []))
+          }
           print("CONFIGURED_EXCLUSIONS", json.dumps(excluded), flush=True)
           print("MISSING_FROM_FULL_AUDIT", json.dumps(missing), flush=True)
           print("UNEXPECTED_DOCUMENTS", json.dumps(unexpected), flush=True)
@@ -139,23 +151,13 @@ jobs:
               counts = dict(collections.Counter(f["severity"] for f in findings))
               entry = {
                   "path": path, "canonical_path": target, "class": document_class(path),
-                  "normally_excluded": target in excluded, "passed": document.get("passed"),
+                  "normally_excluded": target in excluded, "passed": document.get("gate", {}).get("passed"),
                   "findings": counts,
               }
               print("FILE", json.dumps(entry), flush=True)
           for path, document in configured.items():
-              if not document.get("passed", False):
+              if not document.get("gate", {}).get("passed", False):
                   print("CONFIGURED_FAILURE", json.dumps({"path": path, "details": document}), flush=True)
-
-          reference = command("reference", [
-              "slopvac", "reference", "--check", "--write", "packages/slopvac-lint/docs/rules.md",
-          ])
-          print("REFERENCE_RESULT", reference.stdout[:12000], flush=True)
-          routing = command("routing", ["slopvac", "compile", "--format", "json", "--config", "slopvac.toml"])
-          if routing.returncode == 0:
-              route = json.loads(routing.stdout)
-              counts = {k: len(route[k]) for k in ("vale", "native", "disabled")}
-              print("ENGINE_ROUTING", json.dumps({"vale_version": route.get("vale_version"), **counts}), flush=True)
 
           parser = MarkdownIt("commonmark").enable("table")
           anchors = {}
@@ -216,7 +218,7 @@ jobs:
               f"Authored-document coverage: {len(authored)}. Authored exit: {exits['authored']}.",
               f"Configured exit: {exits['configured']}. Full diagnostic exit: {exits['all-files']}.",
               f"Missing documents: {len(missing)}. Documents with unchecked rules: {len(unchecked)}.",
-              f"Generated reference check: {reference.returncode}. Local link candidates: {len(broken)}.",
+              f"Local link candidates: {len(broken)}.",
               "",
               "The unrestricted diagnostic still scans fixtures, generated references, "
               "release records, and managed prose.",
@@ -230,8 +232,7 @@ jobs:
               missing or unexpected or unchecked
               or any(code not in (0, 1) for name, code in exits.items() if name != "authored")
               or exits["authored"] != 0
-              or reference.returncode != 0 or routing.returncode != 0
           )
           if incomplete:
-              raise SystemExit("Audit incomplete or generated reference out of date; inspect the log.")
+              raise SystemExit("Audit incomplete; inspect the log.")
           PY

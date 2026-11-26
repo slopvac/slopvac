@@ -42,15 +42,20 @@ jobs:
 
       - name: Build and install wheel in a clean venv
         shell: bash
+        working-directory: ${{ runner.temp }}
         run: |
           set -euo pipefail
-          python3 -m pip wheel --quiet --no-deps ./packages/slopvac-lint -w /tmp/slopvac-dist
+          python3 -m pip wheel --quiet --no-deps "$GITHUB_WORKSPACE/packages/slopvac-lint" -w /tmp/slopvac-dist
           python3 -m venv /tmp/slopvac-e2e-venv
           /tmp/slopvac-e2e-venv/bin/python -m pip install --quiet /tmp/slopvac-dist/*.whl
           /tmp/slopvac-e2e-venv/bin/slopvac --version
 
+      # The 2.x CLI looks for slopvac.toml from the working directory upward, and the
+      # repository's own slopvac.toml is a 3.x file that it rejects (exit 2). The steps
+      # that call it run from the runner's temp directory.
       - name: Exercise installed CLI happy and red paths
         shell: bash
+        working-directory: ${{ runner.temp }}
         run: |
           set -euo pipefail
           export PATH="/tmp/slopvac-e2e-venv/bin:$HOME/.local/bin:$PATH"
@@ -439,6 +444,7 @@ jobs:
 
       - name: Check CLI surface
         shell: bash
+        working-directory: ${{ runner.temp }}
         run: |
           set -euo pipefail
           slopvac --help > /tmp/help.txt
