@@ -20,6 +20,7 @@
 "lint-report.schema.json" = "output"
 "plugin-index.schema.json" = "both"
 "plugin-manifest.schema.json" = "input"
+"plugin-protocol-codes.schema.json" = "output"
 "plugin-protocol.schema.json" = "both"
 "plugins-lock.schema.json" = "both"
 "rule.schema.json" = "both"

@@ -396,23 +396,38 @@ mod tests {
         let mut fence: Option<(char, usize)> = None;
         let mut open: Option<(String, String)> = None;
         let mut section = false;
+        let mut heading = false;
         for line in doc.lines() {
+            // A fence decides only which marker and heading lines count. Inside a block, the
+            // raw text between the markers is compared, fences included.
+            let mut counts = fence.is_none();
             if let Some((ch, run)) = fence {
                 if fence_close(line, ch, run) {
                     fence = None;
                 }
-                continue;
-            }
-            if let Some(found) = fence_open(line) {
+            } else if let Some(found) = fence_open(line) {
                 fence = Some(found);
+                counts = false;
+            }
+            if !counts {
+                if let Some((_, text)) = open.as_mut() {
+                    text.push_str(line);
+                    text.push('\n');
+                }
                 continue;
             }
             if line.starts_with("## ") {
                 section = line.starts_with("## 10. Error codes");
+                heading |= section;
             }
             if line.contains("<!-- generated:") {
                 match (marker(line), open.take()) {
-                    (Some((name, true)), None) => open = Some((name.to_owned(), String::new())),
+                    (Some((name, true)), None) if section => {
+                        open = Some((name.to_owned(), String::new()));
+                    }
+                    (Some((name, true)), None) => {
+                        return Err(format!("block `{name}` is outside section 10"));
+                    }
                     (Some((name, false)), Some((begun, text))) if name == begun => {
                         out.blocks.push((begun, text));
                     }
@@ -427,6 +442,7 @@ mod tests {
         }
         match open {
             Some((name, _)) => Err(format!("block `{name}` is never closed")),
+            None if !heading => Err("the `## 10. Error codes` heading is missing".to_owned()),
             None => Ok(out),
         }
     }
@@ -515,6 +531,46 @@ mod tests {
     )]
     fn a_document_with_a_loose_marker_or_an_indented_row_is_refused(#[case] doc: &str) {
         assert!(refused(doc), "{doc}");
+    }
+
+    const GOOD_BLOCKS: &str = "<!-- generated:rpc-codes begin -->\n| -1 | `a` | m |\n<!-- generated:rpc-codes end -->\n<!-- generated:host-codes begin -->\n| `b` | c |\n<!-- generated:host-codes end -->\n";
+
+    #[rstest]
+    #[case::with_the_heading("## 10. Error codes")]
+    #[case::heading_renamed("## 10. Failure list")]
+    fn a_row_between_unrelated_markers_is_refused(#[case] heading: &str) {
+        let doc = format!(
+            "{heading}\n<!-- other begin -->\n| -32020 | `unrelated` | x |\n<!-- other end -->\n{GOOD_BLOCKS}## 11. Security\n"
+        );
+        assert!(refused(&doc), "{doc}");
+    }
+
+    #[rstest]
+    #[case::renamed("## 10. Failure list")]
+    #[case::missing("")]
+    fn a_missing_section_heading_is_refused(#[case] heading: &str) {
+        let doc = format!("{heading}\n{GOOD_BLOCKS}| -32020 | `extra` | x |\n## 11. Security\n");
+        assert!(refused(&doc), "{doc}");
+    }
+
+    #[test]
+    fn a_block_outside_section_10_is_refused() {
+        let doc = format!("## 9. Rules\n{GOOD_BLOCKS}## 10. Error codes\ntext\n## 11. Security\n");
+        assert!(refused(&doc), "{doc}");
+    }
+
+    #[rstest]
+    #[case::numeric("rpc-codes")]
+    #[case::host("host-codes")]
+    fn a_fenced_row_inside_a_block_is_part_of_its_text(#[case] name: &str) {
+        let fenced = "```text\n| -32021 | `fenced` | In a fence. |\n```\n";
+        let end = format!("<!-- generated:{name} end -->");
+        let doc = DOC.replacen(&end, &format!("{fenced}{end}"), 1);
+        let text = block_in(&doc, name).unwrap();
+        assert!(text.contains("`fenced`"), "{text}");
+        let (rpc, host) = protocol_error_tables();
+        let expected = if name == "rpc-codes" { rpc } else { host };
+        assert_ne!(text, expected);
     }
 
     #[rstest]

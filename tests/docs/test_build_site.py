@@ -63,22 +63,10 @@ required = []
 optional = ["document-path"]
 """
 
-CODES = {
-    "rpc": [
-        {
-            "code": -32700,
-            "slopvac_code": "parse-error",
-            "meaning": "The body is not valid JSON.",
-        },
-        {
-            "code": -32001,
-            "slopvac_code": "protocol-version-unsupported",
-            "meaning": "No common version.",
-        },
-    ],
-    "host": [{"slopvac_code": "plugin-timeout", "cause": "A timer expired."}],
-}
 CODES_FILE = "plugin-protocol-codes.json"
+# The baseline is every row of the real generated tables, so an equality check cannot fail
+# because a fixture left a normal row out.
+CODES = json.loads((ROOT / "docs" / "reference" / CODES_FILE).read_text())
 
 RULES_YAML = """\
 id: demo
@@ -300,10 +288,7 @@ def test_protocol_errors_come_from_the_reference_file(
     sources: dict[str, Path],
 ) -> None:
     _run(sources)
-    errors = _read(sources, "plugins/protocol.md").split("## Errors")[1]
-    errors = errors.split("## Definitions")[0]
-    assert "| -32001 | `protocol-version-unsupported` | No common version. |" in errors
-    assert "| `plugin-timeout` | A timer expired. |" in errors
+    assert _published_rows(sources) == _expected_rows(CODES)
 
 
 def test_protocol_definitions_follow_the_schema_with_fields(
@@ -826,50 +811,76 @@ def test_a_missing_codes_file_stops_the_build(sources: dict[str, Path]) -> None:
         _run(sources)
 
 
-def _error_section(rows: str, heading: str = "## 10. Error codes") -> str:
+def _rows(kind: str) -> str:
+    if kind == "rpc-codes":
+        return "".join(
+            f"| {r['code']} | `{r['slopvac_code']}` | {r['meaning']} |\n"
+            for r in CODES["rpc"]
+        )
+    return "".join(f"| `{r['slopvac_code']}` | {r['cause']} |\n" for r in CODES["host"])
+
+
+_HEADERS = {
+    "rpc-codes": "| Code | `slopvac_code` | Meaning |\n|---|---|---|\n",
+    "host-codes": "| `slopvac_code` | Cause |\n|---|---|\n",
+}
+_EXTRA = "| -32099 | `extra` | Not in the generated file. |\n"
+
+
+def _block(kind: str, inner: str = "", begin: str | None = None) -> str:
+    """One generated block holding the real rows, with `inner` rows added at its end."""
+    begin = begin or f"<!-- generated:{kind} begin -->"
     return (
-        "# Contract\n\n## 9. Other\n\n| 1 | `ignored` | Not an error. |\n\n"
-        f"{heading}\n\n{rows}\n## 11. Security\n"
+        f"{begin}\n{_HEADERS[kind]}{_rows(kind)}{inner}"
+        f"<!-- generated:{kind} end -->\n"
     )
 
 
-_BLOCKS = (
-    "<!-- generated:rpc-codes begin -->\n| -32700 | `parse-error` | The body is not valid JSON. |\n"
-    "<!-- generated:rpc-codes end -->\n"
-    "<!-- generated:host-codes begin -->\n| `plugin-timeout` | A timer expired. |\n"
-    "<!-- generated:host-codes end -->\n"
-)
-_EXTRA = "| -32099 | `extra` | Not in the generated file. |\n"
+def _section(body: str, heading: str = "## 10. Error codes") -> str:
+    return (
+        "# Contract\n\n## 9. Other\n\n| 1 | `ignored` | Not an error. |\n\n"
+        f"{heading}\n\n{body}\n## 11. Security\n"
+    )
 
-# Every document that the round 2 and round 3 reviews found. The site reads the generated
+
+_BASE = _block("rpc-codes") + "\n" + _block("host-codes")
+_FENCED_IN_RPC = "```text\n" + _EXTRA + "```\n"
+_FENCED_RUN = "```text\n``` not a closer\n| -32022 | `inside` | Still in the fence. |\n```\n"
+
+# The documents that the round 2 and round 3 reviews found. The site reads the generated
 # file only, so none of them may change the published rows.
 ADVERSARIAL_DOCS = {
-    "row-after-the-blocks": _error_section(_BLOCKS + _EXTRA),
-    "row-before-the-blocks": _error_section(_EXTRA + _BLOCKS),
-    "row-between-unrelated-markers": _error_section(
-        "<!-- other begin -->\n" + _EXTRA + "<!-- other end -->\n" + _BLOCKS
-    ),
-    "row-inside-a-fence": _error_section(_BLOCKS + "```text\n" + _EXTRA + "```\n"),
-    "renamed-heading": _error_section(_BLOCKS + _EXTRA, "## 10. Failure list"),
-    "second-error-codes-heading": (
-        "## 8. Error codes\n\n" + _EXTRA + "\n" + _error_section(_BLOCKS)
-    ),
-    "begin-marker-with-trailing-space": _error_section(
-        _BLOCKS.replace("rpc-codes begin -->", "rpc-codes begin --> ", 1) + _EXTRA
-    ),
-    "indented-row-before-the-marker": _error_section(
-        "  " + _EXTRA + _BLOCKS
-    ),
-    "marker-with-an-unrelated-prefix": _error_section(
-        _BLOCKS.replace(
-            "<!-- generated:rpc-codes begin -->",
-            "<!-- generated:other begin --><!-- generated:rpc-codes begin -->",
-            1,
-        )
+    "a-row-after-the-blocks": _section(_BASE + _EXTRA),
+    "a-row-before-the-blocks": _section(_EXTRA + _BASE),
+    "b-row-between-unrelated-markers": _section(
+        _block("rpc-codes")
+        + "<!-- other begin -->\n"
         + _EXTRA
+        + "<!-- other end -->\n"
+        + _block("host-codes")
     ),
-    "fence-closed-by-a-run-followed-by-text": _error_section(
-        "```text\n``` not a closer\n" + _EXTRA + "```\n" + _BLOCKS + _EXTRA
+    "c-row-inside-a-fence-in-each-block": _section(
+        _block("rpc-codes", _FENCED_IN_RPC) + "\n" + _block("host-codes", _FENCED_IN_RPC)
+    ),
+    "d-renamed-error-heading": _section(_BASE + _EXTRA, "## 10. Failure list"),
+    "d-second-error-codes-heading": (
+        "## 8. Error codes\n\n" + _EXTRA + "\n" + _section(_BASE)
+    ),
+    # One document: a begin marker with a trailing space, an indented extra RPC row before
+    # the real marker, and the real marker carrying an unrelated generated-begin prefix.
+    "e-trailing-space-indented-row-and-prefixed-marker": _section(
+        "<!-- generated:rpc-codes begin --> \n"
+        + "  "
+        + _EXTRA
+        + _block(
+            "rpc-codes",
+            begin="<!-- generated:other begin --><!-- generated:rpc-codes begin -->",
+        )
+        + "\n"
+        + _block("host-codes")
+    ),
+    "f-fence-closed-by-a-run-followed-by-text": _section(
+        _block("rpc-codes", _FENCED_RUN + _EXTRA) + "\n" + _block("host-codes", _FENCED_RUN)
     ),
 }
 
