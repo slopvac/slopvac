@@ -1,739 +1,15 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://slopvac.github.io/slopvac/schemas/v3/plugin-protocol.schema.json",
-  "title": "slopvac plugin protocol v1",
-  "description": "One JSON-RPC 2.0 message of plugin protocol v1, as carried in the body of a Content-Length frame. The root validates a whole message: a request or notification is dispatched on method, a response is checked as a success or an error. Result shapes are separate $defs because a response names no method; validate one against the def of the method it answers. No object here sets additionalProperties false: a reader ignores unknown fields, and keys with the prefix x- never carry meaning. Semantics are in docs/contract/plugin-protocol.md. Owner: slopvac-8l4.2.6.",
-  "type": "object",
-  "properties": {
-    "jsonrpc": {
-      "const": "2.0"
-    }
-  },
-  "required": [
-    "jsonrpc"
-  ],
-  "allOf": [
-    {
-      "if": {
-        "required": [
-          "method"
-        ]
-      },
-      "then": {
-        "$ref": "#/$defs/Call"
-      },
-      "else": {
-        "$ref": "#/$defs/Response"
-      }
-    }
-  ],
   "$defs": {
-    "RequestId": {
-      "description": "Request id. Integers from 1 to 2^53-1, unique among the requests of one connection and never reused after completion or cancellation. Strings, null, fractions and larger values are invalid in v1.",
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 9007199254740991
-    },
-    "HookKind": {
-      "description": "Hook point name. The v1 kinds are tagger, extractor, binary-extractor, reporter, fixer, scorer, provider and recipe. A reader ignores a kind it does not know, so the schema fixes only the form.",
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
-    },
-    "HookId": {
-      "description": "Plugin-local hook identifier. The host qualifies it with the plugin name. Each hook kind has its own id space.",
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
-    },
-    "FeatureName": {
-      "description": "Optional capability name. The v1 registry holds one name, document-path. A name with the prefix x- is a private extension and a reader ignores it unless it understands it.",
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])|^x-[a-z0-9-]+(?![\\s\\S])"
-    },
-    "ProtocolVersion": {
-      "description": "Protocol version. Same value space as ApiVersion in common.schema.json.",
-      "$ref": "common.schema.json#/$defs/ApiVersion"
-    },
-    "Name": {
-      "description": "Program name and version of the host or the plugin. For logs only; never branch on it.",
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "version": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": [
-        "name",
-        "version"
-      ]
-    },
-    "ErrorObject": {
-      "description": "JSON-RPC error. code follows docs/contract/plugin-protocol.md, section Error codes. data.slopvac_code is the stable kebab-case string code that policies.md section 3.5 requires. A code from -32099 to -32000 is slopvac-defined.",
-      "type": "object",
-      "properties": {
-        "code": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "message": {
-          "type": "string"
-        },
-        "data": {
-          "type": "object",
-          "properties": {
-            "slopvac_code": {
-              "type": "string",
-              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])"
-            }
-          },
-          "required": [
-            "slopvac_code"
-          ]
-        }
-      },
-      "required": [
-        "code",
-        "message",
-        "data"
-      ]
-    },
-    "ErrorResponse": {
-      "description": "Response that carries an error. id is null only when the sender could not read the request id, for example after a parse error.",
-      "type": "object",
-      "properties": {
-        "jsonrpc": {
-          "const": "2.0"
-        },
-        "id": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/RequestId"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "error": {
-          "$ref": "#/$defs/ErrorObject"
-        }
-      },
-      "required": [
-        "jsonrpc",
-        "id",
-        "error"
-      ],
-      "not": {
-        "required": [
-          "result"
-        ]
-      }
-    },
-    "SuccessResponse": {
-      "description": "Response that carries a result. The shape of result depends on the method of the request with the same id.",
-      "type": "object",
-      "properties": {
-        "jsonrpc": {
-          "const": "2.0"
-        },
-        "id": {
-          "$ref": "#/$defs/RequestId"
-        },
-        "result": {}
-      },
-      "required": [
-        "jsonrpc",
-        "id",
-        "result"
-      ],
-      "not": {
-        "required": [
-          "error"
-        ]
-      }
-    },
-    "Response": {
-      "description": "Success or error response.",
-      "if": {
-        "required": [
-          "error"
-        ]
-      },
-      "then": {
-        "$ref": "#/$defs/ErrorResponse"
-      },
-      "else": {
-        "$ref": "#/$defs/SuccessResponse"
-      }
-    },
-    "PluginDocument": {
-      "description": "One document in a batch. text is the full UTF-8 source. Every span in a result is a byte range into this text. path is present only when the plugin requested the document-path feature and the host granted it. It is relative to the project root, or <stdin>, or <external>/<file name>. It is never absolute.",
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "text": {
-          "type": "string"
-        },
-        "media_type": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string",
-          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S]))).+(?![\\s\\S])"
-        }
-      },
-      "required": [
-        "id",
-        "text"
-      ]
-    },
-    "Documents": {
-      "description": "Batch of documents for one request. The host splits a batch to stay under the limits agreed in initialize. Ids are unique within the array.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/PluginDocument"
-      },
-      "minItems": 1,
-      "uniqueItems": true
-    },
-    "PluginFinding": {
-      "description": "A finding as passed to fixers and scorers. Spans index the text of the document that carries the finding.",
-      "type": "object",
-      "properties": {
-        "rule": {
-          "$ref": "common.schema.json#/$defs/RuleId"
-        },
-        "severity": {
-          "$ref": "common.schema.json#/$defs/Severity"
-        },
-        "span": {
-          "$ref": "common.schema.json#/$defs/Span"
-        },
-        "message": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "rule",
-        "severity",
-        "span",
-        "message"
-      ]
-    },
-    "DocumentResult": {
-      "description": "Fields shared by every per-document result. document echoes a Document id. error marks only this document as failed; the host reports the run as incomplete (exit 2) and keeps the other documents.",
-      "type": "object",
-      "properties": {
-        "document": {
-          "type": "string",
-          "minLength": 1
-        },
-        "error": {
-          "$ref": "#/$defs/ErrorObject"
-        }
-      },
-      "required": [
-        "document"
-      ]
-    },
-    "InitializeParams": {
-      "description": "First request, from host to plugin. protocolVersion is the highest version the host speaks and minProtocolVersion the lowest (default 1). hooks lists the kinds the host can call. features lists optional capabilities the host offers. offline is true when sticky offline mode is on. limits are the host's ceilings.",
-      "type": "object",
-      "properties": {
-        "protocolVersion": {
-          "$ref": "#/$defs/ProtocolVersion"
-        },
-        "minProtocolVersion": {
-          "$ref": "#/$defs/ProtocolVersion"
-        },
-        "hostInfo": {
-          "$ref": "#/$defs/Name"
-        },
-        "capabilities": {
-          "type": "object",
-          "properties": {
-            "hooks": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/HookKind"
-              },
-              "uniqueItems": true
-            },
-            "features": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/FeatureName"
-              },
-              "uniqueItems": true
-            }
-          },
-          "required": [
-            "hooks",
-            "features"
-          ]
-        },
-        "offline": {
-          "type": "boolean"
-        },
-        "limits": {
-          "type": "object",
-          "properties": {
-            "maxMessageBytes": {
-              "type": "integer",
-              "minimum": 65536
-            },
-            "maxBatchDocuments": {
-              "type": "integer",
-              "minimum": 1
-            }
-          },
-          "required": [
-            "maxMessageBytes",
-            "maxBatchDocuments"
-          ]
-        }
-      },
-      "required": [
-        "protocolVersion",
-        "hostInfo",
-        "capabilities",
-        "offline",
-        "limits"
-      ]
-    },
-    "HookDecl": {
-      "description": "One hook a plugin implements. The host calls only declared hooks. A binary-extractor hook must list the formats it reads, at least one and without duplicates. For other kinds formats is an unknown field and a reader ignores it.",
-      "type": "object",
-      "properties": {
-        "kind": {
-          "$ref": "#/$defs/HookKind"
-        },
-        "id": {
-          "$ref": "#/$defs/HookId"
-        }
-      },
-      "required": [
-        "kind",
-        "id"
-      ],
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "binary-extractor"
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "properties": {
-              "formats": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/$defs/BinaryFormat"
-                },
-                "minItems": 1,
-                "uniqueItems": true
-              }
-            },
-            "required": [
-              "formats"
-            ]
-          }
-        }
-      ]
-    },
-    "InitializeResult": {
-      "description": "Reply to initialize. protocolVersion is the negotiated version: the highest version both sides support. It must lie in the host's range. capabilities repeat the pre-spawn declaration: the host compares them with the manifest and rejects the reply, with plugin-declaration-mismatch, when requiresNetwork differs, a hook is absent from the manifest, or a required feature is absent from it. features.required names features the plugin cannot work without; the host stops the load if it lacks one. limits.maxMessageBytes, maxBatchDocuments and maxInFlight may lower the host ceilings but not raise them; a higher value is plugin-output-invalid.",
-      "type": "object",
-      "properties": {
-        "protocolVersion": {
-          "$ref": "#/$defs/ProtocolVersion"
-        },
-        "pluginInfo": {
-          "$ref": "#/$defs/Name"
-        },
-        "capabilities": {
-          "type": "object",
-          "properties": {
-            "hooks": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/HookDecl"
-              }
-            },
-            "features": {
-              "type": "object",
-              "properties": {
-                "required": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/FeatureName"
-                  },
-                  "uniqueItems": true
-                },
-                "optional": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/FeatureName"
-                  },
-                  "uniqueItems": true
-                }
-              },
-              "required": [
-                "required",
-                "optional"
-              ]
-            },
-            "requiresNetwork": {
-              "type": "boolean",
-              "description": "Must equal PluginDeclaration.network. It informs and cannot grant anything."
-            }
-          },
-          "required": [
-            "hooks",
-            "features",
-            "requiresNetwork"
-          ]
-        },
-        "limits": {
-          "type": "object",
-          "properties": {
-            "maxMessageBytes": {
-              "type": "integer",
-              "minimum": 65536
-            },
-            "maxBatchDocuments": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "maxInFlight": {
-              "type": "integer",
-              "minimum": 1
-            }
-          },
-          "required": [
-            "maxMessageBytes",
-            "maxBatchDocuments",
-            "maxInFlight"
-          ]
-        }
-      },
-      "required": [
-        "protocolVersion",
-        "pluginInfo",
-        "capabilities",
-        "limits"
-      ]
-    },
-    "CancelParams": {
-      "description": "Parameters of $/cancelRequest. id names a request the sender no longer wants answered.",
-      "type": "object",
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/RequestId"
-        }
-      },
-      "required": [
-        "id"
-      ]
-    },
-    "Tag": {
-      "description": "A context tag: kind, span, confidence and evidence, as the plan defines for taggers.",
-      "type": "object",
-      "properties": {
-        "kind": {
-          "$ref": "common.schema.json#/$defs/ContextTag"
-        },
-        "span": {
-          "$ref": "common.schema.json#/$defs/Span"
-        },
-        "confidence": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "evidence": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "span",
-        "confidence",
-        "evidence"
-      ]
-    },
-    "TagParams": {
-      "description": "tagger/tag. Run the named tagger over each document.",
-      "type": "object",
-      "properties": {
-        "tagger": {
-          "$ref": "#/$defs/HookId"
-        },
-        "documents": {
-          "$ref": "#/$defs/Documents"
-        }
-      },
-      "required": [
-        "tagger",
-        "documents"
-      ]
-    },
-    "TagResult": {
-      "description": "One entry per requested document. Tags may overlap and may arrive in any order.",
-      "type": "object",
-      "properties": {
-        "results": {
-          "type": "array",
-          "items": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/DocumentResult"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "tags": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/$defs/Tag"
-                    }
-                  }
-                }
-              }
-            ]
-          }
-        }
-      },
-      "required": [
-        "results"
-      ]
-    },
-    "Segment": {
-      "description": "A region of prose that the extractor hands to the rules. span is the source range it came from. text is the converted text when it differs from the source bytes in span; a finding in converted text maps to the whole span. context labels the region, for example prose or code.",
-      "type": "object",
-      "properties": {
-        "span": {
-          "$ref": "common.schema.json#/$defs/Span"
-        },
-        "context": {
-          "$ref": "common.schema.json#/$defs/ContextTag"
-        },
-        "text": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "span",
-        "context"
-      ]
-    },
-    "ExtractParams": {
-      "description": "extractor/extract. Split each document into segments.",
-      "type": "object",
-      "properties": {
-        "extractor": {
-          "$ref": "#/$defs/HookId"
-        },
-        "documents": {
-          "$ref": "#/$defs/Documents"
-        }
-      },
-      "required": [
-        "extractor",
-        "documents"
-      ]
-    },
-    "ExtractResult": {
-      "description": "One entry per requested document. Segments are in source order and do not overlap.",
-      "type": "object",
-      "properties": {
-        "results": {
-          "type": "array",
-          "items": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/DocumentResult"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "segments": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/$defs/Segment"
-                    }
-                  }
-                }
-              }
-            ]
-          }
-        }
-      },
-      "required": [
-        "results"
-      ]
-    },
-    "BinaryFormat": {
-      "description": "Format id of a binary document, from the 3.0 list in docs/contract/plugin-protocol.md section 5.5.1. The enum is extensible (x-slopvac-extensible): a later release may add ids without a new protocol version. A plugin or reader that receives an id it does not know declines that document with binary-input-declined, reason unknown-format, and does not fail the request. Manifest validation applies the list strictly: the host refuses a manifest that declares an id outside its own list.",
-      "x-slopvac-extensible": true,
-      "enum": [
-        "docx",
-        "docm",
-        "dotx",
-        "dotm",
-        "pptx",
-        "pptm",
-        "ppsx",
-        "ppsm",
-        "potx",
-        "potm",
-        "xlsx",
-        "xlsm",
-        "xltx",
-        "xltm",
-        "odt",
-        "odp",
-        "ods",
-        "drawio-png",
-        "excalidraw-png",
-        "plantuml-png"
-      ]
-    },
-    "BinaryDocument": {
-      "description": "One binary document in a batch. bytes is the whole file in standard base64 (RFC 4648 section 4) with padding and no line breaks; byte_length is the decoded length. format is the id the host detected. path follows PluginDocument.path and the document-path feature. Every BinarySpan in the result indexes the decoded bytes.",
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "format": {
-          "$ref": "#/$defs/BinaryFormat"
-        },
-        "media_type": {
-          "type": "string"
-        },
-        "byte_length": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "bytes": {
-          "type": "string",
-          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?(?![\\s\\S])"
-        },
-        "path": {
-          "type": "string",
-          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S]))).+(?![\\s\\S])"
-        }
-      },
-      "required": [
-        "id",
-        "format",
-        "byte_length",
-        "bytes"
-      ]
-    },
-    "BinarySpan": {
-      "description": "Physical provenance of a segment: a half-open range [start, end) of byte offsets into the decoded bytes of the document, with start at most end and end at most byte_length. The host checks the bounds. It has no character-boundary rule, and unlike common Span it is an open object (plugin-protocol.md section 9). Matching and rendered positions never use it; they use offsets into the segment text.",
-      "type": "object",
-      "properties": {
-        "start": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "end": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        }
-      },
-      "required": [
-        "start",
-        "end"
-      ]
-    },
-    "BinarySegment": {
-      "description": "A region of prose that a binary extractor hands to the rules. part names the container member, locator the place inside it; together they identify the segment and are unique within one document result. Both hold 1 to 1024 characters with no control or bidirectional-control characters. The 1024-character bound is a fixed host cap: the host reports a longer value as extract-budget, and the pattern bound is a backstop for other readers. span is physical provenance only. text is the extracted UTF-8 prose that rules match; findings use offsets into it. context is a context tag. role is the structural role, from an extensible set (plugin-protocol.md section 5.5.3).",
-      "type": "object",
-      "properties": {
-        "part": {
-          "type": "string",
-          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])"
-        },
-        "locator": {
-          "type": "string",
-          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])"
-        },
-        "span": {
-          "$ref": "#/$defs/BinarySpan"
-        },
-        "text": {
-          "type": "string",
-          "minLength": 1
-        },
-        "context": {
-          "$ref": "common.schema.json#/$defs/ContextTag"
-        },
-        "role": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
-        }
-      },
-      "required": [
-        "part",
-        "locator",
-        "span",
-        "text",
-        "context",
-        "role"
-      ]
-    },
-    "BinaryUnsupported": {
-      "description": "Content that a binary extractor skipped inside a document it reads, such as an embedded object or a part type it does not handle. part names the container member and locator, when present, the place inside it; both follow the BinarySegment rules. media_type is the content type the container declares for it, when it declares one. The host reports each entry as an info notice extract-unsupported in the root notices of the lint report, and the run still exits 0 (plugin-protocol.md section 5.5.4). Entries count against the segments budget.",
-      "type": "object",
-      "properties": {
-        "part": {
-          "type": "string",
-          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])"
-        },
-        "locator": {
-          "type": "string",
-          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])"
-        },
-        "media_type": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": [
-        "part"
-      ]
-    },
     "BinaryBudget": {
       "description": "The budget an extract-budget error names in data.budget. This def is the one list of allowed values; docs/contract/plugin-protocol.md section 5.5.5 gives each value its limit, which an extract-budget error carries in data.limit in the unit of that table. The enum is extensible (x-slopvac-extensible): a reader keeps a value it does not know.",
-      "x-slopvac-extensible": true,
       "enum": [
         "segments",
         "part",
         "locator",
         "text",
         "in-flight"
-      ]
+      ],
+      "x-slopvac-extensible": true
     },
     "BinaryDeclineReason": {
       "description": "Why a binary extractor declines a whole document with binary-input-declined (-32008), carried in data.reason. unknown-format: the format id is not one the extractor knows (plugin-protocol.md section 5.5.1). variant-unsupported: the format is one it lists, but this variant is one it does not handle. The enum is closed: any other value is a protocol violation (plugin-output-invalid). The host renders its own description for each reason and never shows the plugin's string. A new reason is a contract change.",
@@ -742,98 +18,72 @@
         "variant-unsupported"
       ]
     },
+    "BinaryDocument": {
+      "description": "One binary document in a batch. bytes is the whole file in standard base64 (RFC 4648 section 4) with padding and no line breaks; byte_length is the decoded length. format is the id the host detected. path follows PluginDocument.path and the document-path feature. Every BinarySpan in the result indexes the decoded bytes.",
+      "properties": {
+        "byte_length": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "bytes": {
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?(?![\\s\\S])",
+          "type": "string"
+        },
+        "format": {
+          "$ref": "#/$defs/BinaryFormat"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^(?!/)(?![A-Za-z]:)(?![^\\n]*\\\\)(?!([^\\n]*/)?\\.\\.(/|(?![\\s\\S])))[^\\n]+(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "format",
+        "byte_length",
+        "bytes"
+      ],
+      "type": "object"
+    },
     "BinaryExtractParams": {
       "description": "binary-extractor/extract. Extract the prose of each binary document. The host admits a request by a length preflight before it reads or encodes the file, holds it against the in-flight budget, and sends it only when the exact serialized size fits the negotiated maxMessageBytes (plugin-protocol.md section 5.5.6).",
-      "type": "object",
       "properties": {
-        "extractor": {
-          "$ref": "#/$defs/HookId"
-        },
         "documents": {
-          "type": "array",
           "items": {
             "$ref": "#/$defs/BinaryDocument"
           },
           "minItems": 1,
+          "type": "array",
           "uniqueItems": true
+        },
+        "extractor": {
+          "$ref": "#/$defs/HookId"
         }
       },
       "required": [
         "extractor",
         "documents"
-      ]
+      ],
+      "type": "object"
     },
     "BinaryExtractResult": {
       "description": "One entry per requested document. Each entry carries exactly one of outcome or error. outcome extracted carries one or more segments in reading order; empty and no-source carry none. An entry with an outcome may list skipped content in unsupported, which the host reports as extract-unsupported notices; an entry with an error may not. extract-unsupported is never a per-document error. A document the extractor declines, an encrypted container, a malformed file and a budget breach travel as a per-document error: binary-input-declined (-32008) with data.reason, binary-encrypted (-32011), extract-malformed (-32009) and extract-budget (-32010) with data.budget and data.limit. A reader never parses these fields from the message. The reply must fit maxMessageBytes; a document whose segments do not fit gets the error message-too-large instead.",
-      "type": "object",
       "properties": {
         "results": {
-          "type": "array",
           "items": {
             "allOf": [
               {
                 "$ref": "#/$defs/DocumentResult"
               },
               {
-                "type": "object",
-                "properties": {
-                  "outcome": {
-                    "enum": [
-                      "extracted",
-                      "empty",
-                      "no-source"
-                    ]
-                  },
-                  "segments": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/$defs/BinarySegment"
-                    }
-                  },
-                  "unsupported": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/$defs/BinaryUnsupported"
-                    },
-                    "minItems": 1
-                  }
-                },
-                "oneOf": [
-                  {
-                    "required": [
-                      "outcome"
-                    ],
-                    "not": {
-                      "required": [
-                        "error"
-                      ]
-                    }
-                  },
-                  {
-                    "required": [
-                      "error"
-                    ],
-                    "not": {
-                      "anyOf": [
-                        {
-                          "required": [
-                            "outcome"
-                          ]
-                        },
-                        {
-                          "required": [
-                            "segments"
-                          ]
-                        },
-                        {
-                          "required": [
-                            "unsupported"
-                          ]
-                        }
-                      ]
-                    }
-                  }
-                ],
                 "allOf": [
                   {
                     "if": {
@@ -933,9 +183,9 @@
                                   "$ref": "#/$defs/BinaryBudget"
                                 },
                                 "limit": {
-                                  "type": "integer",
+                                  "maximum": 9007199254740991,
                                   "minimum": 0,
-                                  "maximum": 9007199254740991
+                                  "type": "integer"
                                 }
                               },
                               "required": [
@@ -1009,375 +259,181 @@
                       }
                     }
                   }
-                ]
+                ],
+                "oneOf": [
+                  {
+                    "not": {
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    "required": [
+                      "outcome"
+                    ]
+                  },
+                  {
+                    "not": {
+                      "anyOf": [
+                        {
+                          "required": [
+                            "outcome"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "segments"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "unsupported"
+                          ]
+                        }
+                      ]
+                    },
+                    "required": [
+                      "error"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "outcome": {
+                    "enum": [
+                      "extracted",
+                      "empty",
+                      "no-source"
+                    ]
+                  },
+                  "segments": {
+                    "items": {
+                      "$ref": "#/$defs/BinarySegment"
+                    },
+                    "type": "array"
+                  },
+                  "unsupported": {
+                    "items": {
+                      "$ref": "#/$defs/BinaryUnsupported"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "type": "object"
               }
             ]
-          }
+          },
+          "type": "array"
         }
       },
       "required": [
         "results"
-      ]
+      ],
+      "type": "object"
     },
-    "RenderParams": {
-      "description": "reporter/render. report is one lint report with schema_version 3. Its shape is the lint-report schema; this schema checks only the version so that the two schemas can evolve apart. options holds reporter-specific settings from the config.",
-      "type": "object",
+    "BinaryFormat": {
+      "description": "Format id of a binary document, from the 3.0 list in docs/contract/plugin-protocol.md section 5.5.1. The enum is extensible (x-slopvac-extensible): a later release may add ids without a new protocol version. A plugin or reader that receives an id it does not know declines that document with binary-input-declined, reason unknown-format, and does not fail the request. Manifest validation applies the list strictly: the host refuses a manifest that declares an id outside its own list.",
+      "enum": [
+        "docx",
+        "docm",
+        "dotx",
+        "dotm",
+        "pptx",
+        "pptm",
+        "ppsx",
+        "ppsm",
+        "potx",
+        "potm",
+        "xlsx",
+        "xlsm",
+        "xltx",
+        "xltm",
+        "odt",
+        "odp",
+        "ods",
+        "drawio-png",
+        "excalidraw-png",
+        "plantuml-png"
+      ],
+      "x-slopvac-extensible": true
+    },
+    "BinarySegment": {
+      "description": "A region of prose that a binary extractor hands to the rules. part names the container member, locator the place inside it; together they identify the segment and are unique within one document result. Both hold 1 to 1024 characters with no control or bidirectional-control characters. The 1024-character bound is a fixed host cap: the host reports a longer value as extract-budget, and the pattern bound is a backstop for other readers. span is physical provenance only. text is the extracted UTF-8 prose that rules match; findings use offsets into it. context is a context tag. role is the structural role, from an extensible set (plugin-protocol.md section 5.5.3).",
       "properties": {
-        "reporter": {
-          "$ref": "#/$defs/HookId"
+        "context": {
+          "$ref": "common.schema.json#/$defs/ContextTag"
         },
-        "report": {
-          "type": "object",
-          "properties": {
-            "schema_version": {
-              "$ref": "common.schema.json#/$defs/SchemaVersion"
-            }
-          },
-          "required": [
-            "schema_version"
-          ]
+        "locator": {
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])",
+          "type": "string"
         },
-        "options": {
-          "type": "object"
+        "part": {
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])",
+          "type": "string"
+        },
+        "role": {
+          "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/BinarySpan"
+        },
+        "text": {
+          "minLength": 1,
+          "type": "string"
         }
       },
       "required": [
-        "reporter",
-        "report"
-      ]
+        "part",
+        "locator",
+        "span",
+        "text",
+        "context",
+        "role"
+      ],
+      "type": "object"
     },
-    "RenderResult": {
-      "description": "Rendered text. The host writes it to stdout or to the file the user named. The host strips terminal control characters other than newline and tab before it writes to a terminal.",
-      "type": "object",
+    "BinarySpan": {
+      "description": "Physical provenance of a segment: a half-open range [start, end) of byte offsets into the decoded bytes of the document, with start at most end and end at most byte_length. The host checks the bounds. It has no character-boundary rule, and unlike common Span it is an open object (plugin-protocol.md section 9). Matching and rendered positions never use it; they use offsets into the segment text.",
       "properties": {
-        "output": {
+        "end": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
+    "BinaryUnsupported": {
+      "description": "Content that a binary extractor skipped inside a document it reads, such as an embedded object or a part type it does not handle. part names the container member and locator, when present, the place inside it; both follow the BinarySegment rules. media_type is the content type the container declares for it, when it declares one. The host reports each entry as an info notice extract-unsupported in the root notices of the lint report, and the run still exits 0 (plugin-protocol.md section 5.5.4). Entries count against the segments budget.",
+      "properties": {
+        "locator": {
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])",
           "type": "string"
         },
         "media_type": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "part": {
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])",
           "type": "string"
         }
       },
       "required": [
-        "output",
-        "media_type"
-      ]
-    },
-    "FixParams": {
-      "description": "fixer/fix. Propose edits for the selected findings of each document. findings holds only the findings the user selected to fix. They define the envelope of what edits may touch.",
-      "type": "object",
-      "properties": {
-        "fixer": {
-          "$ref": "#/$defs/HookId"
-        },
-        "documents": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/PluginDocument"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "findings": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/$defs/PluginFinding"
-                    }
-                  }
-                },
-                "required": [
-                  "findings"
-                ]
-              }
-            ]
-          }
-        }
-      },
-      "required": [
-        "fixer",
-        "documents"
-      ]
-    },
-    "FixResult": {
-      "description": "One entry per requested document. Each edit names the selected finding that authorizes it. The host rejects every edit of a document, and reports that document as failed with plugin-output-invalid, when any edit lies outside its finding span, names no valid finding, or overlaps another edit. v1 has no approval path for broader edits. Edits apply to the text the host sent.",
-      "type": "object",
-      "properties": {
-        "results": {
-          "type": "array",
-          "items": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/DocumentResult"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "edits": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/$defs/FixEdit"
-                    }
-                  }
-                }
-              }
-            ]
-          }
-        }
-      },
-      "required": [
-        "results"
-      ]
-    },
-    "ScoreParams": {
-      "description": "scorer/score. Compute a score for each document from its findings. The scorer may also read the text.",
-      "type": "object",
-      "properties": {
-        "scorer": {
-          "$ref": "#/$defs/HookId"
-        },
-        "documents": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/PluginDocument"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "findings": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/$defs/PluginFinding"
-                    }
-                  }
-                },
-                "required": [
-                  "findings"
-                ]
-              }
-            ]
-          }
-        }
-      },
-      "required": [
-        "scorer",
-        "documents"
-      ]
-    },
-    "ScoreResult": {
-      "description": "One entry per requested document. score is finite and at least 0. The scale belongs to the scorer; the host applies the gate thresholds from the config.",
-      "type": "object",
-      "properties": {
-        "results": {
-          "type": "array",
-          "items": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/DocumentResult"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "score": {
-                    "type": "number",
-                    "minimum": 0
-                  }
-                }
-              }
-            ]
-          }
-        }
-      },
-      "required": [
-        "results"
-      ]
-    },
-    "CompleteParams": {
-      "description": "provider/complete. Ask a model provider about each item. task names the review type. The host sends only the text the task needs. model is the model name from the config. A provider that cannot use it answers with an error.",
-      "type": "object",
-      "properties": {
-        "provider": {
-          "$ref": "#/$defs/HookId"
-        },
-        "task": {
-          "enum": [
-            "fact-check",
-            "update",
-            "rewrite"
-          ]
-        },
-        "model": {
-          "type": "string",
-          "minLength": 1
-        },
-        "items": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "text": {
-                "type": "string"
-              },
-              "instruction": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "text"
-            ]
-          }
-        }
-      },
-      "required": [
-        "provider",
-        "task",
-        "model",
-        "items"
-      ]
-    },
-    "CompleteResult": {
-      "description": "One entry per requested item. model is the model name the provider reports. The host compares it with the author model, as policies.md section 1.5 requires.",
-      "type": "object",
-      "properties": {
-        "results": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "item": {
-                "type": "string",
-                "minLength": 1
-              },
-              "text": {
-                "type": "string"
-              },
-              "model": {
-                "type": "string",
-                "minLength": 1
-              },
-              "error": {
-                "$ref": "#/$defs/ErrorObject"
-              }
-            },
-            "required": [
-              "item"
-            ],
-            "if": {
-              "not": {
-                "required": [
-                  "error"
-                ]
-              }
-            },
-            "then": {
-              "required": [
-                "text",
-                "model"
-              ]
-            }
-          }
-        }
-      },
-      "required": [
-        "results"
-      ]
-    },
-    "RecipeParams": {
-      "description": "recipe/plan. Plan the files that set up one agent harness. The plugin writes nothing; the host applies the plan. options holds the flags of the setup command.",
-      "type": "object",
-      "properties": {
-        "recipe": {
-          "$ref": "#/$defs/HookId"
-        },
-        "harness": {
-          "type": "string",
-          "minLength": 1
-        },
-        "options": {
-          "type": "object"
-        }
-      },
-      "required": [
-        "recipe",
-        "harness"
-      ]
-    },
-    "RecipeFile": {
-      "description": "One planned file operation. path is relative to the project root, with no .. segment, no drive letter and no backslash. write creates or replaces the file. merge replaces a block that carries a slopvac marker and creates the file otherwise. remove deletes the file or the block. content is required for write and merge.",
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S]))).+(?![\\s\\S])"
-        },
-        "action": {
-          "enum": [
-            "write",
-            "merge",
-            "remove"
-          ]
-        },
-        "content": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "path",
-        "action"
+        "part"
       ],
-      "if": {
-        "properties": {
-          "action": {
-            "enum": [
-              "write",
-              "merge"
-            ]
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "content"
-        ]
-      }
-    },
-    "RecipeResult": {
-      "description": "The plan. The host shows it, checks every path against the project root after symlink resolution, and applies it only when the command allows writes.",
-      "type": "object",
-      "properties": {
-        "files": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/RecipeFile"
-          }
-        }
-      },
-      "required": [
-        "files"
-      ]
+      "type": "object"
     },
     "Call": {
-      "description": "A request or notification, dispatched on method. A request carries an id and a notification does not. An unknown method is not a schema error: a reader answers -32601 to a request and drops a notification.",
-      "type": "object",
-      "properties": {
-        "method": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": [
-        "method"
-      ],
       "allOf": [
         {
           "if": {
@@ -1462,6 +518,11 @@
             }
           },
           "then": {
+            "not": {
+              "required": [
+                "id"
+              ]
+            },
             "properties": {
               "params": {
                 "$ref": "#/$defs/CancelParams"
@@ -1469,12 +530,7 @@
             },
             "required": [
               "params"
-            ],
-            "not": {
-              "required": [
-                "id"
-              ]
-            }
+            ]
           }
         },
         {
@@ -1661,58 +717,272 @@
             ]
           }
         }
-      ]
-    },
-    "PluginDeclaration": {
-      "description": "Pre-spawn declaration. The plugin manifest embeds it, and the manifest is part of the content that `slopvac plugins trust` hashes (plugin-manifest schema, owner slopvac-8l4.2.4). The host decides whether to spawn from this declaration, never from the initialize reply. network true allows the plugin to open connections, and the host does not spawn it in offline mode. hooks lists every hook the plugin may offer. features lists the features it may require or request. The initialize reply must stay inside the declaration.",
-      "type": "object",
+      ],
+      "description": "A request or notification, dispatched on method. A request carries an id and a notification does not. An unknown method is not a schema error: a reader answers -32601 to a request and drops a notification.",
       "properties": {
-        "network": {
-          "type": "boolean"
-        },
-        "hooks": {
-          "type": "array",
+        "method": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "type": "object"
+    },
+    "CancelParams": {
+      "description": "Parameters of $/cancelRequest. id names a request the sender no longer wants answered.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "CompleteParams": {
+      "description": "provider/complete. Ask a model provider about each item. task names the review type. The host sends only the text the task needs. model is the model name from the config. A provider that cannot use it answers with an error.",
+      "properties": {
+        "items": {
           "items": {
-            "$ref": "#/$defs/HookDecl"
-          }
-        },
-        "features": {
-          "type": "object",
-          "properties": {
-            "required": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/FeatureName"
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
               },
-              "uniqueItems": true
+              "instruction": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
             },
-            "optional": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/FeatureName"
-              },
-              "uniqueItems": true
-            }
+            "required": [
+              "id",
+              "text"
+            ],
+            "type": "object"
           },
-          "required": [
-            "required",
-            "optional"
+          "minItems": 1,
+          "type": "array"
+        },
+        "model": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/HookId"
+        },
+        "task": {
+          "enum": [
+            "fact-check",
+            "update",
+            "rewrite"
           ]
         }
       },
       "required": [
-        "network",
-        "hooks",
-        "features"
-      ]
+        "provider",
+        "task",
+        "model",
+        "items"
+      ],
+      "type": "object"
+    },
+    "CompleteResult": {
+      "description": "One entry per requested item. model is the model name the provider reports. The host compares it with the author model, as policies.md section 1.5 requires.",
+      "properties": {
+        "results": {
+          "items": {
+            "if": {
+              "not": {
+                "required": [
+                  "error"
+                ]
+              }
+            },
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/ErrorObject"
+              },
+              "item": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "model": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "item"
+            ],
+            "then": {
+              "required": [
+                "text",
+                "model"
+              ]
+            },
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "type": "object"
+    },
+    "DocumentResult": {
+      "description": "Fields shared by every per-document result. document echoes a Document id. error marks only this document as failed; the host reports the run as incomplete (exit 2) and keeps the other documents.",
+      "properties": {
+        "document": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorObject"
+        }
+      },
+      "required": [
+        "document"
+      ],
+      "type": "object"
+    },
+    "Documents": {
+      "description": "Batch of documents for one request. The host splits a batch to stay under the limits agreed in initialize. Ids are unique within the array.",
+      "items": {
+        "$ref": "#/$defs/PluginDocument"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "ErrorObject": {
+      "description": "JSON-RPC error. code follows docs/contract/plugin-protocol.md, section Error codes. data.slopvac_code is the stable kebab-case string code that policies.md section 3.5 requires. A code from -32099 to -32000 is slopvac-defined.",
+      "properties": {
+        "code": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "data": {
+          "properties": {
+            "slopvac_code": {
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])",
+              "type": "string"
+            }
+          },
+          "required": [
+            "slopvac_code"
+          ],
+          "type": "object"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "data"
+      ],
+      "type": "object"
+    },
+    "ErrorResponse": {
+      "description": "Response that carries an error. id is null only when the sender could not read the request id, for example after a parse error.",
+      "not": {
+        "required": [
+          "result"
+        ]
+      },
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ErrorObject"
+        },
+        "id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RequestId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "jsonrpc": {
+          "const": "2.0"
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "error"
+      ],
+      "type": "object"
+    },
+    "ExtractParams": {
+      "description": "extractor/extract. Split each document into segments.",
+      "properties": {
+        "documents": {
+          "$ref": "#/$defs/Documents"
+        },
+        "extractor": {
+          "$ref": "#/$defs/HookId"
+        }
+      },
+      "required": [
+        "extractor",
+        "documents"
+      ],
+      "type": "object"
+    },
+    "ExtractResult": {
+      "description": "One entry per requested document. Segments are in source order and do not overlap.",
+      "properties": {
+        "results": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/DocumentResult"
+              },
+              {
+                "properties": {
+                  "segments": {
+                    "items": {
+                      "$ref": "#/$defs/Segment"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "type": "object"
+    },
+    "FeatureName": {
+      "description": "Optional capability name. The v1 registry holds one name, document-path. A name with the prefix x- is a private extension and a reader ignores it unless it understands it.",
+      "pattern": "^([a-z][a-z0-9-]*|x-[a-z0-9-]+)(?![\\s\\S])",
+      "type": "string"
     },
     "FixEdit": {
       "description": "An edit with the finding that authorizes it. finding is the zero-based index into the findings array of the same document in the request. The host accepts the edit only when span lies inside the span of that finding, endpoints included. A zero-width span is an insertion and follows the same rule.",
-      "type": "object",
       "properties": {
         "finding": {
-          "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "type": "integer"
         },
         "span": {
           "$ref": "common.schema.json#/$defs/Span"
@@ -1725,7 +995,737 @@
         "finding",
         "span",
         "text"
-      ]
+      ],
+      "type": "object"
+    },
+    "FixParams": {
+      "description": "fixer/fix. Propose edits for the selected findings of each document. findings holds only the findings the user selected to fix. They define the envelope of what edits may touch.",
+      "properties": {
+        "documents": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/PluginDocument"
+              },
+              {
+                "properties": {
+                  "findings": {
+                    "items": {
+                      "$ref": "#/$defs/PluginFinding"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "findings"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "fixer": {
+          "$ref": "#/$defs/HookId"
+        }
+      },
+      "required": [
+        "fixer",
+        "documents"
+      ],
+      "type": "object"
+    },
+    "FixResult": {
+      "description": "One entry per requested document. Each edit names the selected finding that authorizes it. The host rejects every edit of a document, and reports that document as failed with plugin-output-invalid, when any edit lies outside its finding span, names no valid finding, or overlaps another edit. v1 has no approval path for broader edits. Edits apply to the text the host sent.",
+      "properties": {
+        "results": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/DocumentResult"
+              },
+              {
+                "properties": {
+                  "edits": {
+                    "items": {
+                      "$ref": "#/$defs/FixEdit"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "type": "object"
+    },
+    "HookDecl": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "binary-extractor"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "formats": {
+                "items": {
+                  "$ref": "#/$defs/BinaryFormat"
+                },
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "formats"
+            ]
+          }
+        }
+      ],
+      "description": "One hook a plugin implements. The host calls only declared hooks. A binary-extractor hook must list the formats it reads, at least one and without duplicates. For other kinds formats is an unknown field and a reader ignores it.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/HookId"
+        },
+        "kind": {
+          "$ref": "#/$defs/HookKind"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "HookId": {
+      "description": "Plugin-local hook identifier. The host qualifies it with the plugin name. Each hook kind has its own id space.",
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+      "type": "string"
+    },
+    "HookKind": {
+      "description": "Hook point name. The v1 kinds are tagger, extractor, binary-extractor, reporter, fixer, scorer, provider and recipe. A reader ignores a kind it does not know, so the schema fixes only the form.",
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+      "type": "string"
+    },
+    "InitializeParams": {
+      "description": "First request, from host to plugin. protocolVersion is the highest version the host speaks and minProtocolVersion the lowest (default 1). hooks lists the kinds the host can call. features lists optional capabilities the host offers. offline is true when sticky offline mode is on. limits are the host's ceilings.",
+      "properties": {
+        "capabilities": {
+          "properties": {
+            "features": {
+              "items": {
+                "$ref": "#/$defs/FeatureName"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "hooks": {
+              "items": {
+                "$ref": "#/$defs/HookKind"
+              },
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "hooks",
+            "features"
+          ],
+          "type": "object"
+        },
+        "hostInfo": {
+          "$ref": "#/$defs/Name"
+        },
+        "limits": {
+          "properties": {
+            "maxBatchDocuments": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "maxMessageBytes": {
+              "minimum": 65536,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "maxMessageBytes",
+            "maxBatchDocuments"
+          ],
+          "type": "object"
+        },
+        "minProtocolVersion": {
+          "$ref": "#/$defs/ProtocolVersion"
+        },
+        "offline": {
+          "type": "boolean"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/ProtocolVersion"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "hostInfo",
+        "capabilities",
+        "offline",
+        "limits"
+      ],
+      "type": "object"
+    },
+    "InitializeResult": {
+      "description": "Reply to initialize. protocolVersion is the negotiated version: the highest version both sides support. It must lie in the host's range. capabilities repeat the pre-spawn declaration: the host compares them with the manifest and rejects the reply, with plugin-declaration-mismatch, when requiresNetwork differs, a hook is absent from the manifest, or a required feature is absent from it. features.required names features the plugin cannot work without; the host stops the load if it lacks one. limits.maxMessageBytes, maxBatchDocuments and maxInFlight may lower the host ceilings but not raise them; a higher value is plugin-output-invalid.",
+      "properties": {
+        "capabilities": {
+          "properties": {
+            "features": {
+              "properties": {
+                "optional": {
+                  "items": {
+                    "$ref": "#/$defs/FeatureName"
+                  },
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "required": {
+                  "items": {
+                    "$ref": "#/$defs/FeatureName"
+                  },
+                  "type": "array",
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "required",
+                "optional"
+              ],
+              "type": "object"
+            },
+            "hooks": {
+              "items": {
+                "$ref": "#/$defs/HookDecl"
+              },
+              "type": "array"
+            },
+            "requiresNetwork": {
+              "description": "Must equal PluginDeclaration.network. It informs and cannot grant anything.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "hooks",
+            "features",
+            "requiresNetwork"
+          ],
+          "type": "object"
+        },
+        "limits": {
+          "properties": {
+            "maxBatchDocuments": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "maxInFlight": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "maxMessageBytes": {
+              "minimum": 65536,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "maxMessageBytes",
+            "maxBatchDocuments",
+            "maxInFlight"
+          ],
+          "type": "object"
+        },
+        "pluginInfo": {
+          "$ref": "#/$defs/Name"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/ProtocolVersion"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "pluginInfo",
+        "capabilities",
+        "limits"
+      ],
+      "type": "object"
+    },
+    "Name": {
+      "description": "Program name and version of the host or the plugin. For logs only; never branch on it.",
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "PluginDeclaration": {
+      "description": "Pre-spawn declaration. The plugin manifest embeds it, and the manifest is part of the content that `slopvac plugins trust` hashes (plugin-manifest schema, owner slopvac-8l4.2.4). The host decides whether to spawn from this declaration, never from the initialize reply. network true allows the plugin to open connections, and the host does not spawn it in offline mode. hooks lists every hook the plugin may offer. features lists the features it may require or request. The initialize reply must stay inside the declaration.",
+      "properties": {
+        "features": {
+          "properties": {
+            "optional": {
+              "items": {
+                "$ref": "#/$defs/FeatureName"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "required": {
+              "items": {
+                "$ref": "#/$defs/FeatureName"
+              },
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "required",
+            "optional"
+          ],
+          "type": "object"
+        },
+        "hooks": {
+          "items": {
+            "$ref": "#/$defs/HookDecl"
+          },
+          "type": "array"
+        },
+        "network": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "network",
+        "hooks",
+        "features"
+      ],
+      "type": "object"
+    },
+    "PluginDocument": {
+      "description": "One document in a batch. text is the full UTF-8 source. Every span in a result is a byte range into this text. path is present only when the plugin requested the document-path feature and the host granted it. It is relative to the project root, or <stdin>, or <external>/<file name>. It is never absolute.",
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^(?!/)(?![A-Za-z]:)(?![^\\n]*\\\\)(?!([^\\n]*/)?\\.\\.(/|(?![\\s\\S])))[^\\n]+(?![\\s\\S])",
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "PluginFinding": {
+      "description": "A finding as passed to fixers and scorers. Spans index the text of the document that carries the finding.",
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "rule": {
+          "$ref": "common.schema.json#/$defs/RuleId"
+        },
+        "severity": {
+          "$ref": "common.schema.json#/$defs/Severity"
+        },
+        "span": {
+          "$ref": "common.schema.json#/$defs/Span"
+        }
+      },
+      "required": [
+        "rule",
+        "severity",
+        "span",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ProtocolVersion": {
+      "$ref": "common.schema.json#/$defs/ApiVersion",
+      "description": "Protocol version. Same value space as ApiVersion in common.schema.json."
+    },
+    "RecipeFile": {
+      "description": "One planned file operation. path is relative to the project root, with no .. segment, no drive letter and no backslash. write creates or replaces the file. merge replaces a block that carries a slopvac marker and creates the file otherwise. remove deletes the file or the block. content is required for write and merge.",
+      "if": {
+        "properties": {
+          "action": {
+            "enum": [
+              "write",
+              "merge"
+            ]
+          }
+        }
+      },
+      "properties": {
+        "action": {
+          "enum": [
+            "write",
+            "merge",
+            "remove"
+          ]
+        },
+        "content": {
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^(?!/)(?![A-Za-z]:)(?![^\\n]*\\\\)(?!([^\\n]*/)?\\.\\.(/|(?![\\s\\S])))[^\\n]+(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "action"
+      ],
+      "then": {
+        "required": [
+          "content"
+        ]
+      },
+      "type": "object"
+    },
+    "RecipeParams": {
+      "description": "recipe/plan. Plan the files that set up one agent harness. The plugin writes nothing; the host applies the plan. options holds the flags of the setup command.",
+      "properties": {
+        "harness": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "options": {
+          "type": "object"
+        },
+        "recipe": {
+          "$ref": "#/$defs/HookId"
+        }
+      },
+      "required": [
+        "recipe",
+        "harness"
+      ],
+      "type": "object"
+    },
+    "RecipeResult": {
+      "description": "The plan. The host shows it, checks every path against the project root after symlink resolution, and applies it only when the command allows writes.",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/RecipeFile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "type": "object"
+    },
+    "RenderParams": {
+      "description": "reporter/render. report is one lint report with schema_version 3. Its shape is the lint-report schema; this schema checks only the version so that the two schemas can evolve apart. options holds reporter-specific settings from the config.",
+      "properties": {
+        "options": {
+          "type": "object"
+        },
+        "report": {
+          "properties": {
+            "schema_version": {
+              "$ref": "common.schema.json#/$defs/SchemaVersion"
+            }
+          },
+          "required": [
+            "schema_version"
+          ],
+          "type": "object"
+        },
+        "reporter": {
+          "$ref": "#/$defs/HookId"
+        }
+      },
+      "required": [
+        "reporter",
+        "report"
+      ],
+      "type": "object"
+    },
+    "RenderResult": {
+      "description": "Rendered text. The host writes it to stdout or to the file the user named. The host strips terminal control characters other than newline and tab before it writes to a terminal.",
+      "properties": {
+        "media_type": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "output",
+        "media_type"
+      ],
+      "type": "object"
+    },
+    "RequestId": {
+      "description": "Request id. Integers from 1 to 2^53-1, unique among the requests of one connection and never reused after completion or cancellation. Strings, null, fractions and larger values are invalid in v1.",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "Response": {
+      "description": "Success or error response.",
+      "else": {
+        "$ref": "#/$defs/SuccessResponse"
+      },
+      "if": {
+        "required": [
+          "error"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/ErrorResponse"
+      }
+    },
+    "ScoreParams": {
+      "description": "scorer/score. Compute a score for each document from its findings. The scorer may also read the text.",
+      "properties": {
+        "documents": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/PluginDocument"
+              },
+              {
+                "properties": {
+                  "findings": {
+                    "items": {
+                      "$ref": "#/$defs/PluginFinding"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "findings"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "scorer": {
+          "$ref": "#/$defs/HookId"
+        }
+      },
+      "required": [
+        "scorer",
+        "documents"
+      ],
+      "type": "object"
+    },
+    "ScoreResult": {
+      "description": "One entry per requested document. score is finite and at least 0. The scale belongs to the scorer; the host applies the gate thresholds from the config.",
+      "properties": {
+        "results": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/DocumentResult"
+              },
+              {
+                "properties": {
+                  "score": {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "type": "object"
+    },
+    "Segment": {
+      "description": "A region of prose that the extractor hands to the rules. span is the source range it came from. text is the converted text when it differs from the source bytes in span; a finding in converted text maps to the whole span. context labels the region, for example prose or code.",
+      "properties": {
+        "context": {
+          "$ref": "common.schema.json#/$defs/ContextTag"
+        },
+        "span": {
+          "$ref": "common.schema.json#/$defs/Span"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "span",
+        "context"
+      ],
+      "type": "object"
+    },
+    "SuccessResponse": {
+      "description": "Response that carries a result. The shape of result depends on the method of the request with the same id.",
+      "not": {
+        "required": [
+          "error"
+        ]
+      },
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "result": {}
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "result"
+      ],
+      "type": "object"
+    },
+    "Tag": {
+      "description": "A context tag: kind, span, confidence and evidence, as the plan defines for taggers.",
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "common.schema.json#/$defs/ContextTag"
+        },
+        "span": {
+          "$ref": "common.schema.json#/$defs/Span"
+        }
+      },
+      "required": [
+        "kind",
+        "span",
+        "confidence",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "TagParams": {
+      "description": "tagger/tag. Run the named tagger over each document.",
+      "properties": {
+        "documents": {
+          "$ref": "#/$defs/Documents"
+        },
+        "tagger": {
+          "$ref": "#/$defs/HookId"
+        }
+      },
+      "required": [
+        "tagger",
+        "documents"
+      ],
+      "type": "object"
+    },
+    "TagResult": {
+      "description": "One entry per requested document. Tags may overlap and may arrive in any order.",
+      "properties": {
+        "results": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/DocumentResult"
+              },
+              {
+                "properties": {
+                  "tags": {
+                    "items": {
+                      "$ref": "#/$defs/Tag"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "type": "object"
     }
-  }
+  },
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/plugin-protocol.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "else": {
+        "$ref": "#/$defs/Response"
+      },
+      "if": {
+        "required": [
+          "method"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/Call"
+      }
+    }
+  ],
+  "description": "One JSON-RPC 2.0 message of plugin protocol v1, as carried in the body of a Content-Length frame. The root validates a whole message: a request or notification is dispatched on method, a response is checked as a success or an error. Result shapes are separate $defs because a response names no method; validate one against the def of the method it answers. No object here sets additionalProperties false: a reader ignores unknown fields, and keys with the prefix x- never carry meaning. Semantics are in docs/contract/plugin-protocol.md. Owner: slopvac-8l4.2.6.",
+  "properties": {
+    "jsonrpc": {
+      "const": "2.0"
+    }
+  },
+  "required": [
+    "jsonrpc"
+  ],
+  "title": "slopvac plugin protocol v1",
+  "type": "object"
 }

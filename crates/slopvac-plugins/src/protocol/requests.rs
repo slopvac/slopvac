@@ -444,14 +444,9 @@ mod tests {
             .unwrap()
     }
 
-    /// Bridge until the published schema is generated from these types: each type's own schema
-    /// accepts an instance of it, and so does the matching `$def` of the hand-written file.
-    /// The generator replaces this test.
+    /// The matching `$def` of the published schema accepts an instance of the type.
     fn agree<T: JsonSchema + Serialize>(def: &str, instance: &T) {
         let value = serde_json::to_value(instance).unwrap();
-        let generated = serde_json::to_value(schemars::schema_for!(T)).unwrap();
-        let own = jsonschema::validator_for(&generated).unwrap();
-        assert!(own.is_valid(&value), "{def}: own schema rejects {value}");
         let file = published(&format!("#/$defs/{def}"));
         assert!(
             file.is_valid(&value),
@@ -459,13 +454,10 @@ mod tests {
         );
     }
 
-    /// Like [`agree`], for a whole message: the type's own schema, and the root of the
-    /// published schema, which dispatches on the method.
+    /// Like [`agree`], for a whole message: the root of the published schema dispatches on the
+    /// method.
     fn agree_message<T: JsonSchema + Serialize>(what: &str, message: &T) {
         let value = serde_json::to_value(message).unwrap();
-        let generated = serde_json::to_value(schemars::schema_for!(T)).unwrap();
-        let own = jsonschema::validator_for(&generated).unwrap();
-        assert!(own.is_valid(&value), "{what}: own schema rejects {value}");
         assert!(
             published("").is_valid(&value),
             "{what}: the published root rejects {value}"
