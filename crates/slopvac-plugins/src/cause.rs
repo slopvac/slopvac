@@ -154,7 +154,10 @@ mod tests {
         let e = SyncError::CacheUnreadable {
             id: "demo".parse().unwrap(),
             path: std::path::PathBuf::from("/home/someone/cache/blobs/ab12"),
-            cause: crate::sync::CacheCause::Io(std::io::ErrorKind::PermissionDenied),
+            cause: crate::sync::CacheCause::Io {
+                kind: std::io::ErrorKind::PermissionDenied,
+                os_code: None,
+            },
         };
 
         let reported = sync(Path::new("/project"), &e);

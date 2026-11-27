@@ -16,9 +16,14 @@ use crate::sign::SignError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CacheCause {
-    /// The operating system refused the open or the read. Only the kind is kept: the error can
-    /// carry a path.
-    Io(std::io::ErrorKind),
+    /// The operating system refused the open or the read. Only the kind and the raw OS code are
+    /// kept: the error itself can carry a path.
+    Io {
+        /// The kind of the failure.
+        kind: std::io::ErrorKind,
+        /// The raw OS error code, when the failure has one.
+        os_code: Option<i32>,
+    },
     /// The path is a link, a directory or another file that is not a regular file.
     NotRegular,
     /// The file is larger than a cache file may be.
@@ -26,6 +31,17 @@ pub enum CacheCause {
         /// The limit in bytes.
         cap: u64,
     },
+}
+
+impl CacheCause {
+    /// The cause of a failed open or read, scrubbed of whatever path the error carries.
+    #[must_use]
+    pub fn io(e: &std::io::Error) -> Self {
+        Self::Io {
+            kind: e.kind(),
+            os_code: e.raw_os_error(),
+        }
+    }
 }
 
 /// Why a sync, status or check failed. Every variant makes the command exit 2

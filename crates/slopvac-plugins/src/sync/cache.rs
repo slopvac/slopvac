@@ -61,6 +61,8 @@ pub struct Store {
     root: PathBuf,
     #[cfg(feature = "test-support")]
     observer: Option<ReadObserver>,
+    #[cfg(feature = "test-support")]
+    archive_bytes: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
 }
 
 /// What a test hangs on the read boundary of the store.
@@ -83,6 +85,8 @@ impl Store {
             root: root.into(),
             #[cfg(feature = "test-support")]
             observer: None,
+            #[cfg(feature = "test-support")]
+            archive_bytes: None,
         }
     }
 
@@ -98,6 +102,26 @@ impl Store {
     ) -> Self {
         self.observer = Some(ReadObserver(observer));
         self
+    }
+
+    /// Add the bytes that each hash of a cached archive consumes, drain included, to `counter`.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "test-support")]
+    pub fn with_archive_byte_counter(
+        mut self,
+        counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    ) -> Self {
+        self.archive_bytes = Some(counter);
+        self
+    }
+
+    /// Count `n` bytes of a cached archive, if a test set a counter.
+    #[cfg(feature = "test-support")]
+    pub(super) fn count_archive_bytes(&self, n: u64) {
+        if let Some(counter) = &self.archive_bytes {
+            counter.fetch_add(n, std::sync::atomic::Ordering::SeqCst);
+        }
     }
 
     /// Tell the observer, if a test set one, that `path` was just checked.

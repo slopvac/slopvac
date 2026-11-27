@@ -67,7 +67,7 @@ fn cause_of(e: &io::Error) -> CacheCause {
     if e.kind() == io::ErrorKind::InvalidInput {
         CacheCause::NotRegular
     } else {
-        CacheCause::Io(e.kind())
+        CacheCause::io(e)
     }
 }
 
@@ -171,7 +171,7 @@ impl Store {
         let mut bytes = Vec::new();
         file.take(max.saturating_add(1))
             .read_to_end(&mut bytes)
-            .map_err(|e| CacheCause::Io(e.kind()))?;
+            .map_err(|e| CacheCause::io(&e))?;
         if bytes.len() as u64 > max {
             return Err(CacheCause::TooLarge { cap: max });
         }
@@ -210,7 +210,9 @@ impl Store {
         let hashed = hash_targz(&mut reader, executables, limits);
         // The archive must be read to its end, so a trailing swap cannot go unhashed, but never
         // past the limit plus one byte.
-        io::copy(&mut reader, &mut io::sink()).map_err(|e| unreadable(CacheCause::Io(e.kind())))?;
+        io::copy(&mut reader, &mut io::sink()).map_err(|e| unreadable(CacheCause::io(&e)))?;
+        #[cfg(feature = "test-support")]
+        self.count_archive_bytes(reader.read);
         if reader.read > cap {
             return Err(unreadable(CacheCause::TooLarge { cap }));
         }
@@ -223,7 +225,12 @@ impl Store {
                     actual: actual.to_string(),
                 });
             }
-            Err(_) => return Err(unreadable(CacheCause::Io(io::ErrorKind::InvalidData))),
+            Err(_) => {
+                return Err(unreadable(CacheCause::Io {
+                    kind: io::ErrorKind::InvalidData,
+                    os_code: None,
+                }));
+            }
         }
         hashed.map(Some).map_err(|source| SyncError::Extract {
             id: pack.id.clone(),

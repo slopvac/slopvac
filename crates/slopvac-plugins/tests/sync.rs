@@ -1931,6 +1931,9 @@ mod cache_reads {
         _server: Server,
         manifest: PathBuf,
         layer: PathBuf,
+        statement: PathBuf,
+        signature: PathBuf,
+        layer_bytes: Vec<u8>,
     }
 
     fn cached() -> Cached {
@@ -1948,9 +1951,21 @@ mod cache_reads {
             .iter()
             .find(|l| l.media_type == MEDIA_PACK_LAYER)
             .unwrap();
+        let by_type = |media: &str| {
+            parsed
+                .layers
+                .iter()
+                .find(|l| l.media_type == media)
+                .unwrap()
+                .digest
+                .clone()
+        };
         Cached {
             manifest: blobs.join(published.digest.trim_start_matches("sha256:")),
             layer: blobs.join(layer.digest.hex()),
+            statement: blobs.join(by_type(MEDIA_STATEMENT).hex()),
+            signature: blobs.join(by_type(MEDIA_MINISIG).hex()),
+            layer_bytes: published.blobs[&layer.digest.to_string()].clone(),
             env,
             lock,
             published,
@@ -1966,6 +1981,24 @@ mod cache_reads {
             } else {
                 &self.layer
             }
+        }
+
+        fn online(&self) -> Result<slopvac_plugins::sync::SyncReport, SyncError> {
+            run(&self.env, Network::Online(&client()), &self.policy, &self.lock)
+        }
+
+        /// What `plugins trust` calls: the cached signature check, which reads the cache only.
+        fn cached_signature(&self) -> Result<Option<String>, SyncError> {
+            let store = self.env.store();
+            let revs = self.env.revocations(NOW);
+            Syncer::new(
+                &store,
+                Network::Offline,
+                &self.policy,
+                self.env.project.path(),
+                &revs,
+            )
+            .verify_cached_signature(&self.lock.packs()[0])
         }
 
         fn verified(&self, limits: Limits) -> Result<Option<VerifiedTree>, SyncError> {
@@ -2093,6 +2126,14 @@ mod cache_reads {
         assert!(found.is_none(), "{found:?}");
     }
 
+    /// The cause without the OS code, which differs by platform.
+    fn same_cause(a: &CacheCause, b: &CacheCause) -> bool {
+        match (a, b) {
+            (CacheCause::Io { kind: x, .. }, CacheCause::Io { kind: y, .. }) => x == y,
+            _ => a == b,
+        }
+    }
+
     fn make_directory(path: &Path) -> bool {
         fs::remove_file(path).unwrap();
         fs::create_dir(path).unwrap();
@@ -2120,12 +2161,12 @@ mod cache_reads {
     #[case::manifest_unreadable(
         true,
         make_unreadable,
-        CacheCause::Io(std::io::ErrorKind::PermissionDenied)
+        CacheCause::Io { kind: std::io::ErrorKind::PermissionDenied, os_code: None }
     )]
     #[case::layer_unreadable(
         false,
         make_unreadable,
-        CacheCause::Io(std::io::ErrorKind::PermissionDenied)
+        CacheCause::Io { kind: std::io::ErrorKind::PermissionDenied, os_code: None }
     )]
     fn a_blob_that_exists_but_cannot_be_read_is_an_error_and_not_absence(
         #[case] manifest: bool,
@@ -2140,9 +2181,211 @@ mod cache_reads {
         let err = c.verified(Limits::default()).unwrap_err();
 
         assert!(
-            matches!(&err, SyncError::CacheUnreadable { cause, .. } if *cause == expected),
+            matches!(&err, SyncError::CacheUnreadable { cause, .. } if same_cause(cause, &expected)),
             "{err:?}"
         );
         assert_eq!(err.code(), "plugin-store-unreadable");
+    }
+
+    /// Make `path` a sparse file of `len` bytes, whatever its mode.
+    fn grow(path: &Path, len: u64) {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+        OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_len(len)
+            .unwrap();
+    }
+
+    #[test]
+    fn an_oversize_cached_manifest_is_repaired_by_sync_and_the_repair_is_reported() {
+        let c = cached();
+        grow(&c.manifest, MAX_MANIFEST_BYTES as u64 + 1);
+
+        let report = c.online().unwrap();
+
+        assert!(report.packs[0].repaired, "{report:?}");
+        assert_eq!(report.packs[0].change, Change::Unchanged);
+        assert_eq!(fs::read(&c.manifest).unwrap(), c.published.manifest);
+    }
+
+    #[rstest]
+    #[case::statement(true)]
+    #[case::signature(false)]
+    fn an_oversize_cached_signature_blob_is_repaired_by_sync_and_the_repair_is_reported(
+        #[case] statement: bool,
+    ) {
+        let c = cached();
+        let blob = if statement { &c.statement } else { &c.signature };
+        let original = fs::read(blob).unwrap();
+        grow(blob, 16 << 20);
+
+        let report = c.online().unwrap();
+
+        assert!(report.packs[0].repaired, "{report:?}");
+        assert_eq!(fs::read(blob).unwrap(), original);
+    }
+
+    #[rstest]
+    #[case::manifest(0)]
+    #[case::statement(1)]
+    #[case::signature(2)]
+    fn trust_leaves_a_swapped_cached_file_in_place_and_reports_the_tamper_code(
+        #[case] which: usize,
+    ) {
+        let c = cached();
+        let blob = [&c.manifest, &c.statement, &c.signature][which];
+        swap(blob, b"swapped");
+
+        let err = c.cached_signature().unwrap_err();
+
+        assert_eq!(err.code(), "digest-mismatch", "{err:?}");
+        assert_eq!(fs::read(blob).unwrap(), b"swapped", "trust rewrote the file");
+    }
+
+    #[rstest]
+    #[case::manifest(0)]
+    #[case::statement(1)]
+    #[case::signature(2)]
+    fn trust_leaves_an_oversize_cached_file_in_place(#[case] which: usize) {
+        let c = cached();
+        let blob = [&c.manifest, &c.statement, &c.signature][which];
+        grow(blob, 16 << 20);
+
+        let err = c.cached_signature().unwrap_err();
+
+        assert!(matches!(err, SyncError::CacheUnreadable { .. }), "{err:?}");
+        assert_eq!(fs::metadata(blob).unwrap().len(), 16 << 20, "trust removed or rewrote it");
+    }
+
+    /// Sync on a cache whose archive blob is in a state that it cannot repair.
+    #[rstest]
+    #[case::unreadable(make_unreadable, CacheCause::Io { kind: std::io::ErrorKind::PermissionDenied, os_code: None })]
+    #[case::directory(make_directory, CacheCause::NotRegular)]
+    fn sync_refuses_an_archive_blob_it_cannot_read_and_leaves_it_untouched(
+        #[case] corrupt: fn(&Path) -> bool,
+        #[case] expected: CacheCause,
+    ) {
+        let c = cached();
+        if !corrupt(&c.layer) {
+            return;
+        }
+
+        let err = c.online().unwrap_err();
+
+        assert!(
+            matches!(&err, SyncError::CacheUnreadable { cause, .. } if same_cause(cause, &expected)),
+            "{err:?}"
+        );
+        assert_eq!(err.code(), "plugin-store-unreadable");
+        assert!(fs::symlink_metadata(&c.layer).is_ok(), "sync removed the entry");
+    }
+
+    #[test]
+    fn sync_repairs_an_oversize_archive_blob_and_reports_it() {
+        let c = cached();
+        grow(&c.layer, c.layer_bytes.len() as u64 + 1);
+
+        let report = c.online().unwrap();
+
+        assert!(report.packs[0].repaired, "{report:?}");
+        assert_eq!(fs::read(&c.layer).unwrap(), c.layer_bytes);
+    }
+
+    #[test]
+    fn sync_repairs_an_archive_blob_with_the_wrong_digest_and_reports_it() {
+        let c = cached();
+        swap(&c.layer, b"swapped");
+
+        let report = c.online().unwrap();
+
+        assert!(report.packs[0].repaired, "{report:?}");
+        assert_eq!(fs::read(&c.layer).unwrap(), c.layer_bytes);
+    }
+
+    #[test]
+    fn an_unreadable_cached_file_names_no_absolute_path_in_display_debug_or_its_chain() {
+        let c = cached();
+        if !make_unreadable(&c.manifest) {
+            return;
+        }
+
+        let err = c.verified(Limits::default()).unwrap_err();
+
+        let data = c.env.data.path().to_str().unwrap().to_owned();
+        let mut shown = vec![err.to_string(), format!("{err:?}")];
+        let mut source = std::error::Error::source(&err);
+        while let Some(e) = source {
+            shown.push(e.to_string());
+            shown.push(format!("{e:?}"));
+            source = e.source();
+        }
+        for text in shown {
+            assert!(!text.contains(&data), "{text}");
+        }
+        assert!(
+            matches!(&err, SyncError::CacheUnreadable { cause: CacheCause::Io { os_code: Some(_), .. }, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn sync_stops_when_it_cannot_remove_a_blob_it_found_to_be_wrong() {
+        let c = cached();
+        grow(&c.layer, c.layer_bytes.len() as u64 + 1);
+        let blobs = c.layer.parent().unwrap().to_owned();
+        fs::set_permissions(&blobs, fs::Permissions::from_mode(0o555)).unwrap();
+        let can_still_write = fs::File::create(blobs.join("probe")).is_ok();
+
+        let result = c.online();
+
+        fs::set_permissions(&blobs, fs::Permissions::from_mode(0o755)).unwrap();
+        if can_still_write {
+            return; // the test runs with rights that ignore modes
+        }
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, SyncError::CacheUnreadable { cause: CacheCause::Io { .. }, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_tree_directory_that_cannot_be_inspected_is_an_error_and_not_absence() {
+        let c = cached();
+        let trees = c.env.data.path().join("slopvac/trees");
+        fs::set_permissions(&trees, fs::Permissions::from_mode(0o000)).unwrap();
+        let blocked = fs::read_dir(&trees).is_err();
+
+        let result = c.verified(Limits::default());
+
+        fs::set_permissions(&trees, fs::Permissions::from_mode(0o755)).unwrap();
+        if !blocked {
+            return; // the test runs with rights that ignore modes
+        }
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, SyncError::CacheUnreadable { cause: CacheCause::Io { .. }, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn hashing_an_oversize_archive_reads_no_more_than_the_limit_plus_one_byte() {
+        let c = cached();
+        let limits = Limits {
+            compressed_bytes: 1 << 20,
+            ..Limits::default()
+        };
+        grow(&c.layer, 4 << 20);
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let store = c.env.store().with_archive_byte_counter(counter.clone());
+
+        let result = store.verified_tree(&c.lock.packs()[0], &HashSet::new(), limits);
+
+        assert!(result.is_err(), "{result:?}");
+        let consumed = counter.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(consumed, (1 << 20) + 1, "bytes consumed, drain included");
     }
 }

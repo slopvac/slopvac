@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use slopvac_packs::{CodePluginContext, CodePluginError, SyncedError, load_code_plugin};
-use slopvac_plugins::PluginLoader;
+use slopvac_plugins::{LoadError, PluginLoader};
 use slopvac_plugins::extract::{ExtractError, Limits, TreeHash, tree_hash_capturing};
 use slopvac_plugins::host::PluginSpec;
 use slopvac_plugins::lock::{LockedPack, SourceKind};
@@ -148,10 +148,10 @@ impl<'a> InstalledPlugins<'a> {
 impl PluginLoader for InstalledPlugins<'_> {
     /// The command withholds the text of a refusal, so the cause is logged here, as a code and a
     /// plugin id only.
-    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
         self.try_load(locked).map_err(|refusal| {
             tracing::debug!(code = refusal.code(), plugin = %locked.id, "plugin loader refused");
-            refusal.to_string()
+            LoadError::new(refusal.to_string())
         })
     }
 }

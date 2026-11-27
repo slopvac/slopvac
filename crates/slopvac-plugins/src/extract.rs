@@ -2411,7 +2411,7 @@ mod single_read_tests {
         );
         // The buffer that kept the bytes is bounded the same way, not rounded up by doubling.
         assert!(
-            capacity[0] as u64 == budget + HASH_CHUNK as u64 + 1,
+            capacity[0] == 327_681,
             "a buffer of {} bytes for a file over a {budget} byte budget, not 327681",
             capacity[0]
         );

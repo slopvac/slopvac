@@ -87,9 +87,63 @@ pub trait PluginLoader {
     /// recorded.
     ///
     /// # Errors
-    /// The reason the plugin cannot be loaded, as one sentence with no document text.
-    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String>;
+    /// The reason the plugin cannot be loaded, as one sentence with no document text and no
+    /// path outside the project, and the stable code of the refusal when it has one.
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError>;
 }
+
+/// Why a plugin could not be loaded: one redacted sentence, and the stable code of the refusal
+/// when the loader can name one. `plugins trust` reports the code and withholds the sentence
+/// of a refusal that has none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadError {
+    code: Option<&'static str>,
+    text: String,
+}
+
+impl LoadError {
+    /// A refusal with no code of its own.
+    #[must_use]
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            code: None,
+            text: text.into(),
+        }
+    }
+
+    /// The same refusal, with the stable code it reports.
+    #[must_use]
+    pub fn with_code(mut self, code: &'static str) -> Self {
+        self.code = Some(code);
+        self
+    }
+
+    /// The stable code of the refusal, when it has one.
+    #[must_use]
+    pub fn code(&self) -> Option<&'static str> {
+        self.code
+    }
+
+    /// The sentence, with no document text and no path outside the project.
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+impl From<String> for LoadError {
+    fn from(text: String) -> Self {
+        Self::new(text)
+    }
+}
+
+impl std::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
+impl std::error::Error for LoadError {}
 
 /// Everything the commands need from outside the library: directories, the network, keys,
 /// revocations and the inputs that only the resolved config knows. The binary builds it once.

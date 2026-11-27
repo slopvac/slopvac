@@ -157,6 +157,9 @@ pub struct PackOutcome {
     pub tree: PathBuf,
     /// A modified tree too large to delete was moved here and keeps using storage.
     pub quarantined: Option<PathBuf>,
+    /// A cached file of this plugin was not what it must be (over its size cap, or hashing to
+    /// another digest), was removed and was fetched again. Only sync repairs the cache.
+    pub repaired: bool,
     /// Store key of the managed Python environment for this pack, when its
     /// manifest selects `runtime = "python"` and the syncer builds environments
     /// ([`Syncer::with_python`]).
@@ -425,6 +428,7 @@ impl<'a> Syncer<'a> {
             change,
             tree,
             quarantined,
+            repaired: false,
             python_env: None,
         };
         let extract = |source| SyncError::Extract {

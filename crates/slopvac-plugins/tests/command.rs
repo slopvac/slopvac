@@ -31,7 +31,9 @@ use slopvac_plugins::revoke::Revocations;
 use slopvac_plugins::sign::KeyPolicy;
 use slopvac_plugins::sync::{Network, PythonBuild};
 use slopvac_plugins::trust::{DeclSummary, TrustGate, TrustRecord, TrustStore, VerifiedPlugin};
-use slopvac_plugins::{Dirs, PluginLoader, PluginSpec, RunError, Runner, SpawnGate, command, run};
+use slopvac_plugins::{
+    Dirs, LoadError, PluginLoader, PluginSpec, RunError, Runner, SpawnGate, command, run,
+};
 
 const NOW: &str = "2026-11-22T00:00:00Z";
 const HASH: &str = "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
@@ -254,9 +256,9 @@ impl TreeLoader {
 }
 
 impl PluginLoader for TreeLoader {
-    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
         if locked.id.as_str() != self.id {
-            return Err("no such plugin tree".to_owned());
+            return Err("no such plugin tree".to_owned().into());
         }
         let vp = VerifiedPlugin {
             name: self.id.clone(),
@@ -924,7 +926,7 @@ mod python_env {
     }
 
     impl PluginLoader for PyLoader {
-        fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
+        fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
             Ok(self.parts())
         }
     }
@@ -966,7 +968,7 @@ mod python_env {
     }
 
     impl PluginLoader for BadCapture {
-        fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
+        fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
             let (mut vp, spec) = PyLoader {
                 root: self.root.clone(),
             }
@@ -1030,7 +1032,7 @@ struct OutsideProgram {
 }
 
 impl PluginLoader for OutsideProgram {
-    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
         let (vp, mut spec) = self.inner.load(locked)?;
         spec.program.clone_from(&self.program);
         Ok((vp, spec))
@@ -1216,8 +1218,10 @@ fn a_failed_sync_keeps_no_absolute_path_anywhere_in_its_source_chain() {
 struct FailingLoader;
 
 impl PluginLoader for FailingLoader {
-    fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
-        Err("cannot read /home/someone/secret-dir/plugin.toml".to_owned())
+    fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        Err("cannot read /home/someone/secret-dir/plugin.toml"
+            .to_owned()
+            .into())
     }
 }
 
@@ -1238,6 +1242,34 @@ fn loader_text_is_never_echoed_into_the_failure() {
         "cannot load `fake` to record trust: plugins-trust-inputs-failed: details are withheld because they can name paths outside the project"
     );
 }
+/// A loader whose refusal has a stable code and a sentence with no path.
+struct UnreadableCacheLoader;
+
+impl PluginLoader for UnreadableCacheLoader {
+    fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        Err(
+            LoadError::new("cannot read the cached files of plugin `fake`")
+                .with_code("plugin-store-unreadable"),
+        )
+    }
+}
+
+#[test]
+fn a_loader_refusal_with_a_code_is_reported_under_that_code() {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    let err = f
+        .run(&["trust", "fake"], false, |s| s.loader(UnreadableCacheLoader))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugin-store-unreadable");
+    assert!(
+        err.to_string()
+            .contains("cannot read the cached files of plugin `fake`"),
+        "{err}"
+    );
+}
+
 #[test]
 fn status_names_the_code_beside_a_withheld_loader_failure() {
     let f = Fixture::new();
@@ -1811,7 +1843,7 @@ struct RecordingLoader {
 }
 
 impl PluginLoader for RecordingLoader {
-    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), String> {
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
         self.seen.borrow_mut().push(locked.digest.to_string());
         self.inner.load(locked)
     }

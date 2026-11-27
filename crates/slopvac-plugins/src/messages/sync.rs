@@ -901,7 +901,7 @@ pub(crate) fn layout(id: &PackId, why: &str) -> String {
 /// caller redacts the path before it shows the text.
 pub(crate) fn cache_unreadable(id: &PackId, path: &Path, cause: &CacheCause) -> String {
     let cause = match cause {
-        CacheCause::Io(kind) => SyncText::CacheIo {
+        CacheCause::Io { kind, .. } => SyncText::CacheIo {
             kind: kind.to_string(),
         }
         .to_string(),
