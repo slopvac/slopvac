@@ -81,7 +81,13 @@ Owners: `slopvac-8l4.12.1` for the global flag and environment, `slopvac-8l4.4.2
 - In CI the update check stays off.
 - No code path prompts, in CI or anywhere else.
 - `plugins sync` in CI runs from the lockfile. It fails with exit 2 when the lockfile is missing or a digest differs, and it leaves the lockfile as it found it.
-- In CI, `plugins sync` also compares the plugin ids in the config with a lockfile that it can read. Two cases fail with `lock-mismatch` and exit 2, and the lockfile stays as it was. In the first case, a configured plugin has no lock entry. In the second case, a lock entry belongs to no configured plugin and to no plugin that a configured plugin requires. The comparison checks ids only. Outside CI, `plugins sync` does not make this comparison.
+- In CI, `plugins sync` also compares the `[[plugins]]` entries in the config with a lockfile that it can read, before it fetches anything. The comparison reads only the config and the lockfile, never an installed tree. Four cases fail with `lock-mismatch` and exit 2, and the lockfile stays as it was:
+  - A configured plugin has no lock entry.
+  - A lock entry belongs to no configured plugin and to no plugin that a configured plugin requires.
+  - The `source` of a configured plugin names a different source from its lock entry. For an `oci://` source, only the registry and the repository are compared, and a tag or digest on either side is ignored, because the locked `version` and `digest` pin the content. A `git+https://` or `https://` source is compared as text. A path source is resolved against the directory of the config file that declares it, and compared with the locked path, which is relative to the project root.
+  - The locked `version` of a configured plugin does not satisfy the plugin's configured `version` requirement. An entry with no requirement accepts any version.
+
+  A plugin that is locked only because a configured plugin requires it has no config entry, so only the second case applies to it. The message lists each difference by plugin id. For a source, it says that the source differs and does not repeat the configured value (section 1.7). Outside CI, `plugins sync` does not make this comparison.
 - A GitHub Action run that needs plugins runs `plugins sync` as a separate, named step. The lint step runs with `--offline`.
 
 Owners: `slopvac-8l4.9.3` for lockfile behavior, `slopvac-8l4.13.6` for the Action.
@@ -476,7 +482,7 @@ The binary runs the `plugins` group. The subcommands `search`, `pin`, `rotate`, 
 | Code | Meaning | Raised by |
 | --- | --- | --- |
 | `offline-plugin-missing` | Offline, a locked plugin is not in the cache. The message names the plugin and its digest (section 1.3). | `plugins sync` |
-| `lock-mismatch` | The resolved plugins differ from the lockfile. Or the configured plugin ids differ from the ids of a valid lockfile: a configured plugin has no lock entry, or a lock entry is no longer needed. The message lists each difference. The lockfile is not changed (section 1.4). | `plugins sync` in CI |
+| `lock-mismatch` | The resolved plugins differ from the lockfile. Or the configured plugins differ from a valid lockfile: a configured plugin has no lock entry, a lock entry is no longer needed, a configured source differs from the locked source, or a locked version is outside the configured requirement. The message lists each difference. The lockfile is not changed (section 1.4). | `plugins sync` in CI |
 | `digest-mismatch` | Fetched or read content does not hash to the digest that the lockfile pins. | `plugins sync` |
 | `cache-tampered` | Offline, `plugins sync` found that an installed tree differs from the hash it records, and it cannot fetch the tree again. Sync removes the tree and exits 2. Online, sync removes the tree, fetches and installs it again, and reports the repair as a line of its output. Only `plugins sync` removes a tree. `plugins trust` reports `plugins-trust-inputs-failed` or `plugin-store-unreadable`, and the synced-plugin load in `slopvac-packs` reports `plugin-tampered` or `plugin-store-unreadable`. Neither removes anything. | `plugins sync` while offline |
 | `plugin-tampered` | The cached archive of a locked plugin, or its installed tree, hashes to something other than the lock pins. A hash was computed and does not match. A file that cannot be read is `plugin-store-unreadable`, not this code. The load removes nothing, and `slopvac plugins sync` restores the tree. | the synced-plugin load in `slopvac-packs`, which no command runs yet |
