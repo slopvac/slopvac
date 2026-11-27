@@ -380,6 +380,26 @@ _ROUTING_FAULTS = {
         ' "replaced": []})',
         "routing: 1 document(s) do not resolve to the repository styles",
     ),
+    "settings-missing": (
+        'del next(i for i in document["inputs"] if i["path"] == "docs/a.md")["settings"]',
+        "routing: 1 document(s) have no resolved settings",
+    ),
+    "settings-null": (
+        'next(i for i in document["inputs"] if i["path"] == "docs/a.md")["settings"] = None',
+        "routing: 1 document(s) have no resolved settings",
+    ),
+    "settings-not-a-list": (
+        'next(i for i in document["inputs"] if i["path"] == "docs/a.md")["settings"] = "thresholds.min_score"',
+        "routing: 1 document(s) have no resolved settings",
+    ),
+    "settings-entry-not-an-object": (
+        'next(i for i in document["inputs"] if i["path"] == "docs/a.md")["settings"].append("styles")',
+        "routing: 1 document(s) have no resolved settings",
+    ),
+    "readme-settings-missing": (
+        'del next(i for i in document["inputs"] if i["path"] == "README.md")["settings"]',
+        "routing: 1 document(s) have no resolved settings",
+    ),
     "no-rules": (
         'document["inputs"][0]["rules"]["total"] = 0',
         "routing: 1 document(s) have no rule that runs",
