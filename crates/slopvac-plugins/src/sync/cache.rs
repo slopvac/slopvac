@@ -96,12 +96,24 @@ pub struct Store {
     archive_bytes: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
     /// Called each time the store lock is asked for, before it can block.
     #[cfg(feature = "test-support")]
-    lock_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    lock_hook: Option<LockHook>,
     /// An OS error code that every write to a staged copy fails with.
     #[cfg(feature = "test-support")]
     staging_fault: Option<i32>,
     /// Plugins whose cached files sync removed and fetched again in this run.
     repaired: std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<PackId>>>,
+}
+
+/// What a test hangs on the lock of the store.
+#[cfg(feature = "test-support")]
+#[derive(Clone)]
+struct LockHook(std::sync::Arc<dyn Fn() + Send + Sync>);
+
+#[cfg(feature = "test-support")]
+impl std::fmt::Debug for LockHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("LockHook")
+    }
 }
 
 /// What a test hangs on the read boundary of the store.
@@ -165,7 +177,7 @@ impl Store {
     #[must_use]
     #[cfg(feature = "test-support")]
     pub fn with_lock_hook(mut self, hook: std::sync::Arc<dyn Fn() + Send + Sync>) -> Self {
-        self.lock_hook = Some(hook);
+        self.lock_hook = Some(LockHook(hook));
         self
     }
 
@@ -249,7 +261,7 @@ impl Store {
     pub fn lock(&self) -> Result<StoreLock, SyncError> {
         #[cfg(feature = "test-support")]
         if let Some(hook) = &self.lock_hook {
-            hook();
+            (hook.0)();
         }
         self.prepare()?;
         let path = self.root.join(".lock");
