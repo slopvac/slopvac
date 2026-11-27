@@ -311,6 +311,19 @@ fn claims_cases() -> Vec<Case> {
             |d| set(d, "/dropped", json!({})),
             &[("type", "/dropped")],
         ),
+    ]
+}
+
+/// The claims invariants: what a changed and an added claim carry, and the ranges.
+fn claims_invariant_cases() -> Vec<Case> {
+    let c = |name, change, expect| Case {
+        name,
+        file: CLAIMS,
+        start: Start::Claims,
+        change,
+        expect,
+    };
+    vec![
         c(
             "claims: a changed claim without its original",
             |d| remove(d, "/claims/0", "original"),
@@ -456,6 +469,19 @@ fn update_cases() -> Vec<Case> {
             |d| set(d, "/stats/churn", json!("many")),
             &[("type", "/stats/churn")],
         ),
+    ]
+}
+
+/// The `update` invariants: the payload, the provider, and the items.
+fn update_invariant_cases() -> Vec<Case> {
+    let c = |name, change, expect| Case {
+        name,
+        file: PLAN,
+        start: Start::Update,
+        change,
+        expect,
+    };
+    vec![
         c(
             "plan: an update with the mechanical payload",
             |d| set(d, "/payload", json!({"kind": "none", "items": []})),
@@ -668,7 +694,9 @@ fn errors_of(validator: &jsonschema::Validator, document: &Value) -> Vec<(String
 fn every_negative_case_changes_one_thing_and_fails_on_exactly_that() -> TestResult {
     let cases: Vec<Case> = claims_cases()
         .into_iter()
+        .chain(claims_invariant_cases())
         .chain(update_cases())
+        .chain(update_invariant_cases())
         .chain(rewrite_cases())
         .chain(mechanical_cases())
         .collect();
