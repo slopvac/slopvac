@@ -898,30 +898,8 @@
     },
     "normal/issue-256": {
       "document": {
-        "categories": {
-          "docs-discipline": {
-            "budget": 0.5,
-            "category": "docs-discipline",
-            "errors": 0,
-            "findings": 0,
-            "gating_per_100_words": 0.0,
-            "over_budget": false,
-            "per_100_words": 0.0,
-            "score": 100.0,
-            "suggestions": 0,
-            "warnings": 0
-          }
-        },
         "paragraphs": 2,
-        "prose": {
-          "errors": 0,
-          "findings": 0,
-          "per_100_words": 0.0,
-          "warnings": 0
-        },
-        "score": 100.0,
         "sentences": 4,
-        "total_findings": 0,
         "words": 33
       }
     },
@@ -4353,38 +4331,10 @@
     },
     "strict/issue-256": {
       "document": {
-        "categories": {
-          "docs-discipline": {
-            "budget": 0.2,
-            "category": "docs-discipline",
-            "errors": 0,
-            "findings": 0,
-            "gating_per_100_words": 0.0,
-            "over_budget": false,
-            "per_100_words": 0.0,
-            "score": 100.0,
-            "suggestions": 0,
-            "warnings": 0
-          }
-        },
-        "errors": 0,
-        "gate": {
-          "passed": true,
-          "reasons": []
-        },
         "paragraphs": 2,
-        "prose": {
-          "errors": 0,
-          "findings": 0,
-          "per_100_words": 0.0,
-          "warnings": 0
-        },
-        "score": 100.0,
         "sentences": 4,
-        "total_findings": 0,
         "words": 33
-      },
-      "exit": 0
+      }
     },
     "strict/rule-examples-ai-tells-figurative": {
       "document": {
@@ -5394,7 +5344,6 @@
           "per_100_words": 3.48,
           "warnings": 48
         },
-        "score": 48.4,
         "total_findings": 134,
         "warnings": 54
       },

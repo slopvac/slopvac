@@ -401,7 +401,8 @@ document = { categories = [
   { category = "ste-sentences", findings = 0, errors = 0, warnings = 0, suggestions = 0, per_100_words = 0.0, gating_per_100_words = 0.0, budget = 0.5, score = 100.0, over_budget = false },
   { category = "ste-verbs", findings = 0, errors = 0, warnings = 0, suggestions = 0, per_100_words = 0.0, gating_per_100_words = 0.0, budget = 0.4, score = 100.0, over_budget = false },
   { category = "ste-words", findings = 0, errors = 0, warnings = 0, suggestions = 0, per_100_words = 0.0, gating_per_100_words = 0.0, budget = 0.5, score = 100.0, over_budget = false },
-], errors = 0, gate = { passed = true, reasons = [] }, prose = { findings = 0, errors = 0, warnings = 0, per_100_words = 0.0 }, score = 100.0, suggestions = 0, total_findings = 0 }
+], errors = 0, gate = { passed = true, reasons = [
+] }, prose = { findings = 0, errors = 0, warnings = 0, per_100_words = 0.0 }, score = 100.0, suggestions = 0, total_findings = 0 }
 run = { group = "prose:markdown", summary = { categories = [
   { category = "ai-residue", findings = 3, errors = 3, warnings = 0, suggestions = 0, per_100_words = 0.019, score = 98.7 },
   { category = "ai-tells-agentic", findings = 3, errors = 0, warnings = 3, suggestions = 0, per_100_words = 0.019, score = 99.4 },
