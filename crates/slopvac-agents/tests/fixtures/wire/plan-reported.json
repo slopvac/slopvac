@@ -1,0 +1,100 @@
+{
+  "schema_version": 3,
+  "review_type": "update",
+  "reason": "a changed sentence changes a literal or negation",
+  "stats": {
+    "original_sentences": 15,
+    "churn": 6,
+    "literal_claims": 3,
+    "fact_candidates": 3
+  },
+  "scope": {
+    "required": 6,
+    "extra_budget": 8
+  },
+  "payload": {
+    "kind": "passages",
+    "items": [
+      {
+        "role": "changed",
+        "line": 7,
+        "text": "The default timeout is 60 seconds.",
+        "original": "The default timeout is 30 seconds."
+      },
+      {
+        "role": "changed",
+        "line": 7,
+        "text": "Slopvac retries a failed download once.",
+        "original": "Slopvac never retries a failed download."
+      },
+      {
+        "role": "added",
+        "line": 11,
+        "text": "Use `--refresh` to force a download."
+      },
+      {
+        "role": "dropped",
+        "line": 3,
+        "text": "Entries expire after 24 hours."
+      },
+      {
+        "role": "dropped",
+        "line": 9,
+        "text": "Each pack carries a minisign signature."
+      },
+      {
+        "role": "dropped",
+        "line": 11,
+        "text": "The directory must be writable."
+      }
+    ]
+  },
+  "uses_provider": true,
+  "author_model": "gpt-5",
+  "reviewer_model": "claude-x",
+  "reviewer_model_checked": true,
+  "notices": [
+    {
+      "code": "review-model-same",
+      "level": "warning",
+      "message": "the reviewer model \"gpt-5\" is the author's model, so the review is not independent. Use a model from a different family than the author's.",
+      "data": {
+        "author": "gpt-5",
+        "author_source": "flag",
+        "items": [
+          {
+            "line": 7,
+            "role": "changed"
+          },
+          {
+            "line": 7,
+            "role": "changed"
+          }
+        ],
+        "reviewer": "gpt-5",
+        "reviewer_source": "reported"
+      }
+    },
+    {
+      "code": "review-model-reported-mismatch",
+      "level": "info",
+      "message": "the provider reported \"gpt-5\" for part of the review, not the requested \"claude-x\". Check which model reviewed those items.",
+      "data": {
+        "items": [
+          {
+            "line": 7,
+            "role": "changed"
+          },
+          {
+            "line": 7,
+            "role": "changed"
+          }
+        ],
+        "reported": "gpt-5",
+        "requested": "claude-x",
+        "requested_source": "provider"
+      }
+    }
+  ],
+  "report": "reported"
+}

@@ -168,6 +168,32 @@ pub const ARTIFACTS: &[Artifact] = &[
         keep: &[],
         build: protocol_codes,
     },
+    Artifact {
+        file: "claims.schema.json",
+        title: "slopvac v3 claims report",
+        description: Some(
+            "The document that `slopvac claims` prints by default: the sentences a revision \
+             changed or added, and the original sentences it dropped, with the literals and \
+             negations that differ. It is public output.",
+        ),
+        imports: &["common.schema.json"],
+        inline: &[],
+        keep: &[],
+        build: claims_report,
+    },
+    Artifact {
+        file: "review-plan.schema.json",
+        title: "slopvac v3 review plan",
+        description: Some(
+            "The document that `slopvac review` prints: the review type and why, the change \
+             stats, the scope budget, the exact payload a provider receives, the model notices \
+             and, after a provider call, the provider's report. It is public output.",
+        ),
+        imports: &["common.schema.json", "lint-report.schema.json"],
+        inline: &[],
+        keep: &[],
+        build: review_plan,
+    },
 ];
 
 /// The producer contract: what the generated reference file holds.
@@ -191,6 +217,22 @@ fn plugins_lock() -> Value {
     schema_settings(Contract::Deserialize)
         .into_generator()
         .into_root_schema_for::<PluginsLock>()
+        .to_value()
+}
+
+/// The producer contract: what `slopvac claims` serializes.
+fn claims_report() -> Value {
+    schema_settings(Contract::Serialize)
+        .into_generator()
+        .into_root_schema_for::<slopvac_agents::claims::Report>()
+        .to_value()
+}
+
+/// The producer contract: what `slopvac review` serializes.
+fn review_plan() -> Value {
+    schema_settings(Contract::Serialize)
+        .into_generator()
+        .into_root_schema_for::<slopvac_agents::review::Plan>()
         .to_value()
 }
 

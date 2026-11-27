@@ -47,11 +47,15 @@ pub enum AgentsError {
     Usage(String),
     /// A review policy refusal with its own stable code.
     #[error("{message}")]
+    #[non_exhaustive]
     Coded {
         /// The stable code.
         code: &'static str,
         /// The message.
         message: String,
+        /// The failure behind it, when there is one.
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
     /// The config could not be loaded; the code is the config crate's.
     ///
@@ -287,12 +291,43 @@ impl AgentsError {
         }
     }
 
+    /// A refusal with the stable `code` and the text `message`, and no cause behind it.
+    #[must_use]
+    pub fn new_coded(code: &'static str, message: impl Into<String>) -> Self {
+        Self::Coded {
+            code,
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    /// This error with `source` as its cause. An error without a code field is returned as it is.
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        if let Self::Coded { source: slot, .. } = &mut self {
+            *slot = Some(Box::new(source));
+        }
+        self
+    }
+
     /// A refusal with the stable code and the rendered text of `message`.
     pub(crate) fn coded(message: &AgentsMessage) -> Self {
-        Self::Coded {
-            code: message.code(),
-            message: message.to_string(),
-        }
+        Self::new_coded(message.code(), message.to_string())
+    }
+
+    /// A usage failure with the text `message`, caused by `source`.
+    pub(crate) fn usage_from(
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::new_coded(
+            codes::USAGE,
+            AgentsMessage::Usage {
+                message: message.into(),
+            }
+            .to_string(),
+        )
+        .with_source(source)
     }
 
     /// A usage failure with the text `message`.

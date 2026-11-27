@@ -223,7 +223,7 @@ fn run_writes_json_for_a_reviewer_and_text_on_request() {
     };
     let json: serde_json::Value =
         serde_json::from_str(&claims::run(&args("json")).unwrap()).unwrap();
-    assert_eq!(json["schema_version"], 1);
+    assert_eq!(json["schema_version"], 3);
     assert_eq!(json["summary"]["dropped"], 3);
     assert_eq!(json["claims"][0]["change"], "changed");
     let text = claims::run(&args("text")).unwrap();
