@@ -150,6 +150,23 @@ mod tests {
     }
 
     #[test]
+    fn an_unreadable_cached_file_shows_its_path_as_external_and_never_in_full() {
+        let e = SyncError::CacheUnreadable {
+            id: "demo".parse().unwrap(),
+            path: std::path::PathBuf::from("/home/someone/cache/blobs/ab12"),
+            cause: crate::sync::CacheCause::Io(std::io::ErrorKind::PermissionDenied),
+        };
+
+        let shown = sync(Path::new("/project"), &e).to_string();
+
+        assert_eq!(
+            shown,
+            "plugin-store-unreadable: plugin `demo`: cannot read the cached file \
+             <external>/ab12: permission denied"
+        );
+    }
+
+    #[test]
     fn the_withheld_sentence_always_carries_the_code_it_was_given() {
         assert!(withheld("some-code").starts_with("some-code: "));
     }

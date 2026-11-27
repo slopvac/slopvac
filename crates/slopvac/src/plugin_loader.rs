@@ -373,6 +373,26 @@ mod tests {
         );
     }
 
+    /// A link is not a regular file, so the walk cannot finish: nothing was compared.
+    #[test]
+    fn a_link_planted_in_an_in_place_plugin_is_a_store_failure_and_not_tampering() {
+        let world = World::new();
+        world.path_plugin();
+        std::os::unix::fs::symlink(
+            "slopvac-plugin.toml",
+            world.project().join("plugins/fmt/link"),
+        )
+        .unwrap();
+        let refusal = world.loader().try_load(&world.fmt()).unwrap_err();
+        assert!(
+            matches!(
+                refusal,
+                LoadRefusal::Synced(SyncedError::StoreUnreadable { .. })
+            ),
+            "{refusal:?}"
+        );
+    }
+
     #[test]
     fn a_locked_code_plugin_with_no_installed_tree_is_refused_as_not_installed() {
         let world = World::new();
