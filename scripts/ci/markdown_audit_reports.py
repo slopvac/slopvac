@@ -115,18 +115,20 @@ def _int(value: object) -> bool:
     return type(value) is int
 
 
-def routing_problems(inputs: list[dict], paths: list[str]) -> list[str]:
+def routing_problems(inputs: list[dict], paths: list[str], styles: object = None) -> list[str]:
     """Return one message per way the resolved config of an authored document is wrong.
 
     `inputs` holds the records of the document, and `paths` the path of each, as the audit
     normalises it. The repository config must resolve for every document: the config root is
     the working directory, the config sources are the built-in defaults and `slopvac.toml`,
     and the profile is `normal`. A `README.md` takes `thresholds.min_score` from an override
-    block and no other document does. The catalogue is not empty and not every rule is off.
+    block and no other document does. The resolved `styles` setting equals `styles`, the
+    value the repository's `slopvac.toml` holds (`None` when it sets none). The catalogue is
+    not empty and not every rule is off.
     The messages hold counts only: a path or a value comes from the repository and can carry
     text the Actions log would act on.
     """
-    wrong_config = wrong_profile = wrong_override = wrong_rules = 0
+    wrong_config = wrong_profile = wrong_override = wrong_rules = wrong_styles = 0
     for record, path in zip(inputs, paths, strict=True):
         if record.get("config_root") != "." or record.get("config_sources") != [_CORE, _PROJECT]:
             wrong_config += 1
@@ -142,6 +144,11 @@ def routing_problems(inputs: list[dict], paths: list[str]) -> list[str]:
         overridden = layers == ["override"]
         if overridden != (path.rsplit("/", 1)[-1] == "README.md"):
             wrong_override += 1
+        resolved_styles = [
+            s.get("value") for s in settings if isinstance(s, dict) and s.get("key") == "styles"
+        ]
+        if resolved_styles != ([] if styles is None else [styles]):
+            wrong_styles += 1
         rules = record.get("rules")
         counts = rules.get("configured") if isinstance(rules, dict) else None
         total = rules.get("total") if isinstance(rules, dict) else None
@@ -153,6 +160,8 @@ def routing_problems(inputs: list[dict], paths: list[str]) -> list[str]:
         problems.append(f"routing: {wrong_config} document(s) do not resolve to the repository config")
     if wrong_profile:
         problems.append(f"routing: {wrong_profile} document(s) do not resolve to the normal profile")
+    if wrong_styles:
+        problems.append(f"routing: {wrong_styles} document(s) do not resolve to the repository styles")
     if wrong_override:
         problems.append(f"routing: {wrong_override} document(s) have the wrong README override")
     if wrong_rules:

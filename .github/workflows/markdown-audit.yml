@@ -247,7 +247,9 @@ jobs:
           routing_paths = [relative("routing", i, d) for i, d in enumerate(routing_document["inputs"])]
           bad = document_set_problems(
               "routing", routing_paths, {canonical[p] for p in authored_files}
-          ) or routing_problems(routing_document["inputs"], routing_paths)
+          ) or routing_problems(
+              routing_document["inputs"], routing_paths, original.get("styles")
+          )
           if bad:
               stop("\n".join(bad))
           print("ROUTING", escape(json.dumps(routing_counts(routing_document))), flush=True)
