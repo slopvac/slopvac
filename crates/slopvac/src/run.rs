@@ -281,8 +281,8 @@ fn dispatch(
             slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
         }),
         Some(("migrate", m)) => migrate(m, env, out),
-        Some(("report", m)) => match m.subcommand() {
-            Some(("consent", consent)) => {
+        Some(("report", m)) => {
+            if let Some(("consent", consent)) = m.subcommand() {
                 let clock = || {
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -290,8 +290,7 @@ fn dispatch(
                         .map(|d| d.as_secs())
                 };
                 report::consent::run(consent, env, &clock, out)
-            }
-            _ => {
+            } else {
                 let opener = report::github::SystemOpener;
                 let gh = report::gh::SystemGh::default();
                 report::run(
@@ -307,7 +306,7 @@ fn dispatch(
                     err_out,
                 )
             }
-        },
+        }
         Some(("completions", m)) => {
             let shell = *m
                 .get_one::<clap_complete::Shell>("shell")

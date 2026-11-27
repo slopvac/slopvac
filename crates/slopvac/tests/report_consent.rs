@@ -137,7 +137,7 @@ fn a_new_value_keeps_the_unattended_entries() {
 #[rstest]
 #[case::empty(b"".as_slice())]
 #[case::not_json(b"consent: on".as_slice())]
-#[case::truncated(br#"{"schema":1,"consent":"on","recor"#.as_slice())]
+#[case::truncated(br#"{"schema":1,"consent":"on","recorded":"#.as_slice())]
 #[case::missing_consent(br#"{"schema":1,"recorded":5,"unattended":[]}"#.as_slice())]
 #[case::missing_recorded(br#"{"schema":1,"consent":"on","unattended":[]}"#.as_slice())]
 #[case::missing_unattended(br#"{"schema":1,"consent":"on","recorded":5}"#.as_slice())]
