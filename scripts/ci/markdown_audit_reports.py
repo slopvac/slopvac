@@ -128,38 +128,43 @@ def routing_problems(inputs: list[dict], paths: list[str], styles: object = None
     The messages hold counts only: a path or a value comes from the repository and can carry
     text the Actions log would act on.
     """
-    wrong_config = wrong_profile = wrong_override = wrong_rules = wrong_styles = 0
+    wrong_config = wrong_profile = wrong_override = wrong_rules = wrong_styles = wrong_settings = 0
     for record, path in zip(inputs, paths, strict=True):
         if record.get("config_root") != "." or record.get("config_sources") != [_CORE, _PROJECT]:
             wrong_config += 1
         if record.get("profile") != "normal":
             wrong_profile += 1
-        settings = record.get("settings")
-        settings = settings if isinstance(settings, list) else []
-        layers = [
-            s.get("source", {}).get("layer") if isinstance(s.get("source"), dict) else None
-            for s in settings
-            if isinstance(s, dict) and s.get("key") == "thresholds.min_score"
-        ]
-        overridden = layers == ["override"]
-        if overridden != (path.rsplit("/", 1)[-1] == "README.md"):
-            wrong_override += 1
-        resolved_styles = [
-            s.get("value") for s in settings if isinstance(s, dict) and s.get("key") == "styles"
-        ]
-        if resolved_styles != ([] if styles is None else [styles]):
-            wrong_styles += 1
         rules = record.get("rules")
         counts = rules.get("configured") if isinstance(rules, dict) else None
         total = rules.get("total") if isinstance(rules, dict) else None
         off = counts.get("off") if isinstance(counts, dict) else None
         if not (_int(total) and _int(off) and total > 0 and total > off):
             wrong_rules += 1
+        settings = record.get("settings")
+        if not isinstance(settings, list) or not all(isinstance(s, dict) for s in settings):
+            # A record with no usable settings can pass no per-setting check.
+            wrong_settings += 1
+            continue
+        layers = [
+            s.get("source", {}).get("layer") if isinstance(s.get("source"), dict) else None
+            for s in settings
+            if s.get("key") == "thresholds.min_score"
+        ]
+        overridden = layers == ["override"]
+        if overridden != (path.rsplit("/", 1)[-1] == "README.md"):
+            wrong_override += 1
+        resolved_styles = [
+            s.get("value") for s in settings if s.get("key") == "styles"
+        ]
+        if resolved_styles != ([] if styles is None else [styles]):
+            wrong_styles += 1
     problems = []
     if wrong_config:
         problems.append(f"routing: {wrong_config} document(s) do not resolve to the repository config")
     if wrong_profile:
         problems.append(f"routing: {wrong_profile} document(s) do not resolve to the normal profile")
+    if wrong_settings:
+        problems.append(f"routing: {wrong_settings} document(s) have no resolved settings")
     if wrong_styles:
         problems.append(f"routing: {wrong_styles} document(s) do not resolve to the repository styles")
     if wrong_override:
