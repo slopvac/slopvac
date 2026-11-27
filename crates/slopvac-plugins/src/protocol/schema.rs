@@ -123,8 +123,12 @@ pub(crate) struct FeatureNameSchema;
 
 /// Protocol version: the value space of the plugin API version.
 #[derive(JsonSchema)]
-#[schemars(description = text::PROTOCOL_VERSION, with = "ApiVersion")]
-pub(crate) struct ProtocolVersion;
+#[schemars(description = text::PROTOCOL_VERSION)]
+#[expect(
+    dead_code,
+    reason = "schema only: the derive reads the field and no code reads a value"
+)]
+pub(crate) struct ProtocolVersion(ApiVersion);
 
 /// The review types of `provider/complete`.
 #[derive(JsonSchema)]
@@ -407,7 +411,7 @@ impl JsonSchema for Response {
 
 /// The tags of one document.
 #[derive(JsonSchema)]
-#[schemars(inline)]
+#[schemars(inline, transform = bare_entry)]
 #[expect(
     dead_code,
     reason = "schema only: the derive reads the fields and no code reads a value"
@@ -419,7 +423,7 @@ struct TagEntry {
 
 /// The segments of one document.
 #[derive(JsonSchema)]
-#[schemars(inline)]
+#[schemars(inline, transform = bare_entry)]
 #[expect(
     dead_code,
     reason = "schema only: the derive reads the fields and no code reads a value"
@@ -431,7 +435,7 @@ struct SegmentEntry {
 
 /// The edits for one document.
 #[derive(JsonSchema)]
-#[schemars(inline)]
+#[schemars(inline, transform = bare_entry)]
 #[expect(
     dead_code,
     reason = "schema only: the derive reads the fields and no code reads a value"
@@ -443,7 +447,7 @@ struct EditEntry {
 
 /// The score of one document.
 #[derive(JsonSchema)]
-#[schemars(inline)]
+#[schemars(inline, transform = bare_entry)]
 #[expect(
     dead_code,
     reason = "schema only: the derive reads the fields and no code reads a value"
@@ -455,7 +459,7 @@ struct ScoreEntry {
 
 /// The findings that come with a document sent to a fixer or a scorer.
 #[derive(JsonSchema)]
-#[schemars(inline)]
+#[schemars(inline, transform = bare_entry)]
 #[expect(
     dead_code,
     reason = "schema only: the derive reads the fields and no code reads a value"
@@ -512,6 +516,7 @@ struct ScoreResultShape {
 #[derive(JsonSchema)]
 #[schemars(
     inline,
+    transform = bare_entry,
     extend("if" = {"not": {"required": ["error"]}}, "then" = {"required": ["text", "model"]})
 )]
 #[expect(
