@@ -13,6 +13,7 @@ use slopvac_update::messages::UpdateMessage;
 
 use crate::PluginSpec;
 use crate::cause::{self, withheld};
+use crate::host::{HostConfig, Plugin};
 use crate::lock::{
     ConfiguredPack, ConfiguredSource, LockReadError, LockedPack, Lockfile, PackId, PackKind,
     SourceKind, VersionReq, config_drift, entry_drift, outdated as lock_outdated,
@@ -301,6 +302,49 @@ impl<'a> Runner<'a> {
             }
         }
         Ok((gate, spec))
+    }
+
+    /// The lock entry of the code plugin `id`, read once from the project's lock.
+    ///
+    /// # Errors
+    /// The lock cannot be read or is invalid (`plugins-lock-unreadable`,
+    /// `plugins-lock-invalid`), the lock has no plugin `id` (`plugins-unknown-plugin`), or the
+    /// plugin is a data plugin (`plugin-not-code`).
+    pub fn locked_code(&self, id: &str) -> Result<LockedPack, RunError> {
+        let lock = read_lock(self, false)?;
+        match locked_kind(&lock, id) {
+            None => return Err(RunError::UnknownPlugin { id: line(id) }),
+            Some(PackKind::Data) => return Err(RunError::NotCode { id: line(id) }),
+            Some(PackKind::Code) => {}
+        }
+        let pack_id = id
+            .parse::<PackId>()
+            .map_err(|_| RunError::UnknownPlugin { id: line(id) })?;
+        lock.get(&pack_id)
+            .cloned()
+            .ok_or_else(|| RunError::UnknownPlugin { id: line(id) })
+    }
+
+    /// Start a loaded code plugin through the gate that `plugins trust` records against: the
+    /// same trust store, `SLOPVAC_TRUST` hashes, revocation cache and managed Python launch. The
+    /// gate refuses an untrusted or revoked plugin before anything is spawned.
+    ///
+    /// # Errors
+    /// The plugin needs a managed environment that is not there (`plugin-spawn-failed`), or
+    /// [`Plugin::start`](crate::Plugin::start) failed, under the code of its error.
+    pub fn start(
+        &self,
+        vp: &VerifiedPlugin,
+        spec: PluginSpec,
+        cfg: &HostConfig,
+    ) -> Result<Plugin, RunError> {
+        const SPAWN_FAILED: &str = "plugin-spawn-failed";
+        let (gate, spec) = self
+            .prepared(vp, spec, SPAWN_FAILED)
+            .map_err(|text| Reported::new(SPAWN_FAILED, text))?;
+        Plugin::start(&spec, cfg, &gate).map_err(|e| RunError::Failed {
+            source: Reported::new(e.error.slopvac_code(), e.error.to_string()),
+        })
     }
 }
 
@@ -781,12 +825,9 @@ fn locked_kind(lock: &Lockfile, id: &str) -> Option<PackKind> {
 }
 
 fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, RunError> {
-    let lock = read_lock(runner, false)?;
-    match locked_kind(&lock, id) {
-        None => return Err(RunError::UnknownPlugin { id: line(id) }),
-        Some(PackKind::Data) => return Err(RunError::NotCode { id: line(id) }),
-        Some(PackKind::Code) => {}
-    }
+    // One snapshot: this entry is checked against the revocation list and the signature, it is
+    // what the loader loads, and its source is what the output reports.
+    let pack = &runner.locked_code(id)?;
     let refused = |detail: String| RunError::TrustInputs {
         id: line(id),
         detail: line(&detail),
@@ -794,12 +835,6 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
     let loader = runner
         .loader
         .ok_or_else(|| refused(render(&CliText::WhyNoLoader)))?;
-    let pack_id = id.parse::<PackId>().map_err(|e| refused(e.to_string()))?;
-    // One snapshot: this entry is checked against the revocation list and the signature, it is
-    // what the loader loads, and its source is what the output reports.
-    let pack = lock
-        .get(&pack_id)
-        .ok_or_else(|| RunError::UnknownPlugin { id: line(id) })?;
     // The locked digest and signing key come first: a path or git source has no manifest
     // digest or key id in the loader's plugin, so the list can name it only through the lock.
     let current = runner

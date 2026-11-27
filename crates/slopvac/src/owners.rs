@@ -239,30 +239,50 @@ pub fn prime(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
     Ok(exit::PASS)
 }
 
-/// The model that wrote the revision, from `[review] author_model` of the nearest config.
-fn author_model(root: &Path) -> Result<Option<String>, CliError> {
-    let presets = StylePresets(BuiltinSource);
-    let found = Discovery::new(&presets)
-        .nearest(root)
-        .map_err(|e| engine::config_error(&e, root))?;
-    Ok(found
-        .and_then(|config| config.project_value(&["review", "author_model"]))
-        .and_then(|value| value.as_str().map(str::to_owned)))
-}
-
 /// `slopvac review`.
 ///
-/// No model provider is installed yet, so a run without `--dry-run` that needs one fails
-/// with `review-provider-missing`; `--dry-run` and the mechanical type call none.
-pub fn review(m: &ArgMatches, offline: bool, out: &mut dyn Write) -> Result<u8, CliError> {
-    let env = ReviewEnv {
-        offline,
-        author_model: author_model(&cwd())?,
-        ..ReviewEnv::default()
+/// `[review] provider`, `model` and `author_model` come from the resolved project config, and
+/// the flags win over them. The provider plugin starts only when the run calls it. A run that
+/// stops prints no plan; the notices known before it stopped go to `err_out`.
+pub fn review(
+    m: &ArgMatches,
+    offline: bool,
+    env: &dyn crate::env::Env,
+    out: &mut dyn Write,
+    err_out: &mut dyn Write,
+) -> Result<u8, CliError> {
+    let root = cwd();
+    let presets = StylePresets(BuiltinSource);
+    let config = Discovery::new(&presets)
+        .nearest(&root)
+        .map_err(|e| engine::config_error(&e, &root))?;
+    let value = |key: &str| {
+        config
+            .as_ref()
+            .and_then(|c| c.project_value(&["review", key]))
+            .and_then(|v| v.as_str().map(str::to_owned))
     };
-    let text = review::run(m, &env).map_err(|e| agents_error(&e, &cwd()))?;
-    write(out, &text)?;
-    Ok(exit::PASS)
+    let provider = value("provider")
+        .map(|id| crate::review_provider::PluginProvider::new(id, offline, env, &root));
+    let review_env = ReviewEnv {
+        offline: crate::offline::project(offline, env, config.as_deref()),
+        provider: provider.as_ref().map(|p| p as &dyn review::ModelProvider),
+        author_model: value("author_model"),
+        reviewer_model: value("model"),
+    };
+    match review::run(m, &review_env) {
+        Ok(text) => {
+            write(out, &text)?;
+            Ok(exit::PASS)
+        }
+        Err(stopped) => {
+            for notice in &stopped.notices {
+                // A notice that cannot be written must not hide the error that follows it.
+                let _ = writeln!(err_out, "{}", slopvac_report::render_notice(notice));
+            }
+            Err(agents_error(&stopped.error, &root))
+        }
+    }
 }
 
 /// `slopvac claims`. Reads the two named files and nothing else, so it needs no network.

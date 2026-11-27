@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{PluginError, RpcError};
+use crate::error::{CompleteError, PluginError, RpcError};
 use crate::messages::host::{HostPhrase, HostText};
 use crate::protocol::schema::{bare_entry, bare_fields};
 use crate::protocol::text;
@@ -544,12 +544,28 @@ pub fn parse_completions(
     result: &Value,
     sent: &[&str],
 ) -> Result<Vec<Result<Completion, RpcError>>, PluginError> {
-    let entries = match_entries(result, "item", sent)?;
+    check_completions(result, sent).map_err(PluginError::from)
+}
+
+/// Check the result of a provider against the sent item ids, and say which stage refused it.
+///
+/// The entries come back in the order of `sent`, whatever order the plugin used.
+///
+/// # Errors
+/// [`CompleteError::Refused`] when the result breaks plugin-protocol.md section 5.3: no
+/// `results` list, an entry without an `item` string, an item that is missing, not requested or
+/// repeated, or an entry without `error` that lacks `text` or a non-empty `model`.
+/// [`CompleteError::Host`] for an entry whose error object is itself malformed.
+pub fn check_completions(
+    result: &Value,
+    sent: &[&str],
+) -> Result<Vec<Result<Completion, RpcError>>, CompleteError> {
+    let entries = match_entries(result, "item", sent).map_err(CompleteError::Refused)?;
     entries
         .into_iter()
         .map(|e| {
             if let Some(err) = e.get("error") {
-                return Ok(Err(parse_error_object(err)?));
+                return Ok(Err(parse_error_object(err).map_err(CompleteError::Host)?));
             }
             let text = e.get("text").and_then(Value::as_str);
             let model = e
@@ -557,7 +573,9 @@ pub fn parse_completions(
                 .and_then(Value::as_str)
                 .filter(|m| !m.is_empty());
             let (Some(text), Some(model)) = (text, model) else {
-                return Err(invalid(HostPhrase::ProviderEntry.as_static()));
+                return Err(CompleteError::Refused(invalid(
+                    HostPhrase::ProviderEntry.as_static(),
+                )));
             };
             let item = e.get("item").and_then(Value::as_str).unwrap_or_default();
             Ok(Ok(Completion {
@@ -972,6 +990,41 @@ mod tests {
         ] {
             assert!(parse_completions(&bad, &sent).is_err(), "{bad}");
         }
+    }
+
+    /// The result check is the one stage that `review` reports under its own code, so each
+    /// refusal must say which stage it came from.
+    #[test]
+    fn a_completion_refusal_names_the_stage_that_refused_it() {
+        let sent = ["i1", "i2"];
+        let ok = |i: &str| json!({"item": i, "text": "t", "model": "m"});
+        for refused in [
+            json!({"results": "none"}),
+            json!({"results": [ok("i1")]}),
+            json!({"results": [ok("i1"), ok("i2"), ok("i3")]}),
+            json!({"results": [ok("i1"), ok("i1"), ok("i2")]}),
+            json!({"results": [ok("i1"), {"item": "i2", "model": "m"}]}),
+            json!({"results": [ok("i1"), {"item": "i2", "text": "t", "model": ""}]}),
+        ] {
+            let err = check_completions(&refused, &sent).unwrap_err();
+            assert!(
+                matches!(err, CompleteError::Refused(_)),
+                "{refused}: {err:?}"
+            );
+            assert_eq!(
+                PluginError::from(err).slopvac_code(),
+                "plugin-output-invalid"
+            );
+        }
+        let malformed_error =
+            json!({"results": [ok("i1"), {"item": "i2", "error": {"message": "m"}}]});
+        let err = check_completions(&malformed_error, &sent).unwrap_err();
+        assert!(matches!(err, CompleteError::Host(_)), "{err:?}");
+        // An error entry needs no model, and the entries follow the sent order.
+        let error_entry = json!({"item": "i1", "error": {"code": -32603, "message": "m", "data": {"slopvac_code": "internal-error"}}});
+        let out = check_completions(&json!({"results": [ok("i2"), error_entry]}), &sent).unwrap();
+        assert_eq!(out[0].as_ref().unwrap_err().code_name(), "internal-error");
+        assert_eq!(out[1].as_ref().unwrap().item, "i2");
     }
 
     #[test]

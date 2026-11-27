@@ -21,7 +21,7 @@ use crate::guidance::{Guidance, Report, Review, ReviewDepth, Write};
 use crate::harness;
 use crate::messages::{AgentsPhrase, AgentsText, PrimeText, quoted};
 use crate::models::{self, Evals};
-use crate::review::{Approval, ReviewType};
+use crate::review::ReviewType;
 use crate::setup::{EXIT_FINDINGS, EXIT_INCOMPLETE, EXIT_OK};
 
 /// Schema version the topics name for lint JSON and config.
@@ -75,8 +75,6 @@ pub struct Settings {
     pub level: Level,
     /// Render the review topic for one type; `None` shows how to pick.
     pub review_type: Option<ReviewType>,
-    /// `review_approval` from the config.
-    pub review_approval: Approval,
 }
 
 /// The topic names, in index order.
@@ -311,7 +309,6 @@ fn render_template(
             ReviewDepth::Adversary => "adversary",
         },
         report => settings.guidance.report == Report::Ask,
-        review_approval => if settings.review_approval == Approval::Auto { "auto" } else { "ask" },
         commands => commands,
         topics => topics,
     };
@@ -492,7 +489,6 @@ pub fn run(matches: &ArgMatches, cli: &Command, root: &Path) -> Result<String, A
         review_type: matches
             .get_one::<String>("type")
             .and_then(|t| ReviewType::parse(t)),
-        ..Settings::default()
     };
     let mut out = render(
         matches.get_one::<String>("topic").map(String::as_str),

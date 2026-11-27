@@ -335,7 +335,7 @@ fn dispatch(
         Some(("validate", m)) => owners::validate(m, out),
         Some(("setup", m)) => owners::setup(m, out),
         Some(("prime", m)) => owners::prime(m, out),
-        Some(("review", m)) => owners::review(m, globals.offline, out),
+        Some(("review", m)) => owners::review(m, globals.offline, env, out, err_out),
         Some(("claims", m)) => owners::claims(m, out),
         Some(("man", m)) => man(m, out),
         Some(("plugins", m)) => plugins(m, globals.offline, env, out),
@@ -394,22 +394,33 @@ fn plugins(
     env: &dyn Env,
     out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
-    use slopvac_plugins::{Runner, oci, revoke, sign, sync};
     let cwd = std::env::current_dir().map_err(|e| plugins_setup_failed(&e.kind().to_string()))?;
+    with_plugin_runner(offline, env, &cwd, |runner, _| {
+        slopvac_plugins::run(m, runner, out).map_err(|e| CliError::new(e.code(), e.to_string()))
+    })
+}
+
+/// Build the plugins runner for the project around `cwd` and hand it to `f`, with the loader
+/// of installed code plugins. `slopvac plugins` and the model provider of `slopvac review`
+/// share it, so both read the same lock, store, trust store, revocations and keys.
+pub(crate) fn with_plugin_runner<T>(
+    offline: bool,
+    env: &dyn Env,
+    cwd: &std::path::Path,
+    f: impl FnOnce(
+        &slopvac_plugins::Runner<'_>,
+        &crate::plugin_loader::InstalledPlugins<'_>,
+    ) -> Result<T, CliError>,
+) -> Result<T, CliError> {
+    use slopvac_plugins::{Runner, oci, revoke, sign, sync};
     let presets = slopvac_styles::StylePresets(slopvac_styles::BuiltinSource);
     let config = slopvac_config::Discovery::new(&presets)
-        .nearest(&cwd)
-        .map_err(|e| crate::engine::config_error(&e, &cwd))?;
+        .nearest(cwd)
+        .map_err(|e| crate::engine::config_error(&e, cwd))?;
     let root = config
         .as_ref()
-        .map_or_else(|| cwd.clone(), |c| c.root.clone());
-    // The preflight reads the nearest file only, so an `[network] offline` in an extended file
-    // reaches this command through the resolved config. The resolver keeps offline sticky across
-    // every layer (policies.md, 1.3; config.md, "Layer order"): a later `false` never wins.
-    let config_offline = config
-        .as_ref()
-        .map(|c| crate::lint_settings::resolve(c, std::path::Path::new(".")).is_offline());
-    let offline = offline::resolve(offline, env, config_offline);
+        .map_or_else(|| cwd.to_path_buf(), |c| c.root.clone());
+    let offline = offline::project(offline, env, config.as_deref());
     let dirs = plugin_dirs(env, root.clone())?;
     let dirs_state = dirs.state_dir.clone();
     let store_dir = dirs.cache_dir.clone();
@@ -476,7 +487,7 @@ fn plugins(
         .with_core_version(env!("CARGO_PKG_VERSION"))
         .with_loader(&loader)
         .with_locked(ci);
-    slopvac_plugins::run(m, &runner, out).map_err(|e| CliError::new(e.code(), e.to_string()))
+    f(&runner, &loader)
 }
 
 /// `slopvac doctor`: print the report, and exit 2 when something needs attention.

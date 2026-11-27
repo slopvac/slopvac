@@ -55,7 +55,7 @@ pub use budget::{BudgetCaps, RunBudget};
 pub use cli::{
     Dirs, LoadError, PluginLoader, Runner, command, config_id, config_range, config_source, run,
 };
-pub use error::{PluginError, RpcError, StartError};
+pub use error::{CompleteError, PluginError, RpcError, StartError};
 pub use error_codes::{HostCodeRow, ProtocolCodes, RpcCodeRow, protocol_codes};
 pub use host::{
     DrainHook, HostConfig, Plugin, PluginSpec, ReadHook, RunCaps, Shutdown, SpawnGate, Timeouts,

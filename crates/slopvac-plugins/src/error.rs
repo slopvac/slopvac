@@ -152,7 +152,7 @@ impl From<&serde_json::Error> for EncodeCause {
 impl PluginError {
     /// The stable code for diagnostics and reports.
     #[must_use]
-    pub fn slopvac_code(&self) -> &str {
+    pub fn slopvac_code(&self) -> &'static str {
         match self {
             Self::Untrusted(_) => "plugin-untrusted",
             Self::TrustKeyMissing(_) => "trust-key-missing",
@@ -174,6 +174,34 @@ impl PluginError {
             Self::Cancelled => "request-cancelled",
             Self::MessageTooLarge(_) => "message-too-large",
             Self::Usage(_) | Self::Encode(_) => "plugin-usage",
+        }
+    }
+}
+
+/// Why a `provider/complete` call gave no result that the host accepts, split by stage.
+///
+/// plugin-protocol.md section 5.3 lets `slopvac review` report a refused provider result under
+/// its own code, so the caller must know which stage failed. Both variants hold the error that
+/// every other caller sees; neither changes its code or its text.
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CompleteError {
+    /// A response arrived and the host refused its result: the result breaks the schema, an
+    /// item is missing, extra or repeated, or an entry without `error` has no `text` or no
+    /// `model`. The error is the `plugin-output-invalid` that the generic check reports.
+    #[error(transparent)]
+    Refused(PluginError),
+    /// Any other failure, with its own host code: the start, the handshake, the framing, the
+    /// process, a timer, an error answer to the whole request, or a malformed error object in
+    /// an entry.
+    #[error(transparent)]
+    Host(PluginError),
+}
+
+impl From<CompleteError> for PluginError {
+    fn from(e: CompleteError) -> Self {
+        match e {
+            CompleteError::Refused(e) | CompleteError::Host(e) => e,
         }
     }
 }

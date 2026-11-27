@@ -5,10 +5,10 @@ use std::ops::Range;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::error::{PluginError, RpcError};
+use crate::error::{CompleteError, PluginError, RpcError};
 use crate::hooks::{
     CompleteItem, Completion, Document, FindingsDocument, FixEdit, RecipeFile, Rendered, Segment,
-    Tag, match_entries, parse_completions, parse_edits, parse_error_object, parse_recipe,
+    Tag, check_completions, match_entries, parse_edits, parse_error_object, parse_recipe,
     parse_rendered, parse_score, parse_segments, parse_tags,
 };
 use crate::host::Plugin;
@@ -322,15 +322,34 @@ impl Plugin {
         model: &str,
         items: &[CompleteItem],
     ) -> Result<Vec<Result<Completion, RpcError>>, PluginError> {
+        self.complete_checked(hook, task, model, items)
+            .map_err(PluginError::from)
+    }
+
+    /// [`Self::complete`], with the stage of a failure kept: a refused result is
+    /// [`CompleteError::Refused`], and every other failure is [`CompleteError::Host`]. The
+    /// answers follow the order of `items`.
+    ///
+    /// # Errors
+    /// A request-level failure, by stage.
+    pub fn complete_checked(
+        &self,
+        hook: &str,
+        task: &str,
+        model: &str,
+        items: &[CompleteItem],
+    ) -> Result<Vec<Result<Completion, RpcError>>, CompleteError> {
         let params = CompleteParams {
             items,
             model,
             provider: hook,
             task,
         };
-        let result = self.call_with(HookKind::Provider, hook, &params)?;
+        let result = self
+            .call_with(HookKind::Provider, hook, &params)
+            .map_err(CompleteError::Host)?;
         let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
-        parse_completions(&result, &ids)
+        check_completions(&result, &ids)
     }
 
     /// Ask a recipe for a plan. The plan writes nothing.

@@ -92,9 +92,9 @@
         ],
         "reported": "gpt-5",
         "requested": "claude-x",
-        "requested_source": "provider"
+        "requested_source": "flag"
       }
     }
   ],
-  "report": "reported"
+  "report": "### Item 1 (changed, line 7)\n\nreported\n\n### Item 2 (changed, line 7)\n\nreported\n\n### Item 3 (added, line 11)\n\nreported\n\n### Item 4 (dropped, line 3)\n\nreported\n\n### Item 5 (dropped, line 9)\n\nreported\n\n### Item 6 (dropped, line 11)\n\nreported\n"
 }

@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use slopvac_agents::claims;
 use slopvac_agents::error::AgentsError;
 use slopvac_agents::review::{
-    self, ModelProvider, Payload, ProviderReply, ReportedItem, ReviewEnv,
+    self, ModelProvider, ProviderReply, ProviderRequest, ReplyItem, ReviewEnv,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -32,13 +32,24 @@ impl ModelProvider for Reporting {
     fn name(&self) -> &'static str {
         "reporting"
     }
-    fn model(&self) -> &'static str {
-        "claude-x"
+    fn model(&self) -> Option<&str> {
+        Some("claude-x")
     }
-    fn review(&self, _: &Payload) -> Result<ProviderReply, AgentsError> {
+    fn review(&self, request: &ProviderRequest<'_>) -> Result<ProviderReply, AgentsError> {
         Ok(ProviderReply::new(
-            "reported",
-            vec![ReportedItem::new(0, "gpt-5"), ReportedItem::new(1, "gpt-5")],
+            request
+                .items
+                .iter()
+                .enumerate()
+                .map(|(i, sent)| {
+                    let model = if sent.item < 2 {
+                        "gpt-5"
+                    } else {
+                        request.model
+                    };
+                    ReplyItem::text(i, "reported", model)
+                })
+                .collect(),
         ))
     }
 }
@@ -216,7 +227,10 @@ fn a_plan_with_a_provider_report_and_located_items_validates() -> TestResult {
         provider: Some(&Reporting),
         ..ReviewEnv::default()
     };
-    let plan = plan_output(&["--author-model", "gpt-5"], &env)?;
+    let plan = plan_output(
+        &["--author-model", "gpt-5", "--reviewer-model", "claude-x"],
+        &env,
+    )?;
     assert!(plan["report"].is_string(), "{plan}");
     assert!(
         plan["notices"]

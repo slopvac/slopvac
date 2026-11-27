@@ -10,8 +10,8 @@ use slopvac_agents::claims::compare;
 use slopvac_agents::error::AgentsError;
 use slopvac_agents::prime::{self, Level, Settings};
 use slopvac_agents::review::{
-    Approval, ChangeStats, ModelCheck, ModelProvider, Payload, ProviderReply, ReportedItem,
-    ReviewEnv, ReviewType, Scope, command, compare_models, payload, run, select_type,
+    ChangeStats, ModelCheck, ModelProvider, ProviderReply, ProviderRequest, ReplyItem, ReviewEnv,
+    ReviewType, Scope, SentItem, command, compare_models, payload, run, select_type,
 };
 
 const ORIGINAL: &str = include_str!("fixtures/claims/original.md");
@@ -65,12 +65,11 @@ fn fixture_change_is_an_update_because_literals_and_facts_changed() {
 fn scope_budget_scales_with_the_change_and_asks_above_it() {
     let scope = Scope::for_report(&compare(ORIGINAL, REVISED).unwrap());
     assert_eq!((scope.required, scope.extra_budget), (6, 8));
-    assert!(scope.admit(8, Approval::Ask, false).is_ok());
-    let err = scope.admit(9, Approval::Ask, false).unwrap_err();
+    assert!(scope.admit(8, false).is_ok());
+    let err = scope.admit(9, false).unwrap_err();
     assert_eq!(err.code(), "review-scope-approval");
     assert!(err.to_string().contains("--scope-approved"));
-    assert!(scope.admit(9, Approval::Auto, false).is_ok());
-    assert!(scope.admit(9, Approval::Ask, true).is_ok());
+    assert!(scope.admit(9, true).is_ok());
     let bigger = Scope::for_report(&compare("A one. B two.", "").unwrap());
     assert!(bigger.extra_budget >= 5);
 }
@@ -158,6 +157,26 @@ fn a_deletion_only_update_still_sends_the_deleted_sentence() {
     );
 }
 
+/// Answer every sent item with `text`, on the requested model unless `reported` names
+/// another model for that item.
+fn answer_all(
+    request: &ProviderRequest<'_>,
+    text: &str,
+    reported: &[(usize, &str)],
+) -> ProviderReply {
+    ProviderReply::new(
+        (0..request.items.len())
+            .map(|i| {
+                let model = reported
+                    .iter()
+                    .find(|(at, _)| *at == i)
+                    .map_or(request.model, |(_, m)| m);
+                ReplyItem::text(i, text, model)
+            })
+            .collect(),
+    )
+}
+
 struct Mock {
     model: &'static str,
     calls: Cell<usize>,
@@ -167,12 +186,12 @@ impl ModelProvider for Mock {
     fn name(&self) -> &'static str {
         "mock"
     }
-    fn model(&self) -> &str {
-        self.model
+    fn model(&self) -> Option<&str> {
+        Some(self.model)
     }
-    fn review(&self, _: &Payload) -> Result<ProviderReply, AgentsError> {
+    fn review(&self, request: &ProviderRequest<'_>) -> Result<ProviderReply, AgentsError> {
         self.calls.set(self.calls.get() + 1);
-        Ok(ProviderReply::new("no findings", Vec::new()))
+        Ok(answer_all(request, "no findings", &[]))
     }
 }
 
@@ -186,16 +205,28 @@ impl ModelProvider for Reporting {
     fn name(&self) -> &'static str {
         "reporting"
     }
-    fn model(&self) -> &str {
-        self.declared
+    fn model(&self) -> Option<&str> {
+        Some(self.declared)
     }
-    fn review(&self, _: &Payload) -> Result<ProviderReply, AgentsError> {
-        let items = self
-            .reported
-            .iter()
-            .map(|&(i, m)| ReportedItem::new(i, m))
-            .collect();
-        Ok(ProviderReply::new("reported", items))
+    fn review(&self, request: &ProviderRequest<'_>) -> Result<ProviderReply, AgentsError> {
+        Ok(answer_all(request, "reported", &self.reported))
+    }
+}
+
+/// A provider whose reply is exactly `items`, whatever was sent.
+struct Fixed {
+    items: Vec<ReplyItem>,
+}
+
+impl ModelProvider for Fixed {
+    fn name(&self) -> &'static str {
+        "fixed"
+    }
+    fn model(&self) -> Option<&str> {
+        None
+    }
+    fn review(&self, _: &ProviderRequest<'_>) -> Result<ProviderReply, AgentsError> {
+        Ok(ProviderReply::new(self.items.clone()))
     }
 }
 
@@ -251,13 +282,25 @@ fn a_run_needs_a_trusted_provider_and_an_online_session() {
     assert_eq!(err.to_string(), "offline: review needs the network");
     assert_eq!(mock.calls.get(), 0);
 
+    // A model that only the provider declares is not enough: the request must name one.
+    let unnamed = ReviewEnv {
+        provider: Some(&mock),
+        ..ReviewEnv::default()
+    };
+    let refused = run(&args(dir.path(), &[]), &unnamed)
+        .err()
+        .map(|e| e.code());
+    assert_eq!(refused, Some("review-model-missing"));
+    assert_eq!(mock.calls.get(), 0);
+
     let online = ReviewEnv {
         provider: Some(&mock),
         author_model: Some("claude-sonnet-5-5".into()),
+        reviewer_model: Some("gpt-5".into()),
         ..ReviewEnv::default()
     };
     let out = run(&args(dir.path(), &[]), &online).unwrap();
-    assert!(out.contains("\"report\": \"no findings\""));
+    assert!(out.contains("no findings"), "{out}");
     assert_eq!(mock.calls.get(), 1);
 }
 
@@ -271,16 +314,17 @@ fn a_provider_on_the_authors_model_still_runs_and_the_plan_carries_a_notice() {
     let env = ReviewEnv {
         provider: Some(&mock),
         author_model: Some("claude-sonnet-5-5#high".into()),
+        reviewer_model: Some("gpt-5".into()),
         ..ReviewEnv::default()
     };
     let json = plan_json(dir.path(), &[], &env);
     assert!(notice_codes(&json).contains(&"review-model-same"), "{json}");
-    assert_eq!(json["report"], "no findings");
+    assert!(json["report"].is_string(), "{json}");
     assert_eq!(mock.calls.get(), 1);
 }
 
 #[test]
-fn extra_checks_above_the_budget_need_approval_unless_auto() {
+fn extra_checks_above_the_budget_need_the_scope_flag() {
     let dir = tempfile::tempdir().unwrap();
     let ask = ReviewEnv::default();
     let err = run(&args(dir.path(), &["--dry-run", "--extra", "9"]), &ask).unwrap_err();
@@ -293,11 +337,6 @@ fn extra_checks_above_the_budget_need_approval_unless_auto() {
         &ask,
     )
     .unwrap();
-    let auto = ReviewEnv {
-        approval: Approval::Auto,
-        ..ReviewEnv::default()
-    };
-    run(&args(dir.path(), &["--dry-run", "--extra", "9"]), &auto).unwrap();
 }
 
 #[test]
@@ -322,13 +361,12 @@ fn tree() -> clap::Command {
         .subcommand(clap::Command::new("plugins").subcommand(clap::Command::new("trust")))
 }
 
-fn review_topic(review_type: Option<ReviewType>, approval: Approval, level: Level) -> String {
+fn review_topic(review_type: Option<ReviewType>, level: Level) -> String {
     prime::render(
         Some("review"),
         &Settings {
             level,
             review_type,
-            review_approval: approval,
             ..Settings::default()
         },
         &tree(),
@@ -339,7 +377,7 @@ fn review_topic(review_type: Option<ReviewType>, approval: Approval, level: Leve
 
 #[test]
 fn prime_review_renders_the_steps_of_each_type() {
-    let auto = review_topic(None, Approval::Ask, Level::Default);
+    let auto = review_topic(None, Level::Default);
     for name in ["mechanical", "update", "rewrite"] {
         assert!(auto.contains(&format!("- `{name}`")), "{name}");
     }
@@ -353,7 +391,7 @@ fn prime_review_renders_the_steps_of_each_type() {
         (ReviewType::Rewrite, "List the facts in the original"),
     ];
     for (kind, marker) in expect {
-        let text = review_topic(Some(kind), Approval::Ask, Level::Default);
+        let text = review_topic(Some(kind), Level::Default);
         assert!(text.contains(&format!("## Steps for {}", kind.name())));
         assert!(text.contains(marker), "{kind:?}");
         for (other, other_marker) in expect {
@@ -366,7 +404,7 @@ fn prime_review_renders_the_steps_of_each_type() {
 
 #[test]
 fn prime_review_documents_scope_approval_and_the_reviewer_rule() {
-    let ask = review_topic(None, Approval::Ask, Level::Default);
+    let ask = review_topic(None, Level::Default);
     assert!(ask.contains("ask the user to confirm the exact scope"));
     assert!(ask.contains("--scope-approved"));
     assert!(ask.contains("should differ from the author's"));
@@ -399,20 +437,23 @@ fn prime_review_names_only_real_commands_and_flags() {
         .collect();
     assert_eq!(problems, Vec::<String>::new());
 }
+/// A provider that keeps the task and the items of every request.
 struct Recorder {
-    seen: std::cell::RefCell<Vec<Payload>>,
+    seen: std::cell::RefCell<Vec<(&'static str, Vec<SentItem>)>>,
 }
 
 impl ModelProvider for Recorder {
     fn name(&self) -> &'static str {
         "recorder"
     }
-    fn model(&self) -> &'static str {
-        "gpt-5"
+    fn model(&self) -> Option<&str> {
+        Some("gpt-5")
     }
-    fn review(&self, payload: &Payload) -> Result<ProviderReply, AgentsError> {
-        self.seen.borrow_mut().push(payload.clone());
-        Ok(ProviderReply::new("ok", Vec::new()))
+    fn review(&self, request: &ProviderRequest<'_>) -> Result<ProviderReply, AgentsError> {
+        self.seen
+            .borrow_mut()
+            .push((request.task, request.items.to_vec()));
+        Ok(answer_all(request, "ok", &[]))
     }
 }
 
@@ -561,6 +602,7 @@ fn the_provider_receives_dropped_sentences_and_the_rewrite_baseline() {
     };
     let env = ReviewEnv {
         provider: Some(&rec),
+        reviewer_model: Some("gpt-5".into()),
         ..ReviewEnv::default()
     };
 
@@ -570,21 +612,22 @@ fn the_provider_receives_dropped_sentences_and_the_rewrite_baseline() {
         &env,
     )
     .unwrap();
-    let sent = rec.seen.borrow()[0].clone();
-    assert_eq!(sent.kind, "passages");
-    assert_eq!(sent.items.len(), 1);
-    assert_eq!(
-        (sent.items[0].role, sent.items[0].text.as_str()),
-        ("dropped", "Remove the 90 day limit.")
-    );
+    let (task, sent) = rec.seen.borrow()[0].clone();
+    assert_eq!(task, "update");
+    let texts: Vec<(&str, &str)> = sent
+        .iter()
+        .map(|i| (i.id.as_str(), i.text.as_str()))
+        .collect();
+    assert_eq!(texts, [("1", "Remove the 90 day limit.")]);
 
     run(
         &pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]),
         &env,
     )
     .unwrap();
-    let sent = rec.seen.borrow()[1].clone();
-    let texts: Vec<&str> = sent.items.iter().map(|i| i.text.as_str()).collect();
+    let (task, sent) = rec.seen.borrow()[1].clone();
+    assert_eq!(task, "rewrite");
+    let texts: Vec<&str> = sent.iter().map(|i| i.text.as_str()).collect();
     assert_eq!(texts, [ORIGINAL, REVISED]);
 }
 fn plan_json(dir: &Path, extra: &[&str], env: &ReviewEnv<'_>) -> serde_json::Value {
@@ -734,7 +777,7 @@ fn a_mechanical_review_has_no_reviewer_so_no_unchecked_notice() {
 
 #[test]
 fn prime_review_verdict_reports_both_models_and_forbids_guessing() {
-    let text = review_topic(None, Approval::Ask, Level::Default);
+    let text = review_topic(None, Level::Default);
     assert!(text.contains(
         "Reviewer: <model the harness used, or unknown>; author <model or unknown>; different: yes | no | not checked"
     ));
@@ -767,7 +810,7 @@ fn the_author_flag_overrides_the_config_author_at_the_provider_check() {
         &env,
     )
     .unwrap();
-    assert!(out.contains("\"report\": \"no findings\""), "{out}");
+    assert!(out.contains("no findings"), "{out}");
     assert_eq!(mock.calls.get(), 1);
 }
 
@@ -808,6 +851,7 @@ fn rewrite_plan(
     let env = ReviewEnv {
         provider: Some(&provider),
         author_model: Some("claude-sonnet-5-5".into()),
+        reviewer_model: Some("gpt-5".into()),
         ..ReviewEnv::default()
     };
     let mut argv = vec!["--type", "rewrite"];
@@ -889,34 +933,23 @@ fn reported_models_group_by_normalized_name_across_spellings()
     Ok(())
 }
 
-#[test]
-fn a_reply_may_name_only_some_items() -> Result<(), Box<dyn std::error::Error>> {
-    let json = rewrite_plan(vec![], "gpt-5", &[])?;
-    assert_eq!(json["report"], "reported");
-    assert_eq!(json["notices"], serde_json::json!([]));
-    Ok(())
-}
-
 #[rstest]
-#[case::outside_the_payload(vec![(2, "gpt-5")])]
-#[case::repeated_item(vec![(0, "gpt-5"), (0, "gpt-5")])]
-#[case::empty_model(vec![(0, "")])]
-#[case::blank_model(vec![(0, "  ")])]
-fn a_reply_the_protocol_would_refuse_fails_with_a_code(
-    #[case] reported: Vec<(usize, &'static str)>,
-) {
+#[case::outside_the_request(vec![ReplyItem::text(0, "t", "m"), ReplyItem::text(1, "t", "m"), ReplyItem::text(2, "t", "m")])]
+#[case::repeated_item(vec![ReplyItem::text(0, "t", "m"), ReplyItem::text(0, "t", "m"), ReplyItem::text(1, "t", "m")])]
+#[case::missing_item(vec![ReplyItem::text(0, "t", "m")])]
+#[case::empty_model(vec![ReplyItem::text(0, "t", ""), ReplyItem::text(1, "t", "m")])]
+#[case::blank_model(vec![ReplyItem::text(0, "t", "  "), ReplyItem::text(1, "t", "m")])]
+fn a_reply_the_protocol_would_refuse_fails_with_a_code(#[case] items: Vec<ReplyItem>) {
     let dir = tempfile::tempdir().unwrap();
-    let provider = Reporting {
-        declared: "gpt-5",
-        reported,
-    };
+    let provider = Fixed { items };
     let setting = ReviewEnv {
         provider: Some(&provider),
+        reviewer_model: Some("gpt-5".into()),
         ..ReviewEnv::default()
     };
     let argv = pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]);
-    let err = run(&argv, &setting).unwrap_err();
-    assert_eq!(err.code(), "review-provider-reply-invalid");
+    let refused = run(&argv, &setting).err().map(|e| e.code());
+    assert_eq!(refused, Some("review-provider-reply-invalid"));
 }
 
 #[test]
@@ -1056,16 +1089,16 @@ fn the_same_model_notice_names_where_each_model_came_from(
 }
 
 #[rstest]
-#[case::requested_from_config(Some("gpt-5"), "claude-sonnet-5-5", "config")]
-#[case::requested_from_the_provider(None, "gpt-5", "provider")]
+#[case::requested_from_config(&[][..], Some("gpt-5"), "config")]
+#[case::requested_from_the_flag(&["--reviewer-model", "gpt-5"][..], None, "flag")]
 fn the_mismatch_notice_names_where_the_requested_model_came_from(
+    #[case] flags: &[&str],
     #[case] reviewer_config: Option<&str>,
-    #[case] declared: &'static str,
     #[case] requested_source: &str,
 ) {
     let dir = tempfile::tempdir().unwrap();
     let provider = Reporting {
-        declared,
+        declared: "claude-sonnet-5-5",
         reported: vec![(0, "gemini-3")],
     };
     let setting = ReviewEnv {
@@ -1073,7 +1106,9 @@ fn the_mismatch_notice_names_where_the_requested_model_came_from(
         reviewer_model: reviewer_config.map(Into::into),
         ..ReviewEnv::default()
     };
-    let argv = pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]);
+    let mut argv = vec!["--type", "rewrite"];
+    argv.extend_from_slice(flags);
+    let argv = pair(dir.path(), ORIGINAL, REVISED, &argv);
     let out = run(&argv, &setting).unwrap();
     let json: serde_json::Value = serde_json::from_str(&out).unwrap();
     let found = notice_with(&json, "review-model-reported-mismatch");
@@ -1088,7 +1123,8 @@ fn the_mismatch_notice_names_where_the_requested_model_came_from(
 /// Policies section 1.5: the two phases give two separate non-gating `review-model-same`
 /// warnings. A provider that declares the author's model and also reports it for items gets
 /// one notice before the call, which names the provider and carries no items, and one after
-/// it, which locates each reported item.
+/// it, which locates each reported item. The reported model is not the requested `gpt-5`, so
+/// the info notice follows.
 #[test]
 fn a_provider_that_declares_and_reports_the_author_model_adds_one_notice_per_phase()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -1102,7 +1138,11 @@ fn a_provider_that_declares_and_reports_the_author_model_adds_one_notice_per_pha
     )?;
     assert_eq!(
         notice_codes(&json),
-        ["review-model-same", "review-model-same"],
+        [
+            "review-model-same",
+            "review-model-same",
+            "review-model-reported-mismatch"
+        ],
         "{json}"
     );
     let found = notice_with(&json, "review-model-same");

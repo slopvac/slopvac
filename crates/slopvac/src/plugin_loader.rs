@@ -38,7 +38,7 @@ pub(crate) enum LoadRefusal {
 
 impl LoadRefusal {
     /// The stable code of the text of this refusal.
-    fn code(&self) -> &'static str {
+    pub(crate) fn code(&self) -> &'static str {
         match self {
             Self::Synced(e) => e.code().unwrap_or("plugin-not-loaded"),
             Self::Code(e) => e.code(),
