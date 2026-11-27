@@ -9,6 +9,7 @@ the diagnostic scans, which may fail, and not in the authored scan.
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -336,3 +337,105 @@ def test_a_launcher_warning_with_a_payload_reaches_no_stream(tmp_path) -> None:
     assert_output_contract(done, tmp_path)
     assert "WARNPAYLOAD" not in done.stdout + done.stderr
     assert "WARNPAYLOAD" in _stderr_file(tmp_path)
+
+
+# ---- the routing check on `--explain-config --format json` -------------------------
+
+
+def test_a_correct_audit_prints_the_routing_counts(tmp_path) -> None:
+    done = run_audit(tmp_path, {})
+    assert_output_contract(done, tmp_path)
+    lines = [ln for ln in done.stdout.splitlines() if ln.startswith("ROUTING ")]
+    assert len(lines) == 1, done.stdout
+    counts = json.loads(lines[0].removeprefix("ROUTING "))
+    # The harness repository has two authored documents besides the hostile-named one.
+    assert counts == {"documents": 3, "rules_total": 120, "front_matter_resolved": False}
+
+
+_ROUTING_FAULTS = {
+    "config-root": (
+        'document["inputs"][0]["config_root"] = "docs"',
+        "routing: 1 document(s) do not resolve to the repository config",
+    ),
+    "extra-config-source": (
+        'document["inputs"][0]["config_sources"].append({"layer": "extends", "file": "base.toml"})',
+        "routing: 1 document(s) do not resolve to the repository config",
+    ),
+    "profile": (
+        'document["inputs"][0]["profile"] = "::error::pwned"',
+        "routing: 1 document(s) do not resolve to the normal profile",
+    ),
+    "readme-without-override": (
+        'next(i for i in document["inputs"] if i["path"] == "README.md")["settings"] = []',
+        "routing: 1 document(s) have the wrong README override",
+    ),
+    "other-document-with-override": (
+        'next(i for i in document["inputs"] if i["path"] == "docs/a.md")["settings"][0]["source"]'
+        ' = {"layer": "override", "file": "slopvac.toml", "line": 9, "column": 1}',
+        "routing: 1 document(s) have the wrong README override",
+    ),
+    "no-rules": (
+        'document["inputs"][0]["rules"]["total"] = 0',
+        "routing: 1 document(s) have no rule that runs",
+    ),
+    "every-rule-off": (
+        'document["inputs"][0]["rules"] = {"total": 5, "configured": {"off": 5}}',
+        "routing: 1 document(s) have no rule that runs",
+    ),
+    "document-omitted": (
+        'del document["inputs"][0]',
+        "routing: the report omits 1 expected document(s)",
+    ),
+    "document-repeated": (
+        'document["inputs"].append(dict(document["inputs"][0]))',
+        "routing: the report holds 1 duplicate document(s)",
+    ),
+    "path-outside-the-root": (
+        'document["inputs"][0]["path"] = "/outside/::error::pwned.md"',
+        "routing: document 0 lies outside the repository",
+    ),
+    "path-missing": (
+        'del document["inputs"][0]["path"]',
+        "routing: input 0 has no path",
+    ),
+    "schema-version": (
+        'document["schema_version"] = 2',
+        "routing: the output has no schema_version 3",
+    ),
+    "inputs-missing": (
+        'del document["inputs"]',
+        "routing: the output has no `inputs` list",
+    ),
+    "schema-version-missing": (
+        'del document["schema_version"]',
+        "routing: the output has no schema_version 3",
+    ),
+}
+
+
+@pytest.mark.parametrize("fault", list(_ROUTING_FAULTS))
+def test_a_wrong_routing_fails_the_audit_step_with_fixed_text(tmp_path, fault) -> None:
+    snippet, line = _ROUTING_FAULTS[fault]
+    done = run_audit(tmp_path, {"routing": snippet})
+    assert_output_contract(done, tmp_path, line, payload_free=True)
+    assert not [ln for ln in done.stdout.splitlines() if ln.startswith("ROUTING ")]
+
+
+@pytest.mark.parametrize("code", [1, 2])
+def test_a_failed_routing_run_fails_with_the_exit_code_and_no_output(tmp_path, code) -> None:
+    case = {"routing-exit": code, "routing-stderr": _PAYLOAD}
+    done = run_audit(tmp_path, case)
+    assert_output_contract(done, tmp_path, f"routing: the linter exited {code}", payload_free=True)
+
+
+def test_a_routing_run_that_prints_no_json_fails_with_fixed_text(tmp_path) -> None:
+    done = run_audit(tmp_path, {"routing-noreport": True})
+    assert_output_contract(
+        done, tmp_path, "routing: the linter wrote no JSON document", payload_free=True
+    )
+
+
+def test_a_routing_timeout_fails_with_fixed_text(tmp_path) -> None:
+    case = {"routing-sleep": True, "env": {"AUDIT_LINTER_TIMEOUT": "1"}}
+    done = run_audit(tmp_path, case)
+    assert_output_contract(done, tmp_path, "routing: the linter timed out after 1 s", payload_free=True)
