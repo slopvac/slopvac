@@ -135,18 +135,18 @@ fn explain_config_prints_the_config_and_each_setting_of_a_file_as_json() {
 
 #[test]
 fn explain_config_lists_replaced_values_highest_layer_first() {
-    let config = "schema_version = 3\nlocale = \"en-GB\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nlocale = \"en-US\"\n\n[[overrides]]\nfiles = [\"docs/a.md\"]\nlocale = \"en-CA\"\n";
+    let config = "schema_version = 3\nlocale = \"en-GB\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nlocale = \"und\"\n\n[[overrides]]\nfiles = [\"docs/a.md\"]\nlocale = \"en-US\"\n";
     let dir = project_with(config);
     let doc = explained(dir.path(), &["docs/a.md"]);
     let locale = setting(only_input(&doc), "locale");
-    assert_eq!(locale["value"], json!("en-CA"), "{doc}");
+    assert_eq!(locale["value"], json!("en-US"), "{doc}");
     let replaced: Vec<&Value> = locale["replaced"]
         .as_array()
         .expect("a `replaced` list")
         .iter()
         .map(|r| &r["value"])
         .collect();
-    assert_eq!(replaced, [&json!("en-US"), &json!("en-GB")], "{doc}");
+    assert_eq!(replaced, [&json!("und"), &json!("en-GB")], "{doc}");
 }
 
 #[test]
@@ -444,7 +444,7 @@ fn explain_config_shows_an_extended_config_outside_the_root_as_external() {
     .expect("write config");
     fs::write(
         shared.join("base.toml"),
-        "schema_version = 3\nlocale = \"en-CA\"\n",
+        "schema_version = 3\nlocale = \"en-GB\"\n",
     )
     .expect("write extended config");
     fs::write(proj.join("a.md"), "# Title\n\nText.\n").expect("write document");
