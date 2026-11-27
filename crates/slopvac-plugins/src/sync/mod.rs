@@ -178,7 +178,7 @@ pub struct SyncReport {
 enum Acquired {
     /// A verified archive in the blob cache, and the digest its bytes must have. The install
     /// reads the file once more and checks those bytes, and extracts only what it read.
-    Archive(PathBuf, Digest),
+    Archive(Digest),
     /// A tree fetched from a pinned git commit, hashed and equal to the lock,
     /// not yet in the store.
     Staged(Box<StagedTree>, Accepted),
@@ -470,11 +470,11 @@ impl<'a> Syncer<'a> {
                 };
                 return Ok((outcome(change, done.root, done.quarantined), accepted));
             }
-            Acquired::Archive(_, archive) => archive,
+            Acquired::Archive(archive) => archive,
         };
         // The archive is read once, here, and extracted from the bytes that were checked: a file
         // swapped after the earlier check cannot reach the tree.
-        let bytes = self.store.read_archive(&pack.id, &blob, self.limits.compressed_bytes)?;
+        let bytes = self.store.read_archive(&pack.id, &archive, self.limits.compressed_bytes)?;
         let exec = self.executables.get(&pack.id).cloned().unwrap_or_default();
         let done = extract_targz(bytes.as_slice(), &self.store.trees(), &exec, self.limits)
             .map_err(extract)?;
@@ -636,18 +636,20 @@ impl<'a> Syncer<'a> {
         }
 
         let layer = payload_layer(&manifest, &self.limits).map_err(layout)?;
-        if let Some(path) = self.store.blob(&pack.id, &layer.digest, layer.size)? {
-            return Ok(Acquired::Archive(path, layer.digest.clone()));
+        if self
+            .store
+            .blob(&pack.id, &layer.digest, layer.size)?
+            .is_some()
+        {
+            return Ok(Acquired::Archive(layer.digest.clone()));
         }
         let client = self.client(pack, SyncPhrase::WhatArchive.as_static())?;
         let mut tmp = self.store.blob_tempfile()?;
         client
             .pull_blob(&reference, layer, tmp.as_file_mut())
             .map_err(fetch)?;
-        Ok(Acquired::Archive(
-            self.store.commit_blob(tmp, &layer.digest)?,
-            layer.digest.clone(),
-        ))
+        self.store.commit_blob(tmp, &layer.digest)?;
+        Ok(Acquired::Archive(layer.digest.clone()))
     }
 
     /// The signature gate: the statement is signed by a policy key, names this
@@ -943,11 +945,12 @@ impl<'a> Syncer<'a> {
 
     fn acquire_archive(&self, pack: &LockedPack, url: &str) -> Result<Acquired, SyncError> {
         let locked = Self::locked_digest(pack)?;
-        if let Some(path) = self
+        if self
             .store
             .blob(&pack.id, &locked, self.limits.compressed_bytes)?
+            .is_some()
         {
-            return Ok(Acquired::Archive(path, locked));
+            return Ok(Acquired::Archive(locked));
         }
         let client = self.client(pack, SyncPhrase::WhatRelease.as_static())?;
         let mut tmp = self.store.blob_tempfile()?;
@@ -965,10 +968,8 @@ impl<'a> Syncer<'a> {
                 actual: actual.to_string(),
             });
         }
-        Ok(Acquired::Archive(
-            self.store.commit_blob(tmp, &locked)?,
-            locked,
-        ))
+        self.store.commit_blob(tmp, &locked)?;
+        Ok(Acquired::Archive(locked))
     }
 
     fn acquire_path(&self, pack: &LockedPack, rel: &str) -> Result<Acquired, SyncError> {
@@ -1013,16 +1014,17 @@ impl<'a> Syncer<'a> {
             return Ok(Acquired::InPlace(path, manifest));
         }
         let locked = Self::locked_digest(pack)?;
-        if let Some(cached) = self
+        if self
             .store
             .blob(&pack.id, &locked, self.limits.compressed_bytes)?
+            .is_some()
         {
             // Still check the file in the project: it is what the lock names.
             let actual = cache_hash(&path).map_err(|e| source(messages::path_reading(rel, &e)))?;
             if actual != locked {
                 return Err(mismatch(actual.as_str()));
             }
-            return Ok(Acquired::Archive(cached, locked));
+            return Ok(Acquired::Archive(locked));
         }
         let mut tmp = self.store.blob_tempfile()?;
         let mut file = File::open(&path).map_err(|e| source(messages::path_reading(rel, &e)))?;
@@ -1036,10 +1038,8 @@ impl<'a> Syncer<'a> {
         if actual != locked {
             return Err(mismatch(actual.as_str()));
         }
-        Ok(Acquired::Archive(
-            self.store.commit_blob(tmp, &locked)?,
-            locked,
-        ))
+        self.store.commit_blob(tmp, &locked)?;
+        Ok(Acquired::Archive(locked))
     }
 }
 

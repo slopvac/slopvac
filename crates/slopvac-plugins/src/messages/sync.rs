@@ -171,13 +171,6 @@ pub(crate) enum SyncText {
     #[code("plugins-sync-revoked-key")]
     #[text("publisher key {key_id}")]
     RevokedKey { key_id: String },
-    /// A blob could not be opened.
-    #[code("plugins-sync-opening")]
-    #[text("opening {path}")]
-    Opening {
-        #[display_path]
-        path: String,
-    },
     /// The manifest is not valid JSON of the expected shape.
     #[code("plugins-sync-manifest-parse")]
     #[text("the manifest does not parse: {reason}")]
@@ -977,14 +970,6 @@ pub(crate) fn revoked_key(key_id: &str) -> String {
     .to_string()
 }
 
-/// The step "opening" a blob.
-pub(crate) fn opening(path: &Path) -> String {
-    SyncText::Opening {
-        path: path.display().to_string(),
-    }
-    .to_string()
-}
-
 /// The manifest does not parse.
 pub(crate) fn manifest_parse(reason: &impl Display) -> String {
     SyncText::ManifestParse { reason: s(reason) }.to_string()
@@ -1708,7 +1693,6 @@ mod tests {
                 "artifact sha256:aa",
             ),
             (SyncText::RevokedKey { key_id: s("AB") }, "publisher key AB"),
-            (SyncText::Opening { path: s("/b/x") }, "opening /b/x"),
             (
                 SyncText::CacheUnreadable {
                     id: s("a"),
