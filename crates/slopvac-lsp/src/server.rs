@@ -418,6 +418,20 @@ fn sync_watch(shared: &Shared, out: &Sender<Message>) {
     if watch.globs.as_ref() == Some(&globs) {
         return;
     }
+    let watchers = globs
+        .iter()
+        .map(|glob| FileSystemWatcher {
+            glob_pattern: GlobPattern::String(glob.clone()),
+            kind: None,
+        })
+        .collect();
+    // Strings only, so the conversion does not fail. Were it to, the client keeps the
+    // registration it holds, rather than one that watches nothing.
+    let Ok(register_options) =
+        serde_json::to_value(DidChangeWatchedFilesRegistrationOptions { watchers })
+    else {
+        return;
+    };
     if watch.globs.take().is_some() {
         let request = Request::new(
             RequestId::from(format!("slopvac-unwatch-config-{}", watch.registrations)),
@@ -432,13 +446,6 @@ fn sync_watch(shared: &Shared, out: &Sender<Message>) {
         let _ = out.send(Message::Request(request));
     }
     watch.registrations += 1;
-    let watchers = globs
-        .iter()
-        .map(|glob| FileSystemWatcher {
-            glob_pattern: GlobPattern::String(glob.clone()),
-            kind: None,
-        })
-        .collect();
     let request = Request::new(
         RequestId::from(watch_id(watch.registrations)),
         "client/registerCapability".to_owned(),
@@ -446,12 +453,7 @@ fn sync_watch(shared: &Shared, out: &Sender<Message>) {
             registrations: vec![Registration {
                 id: watch_id(watch.registrations),
                 method: WATCH_METHOD.to_owned(),
-                // Strings only, so the conversion does not fail. Were it to, the client would
-                // get a registration without options and watch nothing.
-                register_options: serde_json::to_value(DidChangeWatchedFilesRegistrationOptions {
-                    watchers,
-                })
-                .ok(),
+                register_options: Some(register_options),
             }],
         },
     );
