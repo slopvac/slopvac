@@ -1389,6 +1389,29 @@ enum Keep<'a> {
     All(u64),
 }
 
+/// The capture buffer could not be allocated. It is the inner error of the `io::Error` that a
+/// failed reservation raises, so the read that was filling the buffer fails with it, and its
+/// source is the allocator's [`std::collections::TryReserveError`].
+#[derive(Debug)]
+struct CaptureAlloc(std::collections::TryReserveError);
+
+impl std::fmt::Display for CaptureAlloc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the capture buffer could not be allocated")
+    }
+}
+
+impl std::error::Error for CaptureAlloc {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+/// Reserve room for exactly `additional` more bytes in `kept`.
+fn reserve_exact(kept: &mut Vec<u8>, additional: usize) -> io::Result<()> {
+    kept.try_reserve_exact(additional).map_err(io::Error::other)
+}
+
 /// What one captured read left behind.
 struct Captured {
     hashed: Result<([u8; 32], u64), ExtractError>,
@@ -1509,9 +1532,7 @@ impl<'a, R: Read> Capture<'a, R> {
         let need = self.kept.len() + data.len();
         if need > self.kept.capacity() {
             let target = need.max(self.kept.capacity().saturating_mul(2).min(self.limit));
-            self.kept
-                .try_reserve_exact(target - self.kept.len())
-                .map_err(io::Error::other)?;
+            reserve_exact(&mut self.kept, target - self.kept.len())?;
         }
         self.kept.extend_from_slice(data);
         Ok(())
@@ -2356,8 +2377,8 @@ mod single_read_tests {
         );
         // The buffer that kept the bytes is bounded the same way, not rounded up by doubling.
         assert!(
-            capacity[0] as u64 <= budget + 2 * (64 << 10),
-            "a buffer of {} bytes for a file over a {budget} byte budget",
+            capacity[0] as u64 == budget + HASH_CHUNK as u64 + 1,
+            "a buffer of {} bytes for a file over a {budget} byte budget, not 327681",
             capacity[0]
         );
         // The probe counts its bytes and drops them: what is retained stops at the hash read,
@@ -2404,6 +2425,66 @@ mod single_read_tests {
         assert!(!captured.over, "the cap was not crossed before the failure");
         assert!(
             matches!(captured.hashed, Err(ExtractError::Malformed(_))),
+            "{:?}",
+            captured.hashed
+        );
+    }
+
+    /// A reader whose every read fails as a failed capture reservation does.
+    struct OutOfMemory;
+
+    impl Read for OutOfMemory {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            Err(reserve_exact(&mut Vec::new(), usize::MAX).unwrap_err())
+        }
+    }
+
+    #[test]
+    fn a_failed_capture_reservation_keeps_the_allocator_error_as_its_source() {
+        let err = reserve_exact(&mut Vec::new(), usize::MAX).unwrap_err();
+
+        assert!(
+            err.get_ref().is_some_and(|inner| inner.is::<CaptureAlloc>()),
+            "{err:?}"
+        );
+        assert!(std::error::Error::source(&err).is_some(), "{err:?}");
+    }
+
+    #[test]
+    fn a_failed_capture_reservation_in_a_hash_pass_is_not_a_malformed_archive() {
+        // The tar-entry path and the tree-capture path both hash through `hash_stream`.
+        let err = hash_stream(&mut OutOfMemory, None, "m.toml", None).unwrap_err();
+
+        assert!(matches!(&err, ExtractError::Io { .. }), "{err:?}");
+        let io = std::error::Error::source(&err).expect("the io error");
+        assert!(std::error::Error::source(io).is_some(), "{io:?}");
+    }
+
+    #[test]
+    fn a_failed_capture_reservation_in_a_tree_capture_is_not_a_malformed_archive() {
+        let captured = hash_captured(&mut OutOfMemory, 1 << 20, 1 << 20, 1 << 20, true, "m.toml");
+
+        assert!(
+            matches!(captured.hashed, Err(ExtractError::Io { .. })),
+            "{:?}",
+            captured.hashed
+        );
+    }
+
+    #[test]
+    fn a_cap_and_budget_that_overflow_the_buffer_limit_are_refused() {
+        // `cap.min(budget) + 1 + a chunk` overflows `u64`; it must not saturate into a limit.
+        let captured = hash_captured(
+            &mut &b"x"[..],
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            false,
+            "m.toml",
+        );
+
+        assert!(
+            matches!(captured.hashed, Err(ExtractError::Refused(_))),
             "{:?}",
             captured.hashed
         );
