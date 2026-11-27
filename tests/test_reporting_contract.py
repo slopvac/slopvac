@@ -1,4 +1,9 @@
-"""Keep the in-package reporting registry aligned with GitHub issue forms."""
+"""Keep the in-package reporting registry aligned with GitHub issue forms.
+
+The help text of each field belongs to the Rust generator in
+`crates/slopvac/src/report/fields.rs`, which `crates/slopvac/tests/report_forms.rs` checks against
+the committed forms. This registry pins ids, labels, types, options and requirements only.
+"""
 
 from __future__ import annotations
 
@@ -18,8 +23,6 @@ def _field_form(field):
     attributes = {"label": field.label}
     if field.render is not None:
         attributes["render"] = field.render
-    if field.description is not None:
-        attributes["description"] = field.description
     if field.type == "checkboxes":
         attributes["options"] = [
             {"label": label, "required": required}
@@ -69,12 +72,6 @@ def _assert_form_matches(category: ReportCategory, form: dict, form_path: Path) 
         validations = item.get("validations", {})
         assert attributes.get("label") == field.label, (form_path, field.id, "label")
         assert attributes.get("render") == field.render, (form_path, field.id, "render")
-        if field.description is not None:
-            assert attributes.get("description") == field.description, (
-                form_path,
-                field.id,
-                "description",
-            )
         assert item.get("type") == field.type, (form_path, field.id, "type")
         if field.type != "checkboxes":
             assert validations.get("required", False) is field.required, (
@@ -134,14 +131,12 @@ def test_issue_form_files_match_registry():
         "checkbox_required",
         "required",
         "render",
-        "description",
         "labels",
         "title",
     ],
 )
 def test_form_comparison_rejects_contract_drift(field, tmp_path):
-    category_key = "false-positive" if field == "description" else "bug"
-    category = next(item for item in REPORT_CATEGORIES if item.key == category_key)
+    category = next(item for item in REPORT_CATEGORIES if item.key == "bug")
     form = copy.deepcopy(_registry_form(category))
     fields = {
         item["id"]: item
@@ -160,8 +155,6 @@ def test_form_comparison_rejects_contract_drift(field, tmp_path):
         fields["what-happened"]["validations"]["required"] = False
     elif field == "render":
         fields["config"]["attributes"]["render"] = "markdown"
-    elif field == "description":
-        fields["context"]["attributes"]["description"] = "Unexpected"
     elif field == "labels":
         form["labels"].append("unexpected")
     else:
