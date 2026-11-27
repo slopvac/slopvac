@@ -120,8 +120,12 @@ def pages(text: str) -> list[object]:
 def list_versions(base: str) -> list[Version]:
     """All active versions of the package, over every page."""
     out = gh(["--paginate", f"{base}/versions?per_page=100"])
+    listing = pages(out)
+    if not listing:
+        # An empty package still prints `[]`, so no page at all means the read failed.
+        raise Invalid("gh api returned no page of versions")
     versions: list[Version] = []
-    for page in pages(out):
+    for page in listing:
         if not isinstance(page, list):
             raise Invalid("a page of versions is not a list")
         versions.extend(parse_version(entry) for entry in page)
