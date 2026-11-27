@@ -208,9 +208,17 @@ fn the_code_comments_invocation_a_form_documents_runs_and_reports()
         !invocations.is_empty(),
         "no form documents a code-comments invocation"
     );
+    assert!(
+        invocations
+            .iter()
+            .any(|span| span.contains("--language <language>")),
+        "no form shows the `<language>` placeholder: {invocations:?}"
+    );
     let dir = tempfile::tempdir()?;
     for span in invocations {
-        let tokens: Vec<&str> = span.split_whitespace().collect();
+        // A placeholder runs with the language of the sample.
+        let runnable = span.replace("<language>", "toml");
+        let tokens: Vec<&str> = runnable.split_whitespace().collect();
         let out = Command::new(cargo_bin!("slopvac"))
             .args(&tokens[1..])
             .env_remove("SLOPVAC_OFFLINE")
