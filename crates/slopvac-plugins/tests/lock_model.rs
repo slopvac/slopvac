@@ -611,6 +611,11 @@ fn source_drift(locked_source: &str, config_source: &str, base: &str) -> Vec<Str
     "oci://ghcr.io/acme/x:2.0.0"
 )]
 #[case::port_kept("oci://reg.example:5000/acme/x:1.2.0", "oci://reg.example:5000/acme/x")]
+#[case::host_in_another_case("oci://ghcr.io/acme/x:1.2.0", "oci://GHCR.IO/acme/x")]
+#[case::host_and_port_in_another_case(
+    "oci://Reg.Example:5000/acme/x:1.2.0",
+    "oci://reg.example:5000/acme/x"
+)]
 fn an_oci_source_with_the_same_repository_matches(#[case] locked: &str, #[case] config: &str) {
     assert_eq!(source_drift(locked, config, ""), Vec::<String>::new());
 }
@@ -647,6 +652,16 @@ fn a_source_with_the_same_text_matches(#[case] source: &str) {
     assert_eq!(source_drift(source, source, ""), Vec::<String>::new());
 }
 
+/// The lock accepts a path with `.` segments and a trailing slash. It names the same directory
+/// as the canonical form, so it matches the configured path.
+#[rstest::rstest]
+#[case::leading_dot("./plugins/x")]
+#[case::trailing_slash("plugins/x/")]
+#[case::inner_dot("plugins/./x")]
+fn a_non_canonical_lock_path_matches_the_same_directory(#[case] locked: &str) {
+    assert_eq!(source_drift(locked, "plugins/x", ""), Vec::<String>::new());
+}
+
 /// A config path is relative to the file that declares it; the lock path to the project root.
 #[rstest::rstest]
 #[case::root_config("plugins/x", "")]
@@ -680,6 +695,11 @@ fn a_path_that_resolves_elsewhere_is_drift(#[case] config: &str, #[case] base: &
 #[case::oci_user_info("oci://reader:hunter2-secret@ghcr.io/acme/x")]
 #[case::absolute_path("/srv/plugins/x")]
 #[case::empty("")]
+#[case::oci_host_only("oci://ghcr.io")]
+#[case::oci_empty_tag("oci://ghcr.io/acme/x:")]
+#[case::oci_bad_tag("oci://ghcr.io/acme/x:-1")]
+#[case::oci_bad_digest("oci://ghcr.io/acme/x@sha256:short")]
+#[case::oci_uppercase_repository("oci://ghcr.io/Acme/x")]
 fn a_source_the_lock_would_refuse_is_invalid(#[case] text: &str) {
     let result = parse_source(text, "");
     assert!(result.is_err(), "accepted {text:?} as {result:?}");
@@ -755,5 +775,27 @@ fn source_drift_never_repeats_the_configured_source() {
     }
     for text in shown {
         assert!(!text.contains("hunter2-secret"), "{text}");
+    }
+}
+
+/// The debug form of a configured source keeps the scheme, host, port and path, and drops the
+/// query and the fragment, which can carry a token.
+#[rstest::rstest]
+#[case::archive(
+    "https://example.com:8443/x.tar.gz?token=hunter2-secret#frag-hunter2-secret",
+    "https://example.com:8443/x.tar.gz"
+)]
+#[case::archive_with_an_at_sign_in_the_query(
+    "https://example.com/x.tar.gz?u=reader@hunter2-secret",
+    "https://example.com/x.tar.gz"
+)]
+fn the_debug_form_of_a_configured_source_drops_query_and_fragment(
+    #[case] text: &str,
+    #[case] kept: &str,
+) {
+    let pack = configured("x", text, "", None);
+    for shown in [format!("{:?}", pack.source), format!("{pack:?}")] {
+        assert!(!shown.contains("hunter2-secret"), "{shown}");
+        assert!(shown.contains(kept), "{shown}");
     }
 }

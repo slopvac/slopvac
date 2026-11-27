@@ -609,6 +609,54 @@ fn an_invalid_source_in_the_config_fails_every_plugins_command(
         .stderr(predicate::str::contains("registry.invalid").not());
 }
 
+/// An `oci://` source with no repository, or with an empty tag, is malformed. The config may
+/// leave out the tag or digest, but not get one wrong.
+#[rstest::rstest]
+#[case::host_only("oci://registry.invalid")]
+#[case::empty_tag("oci://registry.invalid/acme/style:")]
+fn a_malformed_oci_source_in_the_config_is_invalid(#[case] source: &str) {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        style_entry(source, None),
+    )
+    .unwrap();
+    sandbox
+        .slopvac()
+        .env("CI", "true")
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[config-invalid-value]: "))
+        .stderr(predicate::str::contains("plugin `style`"));
+}
+
+/// An online CI sync refuses drift before it opens any connection, the revocation fetch
+/// included, and leaves the lock as it found it. The control above shows that an online sync
+/// does reach the tally.
+#[test]
+fn an_online_sync_in_ci_refuses_drift_before_any_request() {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        style_entry("oci://registry.invalid/acme/other", None),
+    )
+    .unwrap();
+    let before = lock_bytes(&sandbox);
+    let tally = NetworkTally::start();
+    let mut cmd = sandbox.slopvac();
+    tally.route(&mut cmd);
+    cmd.env("CI", "true")
+        .args(["plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[lock-mismatch]: "));
+    assert_eq!(tally.requests(), 0, "a refused sync opened a connection");
+    assert_eq!(lock_bytes(&sandbox), before);
+}
+
 /// A configured source can carry a credential, as user-info (an invalid source) or in a query
 /// (a valid one that differs from the lock). Neither output stream repeats it.
 #[rstest::rstest]
