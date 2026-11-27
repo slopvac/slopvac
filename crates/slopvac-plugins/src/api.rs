@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::error::{PluginError, RpcError};
 use crate::hooks::{
@@ -13,7 +13,10 @@ use crate::hooks::{
 };
 use crate::host::Plugin;
 use crate::messages::host::HostText;
-use crate::protocol::HookKind;
+use crate::protocol::{
+    CompleteParams, ExtractParams, FixParams, HookKind, RecipeParams, RenderParams, ScoreParams,
+    TagParams, request_len,
+};
 
 /// The outcome for one document of a batch.
 #[derive(Debug, Clone, PartialEq)]
@@ -95,12 +98,15 @@ pub fn plan_batches(
 }
 
 impl Plugin {
+    /// Call a documents hook over `docs`, split into batches.
+    ///
+    /// `overhead` is the size of the request with no documents, from [`request_len`]. `send`
+    /// builds the request for one batch and sends it.
     fn documents_call<D, T>(
         &self,
-        kind: HookKind,
-        hook_id: &str,
-        key: &str,
+        overhead: usize,
         docs: &[D],
+        send: &dyn Fn(&[D]) -> Result<Value, PluginError>,
         parse: &dyn Fn(&Value, &D) -> Result<T, PluginError>,
     ) -> Result<Vec<DocOutcome<T>>, PluginError>
     where
@@ -123,9 +129,6 @@ impl Plugin {
                     .to_string(),
                 )
             })?;
-        let empty = json!({"jsonrpc": "2.0", "id": 9_007_199_254_740_991u64, "method": kind.method(),
-            "params": {key: hook_id, "documents": []}});
-        let overhead = serde_json::to_vec(&empty).map_or(0, |v| v.len());
         let (batches, oversize) = plan_batches(
             &encoded,
             overhead,
@@ -146,8 +149,7 @@ impl Plugin {
         }
         for range in batches {
             let batch = &docs[range.clone()];
-            let params = json!({key: hook_id, "documents": batch});
-            let result = self.call(kind, hook_id, params)?;
+            let result = send(batch)?;
             let ids: Vec<&str> = batch.iter().map(|d| d.document().id.as_str()).collect();
             let entries = match_entries(&result, "document", &ids)?;
             for ((slot, entry), doc) in out[range].iter_mut().zip(entries).zip(batch) {
@@ -173,9 +175,26 @@ impl Plugin {
         hook: &str,
         docs: &[Document],
     ) -> Result<Vec<DocOutcome<Vec<Tag>>>, PluginError> {
-        self.documents_call(HookKind::Tagger, hook, "tagger", docs, &|e, d| {
-            parse_tags(e, &d.text)
-        })
+        let kind = HookKind::Tagger;
+        let empty: &[Document] = &[];
+        let overhead = request_len(
+            kind.method(),
+            &TagParams {
+                documents: empty,
+                hook,
+            },
+        )?;
+        let send = |batch: &[Document]| {
+            self.call_with(
+                kind,
+                hook,
+                &TagParams {
+                    documents: batch,
+                    hook,
+                },
+            )
+        };
+        self.documents_call(overhead, docs, &send, &|e, d| parse_tags(e, &d.text))
     }
 
     /// Split documents into prose segments.
@@ -187,9 +206,26 @@ impl Plugin {
         hook: &str,
         docs: &[Document],
     ) -> Result<Vec<DocOutcome<Vec<Segment>>>, PluginError> {
-        self.documents_call(HookKind::Extractor, hook, "extractor", docs, &|e, d| {
-            parse_segments(e, &d.text)
-        })
+        let kind = HookKind::Extractor;
+        let empty: &[Document] = &[];
+        let overhead = request_len(
+            kind.method(),
+            &ExtractParams {
+                documents: empty,
+                hook,
+            },
+        )?;
+        let send = |batch: &[Document]| {
+            self.call_with(
+                kind,
+                hook,
+                &ExtractParams {
+                    documents: batch,
+                    hook,
+                },
+            )
+        };
+        self.documents_call(overhead, docs, &send, &|e, d| parse_segments(e, &d.text))
     }
 
     /// Ask a fixer for edits. Edits are checked against the sent findings.
@@ -201,7 +237,26 @@ impl Plugin {
         hook: &str,
         docs: &[FindingsDocument],
     ) -> Result<Vec<DocOutcome<Vec<FixEdit>>>, PluginError> {
-        self.documents_call(HookKind::Fixer, hook, "fixer", docs, &|e, d| {
+        let kind = HookKind::Fixer;
+        let empty: &[FindingsDocument] = &[];
+        let overhead = request_len(
+            kind.method(),
+            &FixParams {
+                documents: empty,
+                hook,
+            },
+        )?;
+        let send = |batch: &[FindingsDocument]| {
+            self.call_with(
+                kind,
+                hook,
+                &FixParams {
+                    documents: batch,
+                    hook,
+                },
+            )
+        };
+        self.documents_call(overhead, docs, &send, &|e, d| {
             parse_edits(e, &d.document.text, &d.findings)
         })
     }
@@ -215,9 +270,26 @@ impl Plugin {
         hook: &str,
         docs: &[FindingsDocument],
     ) -> Result<Vec<DocOutcome<Option<f64>>>, PluginError> {
-        self.documents_call(HookKind::Scorer, hook, "scorer", docs, &|e, _| {
-            parse_score(e)
-        })
+        let kind = HookKind::Scorer;
+        let empty: &[FindingsDocument] = &[];
+        let overhead = request_len(
+            kind.method(),
+            &ScoreParams {
+                documents: empty,
+                hook,
+            },
+        )?;
+        let send = |batch: &[FindingsDocument]| {
+            self.call_with(
+                kind,
+                hook,
+                &ScoreParams {
+                    documents: batch,
+                    hook,
+                },
+            )
+        };
+        self.documents_call(overhead, docs, &send, &|e, _| parse_score(e))
     }
 
     /// Render one report.
@@ -230,8 +302,12 @@ impl Plugin {
         report: &Value,
         options: &Value,
     ) -> Result<Rendered, PluginError> {
-        let params = json!({"reporter": hook, "report": report, "options": options});
-        parse_rendered(&self.call(HookKind::Reporter, hook, params)?)
+        let params = RenderParams {
+            options,
+            report,
+            reporter: hook,
+        };
+        parse_rendered(&self.call_with(HookKind::Reporter, hook, &params)?)
     }
 
     /// Ask a provider. Output is untrusted model text and has no route to a
@@ -246,8 +322,13 @@ impl Plugin {
         model: &str,
         items: &[CompleteItem],
     ) -> Result<Vec<Result<Completion, RpcError>>, PluginError> {
-        let params = json!({"provider": hook, "task": task, "model": model, "items": items});
-        let result = self.call(HookKind::Provider, hook, params)?;
+        let params = CompleteParams {
+            items,
+            model,
+            provider: hook,
+            task,
+        };
+        let result = self.call_with(HookKind::Provider, hook, &params)?;
         let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
         parse_completions(&result, &ids)
     }
@@ -262,8 +343,12 @@ impl Plugin {
         harness: &str,
         options: &Value,
     ) -> Result<Vec<RecipeFile>, PluginError> {
-        let params = json!({"recipe": hook, "harness": harness, "options": options});
-        parse_recipe(&self.call(HookKind::Recipe, hook, params)?)
+        let params = RecipeParams {
+            harness,
+            options,
+            recipe: hook,
+        };
+        parse_recipe(&self.call_with(HookKind::Recipe, hook, &params)?)
     }
 }
 

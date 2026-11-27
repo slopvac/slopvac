@@ -2758,6 +2758,7 @@ dependencies = [
  "flate2",
  "getrandom 0.4.3",
  "hmac",
+ "jsonschema",
  "minisign",
  "minisign-verify",
  "regex",

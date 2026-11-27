@@ -36,6 +36,7 @@ impl RpcError {
 /// Each variant maps to a `slopvac_code` from plugin-protocol.md section 10.
 /// Any plugin failure makes the affected run exit 2.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PluginError {
     /// The content hash has no recorded trust.
     #[error("{}", messages::untrusted(.0))]
@@ -116,6 +117,36 @@ pub enum PluginError {
     /// The caller used the plugin wrongly, for example an undeclared hook.
     #[error("{}", messages::plugin_usage(.0))]
     Usage(String),
+    /// A message the host built could not be encoded.
+    #[error("{}", messages::plugin_usage(&.0.to_string()))]
+    Encode(#[source] EncodeCause),
+}
+
+/// Why the encoder failed, and nothing else.
+///
+/// The `serde_json` error can quote text that a serializer gave it, and the messages the host
+/// encodes hold document text. The cause keeps the category and the position only, the same
+/// scrub as the manifest errors (docs/engineering.md, approved departures), so the error chain
+/// carries no document text (policies section 1.7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("{}", messages::encode_cause(&format!("{:?}", .category), *.line, *.column))]
+pub struct EncodeCause {
+    /// What kind of failure it was.
+    pub category: serde_json::error::Category,
+    /// One-based line, or 0 when the failure has no position.
+    pub line: usize,
+    /// One-based column, or 0 when the failure has no position.
+    pub column: usize,
+}
+
+impl From<&serde_json::Error> for EncodeCause {
+    fn from(e: &serde_json::Error) -> Self {
+        Self {
+            category: e.classify(),
+            line: e.line(),
+            column: e.column(),
+        }
+    }
 }
 
 impl PluginError {
@@ -142,7 +173,7 @@ impl PluginError {
             Self::Rpc(e) => e.code_name(),
             Self::Cancelled => "request-cancelled",
             Self::MessageTooLarge(_) => "message-too-large",
-            Self::Usage(_) => "plugin-usage",
+            Self::Usage(_) | Self::Encode(_) => "plugin-usage",
         }
     }
 }
