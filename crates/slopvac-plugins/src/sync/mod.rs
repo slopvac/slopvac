@@ -68,8 +68,8 @@ use semver::{Version, VersionReq};
 use cache::Accepted;
 pub use cache::{Store, StoreLock, TreeState};
 pub use error::{CacheCause, SyncError};
-pub use verified::VerifiedTree;
 use verified::Cached;
+pub use verified::VerifiedTree;
 
 use crate::extract::{
     ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash_capturing,

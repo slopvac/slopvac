@@ -1918,7 +1918,7 @@ mod cache_reads {
 
     use slopvac_plugins::extract::Limits;
     use slopvac_plugins::oci::MAX_MANIFEST_BYTES;
-    use slopvac_plugins::sync::{CacheCause, VerifiedTree, MEDIA_PACK_LAYER};
+    use slopvac_plugins::sync::{CacheCause, MEDIA_PACK_LAYER, VerifiedTree};
 
     use super::*;
 

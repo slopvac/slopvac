@@ -198,12 +198,7 @@ impl Store {
     }
 
     /// The error of a cached blob that exists but cannot be read.
-    pub(super) fn unreadable(
-        &self,
-        id: &PackId,
-        digest: &Digest,
-        cause: CacheCause,
-    ) -> SyncError {
+    pub(super) fn unreadable(&self, id: &PackId, digest: &Digest, cause: CacheCause) -> SyncError {
         SyncError::CacheUnreadable {
             id: id.clone(),
             path: self.blob_path(digest),
