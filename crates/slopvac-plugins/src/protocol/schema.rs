@@ -847,11 +847,9 @@ pub(crate) enum Kind {
     Notification,
 }
 
-/// A type that a method names, by definition name and by the call that defines it.
+/// A type that a method names, by the call that defines it.
 #[derive(Clone, Copy)]
 pub(crate) struct TypeRef {
-    /// The definition name.
-    pub(crate) name: fn() -> Cow<'static, str>,
     /// Define the type in a generator and return the reference to it.
     pub(crate) define: fn(&mut SchemaGenerator) -> Schema,
 }
@@ -859,10 +857,7 @@ pub(crate) struct TypeRef {
 impl TypeRef {
     /// A reference to the definition of `T`.
     pub(crate) const fn of<T: JsonSchema>() -> Self {
-        Self {
-            name: T::schema_name,
-            define: define::<T>,
-        }
+        Self { define: define::<T> }
     }
 }
 
@@ -986,16 +981,32 @@ pub(crate) const METHODS: &[Method] = &[
     ),
 ];
 
-/// The names of the definitions that hold the results of the methods in the table. Nothing in a
-/// message refers to them, because a response names no method, so the generated file keeps each
-/// one on purpose.
-#[must_use]
-pub fn result_defs() -> Vec<String> {
-    METHODS
-        .iter()
-        .filter_map(|method| method.result)
-        .map(|result| (result.name)().into_owned())
-        .collect()
+/// The members of a hook declaration.
+#[derive(JsonSchema)]
+#[schemars(rename = "HookDecl", description = text::HOOK_DECL, transform = bare_fields)]
+#[expect(
+    dead_code,
+    reason = "schema only: the derive reads the fields and no code reads a value"
+)]
+struct HookDeclFields {
+    kind: HookKindSchema,
+    id: HookIdSchema,
+}
+
+/// The schema of a hook declaration: its members, and the rule that a binary extractor lists the
+/// formats it reads. The rule refers to `BinaryFormat` through the generator, so a document that
+/// holds only the declaration still defines it.
+pub(crate) fn hook_decl(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema = HookDeclFields::json_schema(generator);
+    let formats = generator.subschema_for::<Batch<BinaryFormat>>();
+    schema.insert(
+        "allOf".into(),
+        json!([{
+            "if": {"properties": {"kind": {"const": "binary-extractor"}}, "required": ["kind"]},
+            "then": {"properties": {"formats": formats}, "required": ["formats"]}
+        }]),
+    );
+    schema
 }
 
 /// A request or notification, dispatched on its method.
@@ -1025,6 +1036,7 @@ impl JsonSchema for Call {
 ///
 /// The root checks the `jsonrpc` member, then dispatches a message with a `method` to its rule
 /// and checks any other message as a response.
+#[non_exhaustive]
 pub struct ProtocolMessage;
 
 impl JsonSchema for ProtocolMessage {

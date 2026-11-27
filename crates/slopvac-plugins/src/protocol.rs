@@ -11,10 +11,9 @@ pub(crate) mod schema;
 pub(crate) mod text;
 
 use schema::{
-    FeatureNameSchema, HookIdSchema, HookKindSchema, ProtocolVersion, UniqueItems, bare_entry,
-    bare_fields, network_note,
+    FeatureNameSchema, ProtocolVersion, UniqueItems, bare_entry, bare_fields, network_note,
 };
-pub use schema::{ProtocolMessage, result_defs};
+pub use schema::ProtocolMessage;
 
 pub(crate) use requests::{
     CancelParams, CompleteParams, ExtractParams, FixParams, HostCapabilities, HostInfo, HostLimits,
@@ -126,30 +125,22 @@ impl HookKind {
 }
 
 /// One hook a plugin offers or may offer.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[schemars(
-    description = text::HOOK_DECL,
-    transform = bare_fields,
-    extend("allOf" = [{
-        "if": {"properties": {"kind": {"const": "binary-extractor"}}, "required": ["kind"]},
-        "then": {
-            "properties": {"formats": {
-                "type": "array",
-                "items": {"$ref": "#/$defs/BinaryFormat"},
-                "minItems": 1,
-                "uniqueItems": true
-            }},
-            "required": ["formats"]
-        }
-    }])
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HookDecl {
     /// Hook kind name.
-    #[schemars(with = "HookKindSchema")]
     pub kind: String,
     /// Plugin-local hook id.
-    #[schemars(with = "HookIdSchema")]
     pub id: String,
+}
+
+impl JsonSchema for HookDecl {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "HookDecl".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schema::hook_decl(generator)
+    }
 }
 
 /// Features a plugin requires or would like.
