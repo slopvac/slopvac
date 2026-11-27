@@ -1586,7 +1586,16 @@ report-sample-unreadable error
 report-severity-error text
 report-severity-suggestion text
 report-severity-warning text
+report-state-changed text
+report-state-clock text
+report-state-damaged text
 report-state-failed error
+report-state-no-directory text
+report-state-not-regular text
+report-state-rewrite-too-large text
+report-state-too-large text
+report-state-unreadable text
+report-state-unwritable text
 report-text-document text
 report-text-finding text
 report-text-notice text
