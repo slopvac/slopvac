@@ -2,43 +2,61 @@
 
 #[cfg(feature = "test-support")]
 use std::cell::RefCell;
-use std::fmt;
 use std::path::Path;
 #[cfg(feature = "test-support")]
 use std::rc::Rc;
 
 use slopvac_fs::{InputKind, ReadOptions, read_capped_regular_to_string};
+use thiserror::Error;
 
 use super::{LockError, Lockfile, MAX_LOCK_BYTES};
 use crate::messages::cli::{Redacted, RunError};
 
-/// Why the lock of a project could not be read: the file cannot be read, or it is not a valid
-/// lock. The text comes from the plugins catalog, names no path and repeats no text of the file.
-#[derive(Debug)]
-pub struct LockReadError(RunError);
+/// A failure to read the lock as a command reports it: its stable code, and a text that names
+/// no path and repeats no text of the file.
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct LockFailure(RunError);
 
-impl LockReadError {
+impl LockFailure {
     /// The stable code of the failure: `plugins-lock-unreadable` or `plugins-lock-invalid`.
     #[must_use]
     pub fn code(&self) -> &'static str {
         self.0.code()
     }
+}
+
+/// Why the lock of a project could not be read. The text comes from the plugins catalog, names no
+/// path and repeats no text of the file.
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum LockReadError {
+    /// The file cannot be read, or is missing and the lock is required. The code is
+    /// `plugins-lock-unreadable`.
+    #[error(transparent)]
+    Unreadable(LockFailure),
+    /// The file is not a valid lock. The code is `plugins-lock-invalid`.
+    #[error(transparent)]
+    Invalid(LockFailure),
+}
+
+/// The result of reading the lock of a project.
+pub type Result<T> = std::result::Result<T, LockReadError>;
+
+impl LockReadError {
+    /// The stable code of the failure: `plugins-lock-unreadable` or `plugins-lock-invalid`.
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Unreadable(f) | Self::Invalid(f) => f.code(),
+        }
+    }
 
     /// The failure as the error of a command, for the command line to report.
     pub(crate) fn into_run_error(self) -> RunError {
-        self.0
-    }
-}
-
-impl fmt::Display for LockReadError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl std::error::Error for LockReadError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        std::error::Error::source(&self.0)
+        match self {
+            Self::Unreadable(f) | Self::Invalid(f) => f.0,
+        }
     }
 }
 
@@ -96,7 +114,7 @@ pub fn observe_lock_reads(
 /// [`LockReadError`] with the code `plugins-lock-unreadable` when the file cannot be read (or is
 /// missing and `required`), and `plugins-lock-invalid` when it is not a valid lock. The cause of
 /// the second keeps the location only, never the rejected text.
-pub fn read_project_lock(project_root: &Path, required: bool) -> Result<Lockfile, LockReadError> {
+pub fn read_project_lock(project_root: &Path, required: bool) -> Result<Lockfile> {
     #[cfg(feature = "test-support")]
     let hooks = OBSERVER.with(|slot| {
         slot.borrow()
@@ -115,16 +133,16 @@ pub fn read_project_lock(project_root: &Path, required: bool) -> Result<Lockfile
     read
 }
 
-fn read_lock_file(project_root: &Path, required: bool) -> Result<Lockfile, LockReadError> {
+fn read_lock_file(project_root: &Path, required: bool) -> Result<Lockfile> {
     let path = project_root.join(".slopvac/plugins.lock");
     let invalid = |source: LockError| {
         let detail = source.diagnostic();
-        LockReadError(RunError::LockInvalid {
+        LockReadError::Unreadable(LockFailure(RunError::LockInvalid {
             // The parser's own error can echo the rejected value, so the cause keeps only the
             // location.
             source: Redacted::new(detail.clone()),
             detail,
-        })
+        }))
     };
 
     match read_capped_regular_to_string(&path, MAX_LOCK_BYTES as u64, ReadOptions::default()) {
@@ -132,9 +150,11 @@ fn read_lock_file(project_root: &Path, required: bool) -> Result<Lockfile, LockR
         Err(e) if !required && e.input_kind() == Some(InputKind::NotFound) => {
             Lockfile::new(Vec::new()).map_err(invalid)
         }
-        Err(source) => Err(LockReadError(RunError::LockUnreadable {
-            detail: source.to_string(),
-            source,
-        })),
+        Err(source) => Err(LockReadError::Unreadable(LockFailure(
+            RunError::LockUnreadable {
+                detail: source.to_string(),
+                source,
+            },
+        ))),
     }
 }
