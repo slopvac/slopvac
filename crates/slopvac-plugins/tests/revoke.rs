@@ -674,6 +674,7 @@ fn install(dir: &Path, manifest: &str, key_id: &str) -> VerifiedPlugin {
         name: "fake".into(),
         version: Some("1.0.0".into()),
         source: "oci:ghcr.io/acme/fake".into(),
+        manifest: manifest_of(&out.root),
         root: out.root,
         tree: out.hash,
         manifest_digest: Some(manifest.into()),
@@ -1205,4 +1206,18 @@ fn a_list_naming_the_plugins_key_stops_a_plugin_signed_by_it() {
     env.warm(env.list(ISSUED, EXPIRES, &[plugins_id.as_str()], &[]));
     assert_eq!(gate.state(&vp, &spec).unwrap().1, TrustState::Revoked);
     assert!(matches!(gate.check(&spec), Err(PluginError::Untrusted(_))));
+}
+
+/// The manifest bytes of the fixture tree at `root`: the file when it exists, a native manifest
+/// when it is absent, and a failed setup for any other error.
+fn manifest_of(root: &Path) -> Vec<u8> {
+    const NATIVE: &str = "schema_version = 3\nid = \"fake\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
+    let read = fs::read(root.join("slopvac-plugin.toml"));
+    if read
+        .as_ref()
+        .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+    {
+        return NATIVE.as_bytes().to_vec();
+    }
+    read.expect("the fixture manifest is readable")
 }

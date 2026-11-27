@@ -12,6 +12,7 @@
     reason = "TEMPORARY: burn-down in slopvac-8l4.2.32"
 )]
 
+mod common;
 mod oci_server;
 mod revocations;
 mod support;
@@ -253,6 +254,40 @@ impl Env {
         .sync(lock)
     }
 
+    /// Sync in `store`, which the caller built, with the git source served from `remote`, and
+    /// with `python` when it is given.
+    fn sync_in(
+        &self,
+        store: &Store,
+        remote: &Remote,
+        lock: &Lockfile,
+        python: Option<slopvac_plugins::sync::PythonBuild<'_>>,
+    ) -> Result<SyncReport, SyncError> {
+        let c = client();
+        let revocations = Revocations::new(
+            self.data.path().join("state"),
+            vec![self.root.public()],
+            self.list.source(),
+            NOW,
+        )
+        .unwrap();
+        let policy = KeyPolicy::default();
+        let syncer = Syncer::new(
+            store,
+            Network::Online(&c),
+            &policy,
+            self.project.path(),
+            &revocations,
+        )
+        .with_launcher(Launcher::Program(launcher().into()))
+        .with_git_rewrite_for_tests(LOCKED_HOST, &remote.served_from());
+        match python {
+            Some(build) => syncer.with_python(build),
+            None => syncer,
+        }
+        .sync(lock)
+    }
+
     fn trees(&self) -> Vec<PathBuf> {
         fs::read_dir(self.data.path().join("slopvac/trees"))
             .map(|rd| {
@@ -314,6 +349,107 @@ fn a_commit_whose_tree_matches_the_lock_is_installed_without_git_metadata() {
     assert_eq!(names, ["pack.toml", "rules"]);
     let states = status(&env.store(), env.project.path(), &lock).unwrap();
     assert!(states[0].is_recorded(), "{states:?}");
+}
+
+/// A git tree changed after the pass that checked it against the lock is refused, and nothing is
+/// installed: the install never takes the hash of the changed tree for the locked one.
+#[test]
+fn a_staged_git_tree_changed_after_it_was_checked_is_refused() {
+    let remote = Remote::with_files(FILES, &[]);
+    let env = Env::new();
+    let lock = remote.lock(&expected_digest(FILES));
+    let store = env
+        .store()
+        .with_read_observer(std::sync::Arc::new(|path: &Path| {
+            let rule = path.join("rules/a.yml");
+            if path.file_name().is_some_and(|n| n == "tree") && rule.exists() {
+                fs::write(rule, b"rule: swapped\n").unwrap();
+            }
+        }));
+
+    let result = env.sync_in(&store, &remote, &lock, None);
+
+    let err = result.unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            SyncError::Extract {
+                source: slopvac_plugins::extract::ExtractError::Tampered { .. },
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    env.assert_no_trees();
+}
+
+const PY_MANIFEST: &str = "schema_version = 3\nid = \"py\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
+const PY_FILES: &[(&str, &[u8])] = &[
+    ("slopvac-plugin.toml", PY_MANIFEST.as_bytes()),
+    ("plugin.py", b"print('plugin')\n"),
+    (
+        "pylock.toml",
+        b"lock-version = \"1.0\"\ncreated-by = \"test\"\n",
+    ),
+];
+
+/// A stored git tree whose manifest changes after the pass that checked it is still synced from
+/// the manifest that was checked.
+#[cfg(unix)]
+#[test]
+fn a_stored_git_tree_is_synced_from_the_manifest_that_was_checked() {
+    use std::os::unix::fs::PermissionsExt;
+
+    use common::fake_uv::{Fake, fake_uv};
+    use slopvac_plugins::pyenv::EnvStore;
+    use slopvac_plugins::sync::PythonBuild;
+
+    let remote = Remote::with_files(PY_FILES, &[]);
+    let env = Env::new();
+    let digest = expected_digest(PY_FILES);
+    let lock = Lockfile::parse(&format!(
+        "schema_version = 3\n\n[[plugins]]\nid = \"py\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
+         slopvac_api = 1\nsource = \"git+{LOCKED_HOST}repo@{}\"\ndigest = \"{digest}\"\n",
+        remote.commit
+    ))
+    .unwrap();
+    let uv = fake_uv(&env.data.path().join("uv-bin"), &Fake::real());
+    let envs = EnvStore::open(env.data.path().join("envs"));
+    let build = || PythonBuild {
+        envs: &envs,
+        uv: &uv,
+        python_install_dir: Path::new("/nonexistent/uv-python"),
+    };
+    let first = env
+        .sync_in(&env.store(), &remote, &lock, Some(build()))
+        .unwrap();
+    let key = first.packs[0].python_env.clone();
+    assert!(key.is_some());
+
+    // The second sync finds the tree in the store. After it is checked, its manifest changes.
+    let swapped = PY_MANIFEST.replace("python = \"3.12\"", "python = \"3.11\"");
+    let store = env
+        .store()
+        .with_read_observer(std::sync::Arc::new(move |path: &Path| {
+            let manifest = path.join("slopvac-plugin.toml");
+            if path
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("tree-"))
+                && manifest.exists()
+            {
+                fs::set_permissions(&manifest, fs::Permissions::from_mode(0o644)).unwrap();
+                fs::write(&manifest, &swapped).unwrap();
+            }
+        }));
+    let second = env.sync_in(&store, &remote, &lock, Some(build())).unwrap();
+
+    assert_eq!(second.packs[0].change, Change::Unchanged);
+    assert_eq!(second.packs[0].python_env, key);
+    // The observer did swap the file: the tree on disk holds the replacement.
+    assert_eq!(
+        fs::read_to_string(second.packs[0].tree.join("slopvac-plugin.toml")).unwrap(),
+        PY_MANIFEST.replace("python = \"3.12\"", "python = \"3.11\"")
+    );
 }
 
 #[test]

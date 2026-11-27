@@ -14,123 +14,35 @@
 mod common;
 mod oci_server;
 mod revocations;
+mod signed_fixture;
 mod support;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
-use flate2::Compression;
-use flate2::write::GzEncoder;
 use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
 use rstest::rstest;
+use signed_fixture::{Key, Published, targz};
 use slopvac_plugins::lock::{
     Lockfile, PackId, ResolvedPack, Source, Version, VersionReq, parse_version_req,
 };
 use slopvac_plugins::oci::{
-    Anonymous, Client, Descriptor, Digest, MEDIA_MANIFEST, Manifest, OciError, Reference,
+    Anonymous, Client, Digest, MEDIA_MANIFEST, Manifest, OciError, Reference,
 };
 use slopvac_plugins::revoke::{RevocationError, RevocationNotice, Revocations};
-use slopvac_plugins::sign::{
-    ANNOTATION_ID, ANNOTATION_VERSION, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, PublicKey,
-    SignError, Statement,
-};
+use slopvac_plugins::sign::{KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, SignError};
 use slopvac_plugins::sync::{
-    ARTIFACT_TYPE_PACK, Change, MEDIA_PACK_LAYER, Network, PackState, Store, SyncError, Syncer,
-    available_versions, check_lock, status, update_notices,
+    Change, Network, PackState, Store, SyncError, Syncer, available_versions, check_lock, status,
+    update_notices,
 };
 
 const NOT_BEFORE: &str = "2026-11-01T00:00:00Z";
 const NOW: &str = "2026-11-14T00:00:00Z";
 
-struct Key {
-    pk: minisign::PublicKey,
-    sk: minisign::SecretKey,
-}
-
-impl Key {
-    fn new() -> Self {
-        let kp = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
-        Self {
-            pk: kp.pk,
-            sk: kp.sk,
-        }
-    }
-    fn public(&self) -> PublicKey {
-        PublicKey::from_base64(&self.pk.to_base64()).unwrap()
-    }
-    fn sign(&self, bytes: &[u8]) -> String {
-        minisign::sign(Some(&self.pk), &self.sk, Cursor::new(bytes), None, None)
-            .unwrap()
-            .to_string()
-    }
-}
-
-fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
-    let mut builder = tar::Builder::new(Vec::new());
-    for (name, data) in files {
-        let mut header = tar::Header::new_gnu();
-        header.set_size(data.len() as u64);
-        header.set_mode(0o644);
-        header.set_entry_type(tar::EntryType::Regular);
-        builder.append_data(&mut header, name, *data).unwrap();
-    }
-    let raw = builder.into_inner().unwrap();
-    let mut gz = GzEncoder::new(Vec::new(), Compression::default());
-    gz.write_all(&raw).unwrap();
-    gz.finish().unwrap()
-}
-
-/// A signed pack artifact, ready to serve.
-struct Published {
-    manifest: Vec<u8>,
-    digest: String,
-    blobs: HashMap<String, Vec<u8>>,
-    key_id: String,
-}
-
 fn publish(key: &Key, namespace: &str, files: &[(&str, &[u8])]) -> Published {
-    let layer = targz(files);
-    let mut manifest = Manifest {
-        schema_version: 2,
-        media_type: Some(MEDIA_MANIFEST.into()),
-        artifact_type: Some(ARTIFACT_TYPE_PACK.into()),
-        config: Descriptor::for_bytes("application/vnd.oci.empty.v1+json", b"{}"),
-        layers: vec![Descriptor::for_bytes(MEDIA_PACK_LAYER, &layer)],
-        subject: None,
-        annotations: BTreeMap::from([
-            (ANNOTATION_ID.to_owned(), "style".to_owned()),
-            (ANNOTATION_VERSION.to_owned(), "1.2.0".to_owned()),
-        ]),
-    };
-    let key_id = key.public().key_id();
-    let statement =
-        Statement::for_manifest(namespace, "style", "1.2.0", &key_id, NOT_BEFORE, &manifest)
-            .canonical_bytes();
-    let minisig = key.sign(&statement);
-    manifest
-        .layers
-        .push(Descriptor::for_bytes(MEDIA_STATEMENT, &statement));
-    manifest
-        .layers
-        .push(Descriptor::for_bytes(MEDIA_MINISIG, minisig.as_bytes()));
-    let body = serde_json::to_vec(&manifest).unwrap();
-    let mut blobs = HashMap::new();
-    blobs.insert(Digest::of(&layer).to_string(), layer);
-    blobs.insert(Digest::of(&statement).to_string(), statement);
-    blobs.insert(
-        Digest::of(minisig.as_bytes()).to_string(),
-        minisig.into_bytes(),
-    );
-    blobs.insert(Digest::of(b"{}").to_string(), b"{}".to_vec());
-    Published {
-        digest: Digest::of(&body).to_string(),
-        manifest: body,
-        blobs,
-        key_id,
-    }
+    signed_fixture::publish(key, namespace, "style", "1.2.0", NOT_BEFORE, files)
 }
 
 /// The artifact of [`publish`] with its statement and signature layers removed.
@@ -307,7 +219,7 @@ const FILES: &[(&str, &[u8])] = &[
 
 #[test]
 fn sync_installs_exactly_the_locked_pack() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -340,7 +252,7 @@ fn sync_installs_exactly_the_locked_pack() {
 
 #[test]
 fn a_registry_serving_other_content_for_the_locked_digest_installs_nothing() {
-    let key = Key::new();
+    let key = Key::primary();
     let locked_pack = publish(&key, "acme", FILES);
     let forged = publish(&key, "acme", &[("pack.toml", b"evil\n")]);
     let server = registry(&[&forged]);
@@ -365,7 +277,7 @@ fn a_registry_serving_other_content_for_the_locked_digest_installs_nothing() {
 
 #[test]
 fn a_fetch_failure_with_no_code_of_its_own_reports_sync_fetch() {
-    let key = Key::new();
+    let key = Key::primary();
     let good = publish(&key, "acme", FILES);
     let server = registry(&[&good]);
     let env = Env::new();
@@ -386,8 +298,8 @@ fn a_fetch_failure_with_no_code_of_its_own_reports_sync_fetch() {
 #[test]
 fn a_key_that_is_not_pinned_is_refused_and_nothing_is_extracted() {
     // TM-22: the artifact verifies against a key the user did not pin.
-    let signer = Key::new();
-    let pinned = Key::new();
+    let signer = Key::primary();
+    let pinned = Key::secondary();
     let p = publish(&signer, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -415,7 +327,7 @@ fn a_key_that_is_not_pinned_is_refused_and_nothing_is_extracted() {
 
 #[test]
 fn a_first_party_namespace_fails_closed_without_compiled_keys() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -444,7 +356,7 @@ fn a_first_party_namespace_fails_closed_without_compiled_keys() {
 
 #[test]
 fn a_lock_entry_without_a_signature_is_refused() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let mut entry = oci_entry("style", &server.registry(), &p.digest, &p.key_id);
@@ -464,7 +376,7 @@ fn a_lock_entry_without_a_signature_is_refused() {
 
 #[test]
 fn a_lock_entry_without_a_signature_reports_sync_unsigned() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let mut entry = oci_entry("style", &server.registry(), &p.digest, &p.key_id);
@@ -484,7 +396,7 @@ fn a_lock_entry_without_a_signature_reports_sync_unsigned() {
 
 #[test]
 fn an_artifact_without_the_signature_its_lock_entry_records_reports_signature_invalid() {
-    let key = Key::new();
+    let key = Key::primary();
     let stripped = publish_without_signature(&key, "acme", FILES);
     let server = registry(&[&stripped]);
     let env = Env::new();
@@ -508,8 +420,8 @@ fn an_artifact_without_the_signature_its_lock_entry_records_reports_signature_in
 
 #[test]
 fn a_signature_that_differs_from_the_lock_still_reports_signature_invalid() {
-    let locked_key = Key::new();
-    let other = Key::new();
+    let locked_key = Key::primary();
+    let other = Key::secondary();
     let p = publish(&other, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -536,8 +448,8 @@ fn a_signature_that_differs_from_the_lock_still_reports_signature_invalid() {
 
 #[test]
 fn a_signature_by_another_pinned_key_than_the_lock_records_is_refused() {
-    let locked_key = Key::new();
-    let other = Key::new();
+    let locked_key = Key::primary();
+    let other = Key::secondary();
     let p = publish(&other, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -564,7 +476,7 @@ fn a_signature_by_another_pinned_key_than_the_lock_records_is_refused() {
 
 #[test]
 fn one_bad_pack_leaves_the_store_without_any_tree() {
-    let key = Key::new();
+    let key = Key::primary();
     let good = publish(&key, "acme", FILES);
     let server = registry(&[&good]);
     let env = Env::new();
@@ -582,7 +494,7 @@ fn one_bad_pack_leaves_the_store_without_any_tree() {
 
 #[test]
 fn a_second_sync_changes_nothing_and_makes_no_request() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -599,7 +511,7 @@ fn a_second_sync_changes_nothing_and_makes_no_request() {
 
 #[test]
 fn offline_sync_from_a_warm_cache_succeeds_without_the_network() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let env = Env::new();
     let pol = policy("acme", &[&key]);
@@ -624,7 +536,7 @@ fn offline_sync_from_a_warm_cache_succeeds_without_the_network() {
 
 #[test]
 fn offline_sync_from_a_cold_cache_names_the_missing_pack_and_digest() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let env = Env::new();
     let lock = oci_lock("127.0.0.1:9", &p);
@@ -638,7 +550,7 @@ fn offline_sync_from_a_cold_cache_names_the_missing_pack_and_digest() {
 
 #[test]
 fn offline_sync_rechecks_a_cached_blob_and_refuses_a_swapped_one() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let env = Env::new();
     let pol = policy("acme", &[&key]);
@@ -682,7 +594,7 @@ fn tamper_add(tree: &Path) {
 fn a_tampered_tree_is_reinstalled_online() {
     // TM-46: edit a file; add a file.
     for tamper in [tamper_edit as fn(&Path), tamper_add] {
-        let key = Key::new();
+        let key = Key::primary();
         let p = publish(&key, "acme", FILES);
         let server = registry(&[&p]);
         let env = Env::new();
@@ -709,7 +621,7 @@ fn a_tampered_tree_is_reinstalled_online() {
 
 #[test]
 fn a_tampered_tree_is_refused_offline_and_removed() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -720,13 +632,14 @@ fn a_tampered_tree_is_refused_offline_and_removed() {
     tamper_edit(&first.packs[0].tree);
     let err = run(&env, Network::Offline, &pol, &lock).unwrap_err();
     assert!(matches!(err, SyncError::CacheTampered { .. }), "{err:?}");
+    assert_eq!(err.code(), "cache-tampered");
     assert_eq!(err.exit_code(), 2);
     env.assert_no_trees();
 }
 
 #[test]
 fn status_reports_missing_then_installed() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -763,6 +676,67 @@ fn a_path_archive_is_installed_by_its_digest_and_cached_for_offline_use() {
     assert_eq!(
         fs::read(report.packs[0].tree.join("rules/a.yml")).unwrap(),
         b"rule: a\n"
+    );
+}
+
+/// An archive source synced offline, so the store holds a recorded tree. Returns the lock and the
+/// tree, made writable so a test can change it.
+#[cfg(unix)]
+fn recorded_archive(env: &Env) -> (Lockfile, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let archive = targz(FILES);
+    fs::create_dir_all(env.project.path().join("dist")).unwrap();
+    fs::write(env.project.path().join("dist/style.tar.gz"), &archive).unwrap();
+    let lock = lock_text(&[path_archive_entry(&Digest::of(&archive).to_string())]);
+    let report = run(env, Network::Offline, &KeyPolicy::default(), &lock).unwrap();
+    let tree = report.packs[0].tree.clone();
+    fs::set_permissions(&tree, fs::Permissions::from_mode(0o755)).unwrap();
+    (lock, tree)
+}
+
+/// A recorded tree that the walk refuses is reported as refused. It is tampering only when a hash
+/// finished and does not match.
+#[cfg(unix)]
+#[test]
+fn status_reports_a_recorded_tree_the_walk_refuses_as_refused_and_not_tampered() {
+    let env = Env::new();
+    let (lock, tree) = recorded_archive(&env);
+    std::os::unix::fs::symlink("rules", tree.join("link")).unwrap();
+
+    let err = status(&env.store(), env.project.path(), &lock).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            SyncError::Extract {
+                source: slopvac_plugins::extract::ExtractError::Refused(_),
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+}
+
+/// A recorded tree whose manifest cannot be kept is reported with that cause, not as changed.
+#[cfg(unix)]
+#[test]
+fn status_keeps_the_capture_limit_of_a_recorded_tree() {
+    let env = Env::new();
+    let (lock, tree) = recorded_archive(&env);
+    fs::write(tree.join("slopvac-plugin.toml"), vec![b'x'; (1 << 20) + 1]).unwrap();
+
+    let err = status(&env.store(), env.project.path(), &lock).unwrap_err();
+
+    assert!(
+        matches!(
+            &err,
+            SyncError::Extract {
+                source: slopvac_plugins::extract::ExtractError::CaptureLimit { .. },
+                ..
+            }
+        ),
+        "{err:?}"
     );
 }
 
@@ -874,7 +848,7 @@ fn update_notices_separate_in_range_updates_from_out_of_range_releases() {
 
 #[test]
 fn available_versions_lists_semver_tags_in_order() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let c = client();
@@ -1117,7 +1091,7 @@ fn an_edited_record_cannot_make_sync_keep_another_tree() {
 #[test]
 fn a_tampered_tree_too_large_to_delete_is_reported_as_quarantined_online() {
     use std::os::unix::fs::PermissionsExt;
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1142,7 +1116,7 @@ fn a_tampered_tree_too_large_to_delete_is_reported_as_quarantined_online() {
 fn a_signature_newer_than_the_one_the_lock_records_is_refused() {
     // Valid, pinned and newer than the lock's floor, so the verifier accepts it;
     // sync still installs only the signature the lock recorded.
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1167,7 +1141,7 @@ fn a_signature_newer_than_the_one_the_lock_records_is_refused() {
 
 #[test]
 fn tm26_a_revoked_manifest_digest_fails_sync_before_any_request_for_it() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1189,7 +1163,7 @@ fn tm26_a_revoked_manifest_digest_fails_sync_before_any_request_for_it() {
 
 #[test]
 fn tm26_a_revoked_signing_key_fails_sync_and_extracts_nothing() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1209,7 +1183,7 @@ fn tm26_a_revoked_signing_key_fails_sync_and_extracts_nothing() {
 
 #[test]
 fn tm26_a_revocation_published_after_install_fails_the_next_sync() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1229,7 +1203,7 @@ fn tm26_a_revocation_published_after_install_fails_the_next_sync() {
 
 #[test]
 fn a_list_that_names_other_artifacts_installs_normally() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1249,7 +1223,7 @@ fn a_list_that_names_other_artifacts_installs_normally() {
 
 #[test]
 fn tm27_a_forged_list_fails_online_sync_with_exit_2() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1276,7 +1250,7 @@ fn tm27_a_forged_list_fails_online_sync_with_exit_2() {
 
 #[test]
 fn tm27_a_stale_cache_offline_prints_a_notice_and_the_sync_runs() {
-    let key = Key::new();
+    let key = Key::primary();
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let env = Env::new();
@@ -1359,7 +1333,7 @@ mod io_boundary {
     }
 
     fn installed() -> Installed {
-        let key = Key::new();
+        let key = Key::primary();
         let p = publish(&key, "acme", FILES);
         let server = registry(&[&p]);
         let env = Env::new();
@@ -1645,6 +1619,154 @@ mod python {
         );
     }
 
+    /// A store that rewrites the manifest of the in-place plugin right after the pass that
+    /// accepted the tree, with a manifest that asks for another Python.
+    fn rewriting_store(t: &Setup) -> slopvac_plugins::sync::Store {
+        let dir = t.env.project.path().join("packs/py");
+        let swapped = PLUGIN_MANIFEST.replace("python = \"3.12\"", "python = \"3.11\"");
+        t.env
+            .store()
+            .with_read_observer(std::sync::Arc::new(move |path: &Path| {
+                if path == dir {
+                    fs::write(path.join("slopvac-plugin.toml"), &swapped).unwrap();
+                }
+            }))
+    }
+
+    #[test]
+    fn sync_selects_the_runtime_from_the_manifest_bytes_that_were_accepted() {
+        let t = Setup::python(&PLUGIN_FILES);
+        let store = rewriting_store(&t);
+        let revs = t.env.revocations(NOW);
+        let pol = KeyPolicy::default();
+
+        let result = Syncer::new(&store, Network::Offline, &pol, t.env.project.path(), &revs)
+            .with_python(t.build())
+            .sync(&t.lock);
+
+        // The accepted manifest asks for 3.12 and the tree hashed to `t.hash`. The tree on disk
+        // no longer matches that hash, so the environment is refused as tampered. A sync that
+        // read the manifest again would build the environment of the swapped bytes instead.
+        let err = result.unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                SyncError::PythonEnv {
+                    source: PyEnvError::Tree(
+                        slopvac_plugins::extract::ExtractError::Tampered { .. }
+                    ),
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        assert!(t.envs.load(&t.hash, "3.12").unwrap().is_none());
+    }
+
+    #[test]
+    fn an_extracted_archive_is_built_from_the_manifest_that_was_accepted() {
+        let env = Env::new();
+        let files: Vec<(&str, &[u8])> = PLUGIN_FILES
+            .iter()
+            .map(|(name, text)| (*name, text.as_bytes()))
+            .collect();
+        let archive = targz(&files);
+        fs::create_dir_all(env.project.path().join("dist")).unwrap();
+        fs::write(env.project.path().join("dist/py.tar.gz"), &archive).unwrap();
+        let lock = lock_text(&[format!(
+            "\n[[plugins]]\nid = \"py\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"dist/py.tar.gz\"\ndigest = \"{}\"\n",
+            Digest::of(&archive)
+        )]);
+        let uv = fake_uv(&env.data.path().join("uv-bin"), &Fake::real());
+        let envs = EnvStore::open(env.data.path().join("envs"));
+        let swapped = PLUGIN_MANIFEST.replace("python = \"3.12\"", "python = \"3.11\"");
+        // Right after the archive is extracted, the manifest in the stored tree changes.
+        let store = env
+            .store()
+            .with_read_observer(std::sync::Arc::new(move |path: &Path| {
+                let is_tree = path
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("tree-"));
+                let manifest = path.join("slopvac-plugin.toml");
+                if is_tree && manifest.exists() {
+                    fs::set_permissions(&manifest, fs::Permissions::from_mode(0o644)).unwrap();
+                    fs::write(&manifest, &swapped).unwrap();
+                }
+            }));
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+
+        let err = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+            .with_python(PythonBuild {
+                envs: &envs,
+                uv: &uv,
+                python_install_dir: Path::new("/nonexistent/uv-python"),
+            })
+            .sync(&lock)
+            .unwrap_err();
+
+        // The accepted manifest asks for 3.12 and the accepted hash is that of the archive; the
+        // changed tree does not verify against it. A sync that read the manifest again would
+        // build the environment of the changed bytes.
+        assert!(
+            matches!(
+                &err,
+                SyncError::PythonEnv {
+                    source: PyEnvError::Tree(
+                        slopvac_plugins::extract::ExtractError::Tampered { .. }
+                    ),
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn status_keeps_the_typed_cause_of_a_pass_that_could_not_finish() {
+        // A manifest over 1 MiB: the tree hashes, but its manifest cannot be kept.
+        let big = format!("{PLUGIN_MANIFEST}# {}\n", "x".repeat(1 << 20));
+        let t = Setup::python(&[
+            ("slopvac-plugin.toml", big.as_str()),
+            ("plugin.py", "print('plugin')\n"),
+            ("pylock.toml", EMPTY_LOCK),
+        ]);
+
+        let err =
+            status_with_python(&t.env.store(), &t.envs, t.env.project.path(), &t.lock).unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                SyncError::Extract {
+                    source: slopvac_plugins::extract::ExtractError::CaptureLimit { .. },
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn status_checks_the_environment_of_the_manifest_bytes_that_were_accepted() {
+        let t = Setup::python(&PLUGIN_FILES);
+        t.sync(Network::Offline, true).unwrap();
+        let store = rewriting_store(&t);
+
+        let states: Vec<PythonState> =
+            status_with_python(&store, &t.envs, t.env.project.path(), &t.lock)
+                .unwrap()
+                .into_iter()
+                .map(|p| p.python)
+                .collect();
+
+        assert_eq!(
+            states,
+            [PythonState::Verified(EnvStore::key(&t.hash, "3.12"))]
+        );
+    }
+
     fn python_states(t: &Setup) -> Vec<PythonState> {
         status_with_python(&t.env.store(), &t.envs, t.env.project.path(), &t.lock)
             .unwrap()
@@ -1710,5 +1832,1101 @@ mod python {
         )]);
         t.sync(Network::Offline, true).unwrap();
         assert_eq!(python_states(&t), [PythonState::NotChecked]);
+    }
+}
+
+fn locked_style(lock: &Lockfile) -> &slopvac_plugins::lock::LockedPack {
+    lock.get(&"style".parse::<PackId>().unwrap()).unwrap()
+}
+
+#[test]
+fn an_online_syncer_with_a_cache_miss_checks_the_cache_only_and_makes_no_request() {
+    let key = Key::primary();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    // The client counts each request it is asked to send, before it refuses the URL, and the
+    // revocation source counts each use, before it touches the cache or the network.
+    let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let touched = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let c = Client::counting_for_tests(Box::new(Anonymous), std::sync::Arc::clone(&attempts));
+    let pol = policy("acme", &[&key]);
+    let lock = oci_lock(&server.registry(), &p);
+    let store = env.store();
+    let revs = env
+        .revocations(NOW)
+        .with_access_counter_for_tests(std::sync::Arc::clone(&touched));
+
+    let err = Syncer::new(&store, Network::Online(&c), &pol, env.project.path(), &revs)
+        .verify_cached_signature(locked_style(&lock))
+        .unwrap_err();
+
+    // The counters come first: a fetch the client refuses would otherwise show up only as a
+    // different error code.
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(touched.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(err.code(), "offline-plugin-missing");
+    assert!(server.requests().is_empty(), "{:?}", server.requests());
+    assert!(
+        env.list.server.requests().is_empty(),
+        "the revocation source was asked"
+    );
+    assert!(
+        !env.data.path().join("slopvac/blobs").exists(),
+        "the check wrote into the cache"
+    );
+}
+
+#[test]
+fn a_cached_manifest_swapped_after_its_digest_check_does_not_change_what_is_verified() {
+    let key = Key::primary();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let pol = policy("acme", &[&key]);
+    let lock = oci_lock(&server.registry(), &p);
+    run(&env, Network::Online(&c), &pol, &lock).unwrap();
+    let manifest = env
+        .data
+        .path()
+        .join("slopvac/blobs")
+        .join(p.digest.split_once(':').unwrap().1);
+    // Right after the store has checked the manifest against its digest, replace the file.
+    let target = manifest.clone();
+    let store = env
+        .store()
+        .with_read_observer(std::sync::Arc::new(move |path: &Path| {
+            if path == target {
+                fs::write(path, b"{}").unwrap();
+            }
+        }));
+    let revs = env.revocations(NOW);
+
+    let verified = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+        .verify_cached_signature(locked_style(&lock));
+
+    assert!(verified.is_ok(), "{verified:?}");
+    // The observer ran: the file holds the replacement, so the test would fail if it never did.
+    assert_eq!(fs::read(&manifest).unwrap(), b"{}");
+}
+/// Reads of the cache by a loader (`Store::verified_tree`) and by sync.
+#[cfg(unix)]
+mod cache_reads {
+    use std::collections::HashSet;
+    use std::fs::OpenOptions;
+    use std::os::unix::fs::PermissionsExt;
+
+    use slopvac_plugins::extract::Limits;
+    use slopvac_plugins::oci::MAX_MANIFEST_BYTES;
+    use slopvac_plugins::sync::{CacheCause, MEDIA_PACK_LAYER, VerifiedTree};
+
+    use super::*;
+
+    /// A store that an online sync filled: the manifest and the layer sit in `blobs/`.
+    struct Cached {
+        env: Env,
+        lock: Lockfile,
+        published: Published,
+        policy: KeyPolicy,
+        _server: Server,
+        manifest: PathBuf,
+        layer: PathBuf,
+        statement: PathBuf,
+        signature: PathBuf,
+        layer_bytes: Vec<u8>,
+    }
+
+    fn cached() -> Cached {
+        let key = Key::primary();
+        let published = publish(&key, "acme", FILES);
+        let server = registry(&[&published]);
+        let env = Env::new();
+        let policy = policy("acme", &[&key]);
+        let lock = oci_lock(&server.registry(), &published);
+        run(&env, Network::Online(&client()), &policy, &lock).unwrap();
+        let blobs = env.data.path().join("slopvac/blobs");
+        let parsed: Manifest = serde_json::from_slice(&published.manifest).unwrap();
+        let layer = parsed
+            .layers
+            .iter()
+            .find(|l| l.media_type == MEDIA_PACK_LAYER)
+            .unwrap();
+        let by_type = |media: &str| {
+            parsed
+                .layers
+                .iter()
+                .find(|l| l.media_type == media)
+                .unwrap()
+                .digest
+                .clone()
+        };
+        Cached {
+            manifest: blobs.join(published.digest.trim_start_matches("sha256:")),
+            layer: blobs.join(layer.digest.hex()),
+            statement: blobs.join(by_type(MEDIA_STATEMENT).hex()),
+            signature: blobs.join(by_type(MEDIA_MINISIG).hex()),
+            layer_bytes: published.blobs[&layer.digest.to_string()].clone(),
+            env,
+            lock,
+            published,
+            policy,
+            _server: server,
+        }
+    }
+
+    impl Cached {
+        fn blob(&self, manifest: bool) -> &Path {
+            if manifest {
+                &self.manifest
+            } else {
+                &self.layer
+            }
+        }
+
+        fn online(&self) -> Result<slopvac_plugins::sync::SyncReport, SyncError> {
+            run(
+                &self.env,
+                Network::Online(&client()),
+                &self.policy,
+                &self.lock,
+            )
+        }
+
+        /// What `plugins trust` calls: the cached signature check, which reads the cache only.
+        fn cached_signature(&self) -> Result<Option<String>, SyncError> {
+            let store = self.env.store();
+            let revs = self.env.revocations(NOW);
+            Syncer::new(
+                &store,
+                Network::Offline,
+                &self.policy,
+                self.env.project.path(),
+                &revs,
+            )
+            .verify_cached_signature(&self.lock.packs()[0])
+        }
+
+        fn verified(&self, limits: Limits) -> Result<Option<VerifiedTree>, SyncError> {
+            self.env
+                .store()
+                .verified_tree(&self.lock.packs()[0], &HashSet::new(), limits)
+        }
+    }
+
+    /// Replace the bytes of a cached blob, whatever its mode.
+    fn swap(path: &Path, bytes: &[u8]) {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn an_oversize_cached_archive_is_too_large_and_is_left_in_place() {
+        let c = cached();
+        let limits = Limits {
+            compressed_bytes: 1 << 20,
+            ..Limits::default()
+        };
+        // Sparse, so it costs no disk: four times the limit, and not a gzip stream.
+        fs::set_permissions(&c.layer, fs::Permissions::from_mode(0o644)).unwrap();
+        let file = OpenOptions::new().write(true).open(&c.layer).unwrap();
+        file.set_len(4 << 20).unwrap();
+
+        let err = c.verified(limits).unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                SyncError::CacheUnreadable {
+                    cause: CacheCause::TooLarge { cap },
+                    ..
+                } if *cap == 1 << 20
+            ),
+            "{err:?}"
+        );
+        assert!(c.layer.exists(), "a read-only lookup deleted the blob");
+    }
+
+    #[test]
+    fn an_oversize_cached_manifest_is_too_large_and_is_left_in_place() {
+        let c = cached();
+        fs::set_permissions(&c.manifest, fs::Permissions::from_mode(0o644)).unwrap();
+        let file = OpenOptions::new().write(true).open(&c.manifest).unwrap();
+        file.set_len(MAX_MANIFEST_BYTES as u64 + 1).unwrap();
+
+        let err = c.verified(Limits::default()).unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                SyncError::CacheUnreadable {
+                    cause: CacheCause::TooLarge { cap },
+                    ..
+                } if *cap == MAX_MANIFEST_BYTES as u64
+            ),
+            "{err:?}"
+        );
+        assert!(c.manifest.exists(), "a read-only lookup deleted the blob");
+    }
+
+    #[rstest]
+    #[case::manifest(true)]
+    #[case::layer(false)]
+    fn a_swapped_cached_blob_is_a_mismatch_that_a_read_only_lookup_leaves_in_place(
+        #[case] manifest: bool,
+    ) {
+        let c = cached();
+        swap(c.blob(manifest), b"{}");
+
+        let err = c.verified(Limits::default()).unwrap_err();
+
+        assert!(matches!(err, SyncError::DigestMismatch { .. }), "{err:?}");
+        assert_eq!(fs::read(c.blob(manifest)).unwrap(), b"{}");
+    }
+
+    #[test]
+    fn offline_sync_removes_a_swapped_cached_manifest_and_reports_it_missing() {
+        let c = cached();
+        swap(&c.manifest, b"{}");
+
+        let err = run(&c.env, Network::Offline, &c.policy, &c.lock).unwrap_err();
+
+        assert_eq!(err.code(), "offline-plugin-missing", "{err:?}");
+        assert!(!c.manifest.exists(), "sync leaves the swapped blob");
+    }
+
+    #[test]
+    fn online_sync_replaces_a_swapped_cached_manifest_with_the_fetched_one() {
+        let c = cached();
+        swap(&c.manifest, b"{}");
+
+        run(&c.env, Network::Online(&client()), &c.policy, &c.lock).unwrap();
+
+        assert_eq!(fs::read(&c.manifest).unwrap(), c.published.manifest);
+    }
+
+    #[test]
+    fn status_leaves_a_tampered_tree_in_place() {
+        let c = cached();
+        let tree = c.env.trees().pop().unwrap();
+        tamper_edit(&tree);
+
+        let states = status(&c.env.store(), c.env.project.path(), &c.lock).unwrap();
+
+        assert!(
+            matches!(states[0].state, PackState::Tampered(_)),
+            "{states:?}"
+        );
+        assert_eq!(fs::read(tree.join("rules/a.yml")).unwrap(), b"rule: evil\n");
+    }
+
+    #[rstest]
+    #[case::manifest(true)]
+    #[case::layer(false)]
+    fn a_blob_the_cache_does_not_hold_is_absent(#[case] manifest: bool) {
+        let c = cached();
+        fs::remove_file(c.blob(manifest)).unwrap();
+
+        let found = c.verified(Limits::default()).unwrap();
+
+        assert!(found.is_none(), "{found:?}");
+    }
+
+    /// The cause without the OS code, which differs by platform.
+    fn same_cause(a: &CacheCause, b: &CacheCause) -> bool {
+        match (a, b) {
+            (CacheCause::Io { kind: x, .. }, CacheCause::Io { kind: y, .. }) => x == y,
+            _ => a == b,
+        }
+    }
+
+    fn make_directory(path: &Path) -> bool {
+        fs::remove_file(path).unwrap();
+        fs::create_dir(path).unwrap();
+        true
+    }
+
+    fn make_link(path: &Path) -> bool {
+        let real = path.with_extension("real");
+        fs::rename(path, &real).unwrap();
+        std::os::unix::fs::symlink(&real, path).unwrap();
+        true
+    }
+
+    /// A blob that mode 000 hides. False when the process ignores modes (root).
+    /// Removes all access to a directory and gives it back when dropped, also when the test
+    /// panics, so the scratch directory can be deleted.
+    struct NoAccess {
+        dir: PathBuf,
+        restored: bool,
+    }
+
+    impl NoAccess {
+        fn new(dir: &Path) -> Self {
+            fs::set_permissions(dir, fs::Permissions::from_mode(0o000)).unwrap();
+            Self {
+                dir: dir.to_owned(),
+                restored: false,
+            }
+        }
+
+        /// Give the access back and report a failure to do so. A test calls it on its way out.
+        fn restore(mut self) -> std::io::Result<()> {
+            self.restored = true;
+            fs::set_permissions(&self.dir, fs::Permissions::from_mode(0o755))
+        }
+    }
+
+    /// The restore for a test that panics. It cannot report, so it tries once and goes on.
+    impl Drop for NoAccess {
+        fn drop(&mut self) {
+            if !self.restored {
+                let _best_effort =
+                    fs::set_permissions(&self.dir, fs::Permissions::from_mode(0o755));
+            }
+        }
+    }
+
+    fn make_unreadable(path: &Path) -> bool {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o000)).unwrap();
+        fs::File::open(path).is_err()
+    }
+
+    #[rstest]
+    #[case::manifest_directory(true, make_directory, CacheCause::NotRegular)]
+    #[case::layer_directory(false, make_directory, CacheCause::NotRegular)]
+    #[case::manifest_link(true, make_link, CacheCause::NotRegular)]
+    #[case::layer_link(false, make_link, CacheCause::NotRegular)]
+    #[case::manifest_unreadable(
+        true,
+        make_unreadable,
+        CacheCause::Io { kind: std::io::ErrorKind::PermissionDenied, os_code: None }
+    )]
+    #[case::layer_unreadable(
+        false,
+        make_unreadable,
+        CacheCause::Io { kind: std::io::ErrorKind::PermissionDenied, os_code: None }
+    )]
+    fn a_blob_that_exists_but_cannot_be_read_is_an_error_and_not_absence(
+        #[case] manifest: bool,
+        #[case] corrupt: fn(&Path) -> bool,
+        #[case] expected: CacheCause,
+    ) {
+        let c = cached();
+        if !corrupt(c.blob(manifest)) {
+            return;
+        }
+
+        let err = c.verified(Limits::default()).unwrap_err();
+
+        assert!(
+            matches!(&err, SyncError::CacheUnreadable { cause, .. } if same_cause(cause, &expected)),
+            "{err:?}"
+        );
+        assert_eq!(err.code(), "plugin-store-unreadable");
+    }
+
+    /// Sync on `c`, which holds a cached file that sync must remove and fetch again.
+    fn repaired(c: &Cached) -> slopvac_plugins::sync::SyncReport {
+        let result = c.online();
+        assert!(
+            result.is_ok(),
+            "sync must remove the wrong cached file, fetch it again and succeed: {result:?}"
+        );
+        result.unwrap()
+    }
+
+    /// Make `path` a sparse file of `len` bytes, whatever its mode.
+    fn grow(path: &Path, len: u64) {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+        OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_len(len)
+            .unwrap();
+    }
+
+    #[test]
+    fn an_oversize_cached_manifest_is_repaired_by_sync_and_the_repair_is_reported() {
+        let c = cached();
+        grow(&c.manifest, MAX_MANIFEST_BYTES as u64 + 1);
+
+        let report = repaired(&c);
+
+        assert!(report.packs[0].repaired, "{report:?}");
+        assert_eq!(report.packs[0].change, Change::Unchanged);
+        assert_eq!(fs::read(&c.manifest).unwrap(), c.published.manifest);
+    }
+
+    #[rstest]
+    #[case::statement(true)]
+    #[case::signature(false)]
+    fn an_oversize_cached_signature_blob_is_repaired_by_sync_and_the_repair_is_reported(
+        #[case] statement: bool,
+    ) {
+        let c = cached();
+        let blob = if statement {
+            &c.statement
+        } else {
+            &c.signature
+        };
+        let original = fs::read(blob).unwrap();
+        grow(blob, 16 << 20);
+
+        let report = repaired(&c);
+
+        assert!(report.packs[0].repaired, "{report:?}");
+        assert_eq!(fs::read(blob).unwrap(), original);
+    }
+
+    #[rstest]
+    #[case::manifest(0)]
+    #[case::statement(1)]
+    #[case::signature(2)]
+    fn trust_leaves_a_swapped_cached_file_in_place_and_reports_the_tamper_code(
+        #[case] which: usize,
+    ) {
+        let c = cached();
+        let blob = [&c.manifest, &c.statement, &c.signature][which];
+        swap(blob, b"swapped");
+
+        let err = c.cached_signature().unwrap_err();
+
+        assert_eq!(err.code(), "digest-mismatch", "{err:?}");
+        assert_eq!(
+            fs::read(blob).unwrap(),
+            b"swapped",
+            "trust rewrote the file"
+        );
+    }
+
+    #[rstest]
+    #[case::manifest(0)]
+    #[case::statement(1)]
+    #[case::signature(2)]
+    fn trust_leaves_an_oversize_cached_file_in_place(#[case] which: usize) {
+        let c = cached();
+        let blob = [&c.manifest, &c.statement, &c.signature][which];
+        grow(blob, 16 << 20);
+
+        let err = c.cached_signature().unwrap_err();
+
+        assert!(matches!(err, SyncError::CacheUnreadable { .. }), "{err:?}");
+        assert_eq!(
+            fs::metadata(blob).unwrap().len(),
+            16 << 20,
+            "trust removed or rewrote it"
+        );
+    }
+
+    /// Sync on a cache whose archive blob is in a state that it cannot repair.
+    #[rstest]
+    #[case::unreadable(make_unreadable, CacheCause::Io { kind: std::io::ErrorKind::PermissionDenied, os_code: None })]
+    #[case::directory(make_directory, CacheCause::NotRegular)]
+    fn sync_refuses_an_archive_blob_it_cannot_read_and_leaves_it_untouched(
+        #[case] corrupt: fn(&Path) -> bool,
+        #[case] expected: CacheCause,
+    ) {
+        let c = cached();
+        if !corrupt(&c.layer) {
+            return;
+        }
+
+        let err = c.online().unwrap_err();
+
+        assert!(
+            matches!(&err, SyncError::CacheUnreadable { cause, .. } if same_cause(cause, &expected)),
+            "{err:?}"
+        );
+        assert_eq!(err.code(), "plugin-store-unreadable");
+        assert!(
+            fs::symlink_metadata(&c.layer).is_ok(),
+            "sync removed the entry"
+        );
+    }
+
+    #[test]
+    fn sync_repairs_an_oversize_archive_blob_and_reports_it() {
+        let c = cached();
+        grow(&c.layer, c.layer_bytes.len() as u64 + 1);
+
+        let report = repaired(&c);
+
+        assert!(report.packs[0].repaired, "{report:?}");
+        assert_eq!(fs::read(&c.layer).unwrap(), c.layer_bytes);
+    }
+
+    #[test]
+    fn sync_repairs_an_archive_blob_with_the_wrong_digest_and_reports_it() {
+        let c = cached();
+        swap(&c.layer, b"swapped");
+
+        let report = repaired(&c);
+
+        assert!(report.packs[0].repaired, "{report:?}");
+        assert_eq!(fs::read(&c.layer).unwrap(), c.layer_bytes);
+    }
+
+    #[test]
+    fn an_unreadable_cached_file_names_no_absolute_path_in_display_debug_or_its_chain() {
+        let c = cached();
+        if !make_unreadable(&c.manifest) {
+            return;
+        }
+
+        let err = c.verified(Limits::default()).unwrap_err();
+
+        let data = c.env.data.path().to_str().unwrap().to_owned();
+        let mut shown = vec![err.to_string(), format!("{err:?}")];
+        let mut source = std::error::Error::source(&err);
+        while let Some(e) = source {
+            shown.push(e.to_string());
+            shown.push(format!("{e:?}"));
+            source = e.source();
+        }
+        for text in shown {
+            assert!(!text.contains(&data), "{text}");
+        }
+        // The source is the scrubbed cause itself: its kind and its raw OS code (EACCES).
+        let cause = std::error::Error::source(&err)
+            .and_then(|e| e.downcast_ref::<CacheCause>())
+            .expect("the error has the scrubbed cause as its source");
+        assert_eq!(
+            *cause,
+            CacheCause::Io {
+                kind: std::io::ErrorKind::PermissionDenied,
+                os_code: Some(13),
+            }
+        );
+    }
+
+    #[test]
+    fn a_tree_directory_that_cannot_be_inspected_is_an_error_and_not_absence() {
+        let c = cached();
+        let trees = c.env.data.path().join("slopvac/trees");
+        let guard = NoAccess::new(&trees);
+        let blocked = fs::read_dir(&trees).is_err();
+
+        let result = c.verified(Limits::default());
+
+        guard
+            .restore()
+            .expect("the permissions of the trees directory are restored");
+
+        if !blocked {
+            return; // the test runs with rights that ignore modes
+        }
+        let err = result.unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                SyncError::CacheUnreadable {
+                    cause: CacheCause::Io { .. },
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn hashing_an_oversize_archive_reads_no_more_than_the_limit_plus_one_byte() {
+        let c = cached();
+        let limits = Limits {
+            compressed_bytes: 1 << 20,
+            ..Limits::default()
+        };
+        grow(&c.layer, 4 << 20);
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let store = c
+            .env
+            .store()
+            .with_archive_byte_counter(std::sync::Arc::clone(&counter));
+
+        let result = store.verified_tree(&c.lock.packs()[0], &HashSet::new(), limits);
+
+        assert!(result.is_err(), "{result:?}");
+        let consumed = counter.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(consumed, (1 << 20) + 1, "bytes consumed, drain included");
+    }
+
+    /// An archive that is swapped right after the store checked it must not be what is installed:
+    /// the bytes that were hashed are the bytes that are extracted.
+    #[test]
+    fn an_archive_swapped_after_its_digest_check_is_not_what_sync_installs() {
+        let env = Env::new();
+        let good = targz(&[
+            ("slopvac-plugin.toml", b"id = \"a\"\n"),
+            ("a.txt", b"honest"),
+        ]);
+        let evil = targz(&[
+            ("slopvac-plugin.toml", b"id = \"a\"\n"),
+            ("evil.txt", b"evil"),
+        ]);
+        fs::create_dir_all(env.project.path().join("dist")).unwrap();
+        fs::write(env.project.path().join("dist/a.tar.gz"), &good).unwrap();
+        let lock = lock_text(&[format!(
+            "\n[[plugins]]\nid = \"a\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"dist/a.tar.gz\"\ndigest = \"{}\"\n",
+            Digest::of(&good)
+        )]);
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        // The first sync fills the cache with the archive.
+        Syncer::new(
+            &env.store(),
+            Network::Offline,
+            &pol,
+            env.project.path(),
+            &revs,
+        )
+        .sync(&lock)
+        .unwrap();
+        let blob = env
+            .data
+            .path()
+            .join("slopvac/blobs")
+            .join(Digest::of(&good).hex());
+        let target = blob.clone();
+        let store = env
+            .store()
+            .with_read_observer(std::sync::Arc::new(move |path: &Path| {
+                if path == target {
+                    fs::remove_file(path).unwrap();
+                    fs::write(path, &evil).unwrap();
+                }
+            }));
+
+        let result =
+            Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs).sync(&lock);
+
+        // Either sync refuses, or what it installed is the archive that was checked.
+        if let Ok(report) = result {
+            let tree = &report.packs[0].tree;
+            assert!(
+                !tree.join("evil.txt").exists(),
+                "the swapped archive was installed"
+            );
+            assert!(
+                tree.join("a.txt").exists(),
+                "the checked archive was not installed"
+            );
+        }
+    }
+
+    /// A path-source plugin `id` whose archive is `files`, written to `dist/<id>.tar.gz`.
+    fn archive_entry(env: &Env, id: &str, files: &[(&str, &[u8])]) -> (String, Vec<u8>) {
+        let archive = targz(files);
+        fs::create_dir_all(env.project.path().join("dist")).unwrap();
+        fs::write(
+            env.project.path().join(format!("dist/{id}.tar.gz")),
+            &archive,
+        )
+        .unwrap();
+        let entry = format!(
+            "\n[[plugins]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"dist/{id}.tar.gz\"\ndigest = \"{}\"\n",
+            Digest::of(&archive)
+        );
+        (entry, archive)
+    }
+
+    /// A failed sync must leave no repair behind: the next sync on the same store reports only
+    /// what it repaired itself.
+    #[test]
+    fn a_repair_of_a_failed_sync_is_not_reported_by_the_next_sync_on_the_same_store() {
+        let env = Env::new();
+        let (a, archive) = archive_entry(&env, "a", &[("a.txt", b"honest")]);
+        let first = lock_text(std::slice::from_ref(&a));
+        let store = env.store();
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&first)
+            .unwrap();
+        let blob = env
+            .data
+            .path()
+            .join("slopvac/blobs")
+            .join(Digest::of(&archive).hex());
+        fs::set_permissions(&blob, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&blob, b"swapped").unwrap();
+        // `b` points at a file that does not exist, so the sync fails after it repaired `a`.
+        let missing = format!(
+            "\n[[plugins]]\nid = \"b\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"dist/none.tar.gz\"\ndigest = \"{}\"\n",
+            Digest::of(b"x")
+        );
+        let broken = lock_text(&[a, missing]);
+        let failed =
+            Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs).sync(&broken);
+        assert!(failed.is_err(), "the second plugin has no archive");
+
+        let report = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&first)
+            .unwrap();
+
+        assert!(!report.packs[0].repaired, "{report:?}");
+    }
+
+    #[test]
+    fn a_tree_that_cannot_be_inspected_is_an_error_and_not_absent_for_status() {
+        let c = cached();
+        let trees = c.env.data.path().join("slopvac/trees");
+        let guard = NoAccess::new(&trees);
+        let blocked = fs::read_dir(&trees).is_err();
+
+        let result = c.env.store().inspect(&c.lock.packs()[0].digest);
+
+        guard
+            .restore()
+            .expect("the permissions of the trees directory are restored");
+
+        if !blocked {
+            return; // the test runs with rights that ignore modes
+        }
+        assert!(result.is_err(), "{result:?}");
+    }
+
+    /// Every file or directory in the staging area of the store.
+    fn staged(env: &Env) -> Vec<String> {
+        let dir = env.data.path().join("slopvac/blobs/.tmp");
+        match fs::read_dir(dir) {
+            Ok(entries) => entries
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// The second pack is swapped after its check. Sync verifies every pack before it extracts
+    /// the first, so a pack that cannot be installed leaves the store as it was.
+    #[test]
+    fn a_pack_swapped_after_its_check_leaves_no_tree_of_the_packs_before_it() {
+        let env = Env::new();
+        let (b, b_archive) = archive_entry(
+            &env,
+            "b",
+            &[
+                ("slopvac-plugin.toml", b"id = \"b\"\n"),
+                ("b.txt", b"honest"),
+            ],
+        );
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        // `b` is installed and cached; `a` is new in the second run.
+        Syncer::new(
+            &env.store(),
+            Network::Offline,
+            &pol,
+            env.project.path(),
+            &revs,
+        )
+        .sync(&lock_text(std::slice::from_ref(&b)))
+        .unwrap();
+        let (a, a_archive) = archive_entry(
+            &env,
+            "a",
+            &[
+                ("slopvac-plugin.toml", b"id = \"a\"\n"),
+                ("a.txt", b"honest"),
+            ],
+        );
+        let evil = targz(&[
+            ("slopvac-plugin.toml", b"id = \"b\"\n"),
+            ("evil.txt", b"evil"),
+        ]);
+        let target = env
+            .data
+            .path()
+            .join("slopvac/blobs")
+            .join(Digest::of(&b_archive).hex());
+        let store = env
+            .store()
+            .with_read_observer(std::sync::Arc::new(move |path: &Path| {
+                if path == target {
+                    fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+                    fs::write(path, &evil).unwrap();
+                }
+            }));
+        let both = lock_text(&[a, b]);
+
+        let result =
+            Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs).sync(&both);
+
+        match result {
+            Err(_) => {
+                let state = env.store().inspect(&both.packs()[0].digest).unwrap();
+                assert_eq!(
+                    state,
+                    slopvac_plugins::sync::TreeState::Absent,
+                    "the tree of the first pack was installed before the second was refused"
+                );
+            }
+            Ok(report) => {
+                for pack in &report.packs {
+                    assert!(!pack.tree.join("evil.txt").exists(), "{report:?}");
+                }
+            }
+        }
+        let _ = a_archive;
+    }
+
+    #[test]
+    fn no_staged_copy_is_left_after_a_sync_that_succeeds_or_is_refused() {
+        let env = Env::new();
+        let (a, _) = archive_entry(&env, "a", &[("a.txt", b"honest")]);
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        Syncer::new(
+            &env.store(),
+            Network::Offline,
+            &pol,
+            env.project.path(),
+            &revs,
+        )
+        .sync(&lock_text(std::slice::from_ref(&a)))
+        .unwrap();
+        assert_eq!(
+            staged(&env),
+            Vec::<String>::new(),
+            "after a sync that succeeded"
+        );
+
+        let missing = format!(
+            "\n[[plugins]]\nid = \"z\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"dist/none.tar.gz\"\ndigest = \"{}\"\n",
+            Digest::of(b"x")
+        );
+        let refused = Syncer::new(
+            &env.store(),
+            Network::Offline,
+            &pol,
+            env.project.path(),
+            &revs,
+        )
+        .sync(&lock_text(&[a, missing]));
+
+        assert!(refused.is_err());
+        assert_eq!(
+            staged(&env),
+            Vec::<String>::new(),
+            "after a sync that was refused"
+        );
+    }
+
+    /// A path-source plugin that a first sync installed, and its lock.
+    fn installed_archive(env: &Env, id: &str) -> (Lockfile, Vec<u8>) {
+        let (entry, archive) = archive_entry(
+            env,
+            id,
+            &[
+                ("slopvac-plugin.toml", format!("id = \"{id}\"\n").as_bytes()),
+                ("a.txt", b"honest"),
+            ],
+        );
+        let lock = lock_text(&[entry]);
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        Syncer::new(
+            &env.store(),
+            Network::Offline,
+            &pol,
+            env.project.path(),
+            &revs,
+        )
+        .sync(&lock)
+        .unwrap();
+        (lock, archive)
+    }
+
+    /// Sync A repairs a cached file and is held after its install, with the store lock. Sync B,
+    /// on a clone of the same store, asks for the lock and waits. A's report must still show its
+    /// repair: B must not drop the marks before it holds the lock.
+    #[test]
+    fn a_second_sync_waiting_for_the_lock_does_not_erase_the_repair_marks_of_the_first() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        use std::sync::mpsc::channel;
+        use std::time::Duration;
+        let wait = Duration::from_secs(60);
+        let env = Env::new();
+        let (lock, archive) = installed_archive(&env, "a");
+        let blob = env
+            .data
+            .path()
+            .join("slopvac/blobs")
+            .join(Digest::of(&archive).hex());
+        fs::set_permissions(&blob, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&blob, b"swapped").unwrap();
+
+        let (held_tx, held_rx) = channel::<()>();
+        let (go_tx, go_rx) = channel::<()>();
+        let (waiting_tx, waiting_rx) = channel::<()>();
+        let go_rx = std::sync::Mutex::new(go_rx);
+        let held_tx = std::sync::Mutex::new(held_tx);
+        let waiting_tx = std::sync::Mutex::new(waiting_tx);
+        let paused = AtomicBool::new(false);
+        let lock_calls = AtomicUsize::new(0);
+        let paused = std::sync::Arc::new(paused);
+        let lock_calls = std::sync::Arc::new(lock_calls);
+        let go_rx = std::sync::Arc::new(go_rx);
+        let held_tx = std::sync::Arc::new(held_tx);
+        let waiting_tx = std::sync::Arc::new(waiting_tx);
+        // The first tree that is installed holds sync A until B is waiting for the lock.
+        let store = env
+            .store()
+            .with_read_observer({
+                let (paused, go_rx, held_tx) = (
+                    std::sync::Arc::clone(&paused),
+                    std::sync::Arc::clone(&go_rx),
+                    std::sync::Arc::clone(&held_tx),
+                );
+                std::sync::Arc::new(move |path: &Path| {
+                    let is_tree = path
+                        .file_name()
+                        .is_some_and(|n| n.to_string_lossy().starts_with("tree-"));
+                    if is_tree && !paused.swap(true, Ordering::SeqCst) {
+                        held_tx.lock().unwrap().send(()).unwrap();
+                        // Held until the coordinator releases it, or drops its end of the channel.
+                        let _ = go_rx.lock().unwrap().recv();
+                    }
+                })
+            })
+            .with_lock_hook({
+                let (lock_calls, waiting_tx) = (
+                    std::sync::Arc::clone(&lock_calls),
+                    std::sync::Arc::clone(&waiting_tx),
+                );
+                std::sync::Arc::new(move || {
+                    // The first call is A's. Every later call is B's, and B is about to wait.
+                    if lock_calls.fetch_add(1, Ordering::SeqCst) >= 1 {
+                        let _ = waiting_tx.lock().unwrap().send(());
+                    }
+                })
+            });
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+
+        let (a, b) = std::thread::scope(|scope| {
+            let sync = || {
+                Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs).sync(&lock)
+            };
+            // Dropping this end releases sync A on every exit of the coordinator, including a
+            // failed assertion, before the scope joins the threads.
+            let release = go_tx;
+            let a = scope.spawn(sync);
+            assert!(
+                matches!(held_rx.recv_timeout(wait), Ok(())),
+                "sync A never reached its install"
+            );
+            let b = scope.spawn(sync);
+            let waiting = waiting_rx.recv_timeout(wait);
+            release.send(()).unwrap();
+            assert_eq!(waiting, Ok(()), "sync B never asked for the lock");
+            (a.join().unwrap(), b.join().unwrap())
+        });
+
+        let a = a.unwrap();
+        b.unwrap();
+        assert!(
+            a.packs[0].repaired,
+            "sync B erased the repair of sync A: {a:?}"
+        );
+    }
+
+    #[test]
+    fn a_failed_write_to_a_staged_copy_keeps_its_kind_and_os_code_and_names_no_path() {
+        let env = Env::new();
+        let (lock, _) = installed_archive(&env, "a");
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        // 28 is ENOSPC: the disk of the staging area is full.
+        let store = env.store().with_staging_write_fault(28);
+
+        let err = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&lock)
+            .unwrap_err();
+
+        let data = env.data.path().to_str().unwrap().to_owned();
+        let mut shown = vec![err.to_string(), format!("{err:?}")];
+        let mut source = std::error::Error::source(&err);
+        while let Some(e) = source {
+            shown.push(e.to_string());
+            shown.push(format!("{e:?}"));
+            source = e.source();
+        }
+        for text in shown {
+            assert!(!text.contains(&data), "{text}");
+        }
+        let cause = std::error::Error::source(&err).and_then(|e| e.downcast_ref::<CacheCause>());
+        assert_eq!(
+            cause,
+            Some(&CacheCause::Io {
+                kind: std::io::ErrorKind::StorageFull,
+                os_code: Some(28),
+            }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_failed_rewind_of_a_staged_copy_keeps_its_kind_and_os_code_and_names_no_path() {
+        use sha2::Digest as _;
+        use std::fmt::Write as _;
+        let env = Env::new();
+        let (lock, archive) = installed_archive(&env, "a");
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        // 29 is ESPIPE: the staged copy cannot seek.
+        let store = env.store().with_staging_seek_fault(29);
+
+        let err = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&lock)
+            .unwrap_err();
+
+        // No rendering of the chain holds an absolute path: not the data directory, not the
+        // project directory and not the temporary-directory root that both sit under.
+        let temp = std::env::temp_dir();
+        let mut roots = Vec::new();
+        for dir in [env.data.path(), env.project.path(), temp.as_path()] {
+            roots.push(dir.to_str().unwrap().to_owned());
+            roots.push(dir.canonicalize().unwrap().to_str().unwrap().to_owned());
+        }
+        let mut shown = vec![err.to_string(), format!("{err:?}")];
+        let mut source = std::error::Error::source(&err);
+        while let Some(e) = source {
+            shown.push(e.to_string());
+            shown.push(format!("{e:?}"));
+            source = e.source();
+        }
+        for text in &shown {
+            for root in &roots {
+                assert!(!text.contains(root.as_str()), "{root} in {text}");
+            }
+        }
+        assert!(matches!(&err, SyncError::CacheUnreadable { .. }), "{err:?}");
+        // The error names the cached blob the copy was made from, and the store names a blob by
+        // the SHA-256 of its bytes, so the file name is worked out here from the archive.
+        let name = sha2::Sha256::digest(&archive)
+            .iter()
+            .fold(String::new(), |mut hex, b| {
+                write!(hex, "{b:02x}").unwrap();
+                hex
+            });
+        let expected = format!(
+            "plugin `a`: cannot read the cached file <external>/{name}: {}",
+            "seek on unseekable file"
+        );
+        assert_eq!(err.to_string(), expected);
+        let cause = std::error::Error::source(&err).and_then(|e| e.downcast_ref::<CacheCause>());
+        assert_eq!(
+            cause,
+            Some(&CacheCause::Io {
+                kind: std::io::ErrorKind::NotSeekable,
+                os_code: Some(29),
+            }),
+            "{err:?}"
+        );
     }
 }

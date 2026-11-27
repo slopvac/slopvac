@@ -489,16 +489,417 @@ fn a_command_not_wired_yet_reports_its_code_and_exits_2(#[case] args: &[&str]) {
         .stderr(predicate::str::starts_with("error[command-not-wired]: "));
 }
 
-/// Pins today's behaviour: the binary gives `plugins trust` no loader for code plugin files,
-/// so trust is refused with its own code. Change this test when the loader is wired.
+/// A code plugin in the project at `plugins/fmt`, locked by its tree hash.
+fn lock_code_plugin(sandbox: &Sandbox) {
+    let plugin = sandbox.project().join("plugins/fmt");
+    fs::create_dir_all(plugin.join("bin")).unwrap();
+    fs::write(
+        plugin.join("slopvac-plugin.toml"),
+        "schema_version = 3\nid = \"fmt\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\
+         [provides]\n[plugin]\ncommand = \"bin/fmt\"\nnetwork = false\nhooks = []\n\
+         features = { required = [], optional = [] }\n",
+    )
+    .unwrap();
+    fs::write(plugin.join("bin/fmt"), "#!/bin/sh\nexit 0\n").unwrap();
+    let digest = slopvac_plugins::extract::tree_hash(&plugin).unwrap();
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"plugins/fmt\"\ndigest = \"{digest}\"\n"
+    ));
+}
+
+/// The trust store that the sandbox's binary writes to.
+fn trust_records(sandbox: &Sandbox) -> usize {
+    slopvac_plugins::trust::TrustStore::open(sandbox.dir.path().join("home/state/slopvac"))
+        .records()
+        .unwrap()
+        .len()
+}
+
+/// The plugin store of the sandbox, which `plugins sync` fills.
+fn plugin_store(sandbox: &Sandbox) -> std::path::PathBuf {
+    sandbox.dir.path().join("home/data/slopvac")
+}
+
+const PLUGIN_MANIFEST: &str = "schema_version = 3\nid = \"fmt\"\nversion = \"1.0.0\"\n\
+    slopvac_api = 1\nkind = \"code\"\n[provides]\n[plugin]\ncommand = \"bin/fmt\"\n\
+    args = [\"--serve\"]\nnetwork = false\nhooks = []\n\
+    features = { required = [], optional = [] }\n";
+
+/// A `.tar.gz` of a code plugin with this manifest and an empty script.
+fn plugin_targz(manifest: &str) -> Vec<u8> {
+    use std::io::Write as _;
+    let mut tar = tar::Builder::new(Vec::new());
+    for (name, bytes) in [
+        ("bin/fmt", &b""[..]),
+        ("slopvac-plugin.toml", manifest.as_bytes()),
+    ] {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        tar.append_data(&mut header, name, bytes).unwrap();
+    }
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gz.write_all(&tar.into_inner().unwrap()).unwrap();
+    gz.finish().unwrap()
+}
+
+/// Extract `archive` into a new directory under `scratch` and return its tree hash and place.
+fn extract_plugin(archive: &[u8], store: &std::path::Path) -> slopvac_plugins::extract::Extracted {
+    slopvac_plugins::extract::extract_targz(
+        archive,
+        store,
+        &std::collections::HashSet::<String>::new(),
+        slopvac_plugins::extract::Limits::default(),
+    )
+    .unwrap()
+}
+
+/// Move the extracted tree `done` to the place that sync keeps the tree `name`.
+fn move_tree_to(
+    done: &slopvac_plugins::extract::Extracted,
+    trees: &std::path::Path,
+    name: &slopvac_plugins::extract::TreeHash,
+) {
+    use std::os::unix::fs::PermissionsExt;
+    // A rename to another directory needs write access to the moved directory.
+    fs::set_permissions(&done.root, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::rename(&done.root, trees.join(format!("tree-{}", name.hex()))).unwrap();
+}
+
+/// The debug event of a refused load, after its timestamp and level: the fixed message and
+/// exactly two fields, the stable `code` of the refusal and the plugin id `fmt`, once each. Any
+/// other text, such as a path or a refusal sentence, fails.
+fn assert_debug_line(stderr: &str, code: &str) {
+    let events: Vec<&str> = stderr
+        .lines()
+        .filter(|l| l.contains("plugin loader refused"))
+        .collect();
+    assert_eq!(
+        events.len(),
+        1,
+        "one `plugin loader refused` event:\n{stderr}"
+    );
+    let split = events[0].split_once(" DEBUG ");
+    assert!(split.is_some(), "no DEBUG level: {:?}", events[0]);
+    let (timestamp, event) = split.unwrap();
+    assert!(!timestamp.contains(' '), "{:?}", events[0]);
+    assert_eq!(
+        event.trim_start(),
+        format!("plugin loader refused code=\"{code}\" plugin=fmt"),
+        "{:?}",
+        events[0]
+    );
+}
+
+/// One entry of a tree, read without following links.
+#[derive(Debug, PartialEq, Eq)]
+enum Entry {
+    File(Vec<u8>),
+    Dir,
+    Link(std::path::PathBuf),
+}
+
+/// Every entry under `dir`, by relative path. A link is recorded with its target and never
+/// followed, so swapping a file for a link to the same bytes shows.
+fn snapshot(dir: &std::path::Path) -> std::collections::BTreeMap<String, Entry> {
+    fn walk(
+        base: &std::path::Path,
+        dir: &std::path::Path,
+        out: &mut std::collections::BTreeMap<String, Entry>,
+    ) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let rel = path
+                .strip_prefix(base)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let kind = fs::symlink_metadata(&path).unwrap().file_type();
+            if kind.is_symlink() {
+                out.insert(rel, Entry::Link(fs::read_link(&path).unwrap()));
+            } else if kind.is_dir() {
+                out.insert(rel, Entry::Dir);
+                walk(base, &path, out);
+            } else {
+                out.insert(rel, Entry::File(fs::read(&path).unwrap()));
+            }
+        }
+    }
+    let mut out = std::collections::BTreeMap::new();
+    walk(dir, dir, &mut out);
+    out
+}
+
+/// Once sync has installed a code plugin, `plugins trust` records trust from the installed
+/// files, and `plugins status` then reports the plugin as trusted.
 #[test]
-fn trust_of_a_locked_code_plugin_exits_2_because_no_loader_is_wired() {
+fn trust_of_a_synced_code_plugin_records_trust_and_exits_0() {
+    let sandbox = Sandbox::new();
+    lock_code_plugin(&sandbox);
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "trusted `fmt` with content hash sha256:",
+        ));
+    assert_eq!(trust_records(&sandbox), 1);
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::function(|out: &str| {
+            out.lines().any(|line| {
+                line.starts_with("fmt 1.0.0 (code): ")
+                    && line.ends_with("; trusted")
+                    && !line.contains("not trusted")
+            })
+        }));
+}
+
+/// A locked code plugin with no installed tree fails for that reason, not for a missing loader.
+/// The debug log names the stable text id of the refusal and the plugin, since the command
+/// withholds the loader's own text.
+#[test]
+fn trust_of_a_locked_code_plugin_that_is_not_synced_exits_2() {
     let sandbox = Sandbox::new();
     sandbox.write_lock(
         "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
          source = \"oci://registry.invalid/acme/fmt:1.0.0\"\n\
          digest = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n",
     );
+    let out = sandbox
+        .slopvac()
+        .env("SLOPVAC_LOG", "debug")
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error[plugins-trust-inputs-failed]: ",
+        ))
+        .stderr(predicate::str::contains("the plugin files are not loaded").not());
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert_debug_line(&stderr, "plugin-not-installed");
+}
+
+/// Trust is pinned to the synced tree: a file changed after sync is refused, and nothing is
+/// recorded. The debug log names the stable text id of the refusal.
+#[test]
+fn trust_of_a_code_plugin_changed_since_sync_exits_2_and_records_nothing() {
+    let sandbox = Sandbox::new();
+    lock_code_plugin(&sandbox);
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+    let manifest = sandbox.project().join("plugins/fmt/slopvac-plugin.toml");
+    let original = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        &manifest,
+        original.replace("hooks = []", "args = [\"--extra\"]\nhooks = []"),
+    )
+    .unwrap();
+    let out = sandbox
+        .slopvac()
+        .env("SLOPVAC_LOG", "debug")
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error[plugins-trust-inputs-failed]: ",
+        ));
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert_debug_line(&stderr, "plugin-tampered");
+    // Checked before the manifest is restored, and in the trust store itself.
+    assert_eq!(trust_records(&sandbox), 0);
+}
+
+/// A manifest over 1 MiB stops `plugins trust` before it parses anything. The command reports
+/// its own code, the debug log names `plugin-too-large`, and nothing is recorded.
+#[test]
+fn trust_of_a_code_plugin_with_a_manifest_over_1_mib_exits_2_and_records_nothing() {
+    let sandbox = Sandbox::new();
+    lock_code_plugin(&sandbox);
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+    let manifest = sandbox.project().join("plugins/fmt/slopvac-plugin.toml");
+    let mut text = fs::read_to_string(&manifest).unwrap();
+    text.push_str(&"#".repeat(1 << 20));
+    fs::write(&manifest, text).unwrap();
+    let out = sandbox
+        .slopvac()
+        .env("SLOPVAC_LOG", "debug")
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error[plugins-trust-inputs-failed]: ",
+        ));
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert_debug_line(&stderr, "plugin-too-large");
+    assert_eq!(trust_records(&sandbox), 0);
+}
+
+/// An attacker who writes the cache can plant a tree and a record that points at it. The
+/// trusted hash comes from the lock and the cached archive, so the plant is refused.
+#[test]
+fn trust_of_an_archive_plugin_with_a_swapped_tree_and_a_forged_record_exits_2() {
+    let sandbox = Sandbox::new();
+    let honest = plugin_targz(PLUGIN_MANIFEST);
+    fs::create_dir_all(sandbox.project().join("plugins")).unwrap();
+    fs::write(sandbox.project().join("plugins/fmt.tar.gz"), &honest).unwrap();
+    let digest = slopvac_plugins::oci::Digest::of(&honest);
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"plugins/fmt.tar.gz\"\ndigest = \"{digest}\"\n"
+    ));
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+
+    let store = plugin_store(&sandbox);
+    let trees = store.join("trees");
+    let record = store.join("refs").join(digest.hex());
+    let honest_hash =
+        slopvac_plugins::extract::TreeHash::from_hex(fs::read_to_string(&record).unwrap().trim())
+            .unwrap();
+    // Put the evil tree where the honest one was, and point the record at a second copy.
+    let evil = plugin_targz(&PLUGIN_MANIFEST.replace("--serve", "--evil"));
+    let aside = sandbox.dir.path().join("aside");
+    let old = trees.join(format!("tree-{}", honest_hash.hex()));
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&old, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    fs::create_dir_all(&aside).unwrap();
+    fs::rename(&old, aside.join("honest")).unwrap();
+    let planted = extract_plugin(&evil, &aside.join("scratch"));
+    move_tree_to(&planted, &trees, &honest_hash);
+    let forged = extract_plugin(&evil, &trees);
+    fs::write(&record, forged.hash.hex()).unwrap();
+
+    let before = snapshot(&trees);
+    let out = sandbox
+        .slopvac()
+        .env("SLOPVAC_LOG", "debug")
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error[plugins-trust-inputs-failed]: ",
+        ));
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert_debug_line(&stderr, "plugin-tampered");
+    assert_eq!(trust_records(&sandbox), 0);
+    // A read path removes nothing: the trees are byte for byte what they were.
+    assert_eq!(snapshot(&trees), before, "trust changed the store");
+}
+
+/// A lock edited to name a planted artifact has no signature that sync ever checked. `trust` is
+/// the point where a person decides, so it checks the cached signature again.
+#[test]
+fn trust_of_a_planted_registry_plugin_without_a_valid_signature_exits_2() {
+    use slopvac_plugins::oci::{Descriptor, Digest, MEDIA_EMPTY, MEDIA_MANIFEST, Manifest};
+    use slopvac_plugins::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER};
+    let sandbox = Sandbox::new();
+    let archive = plugin_targz(PLUGIN_MANIFEST);
+    let manifest = Manifest {
+        schema_version: 2,
+        media_type: Some(MEDIA_MANIFEST.to_owned()),
+        artifact_type: Some(ARTIFACT_TYPE_PACK.to_owned()),
+        config: Descriptor::for_bytes(MEDIA_EMPTY, b"{}"),
+        layers: vec![Descriptor::for_bytes(MEDIA_PACK_LAYER, &archive)],
+        subject: None,
+        annotations: std::collections::BTreeMap::new(),
+    };
+    let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+    let digest = Digest::of(&manifest_bytes);
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"oci://registry.invalid/acme/fmt:1.0.0\"\ndigest = \"{digest}\"\n\
+         [plugins.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00Z\"\n"
+    ));
+    // The cache as a successful sync leaves it, without a signature layer.
+    let store = plugin_store(&sandbox);
+    fs::create_dir_all(store.join("blobs")).unwrap();
+    fs::write(store.join("blobs").join(digest.hex()), &manifest_bytes).unwrap();
+    fs::write(
+        store.join("blobs").join(Digest::of(&archive).hex()),
+        &archive,
+    )
+    .unwrap();
+    let done = extract_plugin(&archive, &store.join("trees"));
+    fs::create_dir_all(store.join("refs")).unwrap();
+    fs::write(store.join("refs").join(digest.hex()), done.hash.hex()).unwrap();
+
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[signature-invalid]: "));
+    assert_eq!(trust_records(&sandbox), 0);
+}
+
+/// A cached signature file that is not what its name says is an input `trust` cannot use, so it
+/// is reported under the code of the command, as a tree that differs is. The command leaves
+/// the cache as it found it: it repairs nothing.
+#[test]
+fn trust_of_a_registry_plugin_with_a_swapped_signature_file_exits_2_and_changes_nothing() {
+    use slopvac_plugins::oci::{Descriptor, Digest, MEDIA_EMPTY, MEDIA_MANIFEST, Manifest};
+    use slopvac_plugins::sign::{MEDIA_MINISIG, MEDIA_STATEMENT};
+    use slopvac_plugins::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER};
+    let sandbox = Sandbox::new();
+    let archive = plugin_targz(PLUGIN_MANIFEST);
+    let statement = b"{}".to_vec();
+    let minisig = b"untrusted comment: x\n".to_vec();
+    let manifest = Manifest {
+        schema_version: 2,
+        media_type: Some(MEDIA_MANIFEST.to_owned()),
+        artifact_type: Some(ARTIFACT_TYPE_PACK.to_owned()),
+        config: Descriptor::for_bytes(MEDIA_EMPTY, b"{}"),
+        layers: vec![
+            Descriptor::for_bytes(MEDIA_PACK_LAYER, &archive),
+            Descriptor::for_bytes(MEDIA_STATEMENT, &statement),
+            Descriptor::for_bytes(MEDIA_MINISIG, &minisig),
+        ],
+        subject: None,
+        annotations: std::collections::BTreeMap::new(),
+    };
+    let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+    let digest = Digest::of(&manifest_bytes);
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"oci://registry.invalid/acme/fmt:1.0.0\"\ndigest = \"{digest}\"\n\
+         [plugins.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00Z\"\n"
+    ));
+    let store = plugin_store(&sandbox);
+    let blobs = store.join("blobs");
+    fs::create_dir_all(&blobs).unwrap();
+    fs::write(blobs.join(digest.hex()), &manifest_bytes).unwrap();
+    fs::write(blobs.join(Digest::of(&archive).hex()), &archive).unwrap();
+    // The statement file holds other bytes than its name says.
+    fs::write(blobs.join(Digest::of(&statement).hex()), b"swapped").unwrap();
+    fs::write(blobs.join(Digest::of(&minisig).hex()), &minisig).unwrap();
+    let done = extract_plugin(&archive, &store.join("trees"));
+    fs::create_dir_all(store.join("refs")).unwrap();
+    fs::write(store.join("refs").join(digest.hex()), done.hash.hex()).unwrap();
+    let before = cached_files(&blobs);
+
     sandbox
         .slopvac()
         .args(["--offline", "plugins", "trust", "fmt"])
@@ -507,4 +908,22 @@ fn trust_of_a_locked_code_plugin_exits_2_because_no_loader_is_wired() {
         .stderr(predicate::str::starts_with(
             "error[plugins-trust-inputs-failed]: ",
         ));
+
+    assert_eq!(cached_files(&blobs), before, "trust changed the cache");
+    assert_eq!(trust_records(&sandbox), 0);
+}
+
+/// Every file in `dir`, by name, with its bytes.
+fn cached_files(dir: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap())
+        .filter(|e| e.path().is_file())
+        .map(|e| {
+            (
+                e.file_name().to_string_lossy().into_owned(),
+                fs::read(e.path()).unwrap(),
+            )
+        })
+        .collect()
 }

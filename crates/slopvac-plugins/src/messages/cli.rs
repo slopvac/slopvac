@@ -188,6 +188,15 @@ pub(crate) enum CliText {
         version: String,
         change: String,
     },
+    /// Sync removed a cached file of the plugin that was not what it must be and fetched it
+    /// again.
+    #[code("plugins-sync-repaired")]
+    #[text("{id}: a cached file was not what it should be; it was removed and fetched again")]
+    SyncRepaired { id: String },
+    /// A code plugin whose cached files cannot be read, as the loader refuses it.
+    #[code("plugins-load-store-unreadable")]
+    #[text("cannot read the cached files of plugin `{id}`")]
+    LoadStoreUnreadable { id: String },
     /// Sync extracted the plugin for the first time.
     #[code("plugins-change-installed")]
     #[text("installed")]
@@ -252,6 +261,18 @@ pub(crate) enum CliText {
     #[code("plugins-trusted")]
     #[text("trusted `{id}` with content hash {hash}")]
     Trusted { id: String, hash: String },
+    /// Where the trusted bytes of a signed plugin came from.
+    #[code("plugins-trusted-signed")]
+    #[text("source: {kind} {origin}; signed by {key_id}")]
+    TrustedSigned {
+        kind: String,
+        origin: String,
+        key_id: String,
+    },
+    /// Where the trusted bytes of an unsigned plugin came from.
+    #[code("plugins-trusted-unsigned")]
+    #[text("source: {kind} {origin}; unsigned")]
+    TrustedUnsigned { kind: String, origin: String },
     /// Residual risk R1, said at each `trust`.
     #[code("plugins-trust-not-containment")]
     #[text(

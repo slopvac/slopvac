@@ -681,8 +681,13 @@ plugin-declaration-mismatch error
 plugin-exited error
 plugin-file-link error
 plugin-file-not-loaded text
+plugin-file-not-text error
 plugin-glob-too-complex error
 plugin-hash-mismatch error
+plugin-loader-command-unsafe text
+plugin-loader-manifest-invalid text
+plugin-loader-manifest-unreadable text
+plugin-loader-not-code text
 plugin-manifest-mismatch error
 plugin-not-code error
 plugin-not-installed error
@@ -697,6 +702,7 @@ plugin-spawn-failed error
 plugin-store-unreadable error
 plugin-tampered error
 plugin-timeout error
+plugin-too-large error
 plugin-too-many-entries error
 plugin-untrusted error
 plugin-usage error
@@ -753,6 +759,8 @@ plugins-command-path text
 plugins-config-id-invalid text
 plugins-config-range-invalid text
 plugins-detail-withheld text
+plugins-extract-capture-alloc text
+plugins-extract-capture-limit text
 plugins-extract-changed text
 plugins-extract-collision text
 plugins-extract-compressed-size text
@@ -1001,6 +1009,7 @@ plugins-launch-usage text
 plugins-line text
 plugins-list-core text
 plugins-list-not-locked text
+plugins-load-store-unreadable text
 plugins-lock-api-integer text
 plugins-lock-api-range text
 plugins-lock-build-metadata text
@@ -1337,6 +1346,10 @@ plugins-strict-integer-range text
 plugins-strict-nesting text
 plugins-strict-phrase-expecting text
 plugins-strict-phrase-non-finite text
+plugins-sync-cache-io text
+plugins-sync-cache-not-regular text
+plugins-sync-cache-too-large text
+plugins-sync-cache-unreadable text
 plugins-sync-config-drift text
 plugins-sync-data-dir text
 plugins-sync-download-file text
@@ -1396,6 +1409,7 @@ plugins-sync-path-reading text
 plugins-sync-path-too-large text
 plugins-sync-plugin-cause text
 plugins-sync-record-install text
+plugins-sync-repaired text
 plugins-sync-revoked-artifact text
 plugins-sync-revoked-key text
 plugins-sync-scratch-dir text
@@ -1483,6 +1497,8 @@ plugins-trust-spawn-program-refused text
 plugins-trust-store-damaged text
 plugins-trust-store-too-large text
 plugins-trusted text
+plugins-trusted-signed text
+plugins-trusted-unsigned text
 plugins-unknown-plugin error
 plugins-untrust-not-trusted error
 plugins-untrusted text

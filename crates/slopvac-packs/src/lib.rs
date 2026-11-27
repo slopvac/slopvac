@@ -5,6 +5,7 @@
 //! name (`<pack>:<name>`) with the [`Provenance`] that supplied each one.
 
 mod budget;
+mod code_plugin;
 mod core;
 mod error;
 mod expand;
@@ -24,13 +25,16 @@ pub use budget::{
     Budget, Limits, MAX_PACK_BYTES, MAX_PACK_FILES, MAX_RUN_BYTES, MAX_RUN_PATTERN_BYTES,
     MAX_RUN_RULES,
 };
+pub use code_plugin::{CodePluginContext, CodePluginError, load_code_plugin};
 pub use core::core_source;
 pub use error::PackError;
 pub use expand::{GLOB_MAX_ALTERNATIVES, GLOB_MAX_BYTES, GLOB_MAX_DEPTH};
-pub use messages::message_entries;
+pub use messages::{TooLargePart, message_entries};
 pub use pack::{LoadedPack, Packs};
 pub use problem::{ArtifactFault, RuleFault, RuleProblem};
 pub use source::{DirSource, EmbeddedSource, FileTable, MANIFEST_FILE, PackSource, SourceError};
+#[cfg(feature = "test-support")]
+pub use synced::load_synced_observed;
 pub use synced::{SyncedError, load_synced, load_synced_within};
 
 pub use manifest::{

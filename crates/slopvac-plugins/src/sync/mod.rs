@@ -55,6 +55,7 @@
 mod cache;
 mod error;
 mod git;
+mod verified;
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
@@ -64,11 +65,15 @@ use std::time::Duration;
 
 use semver::{Version, VersionReq};
 
+use cache::{Accepted, StagedArchive};
 pub use cache::{Store, StoreLock, TreeState};
-pub use error::SyncError;
+pub use error::{CacheCause, SyncError};
+use verified::Cached;
+pub use verified::VerifiedTree;
 
 use crate::extract::{
-    ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash, verify_tree,
+    ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash_capturing,
+    verify_tree_capturing,
 };
 use crate::launch::Launcher;
 use crate::lock::{
@@ -79,7 +84,7 @@ use crate::oci::{
     Client, Descriptor, Digest, MAX_MANIFEST_BYTES, MEDIA_MANIFEST, Manifest, OciError, Reference,
     Target,
 };
-use crate::pyenv::{EnvStore, InstallNetwork, Installer, PythonRuntime};
+use crate::pyenv::{EnvStore, InstallNetwork, Installer, MANIFEST_FILE, PythonRuntime};
 use crate::revoke::{RevocationList, RevocationNotice, Revocations};
 use crate::sign::{
     Expectation, KeyPolicy, MAX_STATEMENT_BYTES, MEDIA_MINISIG, MEDIA_STATEMENT, signature_layers,
@@ -94,6 +99,28 @@ pub const MEDIA_PACK_LAYER: &str = "application/vnd.slopvac.pack.layer.v1.tar+gz
 const MAX_MINISIG_BYTES: u64 = 4 * 1024;
 /// Longest the git commands of one pack may take together.
 const GIT_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// The one layer of a pack manifest that holds the pack, or the sentence that says why it has
+/// none. The signature layers do not count.
+fn payload_layer<'m>(
+    manifest: &'m Manifest,
+    limits: &Limits,
+) -> Result<&'m Descriptor, &'static str> {
+    let mut payload = manifest
+        .layers
+        .iter()
+        .filter(|l| l.media_type != MEDIA_STATEMENT && l.media_type != MEDIA_MINISIG);
+    let (Some(layer), None) = (payload.next(), payload.next()) else {
+        return Err(SyncPhrase::OneLayer.as_static());
+    };
+    if layer.media_type != MEDIA_PACK_LAYER {
+        return Err(SyncPhrase::LayerNotArchive.as_static());
+    }
+    if layer.size > limits.compressed_bytes {
+        return Err(SyncPhrase::LayerTooLarge.as_static());
+    }
+    Ok(layer)
+}
 
 /// Whether sync may use the network.
 #[derive(Clone, Copy)]
@@ -130,6 +157,9 @@ pub struct PackOutcome {
     pub tree: PathBuf,
     /// A modified tree too large to delete was moved here and keeps using storage.
     pub quarantined: Option<PathBuf>,
+    /// A cached file of this plugin was not what it must be (over its size cap, or hashing to
+    /// another digest), was removed and was fetched again. Only sync repairs the cache.
+    pub repaired: bool,
     /// Store key of the managed Python environment for this pack, when its
     /// manifest selects `runtime = "python"` and the syncer builds environments
     /// ([`Syncer::with_python`]).
@@ -146,15 +176,18 @@ pub struct SyncReport {
 }
 
 enum Acquired {
-    /// A verified archive in the blob cache.
-    Archive(PathBuf),
+    /// A private copy of an archive, verified while it was copied. The install extracts from
+    /// the copy and opens nothing by path.
+    Archive(StagedArchive),
     /// A tree fetched from a pinned git commit, hashed and equal to the lock,
     /// not yet in the store.
-    Staged(Box<StagedTree>),
-    /// A tree already in the store whose hash is the locked digest.
-    Stored(PathBuf),
-    /// A verified directory in the project.
-    InPlace(PathBuf),
+    Staged(Box<StagedTree>, Accepted),
+    /// A tree already in the store whose hash is the locked digest, and its manifest as the
+    /// pass that checked the hash read it.
+    Stored(PathBuf, Option<Vec<u8>>),
+    /// A verified directory in the project, and its manifest as the pass that checked the hash
+    /// read it.
+    InPlace(PathBuf, Option<Vec<u8>>),
 }
 
 /// Where and how sync builds managed Python environments (threat model
@@ -309,6 +342,9 @@ impl<'a> Syncer<'a> {
             }
         }
         let _lock = self.store.lock()?;
+        // A repair is reported by the run that made it. The marks are dropped under the store
+        // lock, so no other sync on this store can have a repair in flight.
+        self.store.clear_repaired();
         let mut acquired = Vec::with_capacity(lock.packs().len());
         for pack in lock.packs() {
             acquired.push((pack, self.acquire(pack, revoked)?));
@@ -316,7 +352,7 @@ impl<'a> Syncer<'a> {
 
         let mut states = Vec::with_capacity(acquired.len());
         for (pack, how) in &acquired {
-            if matches!(how, Acquired::Archive(_) | Acquired::Staged(_)) {
+            if matches!(how, Acquired::Archive(..) | Acquired::Staged(..)) {
                 let state = self.store.inspect(&pack.digest)?;
                 let mut set_aside = None;
                 if let TreeState::Tampered(dir) = &state {
@@ -340,8 +376,9 @@ impl<'a> Syncer<'a> {
             ..SyncReport::default()
         };
         for ((pack, how), (before, aside)) in acquired.into_iter().zip(states) {
-            let mut outcome = self.install(pack, how, &before)?;
-            outcome.python_env = self.python_env(pack, &outcome.tree)?;
+            let (mut outcome, accepted) = self.install(pack, how, &before)?;
+            outcome.python_env = self.python_env(pack, &outcome.tree, &accepted)?;
+            outcome.repaired = self.store.take_repaired(&pack.id);
             // A modified tree too large to delete was moved aside; keep reporting it.
             outcome.quarantined = outcome.quarantined.or(aside);
             report.packs.push(outcome);
@@ -349,7 +386,12 @@ impl<'a> Syncer<'a> {
         Ok(report)
     }
 
-    fn python_env(&self, pack: &LockedPack, tree: &Path) -> Result<Option<String>, SyncError> {
+    fn python_env(
+        &self,
+        pack: &LockedPack,
+        tree: &Path,
+        accepted: &Accepted,
+    ) -> Result<Option<String>, SyncError> {
         let Some(build) = self.python else {
             return Ok(None);
         };
@@ -357,10 +399,15 @@ impl<'a> Syncer<'a> {
             id: pack.id.clone(),
             source,
         };
-        let Some(runtime) = PythonRuntime::read(tree).map_err(fail)? else {
+        // The hash and the manifest come from the pass that accepted the tree: the runtime is
+        // selected from the bytes that were accepted, and no second pass reads the tree.
+        let Accepted { hash, manifest } = accepted;
+        let Some(manifest) = manifest else {
             return Ok(None);
         };
-        let hash = tree_hash(tree).map_err(|e| fail(e.into()))?;
+        let Some(runtime) = PythonRuntime::from_manifest(tree, manifest).map_err(fail)? else {
+            return Ok(None);
+        };
         let installer = Installer {
             uv: build.uv.to_path_buf(),
             python_install_dir: build.python_install_dir.to_path_buf(),
@@ -370,8 +417,8 @@ impl<'a> Syncer<'a> {
                 Network::Online(_) => InstallNetwork::Online,
             },
         };
-        build.envs.ensure(&installer, tree, &hash).map_err(fail)?;
-        Ok(Some(EnvStore::key(&hash, &installer.python)))
+        build.envs.ensure(&installer, tree, hash).map_err(fail)?;
+        Ok(Some(EnvStore::key(hash, &installer.python)))
     }
 
     fn install(
@@ -379,54 +426,74 @@ impl<'a> Syncer<'a> {
         pack: &LockedPack,
         how: Acquired,
         before: &TreeState,
-    ) -> Result<PackOutcome, SyncError> {
+    ) -> Result<(PackOutcome, Accepted), SyncError> {
         let outcome = |change, tree, quarantined| PackOutcome {
             id: pack.id.clone(),
             version: pack.version.clone(),
             change,
             tree,
             quarantined,
+            repaired: false,
             python_env: None,
         };
         let extract = |source| SyncError::Extract {
             id: pack.id.clone(),
             source,
         };
-        let blob = match how {
-            Acquired::InPlace(dir) => return Ok(outcome(Change::InPlace, dir, None)),
-            Acquired::Stored(dir) => {
+        let archive = match how {
+            Acquired::InPlace(dir, manifest) => {
+                let hash = Self::locked_tree_hash(pack)?;
+                return Ok((
+                    outcome(Change::InPlace, dir, None),
+                    Accepted { hash, manifest },
+                ));
+            }
+            Acquired::Stored(dir, manifest) => {
                 // The tree hash is the digest: link the digest to it again in case
                 // the record was lost.
                 let hash = Self::locked_tree_hash(pack)?;
                 self.store.record(&pack.digest, &hash)?;
-                return Ok(outcome(Change::Unchanged, dir, None));
+                return Ok((
+                    outcome(Change::Unchanged, dir, None),
+                    Accepted { hash, manifest },
+                ));
             }
-            Acquired::Staged(staged) => {
-                let done = staged.install(&self.store.trees()).map_err(extract)?;
+            Acquired::Staged(staged, accepted) => {
+                // The tree is hashed again to seal it. That hash must be the accepted one, and
+                // the manifest is the one the accepting pass read.
+                let done = staged
+                    .install(&self.store.trees(), &accepted.hash)
+                    .map_err(extract)?;
                 self.store.record(&pack.digest, &done.hash)?;
                 let change = match before {
                     TreeState::Tampered(_) => Change::Reinstalled,
                     _ => Change::Installed,
                 };
-                return Ok(outcome(change, done.root, done.quarantined));
+                return Ok((outcome(change, done.root, done.quarantined), accepted));
             }
-            Acquired::Archive(blob) => blob,
+            Acquired::Archive(archive) => archive,
         };
-        let file = File::open(&blob).map_err(|e| {
-            extract(ExtractError::Io {
-                what: messages::opening(&blob),
-                source: e,
-            })
-        })?;
+        // The copy was verified when acquisition made it. It is extracted from its own handle, and
+        // dropped (removed) when this function returns.
         let exec = self.executables.get(&pack.id).cloned().unwrap_or_default();
-        let done = extract_targz(file, &self.store.trees(), &exec, self.limits).map_err(extract)?;
+        let done = extract_targz(archive.reader(), &self.store.trees(), &exec, self.limits)
+            .map_err(extract)?;
+        drop(archive);
+        #[cfg(feature = "test-support")]
+        self.store.observe(&done.root);
         self.store.record(&pack.digest, &done.hash)?;
         let change = match before {
             TreeState::Intact(dir) if *dir == done.root => Change::Unchanged,
             TreeState::Tampered(_) => Change::Reinstalled,
             _ => Change::Installed,
         };
-        Ok(outcome(change, done.root, done.quarantined))
+        Ok((
+            outcome(change, done.root, done.quarantined),
+            Accepted {
+                hash: done.hash,
+                manifest: done.manifest,
+            },
+        ))
     }
 
     fn acquire(&self, pack: &LockedPack, revoked: &RevocationList) -> Result<Acquired, SyncError> {
@@ -456,12 +523,14 @@ impl<'a> Syncer<'a> {
         })
     }
 
-    fn acquire_oci(
+    /// The reference, the manifest and the namespace of an OCI entry: the manifest comes by the
+    /// locked digest, from the cache when it holds it. An unsigned entry costs no request.
+    fn oci_manifest(
         &self,
         pack: &LockedPack,
         text: &str,
-        revoked: &RevocationList,
-    ) -> Result<Acquired, SyncError> {
+        may_fetch: bool,
+    ) -> Result<(Reference, Manifest, String), SyncError> {
         let id = &pack.id;
         let layout = |why: &str| SyncError::Layout {
             id: id.clone(),
@@ -495,7 +564,7 @@ impl<'a> Syncer<'a> {
             .unwrap_or_default()
             .to_owned();
 
-        let body = self.manifest_bytes(pack, &reference, &locked)?;
+        let body = self.manifest_bytes(pack, &reference, &locked, may_fetch)?;
         let manifest: Manifest =
             serde_json::from_slice(&body).map_err(|e| layout(&messages::manifest_parse(&e)))?;
         if manifest
@@ -506,7 +575,60 @@ impl<'a> Syncer<'a> {
             return Err(layout(SyncPhrase::ManifestNotImage.as_static()));
         }
 
-        let key_id = self.verify_signature(pack, &reference, &manifest, &namespace)?;
+        Ok((reference, manifest, namespace))
+    }
+
+    /// Check the signature of a cached OCI entry again. The cache is not trusted (threat model
+    /// E8), so `plugins trust` calls this before it records trust: a lock edited to name a
+    /// planted artifact has no signature that sync ever checked.
+    ///
+    /// It reads the cache and nothing else, whatever the network mode of this syncer: no
+    /// request, and no write into the cache. Each cached file is read once, checked against its
+    /// digest in memory, and the check uses those bytes. Returns the key id of the signature
+    /// that verified, or `None` for an entry from a source that has no signature (a directory,
+    /// an archive or a git commit).
+    ///
+    /// # Errors
+    /// [`SyncError::Unsigned`] when the lock records no signature for an OCI entry,
+    /// [`SyncError::OfflinePackMissing`] when the cache lacks the manifest or a signature file,
+    /// and [`SyncError::Sign`] or [`SyncError::SignatureDiffersFromLock`] when the signature
+    /// does not verify.
+    pub fn verify_cached_signature(&self, pack: &LockedPack) -> Result<Option<String>, SyncError> {
+        let SourceKind::Oci(text) = pack.source.kind() else {
+            return Ok(None);
+        };
+        let (reference, manifest, namespace) = self.oci_manifest(pack, text, false)?;
+        self.verify_signature(pack, &reference, &manifest, &namespace, false)
+            .map(Some)
+    }
+
+    /// The failure for content that only the network could supply.
+    fn missing(pack: &LockedPack, what: &str) -> SyncError {
+        SyncError::OfflinePackMissing {
+            id: pack.id.clone(),
+            digest: pack.digest.to_string(),
+            what: what.to_owned(),
+        }
+    }
+
+    fn acquire_oci(
+        &self,
+        pack: &LockedPack,
+        text: &str,
+        revoked: &RevocationList,
+    ) -> Result<Acquired, SyncError> {
+        let id = &pack.id;
+        let layout = |why: &str| SyncError::Layout {
+            id: id.clone(),
+            why: why.to_owned(),
+        };
+        let fetch = |source| SyncError::Fetch {
+            id: id.clone(),
+            source,
+        };
+        let (reference, manifest, namespace) = self.oci_manifest(pack, text, true)?;
+
+        let key_id = self.verify_signature(pack, &reference, &manifest, &namespace, true)?;
         if revoked.revokes_key(&key_id) {
             return Err(SyncError::Revoked {
                 id: id.clone(),
@@ -514,30 +636,21 @@ impl<'a> Syncer<'a> {
             });
         }
 
-        let mut payload = manifest
-            .layers
-            .iter()
-            .filter(|l| l.media_type != MEDIA_STATEMENT && l.media_type != MEDIA_MINISIG);
-        let (Some(layer), None) = (payload.next(), payload.next()) else {
-            return Err(layout(SyncPhrase::OneLayer.as_static()));
-        };
-        if layer.media_type != MEDIA_PACK_LAYER {
-            return Err(layout(SyncPhrase::LayerNotArchive.as_static()));
-        }
-        if layer.size > self.limits.compressed_bytes {
-            return Err(layout(SyncPhrase::LayerTooLarge.as_static()));
-        }
-        if let Some(path) = self.store.blob(&layer.digest, layer.size) {
-            return Ok(Acquired::Archive(path));
+        let layer = payload_layer(&manifest, &self.limits).map_err(layout)?;
+        if let Some(staged) = self.store.blob(&pack.id, &layer.digest, layer.size)? {
+            return Ok(Acquired::Archive(staged));
         }
         let client = self.client(pack, SyncPhrase::WhatArchive.as_static())?;
         let mut tmp = self.store.blob_tempfile()?;
         client
             .pull_blob(&reference, layer, tmp.as_file_mut())
             .map_err(fetch)?;
-        Ok(Acquired::Archive(
-            self.store.commit_blob(tmp, &layer.digest)?,
-        ))
+        self.store.commit_blob(tmp, &layer.digest)?;
+        Ok(Acquired::Archive(self.store.stage_written(
+            &pack.id,
+            &layer.digest,
+            layer.size,
+        )?))
     }
 
     /// The signature gate: the statement is signed by a policy key, names this
@@ -548,6 +661,7 @@ impl<'a> Syncer<'a> {
         reference: &Reference,
         manifest: &Manifest,
         namespace: &str,
+        fetch: bool,
     ) -> Result<String, SyncError> {
         let id = &pack.id;
         let layout = |why: &str| SyncError::Layout {
@@ -569,6 +683,7 @@ impl<'a> Syncer<'a> {
             statement,
             MAX_STATEMENT_BYTES as u64,
             SyncPhrase::WhatStatement.as_static(),
+            fetch,
         )?;
         let minisig_bytes = self.small_blob(
             pack,
@@ -576,6 +691,7 @@ impl<'a> Syncer<'a> {
             minisig,
             MAX_MINISIG_BYTES,
             SyncPhrase::WhatSignature.as_static(),
+            fetch,
         )?;
         let minisig_text = String::from_utf8(minisig_bytes)
             .map_err(|_| layout(SyncPhrase::SignatureNotText.as_static()))?;
@@ -619,16 +735,50 @@ impl<'a> Syncer<'a> {
         Ok(verified.key().key_id())
     }
 
+    /// The cached bytes of a small blob, or `None` when it is absent or, under `repair`, was
+    /// removed because it was wrong. Only sync repairs (`repair`): a blob that is over `max` or
+    /// not what its name says is removed, so the caller fetches it again, and the repair is
+    /// recorded. Inspection (`repair` false) deletes nothing: a wrong digest is
+    /// [`SyncError::DigestMismatch`], and any other failure is [`SyncError::CacheUnreadable`].
+    fn cached_small(
+        &self,
+        pack: &LockedPack,
+        digest: &Digest,
+        max: u64,
+        repair: bool,
+    ) -> Result<Option<Vec<u8>>, SyncError> {
+        match self.store.read_cached(digest, max) {
+            Ok(Cached::Bytes(bytes)) => Ok(Some(bytes)),
+            Ok(Cached::Absent) => Ok(None),
+            Ok(Cached::Mismatch(_)) if repair => {
+                self.store.evict_blob(&pack.id, digest).map(|()| None)
+            }
+            Ok(Cached::Mismatch(actual)) => Err(SyncError::DigestMismatch {
+                id: pack.id.clone(),
+                expected: digest.to_string(),
+                actual: actual.to_string(),
+            }),
+            // Slopvac never writes a cached file over its cap, so an oversize file is as wrong
+            // as one with the wrong digest.
+            Err(CacheCause::TooLarge { .. }) if repair => {
+                self.store.evict_blob(&pack.id, digest).map(|()| None)
+            }
+            Err(cause) => Err(self.store.unreadable(&pack.id, digest, cause)),
+        }
+    }
+
     fn manifest_bytes(
         &self,
         pack: &LockedPack,
         reference: &Reference,
         locked: &Digest,
+        fetch: bool,
     ) -> Result<Vec<u8>, SyncError> {
-        if let Some(path) = self.store.blob(locked, MAX_MANIFEST_BYTES as u64)
-            && let Ok(bytes) = fs::read(path)
-        {
+        if let Some(bytes) = self.cached_small(pack, locked, MAX_MANIFEST_BYTES as u64, fetch)? {
             return Ok(bytes);
+        }
+        if !fetch {
+            return Err(Self::missing(pack, SyncPhrase::WhatManifest.as_static()));
         }
         let client = self.client(pack, SyncPhrase::WhatManifest.as_static())?;
         let fetched = client
@@ -648,11 +798,13 @@ impl<'a> Syncer<'a> {
         desc: &Descriptor,
         max: u64,
         what: &str,
+        fetch: bool,
     ) -> Result<Vec<u8>, SyncError> {
-        if let Some(path) = self.store.blob(&desc.digest, max)
-            && let Ok(bytes) = fs::read(path)
-        {
+        if let Some(bytes) = self.cached_small(pack, &desc.digest, max, fetch)? {
             return Ok(bytes);
+        }
+        if !fetch {
+            return Err(Self::missing(pack, what));
         }
         let client = self.client(pack, what)?;
         let bytes = client
@@ -718,9 +870,13 @@ impl<'a> Syncer<'a> {
         let expected = Self::locked_tree_hash(pack)?;
         let dir = self.store.tree_dir(&expected);
         if fs::symlink_metadata(&dir).is_ok() {
-            match verify_tree(&dir, &expected) {
-                Ok(()) => return Ok(Acquired::Stored(dir)),
-                Err(ExtractError::Tampered { .. }) => {
+            let verified = verify_tree_capturing(&dir, &expected);
+            #[cfg(feature = "test-support")]
+            self.store.observe(&dir);
+            match verified {
+                Ok(manifest) => return Ok(Acquired::Stored(dir, manifest)),
+                // A stored tree the walk refuses is repaired like one that changed.
+                Err(ExtractError::Tampered { .. } | ExtractError::Refused(_)) => {
                     if matches!(self.network, Network::Offline) {
                         let aside = cache::evict_tree(&dir)?;
                         return Err(SyncError::CacheTampered {
@@ -769,7 +925,7 @@ impl<'a> Syncer<'a> {
             },
             git::GitError::Extract(source) => extract(source),
         })?;
-        let actual = staged.hash().map_err(extract)?;
+        let (actual, manifest) = staged.hash_capturing().map_err(extract)?;
         if actual != expected {
             return Err(SyncError::DigestMismatch {
                 id: id.clone(),
@@ -777,13 +933,24 @@ impl<'a> Syncer<'a> {
                 actual: actual.to_string(),
             });
         }
-        Ok(Acquired::Staged(Box::new(staged)))
+        #[cfg(feature = "test-support")]
+        self.store.observe(staged.root());
+        Ok(Acquired::Staged(
+            Box::new(staged),
+            Accepted {
+                hash: actual,
+                manifest,
+            },
+        ))
     }
 
     fn acquire_archive(&self, pack: &LockedPack, url: &str) -> Result<Acquired, SyncError> {
         let locked = Self::locked_digest(pack)?;
-        if let Some(path) = self.store.blob(&locked, self.limits.compressed_bytes) {
-            return Ok(Acquired::Archive(path));
+        if let Some(staged) = self
+            .store
+            .blob(&pack.id, &locked, self.limits.compressed_bytes)?
+        {
+            return Ok(Acquired::Archive(staged));
         }
         let client = self.client(pack, SyncPhrase::WhatRelease.as_static())?;
         let mut tmp = self.store.blob_tempfile()?;
@@ -801,7 +968,12 @@ impl<'a> Syncer<'a> {
                 actual: actual.to_string(),
             });
         }
-        Ok(Acquired::Archive(self.store.commit_blob(tmp, &locked)?))
+        self.store.commit_blob(tmp, &locked)?;
+        Ok(Acquired::Archive(self.store.stage_written(
+            &pack.id,
+            &locked,
+            self.limits.compressed_bytes,
+        )?))
     }
 
     fn acquire_path(&self, pack: &LockedPack, rel: &str) -> Result<Acquired, SyncError> {
@@ -833,23 +1005,29 @@ impl<'a> Syncer<'a> {
             actual: actual.to_owned(),
         };
         if fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir()) {
-            let hash = tree_hash(&path).map_err(|source| SyncError::Extract {
-                id: id.clone(),
-                source,
-            })?;
+            let (hash, manifest) =
+                tree_hash_capturing(&path, MANIFEST_FILE).map_err(|source| SyncError::Extract {
+                    id: id.clone(),
+                    source,
+                })?;
             if hash.as_str() != pack.digest.as_str() {
                 return Err(mismatch(hash.as_str()));
             }
-            return Ok(Acquired::InPlace(path));
+            #[cfg(feature = "test-support")]
+            self.store.observe(&path);
+            return Ok(Acquired::InPlace(path, manifest));
         }
         let locked = Self::locked_digest(pack)?;
-        if let Some(cached) = self.store.blob(&locked, self.limits.compressed_bytes) {
+        if let Some(staged) = self
+            .store
+            .blob(&pack.id, &locked, self.limits.compressed_bytes)?
+        {
             // Still check the file in the project: it is what the lock names.
             let actual = cache_hash(&path).map_err(|e| source(messages::path_reading(rel, &e)))?;
             if actual != locked {
                 return Err(mismatch(actual.as_str()));
             }
-            return Ok(Acquired::Archive(cached));
+            return Ok(Acquired::Archive(staged));
         }
         let mut tmp = self.store.blob_tempfile()?;
         let mut file = File::open(&path).map_err(|e| source(messages::path_reading(rel, &e)))?;
@@ -863,7 +1041,12 @@ impl<'a> Syncer<'a> {
         if actual != locked {
             return Err(mismatch(actual.as_str()));
         }
-        Ok(Acquired::Archive(self.store.commit_blob(tmp, &locked)?))
+        self.store.commit_blob(tmp, &locked)?;
+        Ok(Acquired::Archive(self.store.stage_written(
+            &pack.id,
+            &locked,
+            self.limits.compressed_bytes,
+        )?))
     }
 }
 
@@ -931,7 +1114,9 @@ impl PackStatus {
 /// What is installed against `lock`, sorted by id. Reads trees; never writes.
 ///
 /// # Errors
-/// [`SyncError::Store`] when a tree cannot be read.
+/// [`SyncError::Extract`] with the typed cause when a tree cannot be read or hashed: a walk that
+/// is refused, a manifest over the capture limit or a failed read. A tree whose finished hash
+/// differs from the lock or its record is reported in the state, not as an error.
 pub fn status(
     store: &Store,
     project_root: &Path,
@@ -948,7 +1133,8 @@ pub fn status(
 /// that no pack uses are listed by [`EnvStore::list`].
 ///
 /// # Errors
-/// [`SyncError::Store`] when a tree cannot be read.
+/// As [`status`]: [`SyncError::Extract`] with the typed cause when a tree cannot be read or
+/// hashed.
 pub fn status_with_python(
     store: &Store,
     envs: &EnvStore,
@@ -958,20 +1144,22 @@ pub fn status_with_python(
     status_in(store, Some(envs), project_root, lock)
 }
 
-fn python_state(envs: &EnvStore, tree: &Path) -> PythonState {
-    let runtime = match PythonRuntime::read(tree) {
+/// The state of the environment of an accepted tree. The hash and the manifest are those of the
+/// pass that accepted the tree; nothing here reads the tree again.
+fn python_state(envs: &EnvStore, tree: &Path, accepted: &Accepted) -> PythonState {
+    let Accepted { hash, manifest } = accepted;
+    let Some(manifest) = manifest else {
+        return PythonState::NotChecked;
+    };
+    let runtime = match PythonRuntime::from_manifest(tree, manifest) {
         Ok(None) => return PythonState::NotChecked,
         Ok(Some(r)) => r,
         Err(e) => return PythonState::Failed(e.to_string()),
     };
-    let hash = match tree_hash(tree) {
-        Ok(h) => h,
-        Err(e) => return PythonState::Failed(e.to_string()),
-    };
-    match envs.load(&hash, &runtime.python) {
+    match envs.load(hash, &runtime.python) {
         Ok(None) => PythonState::Missing,
         Ok(Some(env)) => match env.verify_full() {
-            Ok(()) => PythonState::Verified(EnvStore::key(&hash, &runtime.python)),
+            Ok(()) => PythonState::Verified(EnvStore::key(hash, &runtime.python)),
             Err(e) => PythonState::Failed(e.to_string()),
         },
         Err(e) => PythonState::Failed(e.to_string()),
@@ -987,25 +1175,43 @@ fn status_in(
     lock.packs()
         .iter()
         .map(|pack| {
+            let mut accepted = None;
             let state = match pack.source.kind() {
                 SourceKind::Path(rel) if project_root.join(rel).is_dir() => {
                     let dir = project_root.join(rel);
-                    match tree_hash(&dir) {
-                        Ok(hash) if hash.as_str() == pack.digest.as_str() => {
-                            PackState::InPlace(dir)
-                        }
-                        _ => PackState::InPlaceChanged(dir),
+                    let passed = tree_hash_capturing(&dir, MANIFEST_FILE);
+                    #[cfg(feature = "test-support")]
+                    store.observe(&dir);
+                    // Only a hash that differs from the lock is a change. A pass that could not
+                    // finish keeps its typed cause.
+                    let (hash, manifest) = passed.map_err(|source| SyncError::Extract {
+                        id: pack.id.clone(),
+                        source,
+                    })?;
+                    if hash.as_str() == pack.digest.as_str() {
+                        accepted = Some(Accepted { hash, manifest });
+                        PackState::InPlace(dir)
+                    } else {
+                        PackState::InPlaceChanged(dir)
                     }
                 }
-                _ => match store.inspect(&pack.digest)? {
-                    TreeState::Absent => PackState::NotInstalled,
-                    TreeState::Intact(dir) => PackState::Recorded(dir),
-                    TreeState::Tampered(dir) => PackState::Tampered(dir),
+                _ => match store.inspect_accepted(&pack.digest).map_err(|source| {
+                    SyncError::Extract {
+                        id: pack.id.clone(),
+                        source,
+                    }
+                })? {
+                    (TreeState::Absent, _) => PackState::NotInstalled,
+                    (TreeState::Intact(dir), seen) => {
+                        accepted = seen;
+                        PackState::Recorded(dir)
+                    }
+                    (TreeState::Tampered(dir), _) => PackState::Tampered(dir),
                 },
             };
-            let python = match (&state, envs) {
-                (PackState::Recorded(dir) | PackState::InPlace(dir), Some(envs)) => {
-                    python_state(envs, dir)
+            let python = match (&state, envs, &accepted) {
+                (PackState::Recorded(dir) | PackState::InPlace(dir), Some(envs), Some(seen)) => {
+                    python_state(envs, dir, seen)
                 }
                 _ => PythonState::NotChecked,
             };

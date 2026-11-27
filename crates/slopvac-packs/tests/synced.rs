@@ -18,7 +18,7 @@ use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
     ArtifactFault, Budget, Limits, LoadedPack, PackError, Packs, Reference, Source, SourceError,
-    SyncedError, core_source, load_synced, load_synced_within,
+    SyncedError, TooLargePart, core_source, load_synced, load_synced_within,
 };
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::Lockfile;
@@ -148,7 +148,15 @@ impl World {
     /// Install a pack the way sync leaves it, and add its lock entry. Returns the tree.
     fn install(&mut self, spec: &Spec) -> PathBuf {
         let tree = self.write_tree(spec);
-        self.lock_entry(spec);
+        // The lock pins the digest of the archive that sync cached, and the loader derives the
+        // tree hash from that archive. The store's record is only a hint.
+        let archive = targz_of_dir(&tree);
+        let digest = slopvac_plugins::oci::Digest::of(&archive);
+        let blobs = self.tmp.path().join("store/blobs");
+        fs::create_dir_all(&blobs).unwrap();
+        fs::write(blobs.join(digest.hex()), &archive).unwrap();
+        self.count += 1;
+        self.lock_entry_with(spec, digest.hex());
         let hash = tree_hash(&tree).unwrap();
         let dest = self
             .tmp
@@ -157,7 +165,7 @@ impl World {
             .join(format!("tree-{}", hash.hex()));
         fs::rename(&tree, &dest).unwrap();
         fs::write(
-            self.tmp.path().join("store/refs").join(self.digest_hex()),
+            self.tmp.path().join("store/refs").join(digest.hex()),
             hash.hex(),
         )
         .unwrap();
@@ -185,6 +193,11 @@ impl World {
     /// A lock entry for `spec` with a digest of its own, whether or not the store holds it.
     fn lock_entry(&mut self, spec: &Spec) {
         self.count += 1;
+        let digest = self.digest_hex();
+        self.lock_entry_with(spec, &digest);
+    }
+
+    fn lock_entry_with(&mut self, spec: &Spec, digest_hex: &str) {
         let requires = spec
             .locked_requires
             .iter()
@@ -198,7 +211,7 @@ impl World {
             spec.version,
             spec.locked_api,
             spec.id,
-            self.digest_hex(),
+            digest_hex,
         ));
     }
 
@@ -209,6 +222,37 @@ impl World {
     fn load(&self, requested: &[&str]) -> Result<Vec<LoadedPack>, SyncedError> {
         load_synced(&ids(requested), &self.lock(), &self.store())
     }
+}
+
+/// A `.tar.gz` of the files under `root`, in path order.
+fn targz_of_dir(root: &Path) -> Vec<u8> {
+    use std::io::Write as _;
+    fn walk(dir: &Path, base: &Path, out: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, base, out);
+            } else {
+                out.push(path.strip_prefix(base).unwrap().to_path_buf());
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(root, root, &mut files);
+    files.sort();
+    let mut tar = tar::Builder::new(Vec::new());
+    for rel in files {
+        let bytes = fs::read(root.join(&rel)).unwrap();
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        tar.append_data(&mut header, &rel, bytes.as_slice())
+            .unwrap();
+    }
+    // Stored, not compressed: the fixtures hold huge repeated files that the ratio limit refuses.
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
+    gz.write_all(&tar.into_inner().unwrap()).unwrap();
+    gz.finish().unwrap()
 }
 
 fn ids(requested: &[&str]) -> Vec<PackId> {
@@ -255,15 +299,158 @@ fn a_pack_two_packs_require_loads_once() {
 }
 
 #[test]
+fn a_data_plugin_loads_the_rule_file_its_hash_covered_not_the_one_on_disk() {
+    let mut w = World::new();
+    let tree = w.install(&Spec::new("acme").rules(&["alpha"]));
+    // After the file is hashed, the file on disk gains two rules. A load that opened it a second
+    // time would see three rules; the load keeps the one rule the hash covered.
+    let swapped = Spec::new("acme").rules(&["alpha", "beta", "gamma"]);
+    let replacement = swapped
+        .files
+        .iter()
+        .find(|(name, _)| *name == "categories/c.json")
+        .map(|(_, text)| text.clone())
+        .unwrap();
+    let mut seen = Vec::new();
+    let mut swap = |rel: &str, path: &Path| {
+        seen.push(rel.to_owned());
+        if rel == "categories/c.json" {
+            fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
+            fs::write(path, &replacement).unwrap();
+        }
+    };
+
+    let packs = slopvac_packs::load_synced_observed(
+        &ids(&["acme"]),
+        &w.lock(),
+        &w.store(),
+        &mut Budget::default(),
+        &mut swap,
+    )
+    .unwrap();
+
+    assert!(seen.iter().any(|r| r == "categories/c.json"), "{seen:?}");
+    assert_eq!(
+        fs::read_to_string(tree.join("categories/c.json")).unwrap(),
+        replacement
+    );
+    assert_eq!(packs[0].rules().len(), 1);
+}
+
+#[test]
 fn a_tampered_pack_tree_fails_the_load_with_a_typed_error() {
     let mut w = World::new();
     let tree = w.install(&Spec::new("acme"));
     tamper(&tree);
+    let before = tree_contents(&tree);
 
     let err = w.load(&["acme"]).unwrap_err();
 
     assert!(matches!(err, SyncedError::Tampered { .. }), "{err}");
     assert_eq!(err.code(), Some("plugin-tampered"));
+    // A load removes nothing: every entry of the tree is still there, byte for byte.
+    assert_eq!(tree_contents(&tree), before, "a load changed the tree");
+}
+
+/// One entry of a tree, read without following links.
+#[derive(Debug, PartialEq, Eq)]
+enum Entry {
+    File(Vec<u8>),
+    Dir,
+    Link(PathBuf),
+}
+
+/// Every entry under `dir` by relative path. A link is recorded with its target and never
+/// followed, so swapping a file for a link to the same bytes shows.
+fn tree_contents(dir: &Path) -> std::collections::BTreeMap<PathBuf, Entry> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(current) = pending.pop() {
+        for entry in fs::read_dir(&current).unwrap() {
+            let path = entry.unwrap().path();
+            let rel = path.strip_prefix(dir).unwrap().to_path_buf();
+            let kind = fs::symlink_metadata(&path).unwrap().file_type();
+            if kind.is_symlink() {
+                out.insert(rel, Entry::Link(fs::read_link(&path).unwrap()));
+            } else if kind.is_dir() {
+                out.insert(rel, Entry::Dir);
+                pending.push(path);
+            } else {
+                out.insert(rel, Entry::File(fs::read(&path).unwrap()));
+            }
+        }
+    }
+    out
+}
+
+/// The one cached archive that `install` left in the store.
+fn only_blob(w: &World) -> PathBuf {
+    let mut blobs = fs::read_dir(w.tmp.path().join("store/blobs")).unwrap();
+    let blob = blobs.next().unwrap().unwrap().path();
+    assert!(blobs.next().is_none(), "more than one cached archive");
+    blob
+}
+
+#[test]
+fn a_link_planted_in_an_installed_tree_is_a_store_failure_and_not_tampering() {
+    let mut w = World::new();
+    let tree = w.install(&Spec::new("acme"));
+    std::os::unix::fs::symlink("slopvac-plugin.toml", tree.join("link")).unwrap();
+
+    let err = w.load(&["acme"]).unwrap_err();
+
+    assert!(matches!(err, SyncedError::StoreUnreadable { .. }), "{err}");
+    assert_eq!(err.code(), Some("plugin-store-unreadable"));
+}
+
+/// A tree over the cap is refused before any file is parsed, and the message names the tree.
+#[test]
+fn a_data_plugin_tree_over_32_mib_says_the_installed_tree_is_too_large() {
+    let mut w = World::new();
+    let tree = w.install(&Spec::new("acme"));
+    fs::write(tree.join("big.bin"), vec![0_u8; (32 << 20) + 1]).unwrap();
+
+    let err = w.load(&["acme"]).unwrap_err();
+
+    assert_eq!(err.code(), Some("plugin-too-large"));
+    assert_eq!(
+        err.to_string(),
+        "the installed tree of plugin `acme` is over the 33554432 byte limit for a load"
+    );
+}
+
+#[test]
+fn a_swapped_cached_archive_is_tampering_and_a_load_leaves_it_in_place() {
+    let mut w = World::new();
+    w.install(&Spec::new("acme"));
+    let blob = only_blob(&w);
+    fs::write(&blob, b"swapped").unwrap();
+
+    let err = w.load(&["acme"]).unwrap_err();
+
+    assert!(matches!(err, SyncedError::Tampered { .. }), "{err}");
+    assert_eq!(err.code(), Some("plugin-tampered"));
+    assert_eq!(
+        fs::read(&blob).unwrap(),
+        b"swapped",
+        "a load deleted the blob"
+    );
+}
+
+#[test]
+fn an_unreadable_cached_archive_is_a_store_failure_and_not_a_missing_plugin() {
+    let mut w = World::new();
+    w.install(&Spec::new("acme"));
+    let blob = only_blob(&w);
+    fs::set_permissions(&blob, std::os::unix::fs::PermissionsExt::from_mode(0o000)).unwrap();
+    if fs::File::open(&blob).is_ok() {
+        return; // the test runs with rights that ignore modes
+    }
+
+    let err = w.load(&["acme"]).unwrap_err();
+
+    assert!(matches!(err, SyncedError::StoreUnreadable { .. }), "{err}");
+    assert_eq!(err.code(), Some("plugin-store-unreadable"));
 }
 
 #[test]
@@ -884,6 +1071,7 @@ fn a_budget_refusal_exposes_its_budget_name_and_limit(
 #[case::not_locked(SyncedError::NotLocked { id: "a".into() }, Some("plugin-not-locked"))]
 #[case::not_installed(SyncedError::NotInstalled { id: "a".into() }, Some("plugin-not-installed"))]
 #[case::tampered(SyncedError::Tampered { id: "a".into() }, Some("plugin-tampered"))]
+#[case::too_large(SyncedError::TooLarge { id: "a".into(), part: TooLargePart::Tree, cap: 7 }, Some("plugin-too-large"))]
 #[case::api(SyncedError::ApiUnsupported { id: "a".into(), api: 9 }, Some("plugin-api-unsupported"))]
 #[case::mismatch(SyncedError::ManifestMismatch { id: "a".into(), field: "id" }, Some("plugin-manifest-mismatch"))]
 #[case::cycle(SyncedError::RequiresCycle { cycle: vec!["a".into(), "a".into()] }, Some("plugin-requires-cycle"))]
@@ -1599,4 +1787,63 @@ fn a_three_mebibyte_config_from_an_embedded_source_loads() {
     let loaded = LoadedPack::load(&EmbeddedSource::new(manifest, tables), Source::Pack);
 
     assert!(loaded.is_ok(), "{:?}", loaded.err());
+}
+/// A `.tar.gz` of one file.
+fn targz_of(name: &str, bytes: &[u8]) -> Vec<u8> {
+    use std::io::Write as _;
+    let mut tar = tar::Builder::new(Vec::new());
+    let mut header = tar::Header::new_gnu();
+    header.set_size(bytes.len() as u64);
+    header.set_mode(0o644);
+    tar.append_data(&mut header, name, bytes).unwrap();
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gz.write_all(&tar.into_inner().unwrap()).unwrap();
+    gz.finish().unwrap()
+}
+
+/// The cache is untrusted: an attacker who writes a tree and a record that points at it must not
+/// get that tree loaded. The tree to load is the one the lock digest names, through the cached
+/// archive, so the swapped tree is refused.
+#[test]
+fn a_forged_record_and_a_swapped_tree_do_not_load_a_data_plugin() {
+    let w = World::new();
+    let honest_dir = w.write_tree(&Spec::new("acme"));
+    let honest_manifest = fs::read(honest_dir.join("slopvac-plugin.toml")).unwrap();
+    let honest_hash = tree_hash(&honest_dir).unwrap();
+    let archive = targz_of("slopvac-plugin.toml", &honest_manifest);
+    let digest = slopvac_plugins::oci::Digest::of(&archive);
+
+    // The same plugin plus a comment, installed twice: where the honest tree belongs, and where
+    // the forged record points.
+    let mut evil_manifest = honest_manifest;
+    evil_manifest.extend_from_slice(b"# evil\n");
+    let trees = w.tmp.path().join("store/trees");
+    let mut evil_hash = None;
+    for (i, name) in ["swapped", "forged"].into_iter().enumerate() {
+        let dir = w.tmp.path().join("stage").join(name);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("slopvac-plugin.toml"), &evil_manifest).unwrap();
+        let hash = tree_hash(&dir).unwrap();
+        let place = if i == 0 { &honest_hash } else { &hash };
+        fs::rename(&dir, trees.join(format!("tree-{}", place.hex()))).unwrap();
+        evil_hash = Some(hash);
+    }
+    let blobs = w.tmp.path().join("store/blobs");
+    fs::create_dir_all(&blobs).unwrap();
+    fs::write(blobs.join(digest.hex()), &archive).unwrap();
+    fs::write(
+        w.tmp.path().join("store/refs").join(digest.hex()),
+        evil_hash.unwrap().hex(),
+    )
+    .unwrap();
+    let lock = Lockfile::parse(&format!(
+        "schema_version = 3\n\n[[plugins]]\nid = \"acme\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
+         slopvac_api = 1\nsource = \"dist/acme.tar.gz\"\ndigest = \"{digest}\"\n"
+    ))
+    .unwrap();
+
+    let err = load_synced(&ids(&["acme"]), &lock, &w.store()).unwrap_err();
+
+    assert!(matches!(err, SyncedError::Tampered { .. }), "{err}");
+    assert_eq!(err.code(), Some("plugin-tampered"));
 }

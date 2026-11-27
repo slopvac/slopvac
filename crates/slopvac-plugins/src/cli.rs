@@ -3,10 +3,10 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use slopvac_fs::{InputKind, ReadOptions, read_capped_regular_to_string};
+use slopvac_fs::display_under_root;
 use slopvac_messages::{Catalog, render};
 use slopvac_sanitize::line;
 use slopvac_update::messages::UpdateMessage;
@@ -14,17 +14,17 @@ use slopvac_update::messages::UpdateMessage;
 use crate::PluginSpec;
 use crate::cause::{self, withheld};
 use crate::lock::{
-    LockedPack, Lockfile, MAX_LOCK_BYTES, PackId, PackKind, VersionReq, config_drift,
-    outdated as lock_outdated,
+    LockReadError, LockedPack, Lockfile, PackId, PackKind, SourceKind, VersionReq, config_drift,
+    outdated as lock_outdated, read_project_lock,
 };
-use crate::messages::cli::{CliText, Redacted, RunError};
+use crate::messages::cli::{CliText, Redacted, Reported, RunError};
 use crate::oci::Digest;
 use crate::pyenv::{EnvStore, PythonRuntime};
 use crate::revoke::{RevocationError, RevocationNotice, Revocations};
 use crate::sign::KeyPolicy;
 use crate::sync::{
-    Change, Network, PackState, PackStatus, PythonBuild, PythonState, Store, Syncer, status,
-    status_with_python, update_notices,
+    Change, Network, PackState, PackStatus, PythonBuild, PythonState, Store, SyncError, Syncer,
+    status, status_with_python, update_notices,
 };
 use crate::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
 use crate::update::{LISTING_BUDGET_BYTES, Outcome, Updater, list_candidates};
@@ -80,11 +80,57 @@ impl Dirs {
 /// `plugins status`. The binary implements it over the installed trees and the resolved
 /// config; the library never decides which program a plugin runs.
 pub trait PluginLoader {
-    /// The verified plugin and the spec it would start with.
+    /// The verified plugin and the spec it would start with, for the lock entry `locked`.
+    ///
+    /// The caller read the lock once and passes that entry, so the loader never reads the lock
+    /// again: the entry that is loaded is the entry that was checked and the one that is
+    /// recorded.
     ///
     /// # Errors
-    /// The reason the plugin cannot be loaded, as one sentence with no document text.
-    fn load(&self, id: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String>;
+    /// The reason the plugin cannot be loaded, as one sentence with no document text and no
+    /// path outside the project, and the stable code of the refusal when it has one.
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError>;
+}
+
+/// Why a plugin could not be loaded. The set is closed and each text comes from the catalog, so
+/// no refusal carries a path or document text. A loader keeps its own detail in its log and
+/// returns [`LoadError::Refused`], whose detail is withheld.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum LoadError {
+    /// The cached files of the plugin cannot be read. The code is `plugin-store-unreadable`.
+    #[error("{}", render(&CliText::LoadStoreUnreadable { id: id.as_str().to_owned() }))]
+    StoreUnreadable {
+        /// The plugin id. `plugins trust` names the locked plugin and ignores this value.
+        id: PackId,
+    },
+    /// Any other refusal. Its detail can name a path, so it is not kept.
+    #[error("{}", withheld(TRUST_INPUTS))]
+    Refused,
+}
+
+impl LoadError {
+    /// The cached files of plugin `id` cannot be read.
+    #[must_use]
+    pub fn store_unreadable(id: &PackId) -> Self {
+        Self::StoreUnreadable { id: id.clone() }
+    }
+
+    /// The stable code of the refusal, when it has one of its own.
+    #[must_use]
+    pub fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::StoreUnreadable { .. } => Some("plugin-store-unreadable"),
+            Self::Refused => None,
+        }
+    }
+}
+
+/// A refusal given as text: the text is dropped, because it can name a path.
+impl From<String> for LoadError {
+    fn from(_: String) -> Self {
+        Self::Refused
+    }
 }
 
 /// Everything the commands need from outside the library: directories, the network, keys,
@@ -226,7 +272,9 @@ impl<'a> Runner<'a> {
             vec![vp.clone()],
         )
         .with_revocation_cache(self.revocations.clone());
-        let managed = PythonRuntime::read(&vp.root).map_err(|_| withheld(code))?;
+        // From the manifest bytes the loader's hash pass read, never from the disk again.
+        let managed =
+            PythonRuntime::from_manifest(&vp.root, &vp.manifest).map_err(|_| withheld(code))?;
         if managed.is_some() {
             let envs = self.envs.ok_or_else(|| render(&CliText::WhyNoEnvs))?;
             gate = gate.with_python_plugins(envs).map_err(|_| withheld(code))?;
@@ -395,27 +443,7 @@ fn notices(out: &mut dyn Write, list: &[RevocationNotice]) -> Result<(), RunErro
 }
 
 fn read_lock(runner: &Runner<'_>, required: bool) -> Result<Lockfile, RunError> {
-    let path = runner.dirs.project_root.join(".slopvac/plugins.lock");
-    let invalid = |source: crate::lock::LockError| {
-        let detail = source.diagnostic();
-        RunError::LockInvalid {
-            // The parser's own error can echo the rejected value, so the cause keeps only the
-            // location.
-            source: Redacted::new(detail.clone()),
-            detail,
-        }
-    };
-
-    match read_capped_regular_to_string(&path, MAX_LOCK_BYTES as u64, ReadOptions::default()) {
-        Ok(text) => Lockfile::parse(&text).map_err(invalid),
-        Err(e) if !required && e.input_kind() == Some(InputKind::NotFound) => {
-            Lockfile::new(Vec::new()).map_err(invalid)
-        }
-        Err(source) => Err(RunError::LockUnreadable {
-            detail: source.to_string(),
-            source,
-        }),
-    }
+    read_project_lock(&runner.dirs.project_root, required).map_err(LockReadError::into_run_error)
 }
 
 fn kind_name(kind: PackKind) -> String {
@@ -462,7 +490,7 @@ fn trust_part(runner: &Runner<'_>, pack: &LockedPack) -> CliText {
         };
     };
     let state = loader
-        .load(&id)
+        .load(pack)
         .map_err(|_| withheld(TRUST_UNKNOWN))
         .and_then(|(vp, spec)| {
             runner
@@ -635,6 +663,14 @@ fn run_sync(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
                 change: render(&change),
             },
         )?;
+        if p.repaired {
+            say(
+                out,
+                &CliText::SyncRepaired {
+                    id: line(p.id.as_str()),
+                },
+            )?;
+        }
     }
     notices(out, &report.notices)?;
     Ok(0)
@@ -741,6 +777,11 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         .loader
         .ok_or_else(|| refused(render(&CliText::WhyNoLoader)))?;
     let pack_id = id.parse::<PackId>().map_err(|e| refused(e.to_string()))?;
+    // One snapshot: this entry is checked against the revocation list and the signature, it is
+    // what the loader loads, and its source is what the output reports.
+    let pack = lock
+        .get(&pack_id)
+        .ok_or_else(|| RunError::UnknownPlugin { id: line(id) })?;
     // The locked digest and signing key come first: a path or git source has no manifest
     // digest or key id in the loader's plugin, so the list can name it only through the lock.
     let current = runner
@@ -748,15 +789,40 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         .cached()
         .map_err(|e| revocation_failed(&e))?;
     notices(out, &current.notices)?;
-    if lock
-        .get(&pack_id)
-        .is_some_and(|pack| revoked(runner, pack, &current.list))
-    {
+    if revoked(runner, pack, &current.list) {
         return Err(RunError::Revoked { id: line(id) });
     }
-    let (vp, spec) = loader
-        .load(&pack_id)
-        .map_err(|_| refused(withheld(TRUST_INPUTS)))?;
+    let (vp, spec) = loader.load(pack).map_err(|e| match e {
+        // The sentence names the plugin from the locked entry that was loaded, never an id that
+        // the loader supplies.
+        LoadError::StoreUnreadable { .. } => RunError::Failed {
+            source: Reported::new(
+                "plugin-store-unreadable",
+                render(&CliText::LoadStoreUnreadable { id: line(id) }),
+            ),
+        },
+        _ => refused(withheld(TRUST_INPUTS)),
+    })?;
+    // The cache is not trusted (threat model E8), so the signature is checked again here, from
+    // the cached files only, before a person's trust is recorded for what they hold.
+    let store = Store::new(&runner.dirs.cache_dir);
+    let signer = Syncer::new(
+        &store,
+        Network::Offline,
+        runner.policy,
+        &runner.dirs.project_root,
+        runner.revocations,
+    )
+    .verify_cached_signature(pack)
+    .map_err(|e| {
+        let reported = cause::sync(&runner.dirs.project_root, &e);
+        match e {
+            // A cached file that is not what its name says is an input that `trust` cannot use:
+            // the command reports it under its own code, as for a tree that differs.
+            SyncError::DigestMismatch { .. } => refused(reported.to_string()),
+            _ => RunError::Failed { source: reported },
+        }
+    })?;
     let (gate, spec) = runner.prepared(&vp, spec, TRUST_INPUTS).map_err(refused)?;
     let (_, state) = gate.state(&vp, &spec).map_err(|e| store_failed(&e))?;
     if state == TrustState::Revoked {
@@ -772,8 +838,35 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
             hash: record.hash,
         },
     )?;
+    let (kind, source) = provenance(&runner.dirs.project_root, pack);
+    say(
+        out,
+        &match signer {
+            Some(key_id) => CliText::TrustedSigned {
+                kind,
+                origin: source,
+                key_id: line(&key_id),
+            },
+            None => CliText::TrustedUnsigned {
+                kind,
+                origin: source,
+            },
+        },
+    )?;
     say(out, &CliText::TrustNotContainment)?;
     Ok(0)
+}
+
+/// The kind and the redacted source of a lock entry (policies, section 1.7): no user-info, no
+/// query or fragment, and a project path shown relative to the project root.
+fn provenance(project_root: &Path, pack: &LockedPack) -> (String, String) {
+    let kind = pack.source.kind();
+    let source = match kind {
+        SourceKind::Oci(text) | SourceKind::Archive(text) => crate::oci::redact_url(text),
+        SourceKind::Git { url, commit } => format!("{}@{commit}", crate::oci::redact_url(url)),
+        SourceKind::Path(rel) => display_under_root(&project_root.join(rel), project_root),
+    };
+    (kind.name().to_owned(), line(&source))
 }
 
 fn run_untrust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, RunError> {

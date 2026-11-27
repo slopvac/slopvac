@@ -95,6 +95,10 @@ pub static RETIRED: &[Retired] = &[
         note: "Replaced by migrate-note-merged-switch.",
     },
     Retired {
+        code: "plugins-sync-opening",
+        note: "Sync extracts from a verified private copy of the archive and opens no file by path at that step, so the text has no use.",
+    },
+    Retired {
         code: "plugin-category-id-collision",
         note: "A plugin category may share a bare id with a core category, because the engine keys categories by plugin and id. A shared rule id is still refused with plugin-rule-id-collision.",
     },

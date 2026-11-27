@@ -29,6 +29,7 @@ mod migrate_lint;
 pub mod offline;
 pub mod output;
 pub mod owners;
+mod plugin_loader;
 pub mod redact;
 pub mod report;
 pub mod rule_catalog;

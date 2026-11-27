@@ -54,6 +54,10 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+#[cfg(feature = "test-support")]
+use std::sync::Arc;
+#[cfg(feature = "test-support")]
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -444,6 +448,8 @@ pub struct Revocations {
     source: Reference,
     now: String,
     now_at: i64,
+    #[cfg(feature = "test-support")]
+    touched: Option<Arc<AtomicUsize>>,
 }
 
 impl Revocations {
@@ -466,7 +472,27 @@ impl Revocations {
             source,
             now: now.to_owned(),
             now_at,
+            #[cfg(feature = "test-support")]
+            touched: None,
         })
+    }
+
+    /// Test seam: count each use of this source, taken before the cache or the network is
+    /// touched. A test proves that a path never consults the revocation source by asserting
+    /// zero.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "test-support")]
+    pub fn with_access_counter_for_tests(mut self, counter: Arc<AtomicUsize>) -> Self {
+        self.touched = Some(counter);
+        self
+    }
+
+    #[cfg(feature = "test-support")]
+    fn touch(&self) {
+        if let Some(counter) = &self.touched {
+            counter.fetch_add(1, Ordering::SeqCst);
+        }
     }
 
     /// The shipped configuration: the compiled first-party release key is the
@@ -513,6 +539,8 @@ impl Revocations {
     /// # Errors
     /// [`RevocationError::Io`] when the lock file cannot be created or locked.
     pub fn lock(&self) -> Result<CacheLock, RevocationError> {
+        #[cfg(feature = "test-support")]
+        self.touch();
         create_private_dir(&self.dir).map_err(io_err(RevokePhrase::CreateDir.as_static()))?;
         let file = OpenOptions::new()
             .create(true)
@@ -531,6 +559,8 @@ impl Revocations {
     /// [`RevocationError::CacheInvalid`] when the cache exists but does not
     /// hold a list a root key signed.
     pub fn cached(&self) -> Result<Current, RevocationError> {
+        #[cfg(feature = "test-support")]
+        self.touch();
         let Some((list, fetched_at)) = self.read_cache()? else {
             return Ok(Current {
                 list: RevocationList::default(),
@@ -564,6 +594,8 @@ impl Revocations {
     /// cache's `issued` time, and
     /// cache write failures. The cache is unchanged on any error.
     pub fn refresh(&self, client: &Client) -> Result<Current, RevocationError> {
+        #[cfg(feature = "test-support")]
+        self.touch();
         let (statement, minisig) = self.fetch(client)?;
         let list = RevocationList::verify(&statement, &minisig, &self.roots)?;
         if list.expired_at(self.now_at) {

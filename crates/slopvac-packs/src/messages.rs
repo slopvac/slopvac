@@ -10,6 +10,26 @@ use slopvac_messages::{Catalog, Entry};
 
 use crate::{Provenance, QualifiedName, Reference};
 
+/// The part of a plugin whose size cap a load refused, as the `plugin-too-large` message names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TooLargePart {
+    /// The installed tree of a data plugin, which a load hashes and keeps in memory.
+    Tree,
+    /// The manifest `slopvac-plugin.toml` of a code plugin, the one file a load keeps.
+    Manifest,
+}
+
+impl TooLargePart {
+    /// The phrase that fills `{part}` in the message.
+    pub(crate) fn phrase(self) -> &'static str {
+        match self {
+            Self::Tree => "installed tree",
+            Self::Manifest => "manifest `slopvac-plugin.toml`",
+        }
+    }
+}
+
 /// Every sentence the loader reports for a synced plugin.
 #[derive(Debug, Clone, PartialEq, Eq, Catalog)]
 pub(crate) enum PackMessage {
@@ -35,9 +55,22 @@ pub(crate) enum PackMessage {
         "the installed tree of plugin `{id}` differs from its lock digest; run `slopvac plugins sync` to restore it"
     )]
     Tampered { id: String },
-    /// The store could not be read for a plugin.
+    /// A plugin file that must be text is not valid UTF-8.
+    #[code("plugin-file-not-text")]
+    #[message("plugin file `{path}` is not valid UTF-8 text")]
+    FileNotText { path: String },
+    /// The part of a plugin that a load keeps in memory is over its cap.
+    #[code("plugin-too-large")]
+    #[message("the {part} of plugin `{id}` is over the {cap} byte limit for a load")]
+    TooLarge {
+        id: String,
+        part: String,
+        #[count]
+        cap: u64,
+    },
+    /// A cached file of a plugin could not be read, by a load, `plugins trust` or `plugins sync`.
     #[code("plugin-store-unreadable")]
-    #[message("cannot read the installed tree of plugin `{id}`")]
+    #[message("cannot read the cached files of plugin `{id}`")]
     StoreUnreadable { id: String },
     /// A plugin targets an extension API that this build does not implement.
     #[code("plugin-api-unsupported")]
@@ -97,6 +130,24 @@ pub(crate) enum PackMessage {
         #[count]
         limit: usize,
     },
+    /// The lock entry of a plugin to load as code is a data plugin.
+    #[code("plugin-loader-not-code")]
+    #[text("plugin `{id}` is a data plugin and has no program to load")]
+    LoaderNotCode { id: String },
+    /// The manifest of a code plugin could not be read.
+    #[code("plugin-loader-manifest-unreadable")]
+    #[text("cannot read the manifest of plugin `{id}`")]
+    LoaderManifestUnreadable { id: String },
+    /// The manifest of a code plugin breaks the contract.
+    #[code("plugin-loader-manifest-invalid")]
+    #[text("the manifest of plugin `{id}` does not meet the plugin contract")]
+    LoaderManifestInvalid { id: String },
+    /// The command of a code plugin leaves its tree or starts with a dash.
+    #[code("plugin-loader-command-unsafe")]
+    #[text(
+        "the command of plugin `{id}` must be a relative path inside the plugin, with no leading dash"
+    )]
+    LoaderCommandUnsafe { id: String },
 }
 
 fn claims_text(claims: &[(QualifiedName, Provenance)]) -> String {

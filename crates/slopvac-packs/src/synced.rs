@@ -1,22 +1,34 @@
 //! Load the plugins that the config lists from the lock and the store.
 //!
-//! The config decides which plugins load (threat model X6). The lock pins each one, and the
-//! store holds its tree, which `Store::inspect` hashes again before the loader reads a file.
+//! The config decides which plugins load (threat model X6). The lock pins each one. The load
+//! derives the trusted tree hash from the lock and the cached archive (`Store::verified_tree`),
+//! hashes the installed tree again and compares the two before the loader reads a file.
 //! A plugin the lock lacks, a tree that is absent or differs from its digest, an extension API
 //! this build does not implement and a `requires` loop each stop the run.
 
 use std::collections::HashSet;
+#[cfg(feature = "test-support")]
+use std::path::Path;
 
 use semver::Version;
 use slopvac_model::{ApiVersion, PackId};
+#[cfg(feature = "test-support")]
+use slopvac_plugins::extract::tree_hash_capturing_files_observed;
+use slopvac_plugins::extract::{ExtractError, Limits as ExtractLimits, tree_hash_capturing_files};
 use slopvac_plugins::lock::{LockedPack, Lockfile, PackId as LockPackId, PackKind as LockKind};
 use slopvac_plugins::sign::RESERVED_ID;
-use slopvac_plugins::sync::{Store, SyncError, TreeState};
+use slopvac_plugins::sync::{Store, SyncError};
 
 use crate::messages::PackMessage;
-use crate::{
-    Budget, DirSource, Limits, LoadedPack, PackError, PackKind, Packs, Source, to_lock_id,
-};
+use crate::source::MemorySource;
+use crate::{Budget, Limits, LoadedPack, PackError, PackKind, Packs, Source, to_lock_id};
+
+/// What a test hangs on the hash pass of a load: called for each file right after it is read.
+#[cfg(feature = "test-support")]
+type HashObserver<'a> = &'a mut dyn FnMut(&str, &Path);
+
+/// Most bytes of one plugin tree a load keeps in memory.
+const PLUGIN_TREE_CAP: u64 = 32 << 20;
 
 /// Why the synced plugins did not load. Every text comes from the message catalog.
 #[derive(Debug, thiserror::Error)]
@@ -42,6 +54,17 @@ pub enum SyncedError {
     Tampered {
         /// The plugin id.
         id: String,
+    },
+    /// The stored tree is over the number of bytes a load keeps in memory. The tree is not
+    /// known to be damaged.
+    #[error("{}", PackMessage::TooLarge { id: String::from(.id), part: String::from(.part.phrase()), cap: *.cap })]
+    TooLarge {
+        /// The plugin id.
+        id: String,
+        /// The part of the plugin that is over its cap.
+        part: crate::messages::TooLargePart,
+        /// The limit, in bytes.
+        cap: u64,
     },
     /// The store could not be read.
     #[error("{}", PackMessage::StoreUnreadable { id: String::from(.id) })]
@@ -107,6 +130,7 @@ impl SyncedError {
             Self::NotLocked { .. } => code_of!(NotLocked { id }),
             Self::NotInstalled { .. } => code_of!(NotInstalled { id }),
             Self::Tampered { .. } => code_of!(Tampered { id }),
+            Self::TooLarge { .. } => code_of!(TooLarge { id, part, cap }),
             Self::StoreUnreadable { .. } => code_of!(StoreUnreadable { id }),
             Self::ApiUnsupported { .. } => code_of!(ApiUnsupported { id, api }),
             Self::ManifestMismatch { .. } => code_of!(ManifestMismatch { id, field }),
@@ -243,14 +267,53 @@ pub fn load_synced(
 /// that crosses a budget, so no later pack is read. A caller that loaded the core pack through
 /// the same `budget` makes the budget cover the whole run.
 ///
+/// A load keeps the files of one plugin tree in memory while it hashes them, up to 32 MiB in all.
+/// A larger tree is refused with [`SyncedError::TooLarge`], which says the tree is too big for
+/// a load and nothing about its integrity.
+///
 /// # Errors
-/// As [`load_synced`], and [`PackError::Budget`] (wrapped in
-/// [`SyncedError::Pack`]) when a budget is crossed.
+/// As [`load_synced`], [`SyncedError::TooLarge`] for a tree over that limit, and
+/// [`PackError::Budget`] (wrapped in [`SyncedError::Pack`]) when a budget is crossed.
 pub fn load_synced_within(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
     budget: &mut Budget,
+) -> Result<Vec<LoadedPack>, SyncedError> {
+    load_inner(
+        requested,
+        lock,
+        store,
+        budget,
+        #[cfg(feature = "test-support")]
+        None,
+    )
+}
+
+/// Test seam: [`load_synced_within`], and `after_hash` runs for each file of a plugin tree right
+/// after the pass that hashes it has read that file. A test changes the file on disk there, at
+/// the one moment a second read would see other bytes.
+///
+/// # Errors
+/// As [`load_synced_within`].
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn load_synced_observed(
+    requested: &[PackId],
+    lock: &Lockfile,
+    store: &Store,
+    budget: &mut Budget,
+    after_hash: &mut dyn FnMut(&str, &Path),
+) -> Result<Vec<LoadedPack>, SyncedError> {
+    load_inner(requested, lock, store, budget, Some(after_hash))
+}
+
+fn load_inner(
+    requested: &[PackId],
+    lock: &Lockfile,
+    store: &Store,
+    budget: &mut Budget,
+    #[cfg(feature = "test-support")] mut after_hash: Option<HashObserver<'_>>,
 ) -> Result<Vec<LoadedPack>, SyncedError> {
     let mut loaded: Vec<LoadedPack> = Vec::new();
     for locked in dependency_order(requested, lock)? {
@@ -261,10 +324,15 @@ pub fn load_synced_within(
                 api: locked.slopvac_api,
             });
         }
-        let dir = match store.inspect(&locked.digest) {
-            Ok(TreeState::Intact(dir)) => dir,
-            Ok(TreeState::Absent) => return Err(SyncedError::NotInstalled { id }),
-            Ok(TreeState::Tampered(_)) => return Err(SyncedError::Tampered { id }),
+        // The hash comes from the lock and the cached archive, never from a store record, and
+        // the tree must hash to it before any file is read (threat model E8).
+        // STUB(slopvac-8l4.9.28): the executable set is empty until config supplies it.
+        let tree = match store.verified_tree(&locked, &HashSet::new(), ExtractLimits::default()) {
+            Ok(Some(tree)) => tree,
+            Ok(None) => return Err(SyncedError::NotInstalled { id }),
+            // The cached archive hashes to something other than the lock pins: a hash was
+            // computed and does not match.
+            Err(SyncError::DigestMismatch { .. }) => return Err(SyncedError::Tampered { id }),
             Err(source) => {
                 return Err(SyncedError::StoreUnreadable {
                     id,
@@ -272,11 +340,45 @@ pub fn load_synced_within(
                 });
             }
         };
+        // One pass hashes the tree and keeps its files, so the pack below is read from the
+        // bytes the hash covers and no file is opened a second time.
+        #[cfg(feature = "test-support")]
+        let hashed = match after_hash.as_deref_mut() {
+            Some(observer) => {
+                tree_hash_capturing_files_observed(&tree.dir, PLUGIN_TREE_CAP, observer)
+            }
+            None => tree_hash_capturing_files(&tree.dir, PLUGIN_TREE_CAP),
+        };
+        #[cfg(not(feature = "test-support"))]
+        let hashed = tree_hash_capturing_files(&tree.dir, PLUGIN_TREE_CAP);
+        let files = match hashed {
+            Ok((hash, files)) if hash == tree.hash => files,
+            // Only a hash that was computed and differs is tampering.
+            Ok(_) => return Err(SyncedError::Tampered { id }),
+            Err(ExtractError::CaptureLimit { cap, .. }) => {
+                return Err(SyncedError::TooLarge {
+                    id,
+                    part: crate::messages::TooLargePart::Tree,
+                    cap,
+                });
+            }
+            // A failed read, a link or another file that is not regular: the walk did not
+            // finish, so nothing was compared.
+            Err(source) => {
+                return Err(SyncedError::StoreUnreadable {
+                    id,
+                    source: Box::new(SyncError::Extract {
+                        id: locked.id.clone(),
+                        source,
+                    }),
+                });
+            }
+        };
         let origin = match locked.kind {
             LockKind::Data => Source::Pack,
             LockKind::Code => Source::Plugin,
         };
-        let pack = LoadedPack::load_within(&DirSource::new(dir), origin, budget)?;
+        let pack = LoadedPack::load_within(&MemorySource::new(files), origin, budget)?;
         check_manifest(&locked, &pack)?;
         check_requirements(&pack, &loaded)?;
         loaded.push(pack);

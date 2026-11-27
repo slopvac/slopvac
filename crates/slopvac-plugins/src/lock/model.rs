@@ -300,6 +300,19 @@ pub struct Source {
     kind: SourceKind,
 }
 
+impl SourceKind {
+    /// A stable name for the kind: `oci`, `archive`, `git` or `path`.
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Oci(_) => "oci",
+            Self::Archive(_) => "archive",
+            Self::Git { .. } => "git",
+            Self::Path(_) => "path",
+        }
+    }
+}
+
 impl Source {
     /// The parsed shape.
     #[must_use]

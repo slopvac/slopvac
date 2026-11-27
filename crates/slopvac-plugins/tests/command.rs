@@ -13,6 +13,7 @@
 mod common;
 mod oci_server;
 mod revocations;
+mod signed_fixture;
 mod support;
 
 use std::collections::BTreeMap;
@@ -23,14 +24,16 @@ use std::path::{Path, PathBuf};
 use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
 use slopvac_plugins::extract::tree_hash;
-use slopvac_plugins::lock::{PackId, VersionReq, parse_version_req};
+use slopvac_plugins::lock::{LockedPack, PackId, VersionReq, parse_version_req};
 use slopvac_plugins::oci::{Anonymous, Client};
 use slopvac_plugins::pyenv::EnvStore;
 use slopvac_plugins::revoke::Revocations;
 use slopvac_plugins::sign::KeyPolicy;
 use slopvac_plugins::sync::{Network, PythonBuild};
 use slopvac_plugins::trust::{DeclSummary, TrustGate, TrustRecord, TrustStore, VerifiedPlugin};
-use slopvac_plugins::{Dirs, PluginLoader, PluginSpec, RunError, Runner, SpawnGate, command, run};
+use slopvac_plugins::{
+    Dirs, LoadError, PluginLoader, PluginSpec, RunError, Runner, SpawnGate, command, run,
+};
 
 const NOW: &str = "2026-11-22T00:00:00Z";
 const HASH: &str = "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
@@ -253,14 +256,15 @@ impl TreeLoader {
 }
 
 impl PluginLoader for TreeLoader {
-    fn load(&self, id: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
-        if id.as_str() != self.id {
-            return Err("no such plugin tree".to_owned());
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        if locked.id.as_str() != self.id {
+            return Err("no such plugin tree".to_owned().into());
         }
         let vp = VerifiedPlugin {
             name: self.id.clone(),
             version: Some("1.0.0".into()),
             source: "test".into(),
+            manifest: common::manifest_of(&self.root),
             root: self.root.clone(),
             tree: tree_hash(&self.root).unwrap(),
             manifest_digest: self.manifest_digest.clone(),
@@ -286,6 +290,12 @@ fn oci_entry(id: &str, kind: &str, version: &str, registry: &str, digest: &str) 
         "\n[[plugins]]\nid = \"{id}\"\nkind = \"{kind}\"\nversion = \"{version}\"\n\
          slopvac_api = 1\nsource = \"oci://{registry}/acme/{id}:{version}\"\ndigest = \"{digest}\"\n"
     )
+}
+
+/// A lock entry for the code plugin `fake` that comes from the project, so `plugins trust` has
+/// no cached signature to check for it.
+fn fake_code_entry() -> String {
+    code_path_entry("fake", "plugins/fake", OTHER_HASH)
 }
 
 /// A lock entry for a project directory.
@@ -441,7 +451,7 @@ fn status_flags_a_plugin_that_the_revocation_list_names() {
 #[test]
 fn status_says_a_code_plugin_is_not_trusted_until_trust_is_recorded() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let before = f.run(&["status"], false, with_loader(&f));
     assert_eq!(before.result.unwrap(), 2);
     assert_eq!(
@@ -508,6 +518,42 @@ fn sync_installs_the_lock_and_tells_a_missing_revocation_list() {
     );
     assert!(
         ran.out.contains("notice[revocation-list-missing]:"),
+        "{}",
+        ran.out
+    );
+}
+
+#[test]
+fn sync_reports_a_repaired_cache_file_by_plugin_and_without_a_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::new();
+    let archive = signed_fixture::targz(&[("rules.yml", b"a: b\n")]);
+    fs::create_dir_all(f.project().join("dist")).unwrap();
+    fs::write(f.project().join("dist/style.tar.gz"), &archive).unwrap();
+    let digest = slopvac_plugins::oci::Digest::of(&archive);
+    f.write_lock(&[path_entry(
+        "style",
+        "1.0.0",
+        "dist/style.tar.gz",
+        &digest.to_string(),
+    )]);
+    assert_eq!(f.run(&["sync"], false, |s| s).result.unwrap(), 0);
+    let blob = f.cache().join("blobs").join(digest.hex());
+    fs::set_permissions(&blob, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::write(&blob, b"swapped").unwrap();
+
+    let ran = f.run(&["sync"], false, |s| s);
+
+    assert_eq!(ran.result.unwrap(), 0);
+    assert!(
+        ran.out.contains(
+            "style: a cached file was not what it should be; it was removed and fetched again\n"
+        ),
+        "{}",
+        ran.out
+    );
+    assert!(
+        !ran.out.contains(f.base.path().to_str().unwrap()),
         "{}",
         ran.out
     );
@@ -715,20 +761,59 @@ fn update_offline_fails_with_the_update_error_as_its_cause() {
 #[test]
 fn trust_records_the_content_hash_and_says_trust_is_not_containment() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let ran = f.run(&["trust", "fake"], false, |s| {
         s.loader(TreeLoader::new(f.base.path(), "fake"))
     });
     assert_eq!(ran.result.unwrap(), 0);
     let records = TrustStore::open(f.state()).records().unwrap();
     assert_eq!(records.len(), 1);
+    // The recorded hash covers the program, arguments and key as well as the tree, so it has no
+    // independent value here. The record and the output must agree, and the record names the
+    // plugin and the locked digest.
+    assert_eq!(records[0].name, "fake");
+    assert_eq!(records[0].manifest_digest.as_deref(), Some(OTHER_HASH));
     assert_eq!(
         ran.out,
         format!(
             "trusted `fake` with content hash {}\n\
+             source: path plugins/fake; unsigned\n\
              Trust is not containment: a trusted plugin runs with your rights, and slopvac has no sandbox.\n",
             records[0].hash
         )
+    );
+}
+
+/// The recorded hash covers the tree: one changed byte, with the program, arguments, key and
+/// lock the same, records a different hash, and the output prints the new one.
+#[test]
+fn trust_of_a_tree_changed_by_one_byte_records_and_prints_a_different_hash() {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    let first = f.run(&["trust", "fake"], false, |s| {
+        s.loader(TreeLoader::new(f.base.path(), "fake"))
+    });
+    assert_eq!(first.result.unwrap(), 0);
+    let before = TrustStore::open(f.state()).records().unwrap();
+    assert_eq!(before.len(), 1);
+    let old = before[0].hash.clone();
+
+    let loader = TreeLoader::new(f.base.path(), "fake");
+    fs::write(loader.root.join("plugin.py"), "print('y')\n").unwrap();
+    let second = f.run(&["trust", "fake"], false, |s| s.loader(loader));
+
+    assert_eq!(second.result.unwrap(), 0);
+    let records = TrustStore::open(f.state()).records().unwrap();
+    let new = records
+        .iter()
+        .find(|r| r.name == "fake" && r.hash != old)
+        .unwrap_or_else(|| panic!("no new hash recorded: {records:?}"));
+    assert!(
+        second
+            .out
+            .starts_with(&format!("trusted `fake` with content hash {}\n", new.hash)),
+        "{}",
+        second.out
     );
 }
 
@@ -750,6 +835,8 @@ fn trust_of_a_data_plugin_exits_2_with_plugin_not_code_and_records_nothing() {
 #[test]
 fn trust_refuses_a_plugin_that_the_revocation_list_names() {
     let f = Fixture::new();
+    // An OCI entry with no signature: the revocation check must come before the signature
+    // check, or `trust` would report `sync-unsigned`.
     f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
     f.revoke(&[OTHER_HASH]);
     let err = f
@@ -891,6 +978,7 @@ mod python_env {
                 name: "py".into(),
                 version: Some("1.0.0".into()),
                 source: "test".into(),
+                manifest: common::manifest_of(&self.root),
                 root: self.root.clone(),
                 tree: tree_hash(&self.root).unwrap(),
                 manifest_digest: None,
@@ -911,7 +999,7 @@ mod python_env {
     }
 
     impl PluginLoader for PyLoader {
-        fn load(&self, _: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
+        fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
             Ok(self.parts())
         }
     }
@@ -944,6 +1032,41 @@ mod python_env {
             ..spec
         };
         gate.check(&spec).unwrap();
+    }
+
+    /// Hands out `py` with captured manifest bytes that are not a manifest, while the file on
+    /// disk is a valid Python manifest.
+    struct BadCapture {
+        root: PathBuf,
+    }
+
+    impl PluginLoader for BadCapture {
+        fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+            let (mut vp, spec) = PyLoader {
+                root: self.root.clone(),
+            }
+            .parts();
+            vp.manifest = b"runtime = [".to_vec();
+            Ok((vp, spec))
+        }
+    }
+
+    #[test]
+    fn trust_selects_the_runtime_from_the_manifest_the_loader_captured() {
+        let p = project();
+        p.f.run(&["sync"], false, |s| s.python(p.build()))
+            .result
+            .unwrap();
+        let root = p.f.project().join("plugins/py");
+        let err =
+            p.f.run(&["trust", "py"], false, |s| {
+                s.envs(&p.envs).loader(BadCapture { root })
+            })
+            .result
+            .unwrap_err();
+        assert_eq!(err.code(), "plugins-trust-inputs-failed");
+        assert_eq!(err.exit_code(), 2);
+        assert_eq!(TrustStore::open(p.f.state()).records().unwrap().len(), 0);
     }
 
     #[test]
@@ -982,8 +1105,8 @@ struct OutsideProgram {
 }
 
 impl PluginLoader for OutsideProgram {
-    fn load(&self, id: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
-        let (vp, mut spec) = self.inner.load(id)?;
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        let (vp, mut spec) = self.inner.load(locked)?;
         spec.program.clone_from(&self.program);
         Ok((vp, spec))
     }
@@ -1046,7 +1169,7 @@ fn a_damaged_revocation_cache_keeps_its_code_and_names_no_absolute_path() {
 #[test]
 fn a_refused_program_path_is_withheld_and_never_absolute() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let outside = f.base.path().join("elsewhere/prog");
     let loader = OutsideProgram {
         inner: TreeLoader::new(f.base.path(), "fake"),
@@ -1094,7 +1217,7 @@ fn an_output_failure_keeps_the_io_error_as_its_source() {
 #[test]
 fn trust_without_a_loader_says_so_in_registered_text() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let err = f.run(&["trust", "fake"], false, |s| s).result.unwrap_err();
     assert_eq!(
         err.to_string(),
@@ -1168,15 +1291,17 @@ fn a_failed_sync_keeps_no_absolute_path_anywhere_in_its_source_chain() {
 struct FailingLoader;
 
 impl PluginLoader for FailingLoader {
-    fn load(&self, _: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
-        Err("cannot read /home/someone/secret-dir/plugin.toml".to_owned())
+    fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        Err("cannot read /home/someone/secret-dir/plugin.toml"
+            .to_owned()
+            .into())
     }
 }
 
 #[test]
 fn loader_text_is_never_echoed_into_the_failure() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let err = f
         .run(&["trust", "fake"], false, |s| s.loader(FailingLoader))
         .result
@@ -1190,10 +1315,87 @@ fn loader_text_is_never_echoed_into_the_failure() {
         "cannot load `fake` to record trust: plugins-trust-inputs-failed: details are withheld because they can name paths outside the project"
     );
 }
+/// A loader whose refusal has a stable code.
+struct UnreadableCacheLoader;
+
+impl PluginLoader for UnreadableCacheLoader {
+    fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        Err(LoadError::StoreUnreadable {
+            id: "fake".parse().unwrap(),
+        })
+    }
+}
+
+/// A loader that refuses with a text that names an absolute path.
+struct PathNamingLoader;
+
+impl PluginLoader for PathNamingLoader {
+    fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        Err("cannot read /home/someone/secret-dir/blob"
+            .to_owned()
+            .into())
+    }
+}
+
+#[test]
+fn trust_shows_no_absolute_path_from_a_loader_refusal_in_its_text_or_chain() {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    let err = f
+        .run(&["trust", "fake"], false, |s| s.loader(PathNamingLoader))
+        .result
+        .unwrap_err();
+    let shown = format!("{}\n{err:?}", names_in_chain(&err));
+    assert!(!shown.contains("/home/someone"), "{shown}");
+    assert!(!shown.contains("secret-dir"), "{shown}");
+}
+
+/// A loader that names another plugin than the one that was loaded.
+struct OtherIdLoader;
+
+impl PluginLoader for OtherIdLoader {
+    fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        Err(LoadError::StoreUnreadable {
+            id: "other".parse().unwrap(),
+        })
+    }
+}
+
+#[test]
+fn trust_names_the_locked_plugin_and_never_the_id_a_loader_supplies() {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    let err = f
+        .run(&["trust", "fake"], false, |s| s.loader(OtherIdLoader))
+        .result
+        .unwrap_err();
+    let shown = format!("{}\n{err:?}", names_in_chain(&err));
+    assert!(!shown.contains("other"), "{shown}");
+    assert!(shown.contains("plugin `fake`"), "{shown}");
+}
+
+#[test]
+fn a_loader_refusal_with_a_code_is_reported_under_that_code() {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    let err = f
+        .run(&["trust", "fake"], false, |s| {
+            s.loader(UnreadableCacheLoader)
+        })
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugin-store-unreadable");
+    assert!(
+        err.to_string()
+            .contains("cannot read the cached files of plugin `fake`"),
+        "{err}"
+    );
+}
+
 #[test]
 fn status_names_the_code_beside_a_withheld_loader_failure() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let ran = f.run(&["status"], false, |s| s.loader(FailingLoader));
     assert!(
         ran.out.contains(
@@ -1210,7 +1412,7 @@ const STORE_WITHHELD: &str =
 #[test]
 fn trust_names_the_code_beside_a_withheld_damaged_store() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     fs::create_dir_all(f.state()).unwrap();
     fs::write(f.state().join("trust.json"), "not json").unwrap();
     let err = f
@@ -1224,7 +1426,7 @@ fn trust_names_the_code_beside_a_withheld_damaged_store() {
 #[test]
 fn status_names_the_code_beside_a_withheld_damaged_store() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     fs::create_dir_all(f.state()).unwrap();
     fs::write(f.state().join("trust.json"), "not json").unwrap();
     let ran = f.run(&["status"], false, with_loader(&f));
@@ -1239,7 +1441,7 @@ fn status_names_the_code_beside_a_withheld_damaged_store() {
 #[test]
 fn trust_tells_a_missing_revocation_list_and_still_records_trust_offline() {
     let f = Fixture::uncached();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let ran = f.run(&["trust", "fake"], false, with_loader(&f));
     assert_eq!(ran.result.unwrap(), 0);
     assert!(
@@ -1266,7 +1468,7 @@ fn trust_tells_a_stale_revocation_list_and_still_records_trust() {
     .unwrap()
     .refresh(&client())
     .unwrap();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     let ran = f.run(&["trust", "fake"], false, with_loader(&f));
     assert_eq!(ran.result.unwrap(), 0);
     assert!(
@@ -1294,7 +1496,7 @@ fn a_malformed_revocation_cache_shows_no_parser_text_in_the_chain() {
 #[test]
 fn a_malformed_trust_store_shows_no_parser_text_in_the_chain() {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     fs::create_dir_all(f.state()).unwrap();
     fs::write(
         f.state().join("trust.json"),
@@ -1326,7 +1528,7 @@ fn seen(ran: &Ran) -> String {
 
 fn code_fixture() -> Fixture {
     let f = Fixture::new();
-    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    f.write_lock(&[fake_code_entry()]);
     f
 }
 
@@ -1560,9 +1762,13 @@ mod native_archive {
     }
 
     fn artifact() -> Artifact {
+        artifact_of(&[("plugin", b"#!/bin/sh\n")])
+    }
+
+    fn artifact_of(files: &[(&str, &[u8])]) -> Artifact {
         let pair = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
         let public = PublicKey::from_base64(&pair.pk.to_base64()).unwrap();
-        let layer = archive(&[("plugin", b"#!/bin/sh\n")]);
+        let layer = archive(files);
         let mut manifest = Manifest {
             schema_version: 2,
             media_type: Some(MEDIA_MANIFEST.into()),
@@ -1635,6 +1841,87 @@ mod native_archive {
         })
     }
 
+    /// The lock text and the key policy for `artifact`, served by `server`.
+    fn signed_style(a: &Artifact, server: &Server) -> (String, KeyPolicy) {
+        let entry = format!(
+            "\n[[plugins]]\nid = \"style\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"oci://{}/acme/style:1.0.0\"\ndigest = \"{}\"\n\n\
+             [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{FLOOR}\"\n",
+            server.registry(),
+            a.digest,
+            a.key_id
+        );
+        let policy = KeyPolicy {
+            pinned: BTreeMap::from([("acme".to_owned(), vec![a.public.clone()])]),
+            ..KeyPolicy::default()
+        };
+        (entry, policy)
+    }
+
+    /// A manifest over 1 MiB in the archive is refused while it is extracted. The command
+    /// reports `sync-failed`, and no tree is installed.
+    #[test]
+    fn sync_of_an_archive_with_a_manifest_over_1_mib_exits_2_with_sync_failed() {
+        let f = Fixture::new();
+        let big = vec![b'#'; (1 << 20) + 1];
+        let a = artifact_of(&[("slopvac-plugin.toml", &big), ("plugin", b"#!/bin/sh\n")]);
+        let server = serve(&a);
+        let (entry, policy) = signed_style(&a, &server);
+        f.write_lock(&[entry]);
+
+        let err = f
+            .run(&["sync"], true, |s| s.policy(policy))
+            .result
+            .unwrap_err();
+
+        assert_eq!(err.code(), "sync-failed");
+        let trees = f.cache().join("trees");
+        // The staging directory stays, empty. No tree was published.
+        let installed: Vec<_> = fs::read_dir(&trees)
+            .map(|d| d.map(|e| e.unwrap().file_name()).collect())
+            .unwrap_or_default();
+        assert!(
+            installed.iter().all(|n| n.to_str() == Some(".staging")),
+            "{installed:?}"
+        );
+        assert_eq!(
+            fs::read_dir(trees.join(".staging")).map_or(0, Iterator::count),
+            0
+        );
+    }
+
+    /// A manifest that grows past 1 MiB after sync stops `plugins status`, which reports
+    /// `sync-failed`.
+    #[test]
+    fn status_of_an_installed_tree_with_a_manifest_over_1_mib_exits_2_with_sync_failed() {
+        let f = Fixture::new();
+        let a = artifact_of(&[
+            ("slopvac-plugin.toml", b"# small\n"),
+            ("plugin", b"#!/bin/sh\n"),
+        ]);
+        let server = serve(&a);
+        let (entry, policy) = signed_style(&a, &server);
+        f.write_lock(&[entry]);
+        let synced = f.run(&["sync"], true, |s| s.policy(policy.clone()));
+        assert_eq!(synced.result.unwrap(), 0, "{}", synced.out);
+        let tree = fs::read_dir(f.cache().join("trees"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.join("slopvac-plugin.toml").exists())
+            .expect("an installed tree holds the manifest");
+        let file = tree.join("slopvac-plugin.toml");
+        fs::set_permissions(&tree, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&file, vec![b'#'; (1 << 20) + 1]).unwrap();
+
+        let err = f
+            .run(&["status"], false, |s| s.policy(policy))
+            .result
+            .unwrap_err();
+
+        assert_eq!(err.code(), "sync-failed");
+    }
+
     #[test]
     fn sync_installs_a_signed_native_archive_with_its_program_executable() {
         let f = Fixture::new();
@@ -1676,4 +1963,183 @@ mod native_archive {
             .mode();
         assert_eq!(mode & 0o111, 0o111, "mode {mode:o}");
     }
+}
+
+// ---- round 5: one lock snapshot, and where the trusted bytes came from ------------------
+
+const NOT_BEFORE: &str = "2026-11-01T00:00:00Z";
+const GIT_PIN: &str = "0123456789abcdef0123456789abcdef01234567";
+
+/// The line of `plugins trust` output that says where the trusted bytes came from.
+fn provenance_line(out: &str) -> &str {
+    out.lines()
+        .find(|l| l.starts_with("source: "))
+        .unwrap_or_else(|| panic!("no provenance line in:\n{out}"))
+}
+
+/// A lock entry for the code plugin `fake` from the first-party namespace, signed by `p`.
+fn signed_oci_entry(p: &signed_fixture::Published) -> String {
+    format!(
+        "\n[[plugins]]\nid = \"fake\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"oci://r.example/slopvac/fake:1.0.0\"\ndigest = \"{}\"\n\n\
+         [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{NOT_BEFORE}\"\n",
+        p.digest, p.key_id
+    )
+}
+
+#[test]
+fn trust_of_a_signed_oci_plugin_prints_its_source_kind_and_the_verified_key_id() {
+    let f = Fixture::new();
+    let key = signed_fixture::Key::primary();
+    let p = signed_fixture::publish(
+        &key,
+        "slopvac",
+        "fake",
+        "1.0.0",
+        NOT_BEFORE,
+        &[("slopvac-plugin.toml", b"x")],
+    );
+    p.cache_into(&f.cache());
+    f.write_lock(&[signed_oci_entry(&p)]);
+    let policy = KeyPolicy {
+        first_party: vec![key.public()],
+        ..KeyPolicy::default()
+    };
+    let ran = f.run(&["trust", "fake"], false, |s| {
+        s.loader(TreeLoader::new(f.base.path(), "fake"))
+            .policy(policy)
+    });
+    assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
+    let line = provenance_line(&ran.out);
+    assert!(line.starts_with("source: oci "), "{line}");
+    assert!(
+        line.ends_with(&format!("; signed by {}", p.key_id)),
+        "{line}"
+    );
+}
+
+#[rstest::rstest]
+#[case::path("path", "plugins/fake".to_owned())]
+#[case::git("git", format!("git+https://example.invalid/acme/fake.git@{GIT_PIN}"))]
+fn trust_of_an_unsigned_path_or_git_plugin_succeeds_and_says_it_is_unsigned(
+    #[case] kind: &str,
+    #[case] source: String,
+) {
+    let f = Fixture::new();
+    f.write_lock(&[code_path_entry("fake", &source, OTHER_HASH)]);
+    let ran = f.run(&["trust", "fake"], false, with_loader(&f));
+    assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
+    let line = provenance_line(&ran.out);
+    assert!(line.starts_with(&format!("source: {kind} ")), "{line}");
+    assert!(line.ends_with("; unsigned"), "{line}");
+    assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 1);
+}
+
+#[test]
+fn trust_of_an_unsigned_oci_entry_reports_sync_unsigned_and_records_nothing() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    let ran = f.run(&["trust", "fake"], false, with_loader(&f));
+    assert_eq!(ran.result.unwrap_err().code(), "sync-unsigned");
+    assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
+}
+
+/// A loader that records the entry it was given.
+struct RecordingLoader {
+    inner: TreeLoader,
+    seen: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+}
+
+impl PluginLoader for RecordingLoader {
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        self.seen.borrow_mut().push(locked.digest.to_string());
+        self.inner.load(locked)
+    }
+}
+
+/// `trust` reads the lock once. After each read the lock file changes, so a second read, for
+/// any reason and at any point before the load, would see another entry.
+#[test]
+fn trust_reads_the_lock_once_and_everything_uses_that_read() {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    let reads = std::rc::Rc::new(std::cell::Cell::new(0_u32));
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let lock = f.project().join(".slopvac/plugins.lock");
+    let swapped = code_path_entry(
+        "fake",
+        &format!("git+https://example.invalid/acme/fake.git@{GIT_PIN}"),
+        HASH,
+    );
+    let loader = RecordingLoader {
+        inner: TreeLoader::new(f.base.path(), "fake"),
+        seen: std::rc::Rc::clone(&seen),
+    };
+    let counted = std::rc::Rc::clone(&reads);
+    // The reader itself reports every read, so a read that does not go through `Runner` is
+    // counted too.
+    let _observing = slopvac_plugins::lock::observe_lock_reads(
+        move || counted.set(counted.get() + 1),
+        move || fs::write(&lock, format!("schema_version = 3\n{swapped}")).unwrap(),
+    );
+    let ran = f.run(&["trust", "fake"], false, |s| s.loader(loader));
+    assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
+    assert_eq!(reads.get(), 1, "the lock was read more than once");
+    assert_eq!(*seen.borrow(), [OTHER_HASH]);
+    assert!(
+        provenance_line(&ran.out).starts_with("source: path plugins/fake;"),
+        "{}",
+        ran.out
+    );
+}
+
+/// A read that is refused still counts: the observer sees every read as it starts.
+#[test]
+fn a_refused_lock_read_is_counted_as_a_read() {
+    let f = Fixture::new();
+    fs::create_dir_all(f.project().join(".slopvac/plugins.lock")).unwrap();
+    let reads = std::rc::Rc::new(std::cell::Cell::new(0_u32));
+    let counted = std::rc::Rc::clone(&reads);
+    let _observing =
+        slopvac_plugins::lock::observe_lock_reads(move || counted.set(counted.get() + 1), || {});
+
+    let err = f
+        .run(&["trust", "fake"], false, with_loader(&f))
+        .result
+        .unwrap_err();
+
+    assert_eq!(err.code(), "plugins-lock-unreadable");
+    assert_eq!(reads.get(), 1);
+}
+
+/// An existing lock that cannot be read is not an empty lock. A directory in its place cannot
+/// be read for any user, so no mode bits are involved.
+#[test]
+fn trust_with_an_unreadable_lock_exits_2_with_its_code_and_records_nothing() {
+    let f = Fixture::new();
+    fs::create_dir_all(f.project().join(".slopvac/plugins.lock")).unwrap();
+    let err = f
+        .run(&["trust", "fake"], false, with_loader(&f))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugins-lock-unreadable");
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
+}
+
+#[test]
+fn trust_with_an_invalid_lock_exits_2_with_its_code_and_records_nothing() {
+    let f = Fixture::new();
+    fs::write(
+        f.project().join(".slopvac/plugins.lock"),
+        "schema_version = [\n",
+    )
+    .unwrap();
+    let err = f
+        .run(&["trust", "fake"], false, with_loader(&f))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugins-lock-invalid");
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
 }

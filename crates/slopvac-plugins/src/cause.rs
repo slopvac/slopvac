@@ -12,7 +12,7 @@ use slopvac_messages::{Catalog, Entry, render};
 
 use crate::lock::LockDiff;
 use crate::messages::cli::Reported;
-use crate::messages::sync::{cache_tampered, config_drift, update_busy};
+use crate::messages::sync::{cache_tampered, cache_unreadable, config_drift, update_busy};
 use crate::revoke::RevocationError;
 use crate::sync::SyncError;
 use crate::trust::TrustError;
@@ -89,6 +89,9 @@ pub(crate) fn sync(root: &Path, e: &SyncError) -> Reported {
     let text = match e {
         SyncError::Revocation(inner) => return revocation(inner),
         SyncError::CacheTampered { id, path } => cache_tampered(id, Path::new(&under(path, root))),
+        SyncError::CacheUnreadable { id, path, cause } => {
+            cache_unreadable(id, Path::new(&under(path, root)), cause)
+        }
         SyncError::OfflinePackMissing { .. }
         | SyncError::Unsigned { .. }
         | SyncError::DigestMismatch { .. }
@@ -143,6 +146,29 @@ mod tests {
         assert_eq!(
             shown,
             "sync-failed: details are withheld because they can name paths outside the project"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_cached_file_shows_its_path_as_external_and_never_in_full() {
+        let e = SyncError::CacheUnreadable {
+            id: "demo".parse().unwrap(),
+            path: std::path::PathBuf::from("/home/someone/cache/blobs/ab12"),
+            cause: crate::sync::CacheCause::Io {
+                kind: std::io::ErrorKind::PermissionDenied,
+                os_code: None,
+            },
+        };
+
+        let reported = sync(Path::new("/project"), &e);
+
+        assert_eq!(
+            slopvac_messages::Catalog::code(&reported),
+            "plugin-store-unreadable"
+        );
+        assert_eq!(
+            reported.to_string(),
+            "plugin `demo`: cannot read the cached file <external>/ab12: permission denied"
         );
     }
 
