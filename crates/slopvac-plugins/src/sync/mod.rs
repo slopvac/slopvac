@@ -1235,7 +1235,7 @@ pub fn check_lock(lock: &Lockfile, resolved: &[ResolvedPack]) -> Result<(), Sync
     if delta.is_empty() {
         Ok(())
     } else {
-        Err(SyncError::LockMismatch(delta))
+        Err(SyncError::LockMismatch(Box::new(delta)))
     }
 }
 

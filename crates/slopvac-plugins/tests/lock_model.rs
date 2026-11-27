@@ -745,7 +745,7 @@ fn source_drift_never_repeats_the_configured_source() {
         drift.to_string(),
         "source: x is configured with a different source from its lock entry\n"
     );
-    let err = slopvac_plugins::sync::SyncError::LockMismatch(drift);
+    let err = slopvac_plugins::sync::SyncError::LockMismatch(Box::new(drift));
     let mut shown = vec![err.to_string(), format!("{err:?}")];
     let mut cause = std::error::Error::source(&err);
     while let Some(e) = cause {

@@ -22,7 +22,7 @@ use crate::update::UpdateError;
 /// `lock-mismatch` code and says that the config was compared, not the resolver output.
 pub(crate) fn config_lock_drift(drift: LockDiff) -> Reported {
     let text = config_drift(&drift);
-    Reported::new(SyncError::LockMismatch(drift).code(), text)
+    Reported::new(SyncError::LockMismatch(Box::new(drift)).code(), text)
 }
 
 /// The one sentence that stands in for withheld detail. It is private, so the only way to render
