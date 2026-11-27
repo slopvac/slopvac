@@ -138,6 +138,7 @@ _NO_RUST_GROUPS = {
         ("test.yml", "quick-lint"),
         ("release.yml", "route"),
         ("release.yml", "publish-legacy-release"),
+        ("oci-live.yml", "cleanup"),
     ],
     "runs only third-party actions or linters on files": [
         ("lint.yml", "markdownlint"),
