@@ -179,8 +179,10 @@
             ]
           },
           "then": {
-            "properties": {
-              "original": false
+            "not": {
+              "required": [
+                "original"
+              ]
             }
           }
         }
@@ -262,8 +264,30 @@
         ]
       },
       "then": {
+        "allOf": [
+          {
+            "not": {
+              "required": [
+                "author_model"
+              ]
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "reviewer_model"
+              ]
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "report"
+              ]
+            }
+          }
+        ],
         "properties": {
-          "author_model": false,
           "notices": {
             "maxItems": 0
           },
@@ -277,8 +301,6 @@
               "kind"
             ]
           },
-          "report": false,
-          "reviewer_model": false,
           "uses_provider": {
             "const": false
           }

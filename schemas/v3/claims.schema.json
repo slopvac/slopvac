@@ -37,6 +37,22 @@
             ]
           },
           "then": {
+            "allOf": [
+              {
+                "not": {
+                  "required": [
+                    "original"
+                  ]
+                }
+              },
+              {
+                "not": {
+                  "required": [
+                    "original_line"
+                  ]
+                }
+              }
+            ],
             "properties": {
               "literals_removed": {
                 "maxItems": 0
@@ -47,8 +63,6 @@
               "negations_original": {
                 "const": 0
               },
-              "original": false,
-              "original_line": false,
               "similarity": {
                 "const": 0
               }

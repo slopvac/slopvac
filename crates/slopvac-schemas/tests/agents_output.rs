@@ -161,11 +161,15 @@ fn assert_valid(validator: &jsonschema::Validator, instance: &Value) {
     assert!(errors.is_empty(), "{errors:#?}");
 }
 
-/// Set the value at a JSON pointer. A pointer that names nothing leaves the document as it was,
-/// which the case then reports as a missing error.
+/// Set the value at a JSON pointer: replace it, or add the member when the parent object lacks it.
+/// A pointer into nothing leaves the document as it was, which the case then reports.
 fn set(document: &mut Value, pointer: &str, value: Value) {
     if let Some(slot) = document.pointer_mut(pointer) {
         *slot = value;
+    } else if let Some((parent, key)) = pointer.rsplit_once('/')
+        && let Some(object) = document.pointer_mut(parent).and_then(Value::as_object_mut)
+    {
+        object.insert(key.to_owned(), value);
     }
 }
 
