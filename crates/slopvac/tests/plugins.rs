@@ -567,45 +567,58 @@ fn move_tree_to(
     fs::rename(&done.root, trees.join(format!("tree-{}", name.hex()))).unwrap();
 }
 
-/// The debug event of a refused load. It carries exactly two fields, the stable `code` of the
-/// refusal and the plugin id `fmt`. Any other field, such as a path or a refusal sentence, fails.
+/// The debug event of a refused load, after its timestamp and level: the fixed message and
+/// exactly two fields, the stable `code` of the refusal and the plugin id `fmt`, once each. Any
+/// other text, such as a path or a refusal sentence, fails.
 fn assert_debug_line(stderr: &str, code: &str) {
-    let line = stderr.lines().find(|l| l.contains("plugin loader refused"));
-    assert!(
-        line.is_some(),
-        "no `plugin loader refused` event:\n{stderr}"
-    );
-    let fields: std::collections::BTreeMap<&str, &str> = line
-        .unwrap()
-        .split_whitespace()
-        .filter_map(|word| word.split_once('='))
-        .map(|(key, value)| (key, value.trim_matches('"')))
+    let events: Vec<&str> = stderr
+        .lines()
+        .filter(|l| l.contains("plugin loader refused"))
         .collect();
+    assert_eq!(events.len(), 1, "one `plugin loader refused` event:\n{stderr}");
+    let (timestamp, event) = events[0]
+        .split_once(" DEBUG ")
+        .unwrap_or_else(|| panic!("no DEBUG level: {:?}", events[0]));
+    assert!(!timestamp.contains(' '), "{:?}", events[0]);
     assert_eq!(
-        fields,
-        std::collections::BTreeMap::from([("code", code), ("plugin", "fmt")]),
-        "{line:?}"
+        event.trim_start(),
+        format!("plugin loader refused code=\"{code}\" plugin=fmt"),
+        "{:?}",
+        events[0]
     );
 }
 
-/// Every file under `dir`, by relative path, with its bytes.
-fn snapshot(dir: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+/// One entry of a tree, read without following links.
+#[derive(Debug, PartialEq, Eq)]
+enum Entry {
+    File(Vec<u8>),
+    Dir,
+    Link(std::path::PathBuf),
+}
+
+/// Every entry under `dir`, by relative path. A link is recorded with its target and never
+/// followed, so swapping a file for a link to the same bytes shows.
+fn snapshot(dir: &std::path::Path) -> std::collections::BTreeMap<String, Entry> {
     fn walk(
         base: &std::path::Path,
         dir: &std::path::Path,
-        out: &mut std::collections::BTreeMap<String, Vec<u8>>,
+        out: &mut std::collections::BTreeMap<String, Entry>,
     ) {
         for entry in fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
-            if path.is_dir() {
+            let rel = path
+                .strip_prefix(base)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let kind = fs::symlink_metadata(&path).unwrap().file_type();
+            if kind.is_symlink() {
+                out.insert(rel, Entry::Link(fs::read_link(&path).unwrap()));
+            } else if kind.is_dir() {
+                out.insert(rel, Entry::Dir);
                 walk(base, &path, out);
             } else {
-                let rel = path
-                    .strip_prefix(base)
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned();
-                out.insert(rel, fs::read(&path).unwrap());
+                out.insert(rel, Entry::File(fs::read(&path).unwrap()));
             }
         }
     }

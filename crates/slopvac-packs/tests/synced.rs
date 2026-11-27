@@ -352,19 +352,31 @@ fn a_tampered_pack_tree_fails_the_load_with_a_typed_error() {
     assert_eq!(tree_contents(&tree), before, "a load changed the tree");
 }
 
-/// Every entry under `dir` by relative path: a file with its bytes, a directory with `None`.
-fn tree_contents(dir: &Path) -> std::collections::BTreeMap<PathBuf, Option<Vec<u8>>> {
+/// One entry of a tree, read without following links.
+#[derive(Debug, PartialEq, Eq)]
+enum Entry {
+    File(Vec<u8>),
+    Dir,
+    Link(PathBuf),
+}
+
+/// Every entry under `dir` by relative path. A link is recorded with its target and never
+/// followed, so swapping a file for a link to the same bytes shows.
+fn tree_contents(dir: &Path) -> std::collections::BTreeMap<PathBuf, Entry> {
     let mut out = std::collections::BTreeMap::new();
     let mut pending = vec![dir.to_path_buf()];
     while let Some(current) = pending.pop() {
         for entry in fs::read_dir(&current).unwrap() {
             let path = entry.unwrap().path();
             let rel = path.strip_prefix(dir).unwrap().to_path_buf();
-            if fs::symlink_metadata(&path).unwrap().is_dir() {
-                out.insert(rel, None);
+            let kind = fs::symlink_metadata(&path).unwrap().file_type();
+            if kind.is_symlink() {
+                out.insert(rel, Entry::Link(fs::read_link(&path).unwrap()));
+            } else if kind.is_dir() {
+                out.insert(rel, Entry::Dir);
                 pending.push(path);
             } else {
-                out.insert(rel, Some(fs::read(&path).unwrap()));
+                out.insert(rel, Entry::File(fs::read(&path).unwrap()));
             }
         }
     }

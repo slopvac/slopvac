@@ -2883,7 +2883,14 @@ mod cache_reads {
             .sync(&lock)
             .unwrap_err();
 
-        let data = env.data.path().to_str().unwrap().to_owned();
+        // No rendering of the chain holds an absolute path: not the data directory, not the
+        // project directory and not the temporary-directory root that both sit under.
+        let temp = std::env::temp_dir();
+        let mut roots = Vec::new();
+        for dir in [env.data.path(), env.project.path(), temp.as_path()] {
+            roots.push(dir.to_str().unwrap().to_owned());
+            roots.push(dir.canonicalize().unwrap().to_str().unwrap().to_owned());
+        }
         let mut shown = vec![err.to_string(), format!("{err:?}")];
         let mut source = std::error::Error::source(&err);
         while let Some(e) = source {
@@ -2891,10 +2898,20 @@ mod cache_reads {
             shown.push(format!("{e:?}"));
             source = e.source();
         }
-        for text in shown {
-            assert!(!text.contains(&data), "{text}");
+        for text in &shown {
+            for root in &roots {
+                assert!(!text.contains(root.as_str()), "{root} in {text}");
+            }
         }
         assert!(matches!(&err, SyncError::CacheUnreadable { .. }), "{err:?}");
+        // The staged copy has a random name, so the text is pinned around it: the plugin, the
+        // redacted file and the cause.
+        let text = err.to_string();
+        let name = text
+            .strip_prefix("plugin `a`: cannot read the cached file <external>/")
+            .and_then(|rest| rest.strip_suffix(": seek on unseekable file"))
+            .unwrap_or_else(|| panic!("{text}"));
+        assert!(!name.is_empty() && !name.contains('/'), "{text}");
         let cause = std::error::Error::source(&err).and_then(|e| e.downcast_ref::<CacheCause>());
         assert_eq!(
             cause,

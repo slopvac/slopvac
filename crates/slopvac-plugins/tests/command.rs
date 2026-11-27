@@ -784,6 +784,39 @@ fn trust_records_the_content_hash_and_says_trust_is_not_containment() {
     );
 }
 
+/// The recorded hash covers the tree: one changed byte, with the program, arguments, key and
+/// lock the same, records a different hash, and the output prints the new one.
+#[test]
+fn trust_of_a_tree_changed_by_one_byte_records_and_prints_a_different_hash() {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    let first = f.run(&["trust", "fake"], false, |s| {
+        s.loader(TreeLoader::new(f.base.path(), "fake"))
+    });
+    assert_eq!(first.result.unwrap(), 0);
+    let before = TrustStore::open(f.state()).records().unwrap();
+    assert_eq!(before.len(), 1);
+    let old = before[0].hash.clone();
+
+    let loader = TreeLoader::new(f.base.path(), "fake");
+    fs::write(loader.root.join("plugin.py"), "print('y')\n").unwrap();
+    let second = f.run(&["trust", "fake"], false, |s| s.loader(loader));
+
+    assert_eq!(second.result.unwrap(), 0);
+    let records = TrustStore::open(f.state()).records().unwrap();
+    let new = records
+        .iter()
+        .find(|r| r.name == "fake" && r.hash != old)
+        .unwrap_or_else(|| panic!("no new hash recorded: {records:?}"));
+    assert!(
+        second
+            .out
+            .starts_with(&format!("trusted `fake` with content hash {}\n", new.hash)),
+        "{}",
+        second.out
+    );
+}
+
 #[test]
 fn trust_of_a_data_plugin_exits_2_with_plugin_not_code_and_records_nothing() {
     let f = Fixture::new();
