@@ -330,12 +330,12 @@ fn claims_cases() -> Vec<Case> {
         c(
             "claims: an added claim with an original",
             |d| set(d, "/claims/2/original", json!("A sentence.")),
-            &[("falseSchema", "/claims/2/original")],
+            &[("not", "/claims/2")],
         ),
         c(
             "claims: an added claim with an original line",
             |d| set(d, "/claims/2/original_line", json!(3)),
-            &[("falseSchema", "/claims/2/original_line")],
+            &[("not", "/claims/2")],
         ),
         c(
             "claims: an added claim with a similarity",
@@ -494,12 +494,12 @@ fn update_cases() -> Vec<Case> {
         c(
             "plan: an added item with an original",
             |d| set(d, "/payload/items/2/original", json!("x")),
-            &[("falseSchema", "/payload/items/2/original")],
+            &[("not", "/payload/items/2")],
         ),
         c(
             "plan: a dropped item with an original",
             |d| set(d, "/payload/items/3/original", json!("x")),
-            &[("falseSchema", "/payload/items/3/original")],
+            &[("not", "/payload/items/3")],
         ),
         c(
             "plan: checked models without an author model",
@@ -585,12 +585,12 @@ fn mechanical_cases() -> Vec<Case> {
         c(
             "plan: a mechanical review with an author model",
             |d| set(d, "/author_model", json!("gpt-5")),
-            &[("falseSchema", "/author_model")],
+            &[("not", "")],
         ),
         c(
             "plan: a mechanical review with a reviewer model",
             |d| set(d, "/reviewer_model", json!("gpt-5")),
-            &[("falseSchema", "/reviewer_model")],
+            &[("not", "")],
         ),
         c(
             "plan: a mechanical review that compared models",
@@ -621,7 +621,7 @@ fn mechanical_cases() -> Vec<Case> {
         c(
             "plan: a mechanical review with a report",
             |d| set(d, "/report", json!("r")),
-            &[("falseSchema", "/report")],
+            &[("not", "")],
         ),
         c(
             "plan: a mechanical review with the passages payload",

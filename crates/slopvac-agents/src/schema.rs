@@ -13,6 +13,16 @@ fn is(key: &str, value: &Value) -> Value {
     json!({"properties": {key: {"const": value}}, "required": [key]})
 }
 
+/// One `not required` condition per member that must be absent. A `false` property schema says the
+/// same, but validators disagree on how they report it.
+fn absent(keys: &[&str]) -> Value {
+    Value::Array(
+        keys.iter()
+            .map(|key| json!({"not": {"required": [key]}}))
+            .collect(),
+    )
+}
+
 /// Append conditions to the schema's `allOf` list.
 fn all_of(schema: &mut Schema, conditions: Vec<Value>) {
     let object: &mut Map<String, Value> = schema.ensure_object();
@@ -39,9 +49,9 @@ pub(crate) fn claim(schema: &mut Schema) {
             ),
             if_then(
                 &is("change", &json!("added")),
-                &json!({"properties": {
-                    "original": false,
-                    "original_line": false,
+                &json!({
+                    "allOf": absent(&["original", "original_line"]),
+                    "properties": {
                     "similarity": {"const": 0},
                     "literals_removed": {"maxItems": 0},
                     "negations_original": {"const": 0},
@@ -85,7 +95,7 @@ pub(crate) fn payload_item(schema: &mut Schema) {
                     "properties": {"role": {"enum": ["added", "dropped", "original_document", "revised_document"]}},
                     "required": ["role"],
                 }),
-                &json!({"properties": {"original": false}}),
+                &json!({"not": {"required": ["original"]}}),
             ),
         ],
     );
@@ -133,11 +143,8 @@ pub(crate) fn plan(schema: &mut Schema) {
                 &json!({"properties": {
                     "payload": {"properties": {"kind": {"const": "none"}}, "required": ["kind"]},
                     "uses_provider": {"const": false},
-                    "author_model": false,
-                    "reviewer_model": false,
                     "notices": {"maxItems": 0},
-                    "report": false,
-                }}),
+                }, "allOf": absent(&["author_model", "reviewer_model", "report"])}),
             ),
             if_then(
                 &is("review_type", &json!("update")),
