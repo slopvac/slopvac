@@ -94,6 +94,8 @@ impl World {
         let script = plugin.join("bin/provider");
         fs::write(&script, format!("#!{}\n{FAKE}", python().display())).unwrap();
         fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        // A plugin tree lists every executable file in its executable list.
+        fs::write(plugin.join(".slopvac-exec"), "bin/provider\n").unwrap();
         let digest = slopvac_plugins::extract::tree_hash(&plugin).unwrap();
         fs::write(
             project.join(".slopvac/plugins.lock"),
@@ -327,6 +329,20 @@ enum Setup {
     config("provider = \"provider\"\n"),
     Setup::Trusted,
     &[][..],
+    Some("review-model-missing")
+)]
+#[case::blank_reviewer_model(
+    REWRITE,
+    config("provider = \"provider\"\nmodel = \"  \"\n"),
+    Setup::Trusted,
+    &[][..],
+    Some("review-model-missing")
+)]
+#[case::blank_reviewer_model_flag(
+    REWRITE,
+    config("provider = \"provider\"\n"),
+    Setup::Trusted,
+    &["--reviewer-model", " "][..],
     Some("review-model-missing")
 )]
 #[case::dry_run_without_a_reviewer_model(
