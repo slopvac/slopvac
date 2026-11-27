@@ -372,6 +372,22 @@ fn a_link_planted_in_an_installed_tree_is_a_store_failure_and_not_tampering() {
     assert_eq!(err.code(), Some("plugin-store-unreadable"));
 }
 
+/// A tree over the cap is refused before any file is parsed, and the message names the tree.
+#[test]
+fn a_data_plugin_tree_over_32_mib_says_the_installed_tree_is_too_large() {
+    let mut w = World::new();
+    let tree = w.install(&Spec::new("acme"));
+    fs::write(tree.join("big.bin"), vec![0_u8; (32 << 20) + 1]).unwrap();
+
+    let err = w.load(&["acme"]).unwrap_err();
+
+    assert_eq!(err.code(), Some("plugin-too-large"));
+    assert_eq!(
+        err.to_string(),
+        "the installed tree of plugin `acme` is over the 33554432 byte limit for a load"
+    );
+}
+
 #[test]
 fn a_swapped_cached_archive_is_tampering_and_a_load_leaves_it_in_place() {
     let mut w = World::new();

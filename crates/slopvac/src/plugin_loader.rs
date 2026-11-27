@@ -360,6 +360,27 @@ mod tests {
         );
     }
 
+    /// The cap that stops a code plugin is the one on its manifest, so the message names the
+    /// manifest and not the tree.
+    #[test]
+    fn a_code_plugin_manifest_over_1_mib_says_the_manifest_is_too_large() {
+        let world = World::new();
+        world.path_plugin();
+        fs::write(
+            world.project().join("plugins/fmt/slopvac-plugin.toml"),
+            vec![b'#'; (1 << 20) + 1],
+        )
+        .unwrap();
+
+        let refusal = world.loader().try_load(&world.fmt()).unwrap_err();
+
+        assert_eq!(refusal.code(), "plugin-too-large");
+        assert_eq!(
+            refusal.to_string(),
+            "the manifest `slopvac-plugin.toml` of plugin `fmt` is over the 1048576 byte limit for a load"
+        );
+    }
+
     /// A failed read is a failure of the store, not evidence of tampering.
     #[test]
     fn a_file_that_cannot_be_read_is_a_store_failure_and_not_tampering() {
