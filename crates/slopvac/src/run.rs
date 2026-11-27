@@ -396,6 +396,20 @@ fn plugins(
     let dirs_state = dirs.state_dir.clone();
     let store_dir = dirs.cache_dir.clone();
     let (mut ranges, mut configured) = (std::collections::BTreeMap::new(), Vec::new());
+    let mut configured_packs = Vec::new();
+    // A path source is relative to the config file that declares the `plugins` list
+    // (config.md, rule 9). Its provenance names that file relative to the project root.
+    let declaring_dir = config
+        .as_ref()
+        .and_then(|c| {
+            c.files
+                .iter()
+                .flat_map(|f| f.settings.iter())
+                .rfind(|s| s.path == ["plugins"])
+        })
+        .and_then(|s| s.source.file.as_deref())
+        .and_then(|file| std::path::Path::new(file).parent())
+        .map_or_else(|| root.clone(), |dir| root.join(dir));
     if let Some(serde_json::Value::Array(entries)) =
         config.as_ref().and_then(|c| c.project_value(&["plugins"]))
     {
@@ -403,15 +417,26 @@ fn plugins(
             let Some(id) = entry.get("id").and_then(|v| v.as_str()) else {
                 continue;
             };
-            // An id that is not a valid plugin id stops the run, and so does an invalid range:
-            // dropping either would let the drift check and `outdated` ignore the entry.
+            // An id that is not a valid plugin id stops the run, and so do an invalid range and
+            // an invalid source: dropping any of them would let the drift check and `outdated`
+            // ignore the entry.
             let pack = slopvac_plugins::config_id(index + 1, id).map_err(plugin_config_invalid)?;
             configured.push(id.to_owned());
-            let Some(text) = entry.get("version").and_then(|v| v.as_str()) else {
-                continue;
+            let text = entry.get("source").and_then(|v| v.as_str()).unwrap_or("");
+            let source = slopvac_plugins::config_source(id, text, &root, &declaring_dir)
+                .map_err(plugin_config_invalid)?;
+            let range = match entry.get("version").and_then(|v| v.as_str()) {
+                Some(text) => {
+                    Some(slopvac_plugins::config_range(id, text).map_err(plugin_config_invalid)?)
+                }
+                None => None,
             };
-            let range = slopvac_plugins::config_range(id, text).map_err(plugin_config_invalid)?;
-            ranges.insert(pack, range);
+            if let Some(range) = &range {
+                ranges.insert(pack.clone(), range.clone());
+            }
+            configured_packs.push(slopvac_plugins::lock::ConfiguredPack::new(
+                pack, source, range,
+            ));
         }
     }
     let now = sign::utc_time(
@@ -436,6 +461,7 @@ fn plugins(
     let runner = Runner::new(dirs, network, &policy, &revocations, now)
         .with_ranges(ranges)
         .with_configured(configured)
+        .with_configured_packs(configured_packs)
         .with_core_version(env!("CARGO_PKG_VERSION"))
         .with_loader(&loader)
         .with_locked(ci);

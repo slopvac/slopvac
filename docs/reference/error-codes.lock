@@ -758,6 +758,7 @@ plugins-change-unchanged text
 plugins-command-path text
 plugins-config-id-invalid text
 plugins-config-range-invalid text
+plugins-config-source-invalid text
 plugins-detail-withheld text
 plugins-extract-capture-alloc text
 plugins-extract-capture-limit text
@@ -1019,7 +1020,9 @@ plugins-lock-diagnostic-at text
 plugins-lock-diagnostic-whole text
 plugins-lock-diff-added text
 plugins-lock-diff-changed text
+plugins-lock-diff-config-source text
 plugins-lock-diff-digest text
+plugins-lock-diff-out-of-range text
 plugins-lock-diff-removed text
 plugins-lock-diff-source text
 plugins-lock-diff-unlocked text

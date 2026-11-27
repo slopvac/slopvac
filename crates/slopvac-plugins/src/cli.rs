@@ -14,8 +14,9 @@ use slopvac_update::messages::UpdateMessage;
 use crate::PluginSpec;
 use crate::cause::{self, withheld};
 use crate::lock::{
-    LockReadError, LockedPack, Lockfile, PackId, PackKind, SourceKind, VersionReq, config_drift,
-    outdated as lock_outdated, read_project_lock,
+    ConfiguredPack, ConfiguredSource, LockReadError, LockedPack, Lockfile, PackId, PackKind,
+    SourceKind, VersionReq, config_drift, entry_drift, outdated as lock_outdated,
+    read_project_lock,
 };
 use crate::messages::cli::{CliText, Redacted, Reported, RunError};
 use crate::oci::Digest;
@@ -45,6 +46,21 @@ pub fn config_id(position: usize, text: &str) -> Result<PackId, String> {
 pub fn config_range(id: &str, text: &str) -> Result<VersionReq, String> {
     crate::lock::parse_version_req(text)
         .map_err(|_| render(&CliText::ConfigRangeInvalid { id: line(id) }))
+}
+
+/// Parse the source that the config sets for plugin `id`. `root` is the project root and `dir`
+/// the directory of the config file that declares the source, both absolute.
+///
+/// # Errors
+/// The sentence that names the plugin and never the value, when the source is not valid.
+pub fn config_source(
+    id: &str,
+    text: &str,
+    root: &Path,
+    dir: &Path,
+) -> Result<ConfiguredSource, String> {
+    ConfiguredSource::parse(text, root, dir)
+        .map_err(|_| render(&CliText::ConfigSourceInvalid { id: line(id) }))
 }
 
 /// Where `slopvac plugins` reads and writes. The caller resolves the directories: the plugin
@@ -145,6 +161,7 @@ pub struct Runner<'a> {
     now: String,
     ranges: BTreeMap<PackId, VersionReq>,
     configured: Vec<String>,
+    configured_packs: Vec<ConfiguredPack>,
     core_version: String,
     trusted_env: Vec<Digest>,
     loader: Option<&'a dyn PluginLoader>,
@@ -173,6 +190,7 @@ impl<'a> Runner<'a> {
             now: now.into(),
             ranges: BTreeMap::new(),
             configured: Vec::new(),
+            configured_packs: Vec::new(),
             core_version: String::new(),
             trusted_env: Vec::new(),
             loader: None,
@@ -195,6 +213,14 @@ impl<'a> Runner<'a> {
     #[must_use]
     pub fn with_configured(mut self, ids: Vec<String>) -> Self {
         self.configured = ids;
+        self
+    }
+
+    /// The `[[plugins]]` entries of the config with their sources and requirements, which
+    /// `sync` in CI compares with the lock.
+    #[must_use]
+    pub fn with_configured_packs(mut self, packs: Vec<ConfiguredPack>) -> Self {
+        self.configured_packs = packs;
         self
     }
 
@@ -626,7 +652,10 @@ fn run_sync(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
             .filter(|id| id.as_str() != "core")
             .filter_map(|id| id.parse().ok())
             .collect();
-        let drift = config_drift(&lock, &configured);
+        let mut drift = config_drift(&lock, &configured);
+        let entries = entry_drift(&lock, &runner.configured_packs);
+        drift.source_differs = entries.source_differs;
+        drift.out_of_range = entries.out_of_range;
         if !drift.is_empty() {
             return Err(RunError::Failed {
                 source: cause::config_lock_drift(drift),

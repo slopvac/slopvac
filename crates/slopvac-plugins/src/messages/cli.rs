@@ -249,6 +249,11 @@ pub(crate) enum CliText {
     #[code("plugins-config-range-invalid")]
     #[text("the version range of plugin `{id}` in the config is not a valid range")]
     ConfigRangeInvalid { id: String },
+    /// A source in the config that is not a valid plugin source. It names the plugin, never
+    /// the value, which can carry a credential.
+    #[code("plugins-config-source-invalid")]
+    #[text("the source of plugin `{id}` in the config is not a valid plugin source")]
+    ConfigSourceInvalid { id: String },
     /// A lock file that does not parse, with no location.
     #[code("plugins-lock-diagnostic-whole")]
     #[text("not a valid lockfile")]

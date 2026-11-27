@@ -24,7 +24,10 @@ mod parse;
 mod read;
 mod write;
 
-pub use diff::{Change, Delta, LockDiff, ResolvedPack, config_drift, diff};
+pub use diff::{
+    Change, ConfiguredPack, ConfiguredSource, Delta, LockDiff, OutOfRange, ResolvedPack,
+    config_drift, diff, entry_drift,
+};
 pub use model::{
     Digest, KeyId, LockError, LockedPack, Lockfile, MAX_API_VERSION, MAX_LOCK_BYTES, MAX_PACKS,
     MAX_REQUIRES, MAX_STRING_BYTES, NotBefore, PackId, PackKind, Signature, Source, SourceKind,

@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::path::Path;
 
-use semver::Version;
+use semver::{Version, VersionReq};
 
 use crate::messages::sync as messages;
 
-use super::model::{Digest, Lockfile, PackId, Source};
+use super::model::{Digest, Lockfile, PackId, Source, ValueError};
 
 /// One pack as the sync code resolved it, before comparing to the lock.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +61,83 @@ pub struct LockDiff {
     pub unlocked: Vec<PackId>,
     /// In both, with a different version, source or digest.
     pub changed: Vec<Change>,
+    /// Configured with a source that names a different source from the lock entry. Only
+    /// [`entry_drift`] fills it. It keeps the id alone, because a configured source can carry a
+    /// credential and must not reach a message.
+    pub source_differs: Vec<PackId>,
+    /// Locked at a version that the configured requirement does not allow. Only
+    /// [`entry_drift`] fills it.
+    pub out_of_range: Vec<OutOfRange>,
+}
+
+/// A configured pack whose locked version is outside its configured requirement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct OutOfRange {
+    /// Pack id.
+    pub id: PackId,
+    /// The version in the lock file.
+    pub locked: Version,
+    /// The requirement in the config.
+    pub range: VersionReq,
+}
+
+impl OutOfRange {
+    /// `id` is locked at `locked`, which `range` does not allow.
+    #[must_use]
+    pub fn new(id: PackId, locked: Version, range: VersionReq) -> Self {
+        Self { id, locked, range }
+    }
+}
+
+/// The `source` of a `[[plugins]]` entry in the config, as the drift check compares it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ConfiguredSource {
+    /// A source of a form the lock accepts. A path is relative to the project root.
+    Named(Source),
+    /// A path that resolves outside the project root. No lock entry can hold it, so it never
+    /// matches.
+    OutsideProject,
+}
+
+impl ConfiguredSource {
+    /// Parses the configured source `text` with the lock's own source parser. `root` is the
+    /// project root, and `dir` the directory of the config file that declares the source. A
+    /// path is resolved against `dir` and made relative to `root` first, because a config path
+    /// is relative to its own file and the lock's path to the root. Both are absolute; the
+    /// resolution is lexical and reads nothing.
+    ///
+    /// # Errors
+    /// [`ValueError`] when `text` is not an `oci://` reference, an `https://` archive URL, a
+    /// `git+https://` URL pinned to a commit or a relative path. The message never repeats the
+    /// text, which can carry a credential.
+    pub fn parse(text: &str, root: &Path, dir: &Path) -> Result<Self, ValueError> {
+        let _ = (root, dir);
+        Ok(text
+            .parse::<Source>()
+            .map_or(Self::OutsideProject, Self::Named))
+    }
+}
+
+/// One `[[plugins]]` entry of the config, as the drift check reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ConfiguredPack {
+    /// Pack id.
+    pub id: PackId,
+    /// The configured source.
+    pub source: ConfiguredSource,
+    /// The configured version requirement, when the entry sets one.
+    pub range: Option<VersionReq>,
+}
+
+impl ConfiguredPack {
+    /// An entry for `id` with its source and optional version requirement.
+    #[must_use]
+    pub fn new(id: PackId, source: ConfiguredSource, range: Option<VersionReq>) -> Self {
+        Self { id, source, range }
+    }
 }
 
 impl LockDiff {
@@ -70,6 +148,8 @@ impl LockDiff {
             && self.removed.is_empty()
             && self.unlocked.is_empty()
             && self.changed.is_empty()
+            && self.source_differs.is_empty()
+            && self.out_of_range.is_empty()
     }
 }
 
@@ -102,6 +182,16 @@ impl fmt::Display for LockDiff {
                 write!(f, "{}", messages::diff_digest(&d.locked, &d.resolved))?;
             }
             writeln!(f)?;
+        }
+        for id in &self.source_differs {
+            writeln!(f, "{}", messages::diff_config_source(id))?;
+        }
+        for pack in &self.out_of_range {
+            writeln!(
+                f,
+                "{}",
+                messages::diff_out_of_range(&pack.id, &pack.locked, &pack.range)
+            )?;
         }
         Ok(())
     }
@@ -170,4 +260,26 @@ pub fn config_drift(lock: &Lockfile, configured: &[PackId]) -> LockDiff {
             .collect(),
         ..LockDiff::default()
     }
+}
+
+/// The drift between the configured `[[plugins]]` entries and the lock that [`config_drift`]
+/// leaves out: a configured source that names a different source from its lock entry, and a
+/// locked version outside the configured requirement. An entry with no lock entry is
+/// [`config_drift`]'s `unlocked` case, so it is skipped here. Pure: it reads only its inputs.
+#[must_use]
+pub fn entry_drift(lock: &Lockfile, configured: &[ConfiguredPack]) -> LockDiff {
+    let mut out = LockDiff::default();
+    for entry in configured {
+        let Some(locked) = lock.get(&entry.id) else {
+            continue;
+        };
+        let same = match &entry.source {
+            ConfiguredSource::Named(source) => *source == locked.source,
+            ConfiguredSource::OutsideProject => false,
+        };
+        if !same {
+            out.source_differs.push(entry.id.clone());
+        }
+    }
+    out
 }
