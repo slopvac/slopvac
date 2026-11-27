@@ -1729,9 +1729,13 @@ mod native_archive {
     }
 
     fn artifact() -> Artifact {
+        artifact_of(&[("plugin", b"#!/bin/sh\n")])
+    }
+
+    fn artifact_of(files: &[(&str, &[u8])]) -> Artifact {
         let pair = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
         let public = PublicKey::from_base64(&pair.pk.to_base64()).unwrap();
-        let layer = archive(&[("plugin", b"#!/bin/sh\n")]);
+        let layer = archive(files);
         let mut manifest = Manifest {
             schema_version: 2,
             media_type: Some(MEDIA_MANIFEST.into()),
@@ -1802,6 +1806,73 @@ mod native_archive {
                 |b| Response::new(200).body(b.clone()),
             )
         })
+    }
+
+    /// The lock text and the key policy for `artifact`, served by `server`.
+    fn signed_style(a: &Artifact, server: &Server) -> (String, KeyPolicy) {
+        let entry = format!(
+            "\n[[plugins]]\nid = \"style\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"oci://{}/acme/style:1.0.0\"\ndigest = \"{}\"\n\n\
+             [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{FLOOR}\"\n",
+            server.registry(),
+            a.digest,
+            a.key_id
+        );
+        let policy = KeyPolicy {
+            pinned: BTreeMap::from([("acme".to_owned(), vec![a.public.clone()])]),
+            ..KeyPolicy::default()
+        };
+        (entry, policy)
+    }
+
+    /// A manifest over 1 MiB in the archive is refused while it is extracted. The command
+    /// reports `sync-failed`, and no tree is installed.
+    #[test]
+    fn sync_of_an_archive_with_a_manifest_over_1_mib_exits_2_with_sync_failed() {
+        let f = Fixture::new();
+        let big = vec![b'#'; (1 << 20) + 1];
+        let a = artifact_of(&[("slopvac-plugin.toml", &big), ("plugin", b"#!/bin/sh\n")]);
+        let server = serve(&a);
+        let (entry, policy) = signed_style(&a, &server);
+        f.write_lock(&[entry]);
+
+        let err = f
+            .run(&["sync"], true, |s| s.policy(policy))
+            .result
+            .unwrap_err();
+
+        assert_eq!(err.code(), "sync-failed");
+        let trees = f.cache().join("trees");
+        assert!(!trees.exists() || fs::read_dir(trees).unwrap().next().is_none());
+    }
+
+    /// A manifest that grows past 1 MiB after sync stops `plugins status`, which reports
+    /// `sync-failed`.
+    #[test]
+    fn status_of_an_installed_tree_with_a_manifest_over_1_mib_exits_2_with_sync_failed() {
+        let f = Fixture::new();
+        let a = artifact_of(&[("slopvac-plugin.toml", b"# small\n"), ("plugin", b"#!/bin/sh\n")]);
+        let server = serve(&a);
+        let (entry, policy) = signed_style(&a, &server);
+        f.write_lock(&[entry]);
+        let synced = f.run(&["sync"], true, |s| s.policy(policy.clone()));
+        assert_eq!(synced.result.unwrap(), 0, "{}", synced.out);
+        let tree = fs::read_dir(f.cache().join("trees"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.join("slopvac-plugin.toml").exists())
+            .expect("an installed tree holds the manifest");
+        let file = tree.join("slopvac-plugin.toml");
+        fs::set_permissions(&tree, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&file, vec![b'#'; (1 << 20) + 1]).unwrap();
+
+        let err = f
+            .run(&["status"], false, |s| s.policy(policy))
+            .result
+            .unwrap_err();
+
+        assert_eq!(err.code(), "sync-failed");
     }
 
     #[test]

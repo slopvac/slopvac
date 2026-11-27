@@ -706,6 +706,35 @@ fn trust_of_a_code_plugin_changed_since_sync_exits_2_and_records_nothing() {
     assert_eq!(trust_records(&sandbox), 0);
 }
 
+/// A manifest over 1 MiB stops `plugins trust` before it parses anything. The command reports
+/// its own code, the debug log names `plugin-too-large`, and nothing is recorded.
+#[test]
+fn trust_of_a_code_plugin_with_a_manifest_over_1_mib_exits_2_and_records_nothing() {
+    let sandbox = Sandbox::new();
+    lock_code_plugin(&sandbox);
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+    let manifest = sandbox.project().join("plugins/fmt/slopvac-plugin.toml");
+    let mut text = fs::read_to_string(&manifest).unwrap();
+    text.push_str(&"#".repeat(1 << 20));
+    fs::write(&manifest, text).unwrap();
+    let out = sandbox
+        .slopvac()
+        .env("SLOPVAC_LOG", "debug")
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error[plugins-trust-inputs-failed]: ",
+        ));
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert_debug_line(&stderr, "plugin-too-large");
+    assert_eq!(trust_records(&sandbox), 0);
+}
+
 /// An attacker who writes the cache can plant a tree and a record that points at it. The
 /// trusted hash comes from the lock and the cached archive, so the plant is refused.
 #[test]
