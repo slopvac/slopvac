@@ -17,7 +17,7 @@ use sha2::{Digest as _, Sha256};
 use super::cache::Store;
 use super::error::{CacheCause, SyncError};
 use super::{Syncer, payload_layer};
-use crate::extract::{ExtractError, Limits, TreeHash, hash_targz, open_regular};
+use crate::extract::{Limits, TreeHash, hash_targz, open_regular};
 use crate::lock::{LockedPack, SourceKind};
 use crate::messages::sync as messages;
 use crate::oci::{Digest, MAX_MANIFEST_BYTES, Manifest};
