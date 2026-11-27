@@ -417,10 +417,7 @@ fn an_unknown_path_is_left_out_of_the_document_and_ends_the_run_with_exit_2() {
         ],
     );
     assert_eq!(code, Some(2), "{stderr}");
-    assert_eq!(
-        stderr,
-        "error[input-unreadable]: missing.md: not found\n"
-    );
+    assert_eq!(stderr, "error[input-unreadable]: missing.md: not found\n");
     let doc: Value = serde_json::from_str(&stdout).expect("stdout is one JSON document");
     assert_eq!(doc["schema_version"], json!(3), "{doc}");
     assert_eq!(only_input(&doc)["path"], json!("a.md"), "{doc}");

@@ -1,0 +1,13 @@
+# file -> JSON pointer (into the instance) where validation must fail.
+"missing-schema-version.json" = ""
+"schema-version-2.json" = "/schema_version"
+"absolute-path.json" = "/inputs/0/path"
+"absolute-config-root.json" = "/inputs/0/config_root"
+"core-origin-file-null.json" = "/inputs/0/settings/0/source/file"
+"unknown-layer.json" = "/inputs/0/config_sources/0/layer"
+"unknown-level.json" = "/inputs/0/configured_rules/0/level"
+"unqualified-rule-id.json" = "/inputs/0/configured_rules/0/id"
+"unknown-genre-source.json" = "/inputs/0/genre/source"
+"missing-front-matter-resolved.json" = "/inputs/0"
+"unknown-key.json" = "/inputs/0"
+"replaced-is-not-a-list.json" = "/inputs/0/settings/0/replaced"

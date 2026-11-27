@@ -723,14 +723,13 @@ fn lint_with(
         }
         if m.get_one::<String>("format").map(String::as_str) == Some("json") {
             // A run that could not start prints what `lint --format json` prints.
-            match &explained.refusal {
-                Some(refusal) => output::deliver(m, refusal, out, err_out)?,
-                None => {
-                    let document = crate::explain_config::Document::new(explained.inputs)
-                        .render()
-                        .map_err(|err| CliError::new("render-failed", err.to_string()))?;
-                    write_stdout(out, document.as_bytes())?;
-                }
+            if let Some(refusal) = &explained.refusal {
+                output::deliver(m, refusal, out, err_out)?;
+            } else {
+                let document = crate::explain_config::Document::new(explained.inputs)
+                    .render()
+                    .map_err(|err| CliError::new("render-failed", err.to_string()))?;
+                write_stdout(out, document.as_bytes())?;
             }
         } else {
             write_stdout(out, explained.text.as_bytes())?;
