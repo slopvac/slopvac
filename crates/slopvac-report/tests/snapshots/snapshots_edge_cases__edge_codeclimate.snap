@@ -1,0 +1,57 @@
+---
+source: crates/slopvac-report/tests/snapshots_edge_cases.rs
+expression: "render(Format::CodeClimate, & edge_report())"
+---
+[
+  {
+    "categories": [
+      "Style"
+    ],
+    "check_name": "alpha:style.example",
+    "description": "First line. Second line. Third.",
+    "fingerprint": "cea7cd4e04538cb8",
+    "location": {
+      "lines": {
+        "begin": 2,
+        "end": 3
+      },
+      "path": "../outside/notes é.md"
+    },
+    "severity": "major",
+    "type": "issue"
+  },
+  {
+    "categories": [
+      "Style"
+    ],
+    "check_name": "core:orwell.not-un",
+    "description": "Say it plainly.",
+    "fingerprint": "24cab6a2517e21c6",
+    "location": {
+      "lines": {
+        "begin": 1,
+        "end": 1
+      },
+      "path": "../outside/notes é.md"
+    },
+    "severity": "minor",
+    "type": "issue"
+  },
+  {
+    "categories": [
+      "Style"
+    ],
+    "check_name": "core:orwell.not-un",
+    "description": "Consider it.",
+    "fingerprint": "a375a19aaaea9b25",
+    "location": {
+      "lines": {
+        "begin": 3,
+        "end": 3
+      },
+      "path": "../outside/notes é.md"
+    },
+    "severity": "info",
+    "type": "issue"
+  }
+]

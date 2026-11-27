@@ -1,0 +1,5 @@
+---
+source: crates/slopvac-report/tests/snapshots_edge_cases.rs
+expression: "render(Format::CodeClimate, &\nserde_json::from_value::<Report>(read(\"empty-run\")).unwrap())"
+---
+[]

@@ -1,0 +1,7 @@
+---
+source: crates/slopvac-report/tests/snapshots_edge_cases.rs
+expression: "render(Format::Rdjsonl, & edge_report())"
+---
+{"code":{"value":"alpha:style.example"},"location":{"path":"../outside/notes é.md","range":{"end":{"column":11,"line":3},"start":{"column":1,"line":2}}},"message":"First line.\r\nSecond line.\n\nThird.","severity":"ERROR","source":{"name":"slopvac"}}
+{"code":{"url":"https://docs.example/slopvac/v3/rules/orwell/not-un/","value":"core:orwell.not-un"},"location":{"path":"../outside/notes é.md","range":{"end":{"column":7,"line":1},"start":{"column":1,"line":1}}},"message":"Say it plainly.","severity":"WARNING","source":{"name":"slopvac"},"suggestions":[{"range":{"end":{"column":7,"line":1},"start":{"column":1,"line":1}},"text":"hi"},{"range":{"end":{"column":7,"line":2},"start":{"column":1,"line":2}},"text":"monde"}]}
+{"code":{"url":"https://docs.example/slopvac/v3/rules/orwell/not-un/","value":"core:orwell.not-un"},"location":{"path":"../outside/notes é.md","range":{"end":{"column":1,"line":3},"start":{"column":1,"line":3}}},"message":"Consider it.","severity":"INFO","source":{"name":"slopvac"}}
