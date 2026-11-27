@@ -157,12 +157,12 @@ mod tests {
             cause: crate::sync::CacheCause::Io(std::io::ErrorKind::PermissionDenied),
         };
 
-        let shown = sync(Path::new("/project"), &e).to_string();
+        let reported = sync(Path::new("/project"), &e);
 
+        assert_eq!(slopvac_messages::Catalog::code(&reported), "plugin-store-unreadable");
         assert_eq!(
-            shown,
-            "plugin-store-unreadable: plugin `demo`: cannot read the cached file \
-             <external>/ab12: permission denied"
+            reported.to_string(),
+            "plugin `demo`: cannot read the cached file <external>/ab12: permission denied"
         );
     }
 
