@@ -211,11 +211,11 @@ pub(crate) struct CancelParams {
 /// Define the params of one documents hook: the batch, and the hook id under the key that
 /// names the kind.
 macro_rules! documents_params {
-    ($(#[$meta:meta])* $name:ident, $key:literal, $batch:literal, $description:path) => {
+    ($(#[$meta:meta])* $name:ident, $rename:literal, $key:literal, $batch:literal, $description:path) => {
         $(#[$meta])*
         #[derive(Debug, Serialize, JsonSchema)]
         #[schemars(
-            rename = stringify!($name),
+            rename = $rename,
             description = $description,
             transform = bare_fields
         )]
@@ -234,6 +234,7 @@ macro_rules! documents_params {
 documents_params!(
     /// `tagger/tag`.
     TagParams,
+    "TagParams",
     "tagger",
     "Documents",
     text::TAG_PARAMS
@@ -241,6 +242,7 @@ documents_params!(
 documents_params!(
     /// `extractor/extract`.
     ExtractParams,
+    "ExtractParams",
     "extractor",
     "Documents",
     text::EXTRACT_PARAMS
@@ -248,6 +250,7 @@ documents_params!(
 documents_params!(
     /// `fixer/fix`.
     FixParams,
+    "FixParams",
     "fixer",
     "MinOne<Over<Document, FindingsEntry>>",
     text::FIX_PARAMS
@@ -255,6 +258,7 @@ documents_params!(
 documents_params!(
     /// `scorer/score`.
     ScoreParams,
+    "ScoreParams",
     "scorer",
     "MinOne<Over<Document, FindingsEntry>>",
     text::SCORE_PARAMS
