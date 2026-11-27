@@ -676,7 +676,9 @@ fn sync_in_ci_reads_the_configured_ids_from_the_configured_entries() {
         .run(&["sync"], false, |s| s.locked().pack("style", Some("^1.2")))
         .result
         .unwrap_err();
-    assert_eq!(err.code(), "offline-plugin-missing", "{err}");
+    // The drift check passes, so sync goes on to the entry itself, which `oci_entry` locks
+    // with no signature record.
+    assert_eq!(err.code(), "sync-unsigned", "{err}");
 }
 
 /// The configured entries also carry the ranges, so `outdated` reads a range from them.
