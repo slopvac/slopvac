@@ -55,7 +55,10 @@ impl Live {
 
     /// `ghcr.io/slopvac/oci-client-ci:ci-<run>-<attempt>-<name>`
     fn reference(&self, name: &str) -> Result<Reference, Box<dyn Error>> {
-        Ok(Reference::parse(&format!("{PACKAGE}:{}-{name}", self.stem))?)
+        Ok(Reference::parse(&format!(
+            "{PACKAGE}:{}-{name}",
+            self.stem
+        ))?)
     }
 
     /// Push one layer and one manifest under the tag for `name`. The layer text names the
