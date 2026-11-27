@@ -428,3 +428,41 @@ pub(super) fn hash_file(path: &Path) -> io::Result<Digest> {
     }
     Ok(Digest::from_hasher(hasher))
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn evicting_a_blob_that_cannot_be_removed_is_an_error_and_not_a_repair() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        let digest = Digest::of(b"x");
+        let id: PackId = "demo".parse().unwrap();
+        // A directory with content cannot be unlinked as a file.
+        let path = store.blob_path(&digest);
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("inner"), b"y").unwrap();
+
+        let err = store.evict_blob(&id, &digest).unwrap_err();
+
+        assert!(
+            matches!(err, SyncError::CacheUnreadable { cause: CacheCause::Io { .. }, .. }),
+            "{err:?}"
+        );
+        assert!(!store.take_repaired(&id), "a failed removal is no repair");
+    }
+
+    #[test]
+    fn evicting_a_blob_that_is_already_gone_is_a_repair() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        let digest = Digest::of(b"x");
+        let id: PackId = "demo".parse().unwrap();
+
+        store.evict_blob(&id, &digest).unwrap();
+
+        assert!(store.take_repaired(&id));
+    }
+}

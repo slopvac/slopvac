@@ -2331,27 +2331,6 @@ mod cache_reads {
     }
 
     #[test]
-    fn sync_stops_when_it_cannot_remove_a_blob_it_found_to_be_wrong() {
-        let c = cached();
-        grow(&c.layer, c.layer_bytes.len() as u64 + 1);
-        let blobs = c.layer.parent().unwrap().to_owned();
-        fs::set_permissions(&blobs, fs::Permissions::from_mode(0o555)).unwrap();
-        let can_still_write = fs::File::create(blobs.join("probe")).is_ok();
-
-        let result = c.online();
-
-        fs::set_permissions(&blobs, fs::Permissions::from_mode(0o755)).unwrap();
-        if can_still_write {
-            return; // the test runs with rights that ignore modes
-        }
-        let err = result.unwrap_err();
-        assert!(
-            matches!(&err, SyncError::CacheUnreadable { cause: CacheCause::Io { .. }, .. }),
-            "{err:?}"
-        );
-    }
-
-    #[test]
     fn a_tree_directory_that_cannot_be_inspected_is_an_error_and_not_absence() {
         let c = cached();
         let trees = c.env.data.path().join("slopvac/trees");
