@@ -1048,3 +1048,62 @@ impl JsonSchema for ProtocolMessage {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        reason = "test code: a panic is a failed test"
+    )]
+
+    use rstest::rstest;
+    use schemars::generate::SchemaSettings;
+
+    use super::*;
+    use crate::protocol::HookDecl;
+
+    /// The schema of `T` from a fresh generator, as the document that generator writes.
+    fn standalone<T: JsonSchema>() -> Value {
+        SchemaSettings::draft2020_12()
+            .into_generator()
+            .into_root_schema_for::<T>()
+            .to_value()
+    }
+
+    /// Every `$ref` under `value`.
+    fn references(value: &Value, found: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                for (key, member) in map {
+                    match (key.as_str(), member) {
+                        ("$ref", Value::String(target)) => found.push(target.clone()),
+                        _ => references(member, found),
+                    }
+                }
+            }
+            Value::Array(items) => items.iter().for_each(|item| references(item, found)),
+            _ => {}
+        }
+    }
+
+    #[rstest]
+    #[case::hook_declaration(standalone::<HookDecl>)]
+    #[case::plugin_declaration(standalone::<PluginDeclaration>)]
+    #[case::initialize_result(standalone::<InitializeResult>)]
+    fn a_standalone_schema_defines_every_definition_it_refers_to(#[case] build: fn() -> Value) {
+        let document = build();
+        let mut found = Vec::new();
+        references(&document, &mut found);
+        assert!(!found.is_empty(), "the document refers to nothing");
+        for target in found {
+            let name = target
+                .strip_prefix("#/$defs/")
+                .unwrap_or_else(|| panic!("{target} points outside the document"));
+            assert!(
+                document["$defs"].get(name).is_some(),
+                "{target} is not defined in {document}"
+            );
+        }
+    }
+}
