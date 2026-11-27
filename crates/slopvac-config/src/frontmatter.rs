@@ -176,7 +176,7 @@ impl Policy {
     #[must_use]
     pub fn core() -> Self {
         Self {
-            enabled: true,
+            enabled: crate::schema::DEFAULT_FRONTMATTER_ENABLED,
             allow: crate::schema::DEFAULT_ALLOW
                 .iter()
                 .map(|s| (*s).to_owned())
@@ -190,7 +190,7 @@ impl Policy {
         let enabled = config
             .project_value(&["frontmatter", "enabled"])
             .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+            .unwrap_or(crate::schema::DEFAULT_FRONTMATTER_ENABLED);
         let allow = config
             .project_value(&["frontmatter", "allow"])
             .and_then(|v| v.as_array().cloned())

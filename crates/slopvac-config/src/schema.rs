@@ -340,6 +340,8 @@ pub(crate) const SCORE_MAX: u32 = 100;
 pub(crate) const MINIMUM: u32 = 0;
 /// The fewest entries in a `files` list.
 pub(crate) const MIN_FILES: usize = 1;
+/// The fewest characters in a string that may not be empty.
+pub(crate) const MIN_STRING: usize = 1;
 /// The category budget that clears a budget a lower layer set.
 pub(crate) const BUDGET_NONE: &str = "none";
 /// The default of `mode`.
@@ -758,7 +760,7 @@ fn child(path: &[String], seg: &str) -> Vec<String> {
 fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
     match shape {
         Shape::NonEmptyStr => match &node.value {
-            Value::Str(s) if s.is_empty() => {
+            Value::Str(s) if s.chars().take(MIN_STRING).count() < MIN_STRING => {
                 ctx.value_error(
                     node,
                     path,

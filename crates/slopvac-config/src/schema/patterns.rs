@@ -116,10 +116,18 @@ fn the_reader_and_the_rust_schema_take_the_same_side_where_engines_disagree(
     #[case] accepted: bool,
 ) {
     let point = char::from_u32(code).unwrap();
-    for source in [format!("https://h/a{point}b"), format!("oci://h{point}x/a")] {
-        let reader = index_source_fault(&source).is_none();
-        assert_eq!(reader, valid(&INDEX_SOURCE, &source), "{source:?}");
-    }
+    let authority = format!("oci://h{point}x/a");
     let path = format!("https://h/a{point}b");
-    assert_eq!(index_source_fault(&path).is_none(), accepted);
+    for source in [authority, path] {
+        assert_eq!(
+            index_source_fault(&source).is_none(),
+            accepted,
+            "reader {source:?}"
+        );
+        assert_eq!(
+            valid(&INDEX_SOURCE, &source),
+            accepted,
+            "validator {source:?}"
+        );
+    }
 }

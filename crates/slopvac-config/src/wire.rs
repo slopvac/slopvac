@@ -8,7 +8,7 @@
 //! reader and through the schema generated here.
 
 use schemars::generate::Contract;
-use schemars::transform::RecursiveTransform;
+use schemars::transform::{RecursiveTransform, Transform};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde_json::{Value, json};
 use slopvac_model::{
@@ -21,9 +21,9 @@ use crate::schema::{
     DEFAULT_GUIDANCE_LEVEL, DEFAULT_GUIDANCE_REPORT, DEFAULT_GUIDANCE_REVIEW,
     DEFAULT_GUIDANCE_WRITE, DEFAULT_INDEX_DEFAULT, DEFAULT_MODE, DEFAULT_OFFLINE,
     DEFAULT_UPDATE_CHECK, GUIDANCE_DEPTHS, GUIDANCE_LEVELS, GUIDANCE_REPORT, GUIDANCE_REVIEW,
-    GUIDANCE_WRITE, INDEX_SOURCE_MAX, INDEX_SOURCE_PATTERN, LEVELS, LOCALES, MIN_FILES, MINIMUM,
-    MODES, PROFILES, REF_PATTERN, RULE_KEY_PATTERN, SCORE_MAX, SETTINGS_KEYS, SHIFT_MAX, SHIFT_MIN,
-    index_name_pattern,
+    GUIDANCE_WRITE, INDEX_SOURCE_MAX, INDEX_SOURCE_PATTERN, LEVELS, LOCALES, MIN_FILES, MIN_STRING,
+    MINIMUM, MODES, PROFILES, REF_PATTERN, RULE_KEY_PATTERN, SCORE_MAX, SETTINGS_KEYS, SHIFT_MAX,
+    SHIFT_MIN, index_name_pattern,
 };
 
 /// The generator for the config schemas: the shared v3 settings, for what a reader accepts.
@@ -100,7 +100,7 @@ fn scalar_or_table(schema: &mut Schema) {
 /// nearest config, the one that applies to the file, even when an extended file holds the
 /// pattern. A leading `!` negates. The last matching pattern wins.
 #[derive(JsonSchema)]
-#[schemars(with = "String", extend("minLength" = 1))]
+#[schemars(with = "String", extend("minLength" = MIN_STRING))]
 pub(crate) struct Glob;
 
 /// A style or genre name. A bare name resolves against the active plugins and must be
@@ -316,9 +316,9 @@ pub(crate) struct PluginSource {
     id: PluginId,
     /// An `oci://` reference, a `git+https://` URL with a commit, or a path relative to the
     /// config file.
-    #[schemars(extend("minLength" = 1))]
+    #[schemars(extend("minLength" = MIN_STRING))]
     source: String,
-    #[schemars(extend("minLength" = 1))]
+    #[schemars(extend("minLength" = MIN_STRING))]
     version: Option<String>,
 }
 
@@ -494,10 +494,10 @@ pub(crate) struct Review {
     /// Plugin id of the model provider.
     provider: Option<PackId>,
     /// Model name the reviewer must report.
-    #[schemars(extend("minLength" = 1))]
+    #[schemars(extend("minLength" = MIN_STRING))]
     model: Option<String>,
     /// Model name of the author. The review refuses a reviewer with the same name.
-    #[schemars(extend("minLength" = 1))]
+    #[schemars(extend("minLength" = MIN_STRING))]
     author_model: Option<String>,
 }
 
@@ -532,4 +532,77 @@ pub(crate) struct ConfigDocument {
     overrides: Option<Vec<Override>>,
     network: Option<Network>,
     review: Option<Review>,
+}
+
+/// Replace a field schema with a reference to one setting of `Settings` in the config schema,
+/// so the front-matter block and a config table share one definition of each setting.
+struct SettingsField(&'static str);
+
+impl Transform for SettingsField {
+    fn transform(&mut self, schema: &mut Schema) {
+        *schema = json_schema!({"$ref": format!("#/$defs/Settings/properties/{}", self.0)});
+    }
+}
+
+// Words this document uses its own way. Front matter takes no terms files.
+#[derive(JsonSchema)]
+#[schemars(inline, transform = x_extensions)]
+#[expect(
+    dead_code,
+    reason = "schema only: the derive reads the fields and no code reads a value"
+)]
+struct BlockTerms {
+    allow: Option<Vec<NonEmptyString>>,
+}
+
+/// Per-document settings. The layer sits above matching overrides and below inline directives.
+#[derive(JsonSchema)]
+#[schemars(transform = x_extensions)]
+#[expect(
+    dead_code,
+    reason = "schema only: the derive reads the fields and no code reads a value"
+)]
+pub(crate) struct Block {
+    #[expect(
+        clippy::doc_markdown,
+        reason = "the text is the published description, which names the member without backticks"
+    )]
+    /// Version of this block's shape. Same number as the config schema_version.
+    v: SchemaVersion,
+    genre: Option<Ref>,
+    #[schemars(with = "Option<String>", transform = SettingsField("profile"))]
+    profile: Option<String>,
+    #[schemars(with = "Option<String>", transform = SettingsField("locale"))]
+    locale: Option<String>,
+    #[schemars(with = "Option<String>", transform = SettingsField("thresholds"))]
+    thresholds: Option<String>,
+    #[schemars(with = "Option<String>", transform = SettingsField("categories"))]
+    categories: Option<String>,
+    #[schemars(with = "Option<String>", transform = SettingsField("rules"))]
+    rules: Option<String>,
+    /// Words this document uses its own way.
+    terms: Option<BlockTerms>,
+}
+
+/// A document's front matter mapping, after YAML, TOML or JSON parsing. Only the `slopvac` key
+/// belongs to slopvac; every other key is the document's own and is not validated. Unknown keys
+/// inside `slopvac` are errors, and keys that start with `x-` are ignored. The project's
+/// `[frontmatter] allow` list narrows which fields take effect. Semantics:
+/// docs/contract/config.md.
+#[derive(JsonSchema)]
+#[expect(
+    dead_code,
+    reason = "schema only: the derive reads the fields and no code reads a value"
+)]
+pub(crate) struct FrontMatterDocument {
+    slopvac: Option<Block>,
+}
+
+/// The schema of the `slopvac:` front-matter block. The references to `Settings` stay local
+/// here, and `slopvac-schemas` points them at the config schema.
+#[must_use]
+pub fn frontmatter_schema() -> Value {
+    generator()
+        .into_root_schema_for::<FrontMatterDocument>()
+        .to_value()
 }

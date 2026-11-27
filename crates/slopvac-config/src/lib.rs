@@ -49,4 +49,4 @@ pub use schema::{validate_config, validate_frontmatter, validate_style};
 pub use slopvac_model::{ConfigLayer, ConfigSource, Severity};
 pub use source::{Setting, bare_source, layer_name, located_source};
 pub use unknown_rule::{UnknownRule, unknown_rules};
-pub use wire::config_schema;
+pub use wire::{config_schema, frontmatter_schema};

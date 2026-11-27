@@ -53,6 +53,15 @@ pub const ARTIFACTS: &[Artifact] = &[
         build: config,
     },
     Artifact {
+        file: "frontmatter.schema.json",
+        title: "slopvac v3 front matter",
+        description: None,
+        imports: &["common.schema.json", "config.schema.json"],
+        inline: &[],
+        keep: &[],
+        build: frontmatter,
+    },
+    Artifact {
         file: "rule.schema.json",
         title: "slopvac v3 rule",
         description: Some(
@@ -369,6 +378,12 @@ pub(crate) struct Semver;
 /// (`slopvac_config::config_schema`), and the reader validates with its own shape tree.
 fn config() -> Value {
     slopvac_config::config_schema()
+}
+
+/// The front-matter block, which the reader accepts as input. Its settings refer to the
+/// config schema, which `slopvac-schemas` links.
+fn frontmatter() -> Value {
+    slopvac_config::frontmatter_schema()
 }
 
 fn rule() -> Value {
