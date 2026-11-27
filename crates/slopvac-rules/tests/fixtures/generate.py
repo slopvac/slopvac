@@ -18,7 +18,9 @@ only recomputes the spans for the stored texts. Without a flag the corpus is reb
 the rule examples, the repository's own prose and the Unicode probes below, which drops
 every stored text that no source produces any more. ``--refresh`` keeps every stored text
 and appends the texts of the current rule examples and probes that are not stored yet,
-so a rule change adds its cases and takes none away.
+so a rule change adds its cases and takes none away. ``--out DIR`` writes ``core-v3/`` and
+``pattern-parity.json`` under ``DIR`` instead of this directory, and ``--refresh`` then reads
+the stored corpus from there.
 """
 
 from __future__ import annotations
@@ -262,18 +264,20 @@ def main() -> None:
                 + "; regenerate with generate.py and commit the result"
             )
         return
-    CORE.mkdir(exist_ok=True)
-    for stale in CORE.glob("*.json"):
+    out = Path(sys.argv[sys.argv.index("--out") + 1]) if "--out" in sys.argv else HERE
+    core_out, parity_out = out / "core-v3", out / "pattern-parity.json"
+    core_out.mkdir(parents=True, exist_ok=True)
+    for stale in core_out.glob("*.json"):
         stale.unlink()
     for name, text in core.items():
-        (CORE / name).write_text(text, encoding="utf-8")
+        (core_out / name).write_text(text, encoding="utf-8")
     rules = lexical_rules()
     if "--refresh" in sys.argv:
-        stored = json.loads(PARITY.read_text(encoding="utf-8"))["texts"]
+        stored = json.loads(parity_out.read_text(encoding="utf-8"))["texts"]
         texts = merge_corpus(stored, build_corpus(rules, prose=False))
     else:
         texts = build_corpus(rules)
-    PARITY.write_text(parity_text(texts), encoding="utf-8")
+    parity_out.write_text(parity_text(texts), encoding="utf-8")
     print(f"{len(core)} categories, {len(rules)} lexical rules, {len(texts)} texts")
 
 
