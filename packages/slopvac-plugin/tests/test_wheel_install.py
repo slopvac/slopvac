@@ -74,6 +74,7 @@ def venv(wheel):
 def site_schemas(python):
     found = run(
         str(python),
+        "-I",
         "-c",
         "import importlib.util as u, pathlib;"
         "print(pathlib.Path(u.find_spec('slopvac_plugin').origin).parent / 'schemas')",
@@ -81,22 +82,30 @@ def site_schemas(python):
     return Path(found.stdout.strip())
 
 
+PROBE = """
+from slopvac_plugin import Plugin
+from slopvac_plugin.validate import KEBAB
+
+plugin = Plugin("p", "1")
+plugin.hook("tagger", "hk1")
+try:
+    plugin.hook("tagger", "ab1")
+except ValueError:
+    print(KEBAB.pattern)
+else:
+    raise SystemExit("hook ids are not checked against HookId")
+"""
+
+
 def test_an_installed_wheel_in_a_checkout_loads_its_vendored_patterns(venv):
-    code = (
-        "from slopvac_plugin import Plugin;"
-        "from slopvac_plugin.validate import KEBAB;"
-        "p = Plugin('p', '1');"
-        "p.hook('tagger', 'hk1');"
-        "print(KEBAB.pattern)"
-    )
-    result = run(str(venv), "-c", code)
+    result = run(str(venv), "-I", "-c", PROBE)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == CONTEXT_TAG.replace("(?![\\s\\S])", r"\Z")
 
 
 def test_an_installed_wheel_without_its_schemas_refuses_to_import(venv):
     shutil.rmtree(site_schemas(venv))
-    result = run(str(venv), "-c", "import slopvac_plugin")
+    result = run(str(venv), "-I", "-c", "import slopvac_plugin")
     assert result.returncode != 0
     assert "plugin-protocol.schema.json" in result.stderr
     assert "vendored" in result.stderr
