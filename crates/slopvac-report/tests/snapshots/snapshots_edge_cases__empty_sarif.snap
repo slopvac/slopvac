@@ -1,0 +1,28 @@
+---
+source: crates/slopvac-report/tests/snapshots_edge_cases.rs
+expression: "render(Format::Sarif, &\nserde_json::from_value::<Report>(read(\"empty-run\")).unwrap())"
+---
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "columnKind": "utf16CodeUnits",
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/slopvac/slopvac",
+          "name": "slopvac",
+          "rules": [],
+          "version": "3.0.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

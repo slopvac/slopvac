@@ -2,11 +2,46 @@
 //! Code Quality requires it, and the spec treats lines and positions as alternatives. The end
 //! line is inclusive.
 
-use serde_json::json;
+use serde::Serialize;
 use slopvac_model::{ColumnUnit, Report, Severity};
 
 use crate::locate::DocIndex;
 use crate::{RenderError, Sources};
+
+// The models below borrow from the report and serialize in declaration order. The output has
+// always had alphabetically sorted keys, so each struct lists its fields in that order.
+
+#[derive(Serialize)]
+struct Issue<'a> {
+    categories: [&'static str; 1],
+    check_name: &'a str,
+    description: String,
+    fingerprint: String,
+    location: Location<'a>,
+    severity: Level,
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
+#[derive(Serialize)]
+struct Location<'a> {
+    lines: Lines,
+    path: &'a str,
+}
+
+#[derive(Serialize)]
+struct Lines {
+    begin: usize,
+    end: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Level {
+    Major,
+    Minor,
+    Info,
+}
 
 /// The spec wants a description on one line.
 fn single_line(text: &str) -> String {
@@ -39,23 +74,31 @@ pub(crate) fn render(report: &Report, sources: &dyn Sources) -> Result<String, R
                 _ => at.start.line,
             };
             let severity = match f.severity {
-                Severity::Error => "major",
-                Severity::Warning => "minor",
-                Severity::Suggestion => "info",
+                Severity::Error => Level::Major,
+                Severity::Warning => Level::Minor,
+                Severity::Suggestion => Level::Info,
             };
             let key = format!("{}:{}", at.start.line, at.start.column);
-            issues.push(json!({
-                "type": "issue",
-                "check_name": f.rule_id.as_str(),
-                "description": single_line(f.message.as_str()),
-                "categories": ["Style"],
-                "severity": severity,
-                "fingerprint": fingerprint(&[document.path.as_str(), f.rule_id.as_str(), &key, f.message.as_str()]),
-                "location": {
-                    "path": document.path,
-                    "lines": {"begin": at.start.line, "end": lines_end},
+            issues.push(Issue {
+                categories: ["Style"],
+                check_name: f.rule_id.as_str(),
+                description: single_line(f.message.as_str()),
+                fingerprint: fingerprint(&[
+                    document.path.as_str(),
+                    f.rule_id.as_str(),
+                    &key,
+                    f.message.as_str(),
+                ]),
+                location: Location {
+                    lines: Lines {
+                        begin: at.start.line,
+                        end: lines_end,
+                    },
+                    path: document.path.as_str(),
                 },
-            }));
+                severity,
+                kind: "issue",
+            });
         }
     }
     Ok(serde_json::to_string_pretty(&issues)?)
