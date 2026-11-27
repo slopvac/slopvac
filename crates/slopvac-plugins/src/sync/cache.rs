@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek as _, Write};
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest as _, Sha256};
@@ -35,6 +35,35 @@ pub enum TreeState {
     Intact(PathBuf),
     /// The recorded tree exists and differs from its record.
     Tampered(PathBuf),
+}
+
+/// A verified private copy of a cached archive, in the staging area of the store. Only the store
+/// builds one, from bytes it hashed while it wrote them. Dropping it removes the file, so a copy
+/// never outlives the sync that made it, on success or on error.
+#[derive(Debug)]
+pub(super) struct StagedArchive(NamedTempFile);
+
+impl StagedArchive {
+    /// The copy, positioned at its first byte, for extraction. It is read from its own handle,
+    /// and no path is opened.
+    pub(super) fn reader(&self) -> &File {
+        self.0.as_file()
+    }
+}
+
+/// What copying a cached archive found.
+enum Copied {
+    Staged(StagedArchive),
+    Absent,
+    Wrong(Verdict),
+}
+
+/// Why a cached archive is not the archive that the lock names.
+enum Verdict {
+    /// It is over the size cap.
+    Over,
+    /// It hashes to another digest.
+    Digest(Digest),
 }
 
 /// The exclusive store lock. Dropping it releases the lock.
@@ -203,10 +232,13 @@ impl Store {
         self.trees().join(format!("tree-{}", hash.hex()))
     }
 
-    /// A cached blob whose content hashes to `digest`, or `None` when it is absent or sync
-    /// removed it because it was over `max` or hashed to something else (the repair is recorded).
-    /// Only sync calls it. The file is opened once and the bytes that are hashed are the bytes
-    /// that are read, never more than `max` plus one.
+    /// A private copy of the cached archive `digest`, verified while it was copied, or `None`
+    /// when the archive is absent or sync removed it because it was over `max` or hashed to
+    /// something else (the repair is recorded). Only sync calls it.
+    ///
+    /// The cached file is opened once, without following a link. The bytes are hashed as they are
+    /// written to a new private file in the staging area, never more than `max` plus one, so the
+    /// copy is exactly what was checked and nothing opens the cached file by path again.
     ///
     /// # Errors
     /// [`SyncError::CacheUnreadable`] when the file exists and cannot be read, is not a regular
@@ -216,13 +248,63 @@ impl Store {
         id: &PackId,
         digest: &Digest,
         max: u64,
-    ) -> Result<Option<PathBuf>, SyncError> {
+    ) -> Result<Option<StagedArchive>, SyncError> {
+        match self.copy_verified(id, digest, max)? {
+            Copied::Staged(staged) => Ok(Some(staged)),
+            Copied::Absent => Ok(None),
+            Copied::Wrong(_) => {
+                self.evict_blob(id, digest)?;
+                Ok(None)
+            }
+        }
+    }
+
+    /// A private copy of the archive `digest` that the store has just written. A cached file that
+    /// is not what was written is an error: the run stops.
+    ///
+    /// # Errors
+    /// [`SyncError::CacheUnreadable`] for a missing, unreadable or oversize file, and
+    /// [`SyncError::DigestMismatch`] for other bytes.
+    pub(super) fn stage_written(
+        &self,
+        id: &PackId,
+        digest: &Digest,
+        max: u64,
+    ) -> Result<StagedArchive, SyncError> {
+        match self.copy_verified(id, digest, max)? {
+            Copied::Staged(staged) => Ok(staged),
+            Copied::Absent => Err(self.unreadable(
+                id,
+                digest,
+                CacheCause::Io {
+                    kind: io::ErrorKind::NotFound,
+                    os_code: None,
+                },
+            )),
+            Copied::Wrong(Verdict::Over) => {
+                Err(self.unreadable(id, digest, CacheCause::TooLarge { cap: max }))
+            }
+            Copied::Wrong(Verdict::Digest(actual)) => Err(SyncError::DigestMismatch {
+                id: id.clone(),
+                expected: digest.to_string(),
+                actual: actual.to_string(),
+            }),
+        }
+    }
+
+    fn copy_verified(
+        &self,
+        id: &PackId,
+        digest: &Digest,
+        max: u64,
+    ) -> Result<Copied, SyncError> {
         let path = self.blob_path(digest);
         let file = match open_regular(&path) {
             Ok(file) => file,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Copied::Absent),
             Err(e) => return Err(self.unreadable(id, digest, cause_of(&e))),
         };
+        let mut staged = self.blob_tempfile()?;
         let mut reader = file.take(max.saturating_add(1));
         let mut hasher = Sha256::new();
         let mut read = 0u64;
@@ -235,15 +317,25 @@ impl Store {
                 break;
             }
             hasher.update(&buf[..n]);
+            staged
+                .write_all(&buf[..n])
+                .map_err(|e| SyncError::Store(messages::download_write(&e)))?;
             read += n as u64;
         }
-        if read <= max && Digest::from_hasher(hasher) == *digest {
-            #[cfg(feature = "test-support")]
-            self.observe(&path);
-            return Ok(Some(path));
+        if read > max {
+            return Ok(Copied::Wrong(Verdict::Over));
         }
-        self.evict_blob(id, digest)?;
-        Ok(None)
+        let actual = Digest::from_hasher(hasher);
+        if actual != *digest {
+            return Ok(Copied::Wrong(Verdict::Digest(actual)));
+        }
+        staged
+            .as_file_mut()
+            .rewind()
+            .map_err(|e| SyncError::Store(messages::download_write(&e)))?;
+        #[cfg(feature = "test-support")]
+        self.observe(&path);
+        Ok(Copied::Staged(StagedArchive(staged)))
     }
 
     /// Remove the cached blob `digest` that sync found to be wrong, and record the repair. Only
@@ -262,39 +354,6 @@ impl Store {
             repaired.insert(id.clone());
         }
         Ok(())
-    }
-
-    /// Read the archive `path`, which must hash to `digest`, in one pass. The bytes returned are the
-    /// bytes that were hashed. The read stops at `cap` plus one byte.
-    ///
-    /// # Errors
-    /// [`SyncError::CacheUnreadable`] when the file cannot be read, is not a regular file or is
-    /// over `cap`; [`SyncError::DigestMismatch`] when the bytes are not `digest`.
-    pub(super) fn read_archive(
-        &self,
-        id: &PackId,
-        digest: &Digest,
-        cap: u64,
-    ) -> Result<Vec<u8>, SyncError> {
-        let path = self.blob_path(digest);
-        let unreadable = |cause| Self::unreadable_at(id, &path, cause);
-        let file = open_regular(&path).map_err(|e| unreadable(cause_of(&e)))?;
-        let mut bytes = Vec::new();
-        file.take(cap.saturating_add(1))
-            .read_to_end(&mut bytes)
-            .map_err(|e| unreadable(CacheCause::io(&e)))?;
-        if bytes.len() as u64 > cap {
-            return Err(unreadable(CacheCause::TooLarge { cap }));
-        }
-        let actual = Digest::of(&bytes);
-        if actual != *digest {
-            return Err(SyncError::DigestMismatch {
-                id: id.clone(),
-                expected: digest.to_string(),
-                actual: actual.to_string(),
-            });
-        }
-        Ok(bytes)
     }
 
     /// Forget the repairs recorded so far. Each sync starts from none.

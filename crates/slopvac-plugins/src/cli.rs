@@ -99,10 +99,10 @@ pub trait PluginLoader {
 #[non_exhaustive]
 pub enum LoadError {
     /// The cached files of the plugin cannot be read. The code is `plugin-store-unreadable`.
-    #[error("{}", render(&CliText::LoadStoreUnreadable { id: id.clone() }))]
+    #[error("{}", render(&CliText::LoadStoreUnreadable { id: id.as_str().to_owned() }))]
     StoreUnreadable {
-        /// The plugin id.
-        id: String,
+        /// The plugin id. `plugins trust` names the locked plugin and ignores this value.
+        id: PackId,
     },
     /// Any other refusal. Its detail can name a path, so it is not kept.
     #[error("{}", withheld(TRUST_INPUTS))]
@@ -113,9 +113,7 @@ impl LoadError {
     /// The cached files of plugin `id` cannot be read.
     #[must_use]
     pub fn store_unreadable(id: &PackId) -> Self {
-        Self::StoreUnreadable {
-            id: id.as_str().to_owned(),
-        }
+        Self::StoreUnreadable { id: id.clone() }
     }
 
     /// The stable code of the refusal, when it has one of its own.
@@ -794,12 +792,16 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
     if revoked(runner, pack, &current.list) {
         return Err(RunError::Revoked { id: line(id) });
     }
-    let (vp, spec) = loader.load(pack).map_err(|e| match e.code() {
-        // A refusal that carries a code is reported under it, with its catalog sentence.
-        Some(code) => RunError::Failed {
-            source: Reported::new(code, e.to_string()),
+    let (vp, spec) = loader.load(pack).map_err(|e| match e {
+        // The sentence names the plugin from the locked entry that was loaded, never an id that
+        // the loader supplies.
+        LoadError::StoreUnreadable { .. } => RunError::Failed {
+            source: Reported::new(
+                "plugin-store-unreadable",
+                render(&CliText::LoadStoreUnreadable { id: line(id) }),
+            ),
         },
-        None => refused(withheld(TRUST_INPUTS)),
+        _ => refused(withheld(TRUST_INPUTS)),
     })?;
     // The cache is not trusted (threat model E8), so the signature is checked again here, from
     // the cached files only, before a person's trust is recorded for what they hold.

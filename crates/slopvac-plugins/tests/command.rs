@@ -1284,7 +1284,7 @@ struct UnreadableCacheLoader;
 impl PluginLoader for UnreadableCacheLoader {
     fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
         Err(LoadError::StoreUnreadable {
-            id: "fake".to_owned(),
+            id: "fake".parse().unwrap(),
         })
     }
 }
@@ -1313,13 +1313,13 @@ fn trust_shows_no_absolute_path_from_a_loader_refusal_in_its_text_or_chain() {
     assert!(!shown.contains("secret-dir"), "{shown}");
 }
 
-/// A loader that puts an absolute path where the plugin id goes.
-struct PathAsIdLoader;
+/// A loader that names another plugin than the one that was loaded.
+struct OtherIdLoader;
 
 impl PluginLoader for PathAsIdLoader {
     fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
         Err(LoadError::StoreUnreadable {
-            id: "/home/someone/secret-dir".to_owned(),
+            id: "other".parse().unwrap(),
         })
     }
 }
@@ -1329,12 +1329,11 @@ fn trust_names_the_locked_plugin_and_never_the_id_a_loader_supplies() {
     let f = Fixture::new();
     f.write_lock(&[fake_code_entry()]);
     let err = f
-        .run(&["trust", "fake"], false, |s| s.loader(PathAsIdLoader))
+        .run(&["trust", "fake"], false, |s| s.loader(OtherIdLoader))
         .result
         .unwrap_err();
     let shown = format!("{}\n{err:?}", names_in_chain(&err));
-    assert!(!shown.contains("/home/someone"), "{shown}");
-    assert!(!shown.contains("secret-dir"), "{shown}");
+    assert!(!shown.contains("other"), "{shown}");
     assert!(shown.contains("plugin `fake`"), "{shown}");
 }
 

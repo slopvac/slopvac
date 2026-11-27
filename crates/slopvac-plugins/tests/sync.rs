@@ -2153,6 +2153,23 @@ mod cache_reads {
     }
 
     /// A blob that mode 000 hides. False when the process ignores modes (root).
+    /// Removes all access to a directory and gives it back when dropped, also when the test
+    /// panics, so the scratch directory can be deleted.
+    struct NoAccess(PathBuf);
+
+    impl NoAccess {
+        fn new(dir: &Path) -> Self {
+            fs::set_permissions(dir, fs::Permissions::from_mode(0o000)).unwrap();
+            Self(dir.to_owned())
+        }
+    }
+
+    impl Drop for NoAccess {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+        }
+    }
+
     fn make_unreadable(path: &Path) -> bool {
         fs::set_permissions(path, fs::Permissions::from_mode(0o000)).unwrap();
         fs::File::open(path).is_err()
@@ -2371,12 +2388,11 @@ mod cache_reads {
     fn a_tree_directory_that_cannot_be_inspected_is_an_error_and_not_absence() {
         let c = cached();
         let trees = c.env.data.path().join("slopvac/trees");
-        fs::set_permissions(&trees, fs::Permissions::from_mode(0o000)).unwrap();
+        let _restore = NoAccess::new(&trees);
         let blocked = fs::read_dir(&trees).is_err();
 
         let result = c.verified(Limits::default());
 
-        fs::set_permissions(&trees, fs::Permissions::from_mode(0o755)).unwrap();
         if !blocked {
             return; // the test runs with rights that ignore modes
         }
@@ -2537,12 +2553,11 @@ mod cache_reads {
     fn a_tree_that_cannot_be_inspected_is_an_error_and_not_absent_for_status() {
         let c = cached();
         let trees = c.env.data.path().join("slopvac/trees");
-        fs::set_permissions(&trees, fs::Permissions::from_mode(0o000)).unwrap();
+        let _restore = NoAccess::new(&trees);
         let blocked = fs::read_dir(&trees).is_err();
 
         let result = c.env.store().inspect(&c.lock.packs()[0].digest);
 
-        fs::set_permissions(&trees, fs::Permissions::from_mode(0o755)).unwrap();
         if !blocked {
             return; // the test runs with rights that ignore modes
         }
@@ -2595,7 +2610,6 @@ mod cache_reads {
                     fs::write(path, &evil).unwrap();
                 }
             }));
-        // Drop the tree record of `b`, so the run extracts it again.
         let both = lock_text(&[a, b]);
 
         let result =

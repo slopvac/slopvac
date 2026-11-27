@@ -65,7 +65,7 @@ use std::time::Duration;
 
 use semver::{Version, VersionReq};
 
-use cache::Accepted;
+use cache::{Accepted, StagedArchive};
 pub use cache::{Store, StoreLock, TreeState};
 pub use error::{CacheCause, SyncError};
 use verified::Cached;
@@ -176,9 +176,9 @@ pub struct SyncReport {
 }
 
 enum Acquired {
-    /// A verified archive in the blob cache, and the digest its bytes must have. The install
-    /// reads the file once more and checks those bytes, and extracts only what it read.
-    Archive(Digest),
+    /// A private copy of an archive, verified while it was copied. The install extracts from
+    /// the copy and opens nothing by path.
+    Archive(StagedArchive),
     /// A tree fetched from a pinned git commit, hashed and equal to the lock,
     /// not yet in the store.
     Staged(Box<StagedTree>, Accepted),
@@ -328,8 +328,6 @@ impl<'a> Syncer<'a> {
     /// new trees; see the module documentation.
     pub fn sync(&self, lock: &Lockfile) -> Result<SyncReport, SyncError> {
         self.check_git_launcher(lock)?;
-        // A repair is reported by the run that made it: marks of an earlier run are dropped.
-        self.store.clear_repaired();
         let current = match self.network {
             Network::Online(client) => self.revocations.refresh(client)?,
             Network::Offline => self.revocations.cached()?,
@@ -344,6 +342,9 @@ impl<'a> Syncer<'a> {
             }
         }
         let _lock = self.store.lock()?;
+        // A repair is reported by the run that made it. The marks are dropped under the store
+        // lock, so no other sync on this store can have a repair in flight.
+        self.store.clear_repaired();
         let mut acquired = Vec::with_capacity(lock.packs().len());
         for pack in lock.packs() {
             acquired.push((pack, self.acquire(pack, revoked)?));
@@ -472,14 +473,17 @@ impl<'a> Syncer<'a> {
             }
             Acquired::Archive(archive) => archive,
         };
-        // The archive is read once, here, and extracted from the bytes that were checked: a file
-        // swapped after the earlier check cannot reach the tree.
-        let bytes = self
-            .store
-            .read_archive(&pack.id, &archive, self.limits.compressed_bytes)?;
+        // The copy was verified when acquisition made it. It is extracted from its own handle, and
+        // dropped (removed) when this function returns.
+        let mut archive = archive;
         let exec = self.executables.get(&pack.id).cloned().unwrap_or_default();
-        let done = extract_targz(bytes.as_slice(), &self.store.trees(), &exec, self.limits)
-            .map_err(extract)?;
+        let reader = archive.reader().map_err(|e| {
+            extract(ExtractError::Io {
+                what: messages::reading_staged(),
+                source: e,
+            })
+        })?;
+        let done = extract_targz(reader, &self.store.trees(), &exec, self.limits).map_err(extract)?;
         #[cfg(feature = "test-support")]
         self.store.observe(&done.root);
         self.store.record(&pack.digest, &done.hash)?;
@@ -638,12 +642,8 @@ impl<'a> Syncer<'a> {
         }
 
         let layer = payload_layer(&manifest, &self.limits).map_err(layout)?;
-        if self
-            .store
-            .blob(&pack.id, &layer.digest, layer.size)?
-            .is_some()
-        {
-            return Ok(Acquired::Archive(layer.digest.clone()));
+        if let Some(staged) = self.store.blob(&pack.id, &layer.digest, layer.size)? {
+            return Ok(Acquired::Archive(staged));
         }
         let client = self.client(pack, SyncPhrase::WhatArchive.as_static())?;
         let mut tmp = self.store.blob_tempfile()?;
@@ -651,7 +651,11 @@ impl<'a> Syncer<'a> {
             .pull_blob(&reference, layer, tmp.as_file_mut())
             .map_err(fetch)?;
         self.store.commit_blob(tmp, &layer.digest)?;
-        Ok(Acquired::Archive(layer.digest.clone()))
+        Ok(Acquired::Archive(self.store.stage_written(
+            &pack.id,
+            &layer.digest,
+            layer.size,
+        )?))
     }
 
     /// The signature gate: the statement is signed by a policy key, names this
@@ -947,12 +951,11 @@ impl<'a> Syncer<'a> {
 
     fn acquire_archive(&self, pack: &LockedPack, url: &str) -> Result<Acquired, SyncError> {
         let locked = Self::locked_digest(pack)?;
-        if self
+        if let Some(staged) = self
             .store
             .blob(&pack.id, &locked, self.limits.compressed_bytes)?
-            .is_some()
         {
-            return Ok(Acquired::Archive(locked));
+            return Ok(Acquired::Archive(staged));
         }
         let client = self.client(pack, SyncPhrase::WhatRelease.as_static())?;
         let mut tmp = self.store.blob_tempfile()?;
@@ -971,7 +974,11 @@ impl<'a> Syncer<'a> {
             });
         }
         self.store.commit_blob(tmp, &locked)?;
-        Ok(Acquired::Archive(locked))
+        Ok(Acquired::Archive(self.store.stage_written(
+            &pack.id,
+            &locked,
+            self.limits.compressed_bytes,
+        )?))
     }
 
     fn acquire_path(&self, pack: &LockedPack, rel: &str) -> Result<Acquired, SyncError> {
@@ -1016,17 +1023,16 @@ impl<'a> Syncer<'a> {
             return Ok(Acquired::InPlace(path, manifest));
         }
         let locked = Self::locked_digest(pack)?;
-        if self
+        if let Some(staged) = self
             .store
             .blob(&pack.id, &locked, self.limits.compressed_bytes)?
-            .is_some()
         {
             // Still check the file in the project: it is what the lock names.
             let actual = cache_hash(&path).map_err(|e| source(messages::path_reading(rel, &e)))?;
             if actual != locked {
                 return Err(mismatch(actual.as_str()));
             }
-            return Ok(Acquired::Archive(locked));
+            return Ok(Acquired::Archive(staged));
         }
         let mut tmp = self.store.blob_tempfile()?;
         let mut file = File::open(&path).map_err(|e| source(messages::path_reading(rel, &e)))?;
@@ -1041,7 +1047,11 @@ impl<'a> Syncer<'a> {
             return Err(mismatch(actual.as_str()));
         }
         self.store.commit_blob(tmp, &locked)?;
-        Ok(Acquired::Archive(locked))
+        Ok(Acquired::Archive(self.store.stage_written(
+            &pack.id,
+            &locked,
+            self.limits.compressed_bytes,
+        )?))
     }
 }
 
