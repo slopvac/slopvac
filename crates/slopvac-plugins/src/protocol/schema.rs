@@ -1065,12 +1065,6 @@ impl JsonSchema for ProtocolMessage {
 
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::panic,
-        reason = "test code: a panic is a failed test"
-    )]
-
     use rstest::rstest;
     use schemars::generate::SchemaSettings;
 
