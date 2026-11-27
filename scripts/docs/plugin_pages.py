@@ -27,7 +27,10 @@ Pages = dict[str, str]
 PROTOCOL_SCHEMA = "plugin-protocol.schema.json"
 MANIFEST_SCHEMA = "plugin-manifest.schema.json"
 MANIFEST_FILE = "slopvac-plugin.toml"
-CONTRACT_FILE = "plugin-protocol.md"
+# The tables of the error-code section, generated from the host code table by
+# `slopvac-schemas write`, with the schema that describes them.
+CODES_FILE = "plugin-protocol-codes.json"
+CODES_SCHEMA = "plugin-protocol-codes.schema.json"
 
 
 # ---------------------------------------------------------------------------
@@ -254,49 +257,50 @@ def _def_link(name: str | None) -> str:
     return f"[`{name}`](#{name.lower()})" if name else "none"
 
 
-_TABLE_HEADERS = (
-    ["Code", "`slopvac_code`", "Meaning"],
-    ["`slopvac_code`", "Cause"],
-)
-
-
 def _error_tables(
-    contract: Path,
+    reference: Path, schemas: SchemaSet
 ) -> tuple[list[tuple[str, str, str]], list[tuple[str, str]]]:
-    """Numeric error codes and host-only diagnostics, from the contract's tables."""
-    if not contract.is_file():
-        raise SystemExit(f"{contract}: protocol contract not found")
-    body = contract.read_text()
-    match = re.search(
-        r"^## \d+\. Error codes\n(.*?)(?=^## |\Z)", body, re.MULTILINE | re.DOTALL
-    )
-    if not match:
-        raise SystemExit(f"{contract}: no 'Error codes' section")
-    codes, diagnostics = [], []
-    for line in match[1].splitlines():
-        if not line.startswith("|"):
-            continue
-        if not line.rstrip().endswith("|"):
-            raise SystemExit(f"{contract}: malformed error table row: {line}")
-        # A pipe escaped as \| belongs to its cell. A split on bare pipes keeps it there.
-        cells = [
-            c.strip().replace("\\|", "|")
-            for c in re.split(r"(?<!\\)\|", line.strip()[1:-1])
-        ]
-        if all(re.fullmatch(r":?-+:?", c) for c in cells) or cells in _TABLE_HEADERS:
-            continue
-        if len(cells) == 3 and re.fullmatch(r"-\d+", cells[0]):
-            codes.append((cells[0], cells[1].strip("`"), cells[2]))
-        elif len(cells) == 2 and re.fullmatch(r"`[a-z][a-z0-9-]*`", cells[0]):
-            diagnostics.append((cells[0].strip("`"), cells[1]))
-        else:
-            raise SystemExit(f"{contract}: malformed error table row: {line}")
+    """Numeric error codes and host-only diagnostics, from the generated data file.
+
+    `slopvac-schemas` writes the file from the host's code table, so the site reads data
+    and parses no Markdown. The file must match its generated schema.
+    """
+    path = reference / CODES_FILE
+    if not path.is_file():
+        raise SystemExit(f"{path}: plugin-protocol-codes data file not found")
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as err:
+        raise SystemExit(f"{path}: plugin-protocol-codes data file is not JSON: {err}")
+    _check_codes(path, data, schemas)
+    codes = [(str(r["code"]), r["slopvac_code"], r["meaning"]) for r in data["rpc"]]
+    diagnostics = [(r["slopvac_code"], r["cause"]) for r in data["host"]]
     if not codes or not diagnostics:
-        raise SystemExit(f"{contract}: error tables not found in 'Error codes'")
+        raise SystemExit(f"{path}: plugin-protocol-codes data file has an empty table")
     return codes, diagnostics
 
 
-def generate_protocol(schemas: SchemaSet, contract_dir: Path) -> Pages:
+def _check_codes(path: Path, data: object, schemas: SchemaSet) -> None:
+    from jsonschema import Draft202012Validator
+
+    schema = schemas.raw.get(CODES_SCHEMA)
+    if schema is None:
+        raise SystemExit(f"schema {CODES_SCHEMA} is missing")
+    errors = sorted(
+        Draft202012Validator(schema).iter_errors(data),
+        key=lambda e: list(e.absolute_path),
+    )
+    if errors:
+        detail = "; ".join(
+            f"{'/'.join(map(str, e.absolute_path)) or '(root)'}: {e.message}"
+            for e in errors
+        )
+        raise SystemExit(
+            f"{path}: plugin-protocol-codes data file does not match {CODES_SCHEMA}: {detail}"
+        )
+
+
+def generate_protocol(schemas: SchemaSet, reference_dir: Path) -> Pages:
     root = schemas.doc(PROTOCOL_SCHEMA)
     defs = schemas.defs(PROTOCOL_SCHEMA)
     renderer = Renderer(schemas, link_defs_of=PROTOCOL_SCHEMA)
@@ -362,7 +366,7 @@ def generate_protocol(schemas: SchemaSet, contract_dir: Path) -> Pages:
         *_table(renderer.rows(defs["InitializeResult"])),
     ]
 
-    codes, diagnostics = _error_tables(contract_dir / CONTRACT_FILE)
+    codes, diagnostics = _error_tables(reference_dir, schemas)
     lines += [
         "",
         "## Errors",

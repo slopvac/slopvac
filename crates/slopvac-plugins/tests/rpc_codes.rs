@@ -50,7 +50,10 @@ fn a_plugin_range_code_is_an_internal_error_whatever_the_plugin_names(#[case] co
 }
 
 #[rstest]
-#[case::host_reserved(-32008)]
+#[case::declined(-32008)]
+#[case::malformed(-32009)]
+#[case::budget(-32010)]
+#[case::encrypted(-32011)]
 #[case::host_reserved_edge(-32049)]
 #[case::outside(1)]
 fn any_other_code_is_an_internal_error(#[case] code: i64) {

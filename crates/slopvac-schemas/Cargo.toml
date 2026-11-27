@@ -17,6 +17,7 @@ slopvac = { workspace = true }
 slopvac-context = { workspace = true }
 slopvac-model = { workspace = true }
 slopvac-packs = { workspace = true }
+slopvac-plugins = { workspace = true }
 slopvac-rules = { workspace = true }
 slopvac-sanitize = { workspace = true }
 thiserror = { workspace = true }
@@ -24,7 +25,6 @@ thiserror = { workspace = true }
 [dev-dependencies]
 jsonschema = { workspace = true }
 rstest = { workspace = true }
-slopvac-plugins = { workspace = true }
 snapbox = { workspace = true }
 tempfile = { workspace = true }
 

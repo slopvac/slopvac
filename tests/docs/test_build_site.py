@@ -63,26 +63,10 @@ required = []
 optional = ["document-path"]
 """
 
-CONTRACT = """\
-# Contract
-
-## 9. Other
-
-| 1 | `ignored` | Not an error. |
-
-## 10. Error codes
-
-| Code | `slopvac_code` | Meaning |
-|---|---|---|
-| -32700 | `parse-error` | The body is not valid JSON. |
-| -32001 | `protocol-version-unsupported` | No common version. |
-
-| `slopvac_code` | Cause |
-|---|---|
-| `plugin-timeout` | A timer expired. |
-
-## 11. Security
-"""
+CODES_FILE = "plugin-protocol-codes.json"
+# The baseline is every row of the real generated tables, so an equality check cannot fail
+# because a fixture left a normal row out.
+CODES = json.loads((ROOT / "docs" / "reference" / CODES_FILE).read_text())
 
 RULES_YAML = """\
 id: demo
@@ -159,7 +143,7 @@ def sources(tmp_path: Path) -> dict[str, Path]:
         )
     )
     (schemas / "b.schema.json").write_text(_schema("b.schema.json"))
-    for name in ("plugin-protocol", "plugin-manifest", "common"):
+    for name in ("plugin-protocol", "plugin-manifest", "common", "plugin-protocol-codes"):
         shutil.copy(REAL_SCHEMAS / f"{name}.schema.json", schemas)
     (schemas / "config.schema.json").write_text(
         _schema("config.schema.json", **FIXTURE_CONFIG)
@@ -170,7 +154,9 @@ def sources(tmp_path: Path) -> dict[str, Path]:
         (packs / pack_id / "slopvac-plugin.toml").write_text(body)
     contract = tmp_path / "contract"
     contract.mkdir()
-    (contract / "plugin-protocol.md").write_text(CONTRACT)
+    reference = tmp_path / "reference"
+    reference.mkdir()
+    (reference / CODES_FILE).write_text(json.dumps(CODES, indent=2) + "\n")
     config = tmp_path / "site.toml"
     config.write_text(
         'site_url = "https://docs.example.org/tools/"\napi_version = "v3"\n'
@@ -180,6 +166,7 @@ def sources(tmp_path: Path) -> dict[str, Path]:
         "schemas": schemas,
         "packs": packs,
         "contract": contract,
+        "reference": reference,
         "config": config,
         "out": tmp_path / "out",
     }
@@ -193,7 +180,7 @@ def _run(sources: dict[str, Path], *extra: str) -> int:
             "--rules-dir", str(sources["rules"]),
             "--schemas-dir", str(sources["schemas"]),
             "--plugins-dir", str(sources["packs"]),
-            "--contract-dir", str(sources["contract"]),
+            "--reference-dir", str(sources["reference"]),
             *extra,
         ]
     )  # fmt: skip
@@ -297,15 +284,11 @@ def test_protocol_capabilities_show_declaration_offer_and_reply_fields(
     assert "| `capabilities.requiresNetwork` | boolean | yes |" in capabilities
 
 
-def test_protocol_errors_come_from_the_contract_tables(
+def test_protocol_errors_come_from_the_reference_file(
     sources: dict[str, Path],
 ) -> None:
     _run(sources)
-    errors = _read(sources, "plugins/protocol.md").split("## Errors")[1]
-    errors = errors.split("## Definitions")[0]
-    assert "| -32001 | `protocol-version-unsupported` | No common version. |" in errors
-    assert "| `plugin-timeout` | A timer expired. |" in errors
-    assert "ignored" not in errors
+    assert _published_rows(sources) == _expected_rows(CODES)
 
 
 def test_protocol_definitions_follow_the_schema_with_fields(
@@ -315,14 +298,6 @@ def test_protocol_definitions_follow_the_schema_with_fields(
     page = _read(sources, "plugins/protocol.md")
     definition = page.split("### CancelParams")[1].split("###")[0]
     assert "| `id` | integer ([`RequestId`](#requestid)) | yes |" in definition
-
-
-def test_protocol_without_error_tables_in_the_contract_fails(
-    sources: dict[str, Path],
-) -> None:
-    (sources["contract"] / "plugin-protocol.md").write_text("# Contract\n")
-    with pytest.raises(SystemExit, match="Error codes"):
-        _run(sources)
 
 
 def test_manifest_reference_documents_fields_and_the_kind_rule(
@@ -417,7 +392,7 @@ def test_committed_schemas_contract_and_example_pack_render() -> None:
     import plugin_pages
 
     schemas = plugin_pages.SchemaSet(REAL_SCHEMAS)
-    protocol = plugin_pages.generate_protocol(schemas, ROOT / "docs" / "contract")
+    protocol = plugin_pages.generate_protocol(schemas, ROOT / "docs" / "reference")
     assert "| -32002 | `required-feature-missing` |" in protocol["plugins/protocol.md"]
     packs = plugin_pages.generate_packs(
         schemas, ROOT / "packages" / "slopvac-plugin" / "examples"
@@ -767,36 +742,177 @@ def test_a_pack_named_index_does_not_replace_the_packs_index(
 # --- error tables ----------------------------------------------------------
 
 
-def _with_contract(sources: dict[str, Path], new: str) -> None:
-    old = "| -32001 |"
-    assert old in CONTRACT
-    text = CONTRACT.replace(old, f"{new}\n{old}")
-    (sources["contract"] / "plugin-protocol.md").write_text(text)
+def _expected_rows(codes: dict) -> list[str]:
+    rows = [f"| {r['code']} | `{r['slopvac_code']}` | {r['meaning']} |" for r in codes["rpc"]]
+    rows += [f"| `{r['slopvac_code']}` | {r['cause']} |" for r in codes["host"]]
+    return rows
+
+
+def _published_rows(sources: dict[str, Path]) -> list[str]:
+    errors = _read(sources, "plugins/protocol.md").split("## Errors")[1]
+    errors = errors.split("## Definitions")[0]
+    headers = ("| Code |", "| `slopvac_code` |", "| ---")
+    return [
+        line
+        for line in errors.splitlines()
+        if line.startswith("|") and not line.startswith(headers)
+    ]
 
 
 def test_an_escaped_pipe_stays_inside_its_error_table_cell(
     sources: dict[str, Path],
 ) -> None:
-    _with_contract(sources, "| -32009 | `pipe-case` | Takes a \\| b. |")
+    codes = json.loads((sources["reference"] / CODES_FILE).read_text())
+    codes["rpc"][0]["meaning"] = "Takes a | b."
+    (sources["reference"] / CODES_FILE).write_text(json.dumps(codes))
     _run(sources)
-    errors = _read(sources, "plugins/protocol.md").split("## Errors")[1]
-    assert "| -32009 | `pipe-case` | Takes a \\| b. |" in errors
+    assert "| -32700 | `parse-error` | Takes a \\| b. |" in _published_rows(sources)
+
+
+def _codes_file(sources: dict[str, Path], mutate) -> None:
+    path = sources["reference"] / CODES_FILE
+    codes = json.loads(path.read_text())
+    path.write_text(mutate(codes))
 
 
 @pytest.mark.parametrize(
-    "row",
+    "mutate",
     [
-        "| -32009 | `short-row` |",
-        "| -32009 | `split-row` | one | two |",
-        "| nine | `bad-code` | Not numeric. |",
+        pytest.param(lambda c: "{not json", id="not-json"),
+        pytest.param(lambda c: "[]", id="not-an-object"),
+        pytest.param(lambda c: json.dumps({"rpc": c["rpc"]}), id="host-missing"),
+        pytest.param(lambda c: json.dumps({"host": c["host"]}), id="rpc-missing"),
+        pytest.param(lambda c: json.dumps({**c, "rpc": []}), id="no-numeric-rows"),
+        pytest.param(lambda c: json.dumps({**c, "host": []}), id="no-host-rows"),
+        pytest.param(lambda c: json.dumps({**c, "extra": 1}), id="unknown-key"),
+        pytest.param(
+            lambda c: json.dumps(
+                {**c, "rpc": [{**c["rpc"][0], "code": "-32700"}, *c["rpc"][1:]]}
+            ),
+            id="code-is-text",
+        ),
+        pytest.param(
+            lambda c: json.dumps({**c, "host": [{"slopvac_code": "x"}]}),
+            id="row-missing-a-key",
+        ),
     ],
 )
-def test_a_malformed_error_table_row_stops_the_build(
-    sources: dict[str, Path], row: str
+def test_a_malformed_codes_file_stops_the_build(
+    sources: dict[str, Path], mutate
 ) -> None:
-    _with_contract(sources, row)
-    with pytest.raises(SystemExit, match="malformed"):
+    _codes_file(sources, mutate)
+    with pytest.raises(SystemExit, match="plugin-protocol-codes"):
         _run(sources)
+
+
+def test_a_missing_codes_file_stops_the_build(sources: dict[str, Path]) -> None:
+    (sources["reference"] / CODES_FILE).unlink()
+    with pytest.raises(SystemExit, match="plugin-protocol-codes"):
+        _run(sources)
+
+
+def _rows(kind: str) -> str:
+    if kind == "rpc-codes":
+        return "".join(
+            f"| {r['code']} | `{r['slopvac_code']}` | {r['meaning']} |\n"
+            for r in CODES["rpc"]
+        )
+    return "".join(f"| `{r['slopvac_code']}` | {r['cause']} |\n" for r in CODES["host"])
+
+
+_HEADERS = {
+    "rpc-codes": "| Code | `slopvac_code` | Meaning |\n|---|---|---|\n",
+    "host-codes": "| `slopvac_code` | Cause |\n|---|---|\n",
+}
+_EXTRA = "| -32099 | `extra` | Not in the generated file. |\n"
+
+
+def _block(kind: str, inner: str = "", begin: str | None = None) -> str:
+    """One generated block holding the real rows, with `inner` rows added at its end."""
+    begin = begin or f"<!-- generated:{kind} begin -->"
+    return (
+        f"{begin}\n{_HEADERS[kind]}{_rows(kind)}{inner}"
+        f"<!-- generated:{kind} end -->\n"
+    )
+
+
+def _section(body: str, heading: str = "## 10. Error codes") -> str:
+    return (
+        "# Contract\n\n## 9. Other\n\n| 1 | `ignored` | Not an error. |\n\n"
+        f"{heading}\n\n{body}\n## 11. Security\n"
+    )
+
+
+_BASE = _block("rpc-codes") + "\n" + _block("host-codes")
+_FENCED_IN_RPC = "```text\n" + _EXTRA + "```\n"
+_FENCED_RUN = "```text\n``` not a closer\n| -32022 | `inside` | Still in the fence. |\n```\n"
+
+# The documents that the round 2 and round 3 reviews found. The site reads the generated
+# file only, so none of them may change the published rows.
+ADVERSARIAL_DOCS = {
+    "a-row-after-the-blocks": _section(_BASE + _EXTRA),
+    "a-row-before-the-blocks": _section(_EXTRA + _BASE),
+    "b-row-between-unrelated-markers": _section(
+        _block("rpc-codes")
+        + "<!-- other begin -->\n"
+        + _EXTRA
+        + "<!-- other end -->\n"
+        + _block("host-codes")
+    ),
+    "c-row-inside-a-fence-in-each-block": _section(
+        _block("rpc-codes", _FENCED_IN_RPC) + "\n" + _block("host-codes", _FENCED_IN_RPC)
+    ),
+    "d-renamed-error-heading": _section(_BASE + _EXTRA, "## 10. Failure list"),
+    "d-second-error-codes-heading": (
+        "## 8. Error codes\n\n" + _EXTRA + "\n" + _section(_BASE)
+    ),
+    # One document: a begin marker with a trailing space, an indented extra RPC row before
+    # the real marker, and the real marker carrying an unrelated generated-begin prefix.
+    "e-trailing-space-indented-row-and-prefixed-marker": _section(
+        "<!-- generated:rpc-codes begin --> \n"
+        + "  "
+        + _EXTRA
+        + _block(
+            "rpc-codes",
+            begin="<!-- generated:other begin --><!-- generated:rpc-codes begin -->",
+        )
+        + "\n"
+        + _block("host-codes")
+    ),
+    "f-fence-closed-by-a-run-followed-by-text": _section(
+        _block("rpc-codes", _FENCED_RUN + _EXTRA) + "\n" + _block("host-codes", _FENCED_RUN)
+    ),
+}
+
+
+@pytest.mark.parametrize("doc", ADVERSARIAL_DOCS.values(), ids=ADVERSARIAL_DOCS.keys())
+def test_the_published_rows_are_the_generated_rows_whatever_the_contract_says(
+    sources: dict[str, Path], doc: str
+) -> None:
+    (sources["contract"] / "plugin-protocol.md").write_text(doc)
+    _run(sources)
+    assert _published_rows(sources) == _expected_rows(CODES)
+
+
+def test_the_real_reference_file_is_published_row_for_row() -> None:
+    sys.path.insert(0, str(ROOT / "scripts" / "docs"))
+    import plugin_pages
+
+    codes = json.loads((ROOT / "docs/reference" / CODES_FILE).read_text())
+    schemas = plugin_pages.SchemaSet(REAL_SCHEMAS)
+    page = plugin_pages.generate_protocol(schemas, ROOT / "docs" / "reference")
+    errors = page["plugins/protocol.md"].split("## Errors")[1].split("## Definitions")[0]
+    published = [
+        line
+        for line in errors.splitlines()
+        if line.startswith("|")
+        and not line.startswith(("| Code |", "| `slopvac_code` |", "| ---"))
+    ]
+    expected = [
+        f"| {r['code']} | `{r['slopvac_code']}` | {r['meaning']} |" for r in codes["rpc"]
+    ] + [f"| `{r['slopvac_code']}` | {r['cause']} |" for r in codes["host"]]
+    assert published == expected
+    assert len(published) == len(codes["rpc"]) + len(codes["host"])
 
 
 # --- URLs and link structure -----------------------------------------------

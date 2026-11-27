@@ -1,0 +1,73 @@
+{
+  "$defs": {
+    "HostCodeRow": {
+      "additionalProperties": false,
+      "description": "One code that the host raises in its own diagnostics, with no numeric code.",
+      "properties": {
+        "cause": {
+          "description": "What causes the host to raise it.",
+          "type": "string"
+        },
+        "slopvac_code": {
+          "description": "The stable kebab-case code.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slopvac_code",
+        "cause"
+      ],
+      "type": "object"
+    },
+    "RpcCodeRow": {
+      "additionalProperties": false,
+      "description": "One numeric JSON-RPC code and the `slopvac_code` it reports as.",
+      "properties": {
+        "code": {
+          "description": "The numeric JSON-RPC code.",
+          "type": "integer"
+        },
+        "meaning": {
+          "description": "What the code means.",
+          "type": "string"
+        },
+        "slopvac_code": {
+          "description": "The stable kebab-case `data.slopvac_code`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "slopvac_code",
+        "meaning"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/plugin-protocol-codes.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The two error-code tables of plugin-protocol.md section 10, as the data file docs/reference/plugin-protocol-codes.json. The docs site reads this file, not the Markdown. The host's code table in slopvac-plugins is the source, and the file is generated from it.",
+  "properties": {
+    "host": {
+      "description": "The codes the host raises with no numeric code, in document order.",
+      "items": {
+        "$ref": "#/$defs/HostCodeRow"
+      },
+      "type": "array"
+    },
+    "rpc": {
+      "description": "The numeric JSON-RPC codes, in document order.",
+      "items": {
+        "$ref": "#/$defs/RpcCodeRow"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "rpc",
+    "host"
+  ],
+  "title": "slopvac v3 plugin protocol codes",
+  "type": "object"
+}

@@ -19,6 +19,12 @@ fn committed_copy() -> tempfile::TempDir {
     for artifact in ARTIFACTS {
         fs::copy(repo.join(artifact.file), dir.join(artifact.file)).unwrap();
     }
+    // The generated data file under docs/reference is checked with the schemas.
+    let reference = root.path().join("docs/reference");
+    fs::create_dir_all(&reference).unwrap();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/reference/plugin-protocol-codes.json");
+    fs::copy(source, reference.join("plugin-protocol-codes.json")).unwrap();
     root
 }
 

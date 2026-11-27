@@ -2,6 +2,7 @@
 
 use thiserror::Error;
 
+use crate::error_codes::rpc_code_name;
 use crate::messages::host as messages;
 use crate::process::Teardown;
 
@@ -26,20 +27,7 @@ impl RpcError {
     /// own range -32050 to -32099, is `internal-error`.
     #[must_use]
     pub fn code_name(&self) -> &'static str {
-        match self.code {
-            -32700 => "parse-error",
-            -32600 => "invalid-request",
-            -32601 => "method-not-found",
-            -32602 => "invalid-params",
-            -32001 => "protocol-version-unsupported",
-            -32002 => "required-feature-missing",
-            -32003 => "not-initialized",
-            -32004 => "message-too-large",
-            -32005 => "request-cancelled",
-            -32006 => "document-invalid",
-            -32007 => "offline",
-            _ => "internal-error",
-        }
+        rpc_code_name(self.code)
     }
 }
 

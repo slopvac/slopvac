@@ -2763,6 +2763,7 @@ dependencies = [
  "rstest",
  "rustix",
  "rustls",
+ "schemars",
  "semver",
  "serde",
  "serde_json",

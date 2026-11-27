@@ -26,6 +26,7 @@ pub mod budget;
 mod cause;
 mod cli;
 pub mod error;
+mod error_codes;
 pub mod extract;
 pub mod frame;
 pub mod hooks;
@@ -53,6 +54,7 @@ pub use api::{DocOutcome, plan_batches};
 pub use budget::{BudgetCaps, RunBudget};
 pub use cli::{Dirs, PluginLoader, Runner, command, config_id, config_range, run};
 pub use error::{PluginError, RpcError, StartError};
+pub use error_codes::{HostCodeRow, ProtocolCodes, RpcCodeRow, protocol_codes};
 pub use host::{
     DrainHook, HostConfig, Plugin, PluginSpec, ReadHook, RunCaps, Shutdown, SpawnGate, Timeouts,
 };
