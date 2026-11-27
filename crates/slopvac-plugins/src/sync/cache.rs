@@ -100,6 +100,9 @@ pub struct Store {
     /// An OS error code that every write to a staged copy fails with.
     #[cfg(feature = "test-support")]
     staging_fault: Option<i32>,
+    /// An OS error code that rewinding a staged copy fails with.
+    #[cfg(feature = "test-support")]
+    staging_seek_fault: Option<i32>,
     /// Plugins whose cached files sync removed and fetched again in this run.
     repaired: std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<PackId>>>,
 }
@@ -142,6 +145,8 @@ impl Store {
             lock_hook: None,
             #[cfg(feature = "test-support")]
             staging_fault: None,
+            #[cfg(feature = "test-support")]
+            staging_seek_fault: None,
             repaired: std::sync::Arc::default(),
         }
     }
@@ -188,6 +193,24 @@ impl Store {
     pub fn with_staging_write_fault(mut self, code: i32) -> Self {
         self.staging_fault = Some(code);
         self
+    }
+
+    /// Make rewinding a staged copy, after a good copy, fail with the OS error `code`.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "test-support")]
+    pub fn with_staging_seek_fault(mut self, code: i32) -> Self {
+        self.staging_seek_fault = Some(code);
+        self
+    }
+
+    /// Rewind the staged copy, or fail as a test asked.
+    fn rewind_staged(&self, staged: &mut NamedTempFile) -> io::Result<()> {
+        #[cfg(feature = "test-support")]
+        if let Some(code) = self.staging_seek_fault {
+            return Err(io::Error::from_raw_os_error(code));
+        }
+        staged.as_file_mut().rewind()
     }
 
     /// Write `chunk` to the staged copy, or fail as a test asked.
@@ -376,10 +399,8 @@ impl Store {
         if actual != *digest {
             return Ok(Copied::Wrong(Verdict::Digest(actual)));
         }
-        staged
-            .as_file_mut()
-            .rewind()
-            .map_err(|e| self.unreadable(id, digest, CacheCause::io(&e)))?;
+        self.rewind_staged(&mut staged)
+            .map_err(|e| SyncError::Store(messages::download_write(&e)))?;
         #[cfg(feature = "test-support")]
         self.observe(&path);
         Ok(Copied::Staged(StagedArchive(staged)))

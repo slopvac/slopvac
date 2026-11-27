@@ -2787,7 +2787,8 @@ mod cache_reads {
                         .is_some_and(|n| n.to_string_lossy().starts_with("tree-"));
                     if is_tree && !paused.swap(true, Ordering::SeqCst) {
                         held_tx.lock().unwrap().send(()).unwrap();
-                        let _ = go_rx.lock().unwrap().recv_timeout(Duration::from_secs(60));
+                        // Held until the coordinator releases it, or drops its end of the channel.
+                        let _ = go_rx.lock().unwrap().recv();
                     }
                 })
             })
@@ -2810,6 +2811,9 @@ mod cache_reads {
             let sync = || {
                 Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs).sync(&lock)
             };
+            // Dropping this end releases sync A on every exit of the coordinator, including a
+            // failed assertion, before the scope joins the threads.
+            let release = go_tx;
             let a = scope.spawn(sync);
             assert!(
                 matches!(held_rx.recv_timeout(wait), Ok(())),
@@ -2817,8 +2821,7 @@ mod cache_reads {
             );
             let b = scope.spawn(sync);
             let waiting = waiting_rx.recv_timeout(wait);
-            // Let A go whether or not B was seen, so a failure cannot hang the test.
-            go_tx.send(()).unwrap();
+            release.send(()).unwrap();
             assert_eq!(waiting, Ok(()), "sync B never asked for the lock");
             (a.join().unwrap(), b.join().unwrap())
         });
@@ -2861,6 +2864,45 @@ mod cache_reads {
             Some(&CacheCause::Io {
                 kind: std::io::ErrorKind::StorageFull,
                 os_code: Some(28),
+            }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_failed_rewind_of_a_staged_copy_keeps_its_kind_and_os_code_and_names_no_path() {
+        let env = Env::new();
+        let (lock, _) = installed_archive(&env, "a");
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        // 29 is ESPIPE: the staged copy cannot seek.
+        let store = env.store().with_staging_seek_fault(29);
+
+        let err = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&lock)
+            .unwrap_err();
+
+        let data = env.data.path().to_str().unwrap().to_owned();
+        let mut shown = vec![err.to_string(), format!("{err:?}")];
+        let mut source = std::error::Error::source(&err);
+        while let Some(e) = source {
+            shown.push(e.to_string());
+            shown.push(format!("{e:?}"));
+            source = e.source();
+        }
+        for text in shown {
+            assert!(!text.contains(&data), "{text}");
+        }
+        assert!(
+            matches!(&err, SyncError::CacheUnreadable { .. }),
+            "{err:?}"
+        );
+        let cause = std::error::Error::source(&err).and_then(|e| e.downcast_ref::<CacheCause>());
+        assert_eq!(
+            cause,
+            Some(&CacheCause::Io {
+                kind: std::io::ErrorKind::NotSeekable,
+                os_code: Some(29),
             }),
             "{err:?}"
         );
