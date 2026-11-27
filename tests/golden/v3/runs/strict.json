@@ -822,7 +822,7 @@
         "weak": {
           "errors": 47,
           "findings": 131,
-          "per_100_words": 0.848,
+          "per_100_words": 0.847,
           "warnings": 64
         }
       },
@@ -858,7 +858,7 @@
           "category": "ai-tells-figurative",
           "errors": 0,
           "findings": 18,
-          "per_100_words": 0.117,
+          "per_100_words": 0.116,
           "score": 97.9,
           "suggestions": 0,
           "warnings": 18
@@ -903,7 +903,7 @@
           "category": "orwell",
           "errors": 16,
           "findings": 16,
-          "per_100_words": 0.104,
+          "per_100_words": 0.103,
           "score": 93.5,
           "suggestions": 0,
           "warnings": 0
@@ -921,7 +921,7 @@
           "category": "prose-craft",
           "errors": 0,
           "findings": 149,
-          "per_100_words": 0.965,
+          "per_100_words": 0.963,
           "score": 82.1,
           "suggestions": 3,
           "warnings": 146
@@ -1010,17 +1010,17 @@
         {
           "category": "ste-procedural",
           "errors": 40,
-          "findings": 73,
-          "per_100_words": 0.473,
+          "findings": 74,
+          "per_100_words": 0.478,
           "score": 84.7,
-          "suggestions": 33,
+          "suggestions": 34,
           "warnings": 0
         },
         {
           "category": "ste-punctuation",
           "errors": 0,
           "findings": 94,
-          "per_100_words": 0.609,
+          "per_100_words": 0.608,
           "score": 89.5,
           "suggestions": 0,
           "warnings": 94
@@ -1038,8 +1038,8 @@
           "category": "ste-sentences",
           "errors": 80,
           "findings": 80,
-          "per_100_words": 0.518,
-          "score": 79.5,
+          "per_100_words": 0.517,
+          "score": 79.6,
           "suggestions": 0,
           "warnings": 0
         },
@@ -1047,7 +1047,7 @@
           "category": "ste-verbs",
           "errors": 159,
           "findings": 159,
-          "per_100_words": 1.029,
+          "per_100_words": 1.028,
           "score": 54.0,
           "suggestions": 0,
           "warnings": 0
@@ -1056,27 +1056,27 @@
           "category": "ste-words",
           "errors": 56,
           "findings": 56,
-          "per_100_words": 0.363,
-          "score": 83.8,
+          "per_100_words": 0.362,
+          "score": 83.9,
           "suggestions": 0,
           "warnings": 0
         }
       ],
       "documents": 47,
       "errors": 630,
-      "findings": 1031,
+      "findings": 1032,
       "passed": false,
-      "per_100_words": 6.675,
+      "per_100_words": 6.671,
       "prose": {
         "errors": 571,
-        "findings": 888,
-        "per_100_words": 5.749,
+        "findings": 889,
+        "per_100_words": 5.747,
         "warnings": 267
       },
       "score": 32.7,
-      "suggestions": 70,
+      "suggestions": 71,
       "warnings": 331,
-      "words": 15446
+      "words": 15469
     }
   },
   "prose:mdx": {

@@ -140,10 +140,10 @@
         "category": "prose-craft",
         "errors": 0,
         "findings": 1,
-        "gating_per_100_words": 0.146,
+        "gating_per_100_words": 0.137,
         "over_budget": false,
-        "per_100_words": 0.292,
-        "score": 97.1,
+        "per_100_words": 0.273,
+        "score": 97.3,
         "suggestions": 0,
         "warnings": 1
       },
@@ -259,12 +259,12 @@
         "budget": 1.0,
         "category": "ste-procedural",
         "errors": 0,
-        "findings": 20,
-        "gating_per_100_words": 1.312,
+        "findings": 21,
+        "gating_per_100_words": 1.23,
         "over_budget": true,
-        "per_100_words": 5.831,
-        "score": 54.7,
-        "suggestions": 11,
+        "per_100_words": 5.738,
+        "score": 56.4,
+        "suggestions": 12,
         "warnings": 9
       },
       {
@@ -296,10 +296,10 @@
         "category": "ste-sentences",
         "errors": 0,
         "findings": 3,
-        "gating_per_100_words": 0.146,
+        "gating_per_100_words": 0.137,
         "over_budget": false,
-        "per_100_words": 0.875,
-        "score": 95.6,
+        "per_100_words": 0.82,
+        "score": 95.9,
         "suggestions": 2,
         "warnings": 1
       },
@@ -310,8 +310,8 @@
         "findings": 3,
         "gating_per_100_words": 0.0,
         "over_budget": false,
-        "per_100_words": 0.875,
-        "score": 97.8,
+        "per_100_words": 0.82,
+        "score": 98.0,
         "suggestions": 3,
         "warnings": 0
       },
@@ -322,7 +322,7 @@
         "findings": 1,
         "gating_per_100_words": 0.0,
         "over_budget": false,
-        "per_100_words": 0.292,
+        "per_100_words": 0.273,
         "score": 99.3,
         "suggestions": 1,
         "warnings": 0
@@ -759,34 +759,17 @@
         "ai_signal": "none",
         "category": "ste-procedural",
         "column": 1,
-        "end_column": 13,
+        "end_column": 52,
         "end_line": 61,
         "line": 61,
-        "matched_text": "NOTE: Always",
-        "message": "This note gives an instruction (\"NOTE: Always\"). A note only gives information.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.note-gives-instruction",
-        "severity": "warning",
-        "span": {
-          "end": 1730,
-          "start": 1718
-        }
-      },
-      {
-        "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
-        "end_column": 43,
-        "end_line": 63,
-        "line": 63,
-        "matched_text": "Clear the cache before you run the import.",
-        "message": "The condition follows the command (\"Clear the cache before you run the import.\"). Put the condition first.",
+        "matched_text": "Run either the lint or test if the branch is ready.",
+        "message": "The condition follows the command (\"Run either the lint or test if the branch is ready.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
         "severity": "suggestion",
         "span": {
-          "end": 1817,
-          "start": 1775
+          "end": 1769,
+          "start": 1718
         }
       },
       {
@@ -796,40 +779,74 @@
         "end_column": 13,
         "end_line": 65,
         "line": 65,
+        "matched_text": "NOTE: Always",
+        "message": "This note gives an instruction (\"NOTE: Always\"). A note only gives information.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.note-gives-instruction",
+        "severity": "warning",
+        "span": {
+          "end": 1841,
+          "start": 1829
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 43,
+        "end_line": 67,
+        "line": 67,
+        "matched_text": "Clear the cache before you run the import.",
+        "message": "The condition follows the command (\"Clear the cache before you run the import.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1928,
+          "start": 1886
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 69,
+        "line": 69,
         "matched_text": "NOTE: Do not",
         "message": "This note gives an instruction (\"NOTE: Do not\"). A note only gives information.",
         "replacement": null,
         "rule_id": "core:ste-procedural.note-gives-instruction",
         "severity": "warning",
         "span": {
-          "end": 1876,
-          "start": 1864
+          "end": 1987,
+          "start": 1975
         }
       }
     ],
     "gate": {
       "passed": false,
       "reasons": [
-        "ste-procedural at 1.31 severity-weighted findings per 100 words, budget 1.0"
+        "ste-procedural at 1.23 severity-weighted findings per 100 words, budget 1.0"
       ]
     },
-    "paragraphs": 34,
+    "paragraphs": 36,
     "path": "rule-examples-ste-procedural.md",
-    "per_100_words": 8.163,
+    "per_100_words": 7.923,
     "profile": "normal",
     "prose": {
       "errors": 0,
-      "findings": 28,
-      "per_100_words": 8.163,
+      "findings": 29,
+      "per_100_words": 7.923,
       "warnings": 11
     },
-    "score": 71.6,
-    "sentences": 40,
-    "suggestions": 17,
-    "total_findings": 28,
+    "score": 72.7,
+    "sentences": 42,
+    "suggestions": 18,
+    "total_findings": 29,
     "unchecked": [],
     "warnings": 11,
-    "words": 343
+    "words": 366
   },
   "exit_code": 1
 }

@@ -298,7 +298,7 @@
         "findings": 1,
         "gating_per_100_words": 0.0,
         "over_budget": false,
-        "per_100_words": 0.292,
+        "per_100_words": 0.273,
         "score": 99.3,
         "suggestions": 1,
         "warnings": 0
@@ -352,23 +352,23 @@
       "passed": true,
       "reasons": []
     },
-    "paragraphs": 34,
+    "paragraphs": 36,
     "path": "rule-examples-ste-procedural.md",
-    "per_100_words": 0.292,
+    "per_100_words": 0.273,
     "profile": "relaxed",
     "prose": {
       "errors": 0,
       "findings": 1,
-      "per_100_words": 0.292,
+      "per_100_words": 0.273,
       "warnings": 0
     },
     "score": 99.3,
-    "sentences": 40,
+    "sentences": 42,
     "suggestions": 1,
     "total_findings": 1,
     "unchecked": [],
     "warnings": 0,
-    "words": 343
+    "words": 366
   },
   "exit_code": 0
 }

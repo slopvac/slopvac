@@ -58,6 +58,10 @@ Pause the job when the queue depth passes one thousand.
 
 Select when you want the status to expire.
 
+Run either the lint or test if the branch is ready.
+
+If the branch is ready, run either the lint or the test.
+
 NOTE: Always clear the cache before you run the import.
 
 Clear the cache before you run the import. NOTE: The import reads the cache at startup.
