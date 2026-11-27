@@ -125,6 +125,14 @@ fn every_command_a_form_names_is_a_valid_invocation_of_the_binary(#[case] key: &
         if tokens.len() < 2 || !matches!(launcher, "slopvac" | "uvx") {
             continue;
         }
+        // The updater's own advice for an `uvx` install is the one `uvx` command a form may name.
+        let uvx_advice = slopvac_update::install::InstallMethod::Wheel(
+            slopvac_update::install::WheelTool::Uvx,
+        )
+        .upgrade_command();
+        if launcher == "uvx" && uvx_advice == Some(span.as_str()) {
+            continue;
+        }
         commands += 1;
         assert_eq!(
             launcher, "slopvac",
@@ -227,10 +235,10 @@ fn the_code_comments_invocation_a_form_documents_runs_and_reports()
 fn the_latest_release_help_gives_the_upgrade_advice_the_binary_gives() {
     use slopvac_update::install::{InstallMethod, RELEASES_URL, WheelTool};
 
-    // `uvx` runs an ephemeral environment, so the form leaves it out.
     let methods = [
         InstallMethod::Installer,
         InstallMethod::Wheel(WheelTool::Uv),
+        InstallMethod::Wheel(WheelTool::Uvx),
         InstallMethod::Wheel(WheelTool::UvPip),
         InstallMethod::Wheel(WheelTool::Pip),
         InstallMethod::Homebrew,
