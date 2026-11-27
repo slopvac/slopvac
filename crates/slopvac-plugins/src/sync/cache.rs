@@ -400,7 +400,7 @@ impl Store {
             return Ok(Copied::Wrong(Verdict::Digest(actual)));
         }
         self.rewind_staged(&mut staged)
-            .map_err(|e| SyncError::Store(messages::download_write(&e)))?;
+            .map_err(|e| self.unreadable(id, digest, CacheCause::io(&e)))?;
         #[cfg(feature = "test-support")]
         self.observe(&path);
         Ok(Copied::Staged(StagedArchive(staged)))
