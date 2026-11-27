@@ -426,3 +426,69 @@ fn an_unknown_path_is_left_out_of_the_document_and_ends_the_run_with_exit_2() {
     assert_eq!(doc["schema_version"], json!(3), "{doc}");
     assert_eq!(only_input(&doc)["path"], json!("a.md"), "{doc}");
 }
+
+/// A config file that `extends` a file outside the project root shows that file as
+/// `<external>/<file name>` in `config_sources` and in every origin, never with `..` or the
+/// directories above the root (policies.md, section 1.7).
+#[test]
+fn explain_config_shows_an_extended_config_outside_the_root_as_external() {
+    let outer = tempfile::tempdir().expect("tempdir");
+    let proj = outer.path().join("proj");
+    let shared = outer.path().join("zz-shared-dir");
+    fs::create_dir_all(&proj).expect("proj");
+    fs::create_dir_all(&shared).expect("shared");
+    fs::write(
+        proj.join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"../zz-shared-dir/base.toml\"]\n",
+    )
+    .expect("write config");
+    fs::write(
+        shared.join("base.toml"),
+        "schema_version = 3\nlocale = \"en-CA\"\n",
+    )
+    .expect("write extended config");
+    fs::write(proj.join("a.md"), "# Title\n\nText.\n").expect("write document");
+    let doc = explained(&proj, &["a.md"]);
+    let input = only_input(&doc);
+    assert_eq!(
+        input["config_sources"],
+        json!([
+            {"layer": "core"},
+            {"layer": "extends", "file": "<external>/base.toml"},
+            {"layer": "project", "file": "slopvac.toml"},
+        ]),
+        "{doc}"
+    );
+    assert_eq!(
+        setting(input, "locale")["source"],
+        json!({"layer": "extends", "file": "<external>/base.toml", "line": 2, "column": 1}),
+        "{doc}"
+    );
+    let text = doc.to_string();
+    assert!(!text.contains("zz-shared-dir"), "{doc}");
+    assert!(!text.contains("../"), "{doc}");
+}
+
+/// A `slopvac.toml` above the working directory that cannot be read is found by the update
+/// policy check, which runs before any command. It stops `--explain-config` as it stops `lint`.
+#[test]
+fn an_unreadable_parent_config_stops_explain_config_as_it_stops_lint_with_json() {
+    let outer = tempfile::tempdir().expect("tempdir");
+    fs::write(outer.path().join("slopvac.toml"), [0xff, 0xfe, 0x00]).expect("write config");
+    let sub = outer.path().join("sub");
+    fs::create_dir(&sub).expect("sub dir");
+    fs::write(sub.join("a.md"), "# Title\n\nText.\n").expect("write document");
+    let lint = outcome(&sub, &["lint", "--format", "json", "a.md"]);
+    let explain = outcome(
+        &sub,
+        &["lint", "--explain-config", "--format", "json", "a.md"],
+    );
+    assert_eq!(lint.0, Some(2), "{lint:?}");
+    assert_eq!(lint.1, "", "{lint:?}");
+    assert!(
+        lint.2
+            .starts_with("error[config-unreadable]: <external>/slopvac.toml: "),
+        "{lint:?}"
+    );
+    assert_eq!(explain, lint);
+}
