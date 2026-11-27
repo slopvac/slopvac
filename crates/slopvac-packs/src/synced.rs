@@ -327,6 +327,9 @@ fn load_inner(
         let tree = match store.verified_tree(&locked, &HashSet::new(), ExtractLimits::default()) {
             Ok(Some(tree)) => tree,
             Ok(None) => return Err(SyncedError::NotInstalled { id }),
+            // The cached archive hashes to something other than the lock pins: a hash was
+            // computed and does not match.
+            Err(SyncError::DigestMismatch { .. }) => return Err(SyncedError::Tampered { id }),
             Err(source) => {
                 return Err(SyncedError::StoreUnreadable {
                     id,
@@ -347,19 +350,22 @@ fn load_inner(
         let hashed = tree_hash_capturing_files(&tree.dir, PLUGIN_TREE_CAP);
         let files = match hashed {
             Ok((hash, files)) if hash == tree.hash => files,
-            Err(ExtractError::Io { what, source }) => {
+            // Only a hash that was computed and differs is tampering.
+            Ok(_) => return Err(SyncedError::Tampered { id }),
+            Err(ExtractError::CaptureLimit { cap, .. }) => {
+                return Err(SyncedError::TooLarge { id, cap });
+            }
+            // A failed read, a link or another file that is not regular: the walk did not
+            // finish, so nothing was compared.
+            Err(source) => {
                 return Err(SyncedError::StoreUnreadable {
                     id,
                     source: Box::new(SyncError::Extract {
                         id: locked.id.clone(),
-                        source: ExtractError::Io { what, source },
+                        source,
                     }),
                 });
             }
-            Err(ExtractError::CaptureLimit { cap, .. }) => {
-                return Err(SyncedError::TooLarge { id, cap });
-            }
-            _ => return Err(SyncedError::Tampered { id }),
         };
         let origin = match locked.kind {
             LockKind::Data => Source::Pack,

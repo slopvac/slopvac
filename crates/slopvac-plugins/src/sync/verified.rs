@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use sha2::{Digest as _, Sha256};
 
 use super::cache::Store;
-use super::error::SyncError;
+use super::error::{CacheCause, SyncError};
 use super::{Syncer, payload_layer};
 use crate::extract::{ExtractError, Limits, TreeHash, hash_targz, open_regular};
 use crate::lock::{LockedPack, SourceKind};
@@ -35,17 +35,39 @@ pub struct VerifiedTree {
     pub hash: TreeHash,
 }
 
-/// A reader that hashes what passes through it, so a file is hashed and used in one read.
+/// A reader that hashes what passes through it, so a file is hashed and used in one read, and
+/// counts the bytes that it passed.
 struct Hashing<R> {
     inner: R,
     hasher: Sha256,
+    read: u64,
 }
 
 impl<R: Read> Read for Hashing<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
         self.hasher.update(&buf[..n]);
+        self.read += n as u64;
         Ok(n)
+    }
+}
+
+/// What the cache holds for a small blob.
+pub(super) enum Cached {
+    /// No file of that name: only `NotFound` means this.
+    Absent,
+    /// The bytes, which hash to the digest they are named by.
+    Bytes(Vec<u8>),
+    /// A file whose bytes hash to something else.
+    Mismatch(Digest),
+}
+
+/// The cause for a failed open or read of a cached file.
+fn cause_of(e: &io::Error) -> CacheCause {
+    if e.kind() == io::ErrorKind::InvalidInput {
+        CacheCause::NotRegular
+    } else {
+        CacheCause::Io(e.kind())
     }
 }
 
@@ -110,8 +132,19 @@ impl Store {
     /// read once and checked in memory, so what is parsed is what the lock digest names.
     fn cached_layer(&self, pack: &LockedPack, limits: Limits) -> Result<Option<Digest>, SyncError> {
         let locked = Syncer::locked_digest(pack)?;
-        let Some(bytes) = self.read_cached(&locked, MAX_MANIFEST_BYTES as u64) else {
-            return Ok(None);
+        let bytes = match self
+            .read_cached(&locked, MAX_MANIFEST_BYTES as u64)
+            .map_err(|cause| self.unreadable(&pack.id, &locked, cause))?
+        {
+            Cached::Bytes(bytes) => bytes,
+            Cached::Absent => return Ok(None),
+            Cached::Mismatch(actual) => {
+                return Err(SyncError::DigestMismatch {
+                    id: pack.id.clone(),
+                    expected: locked.to_string(),
+                    actual: actual.to_string(),
+                });
+            }
         };
         let layout = |why: &str| SyncError::Layout {
             id: pack.id.clone(),
@@ -123,28 +156,37 @@ impl Store {
         Ok(Some(layer.digest.clone()))
     }
 
-    /// The bytes of a cached small blob if they hash to `digest`. A blob that does not is
-    /// removed, as [`Store::blob`] does.
-    pub(super) fn read_cached(&self, digest: &Digest, max: u64) -> Option<Vec<u8>> {
+    /// The bytes of a cached small blob, read once and checked against `digest`. Nothing is
+    /// written or removed: sync, which repairs the cache, removes a [`Cached::Mismatch`].
+    ///
+    /// # Errors
+    /// The cause when the file exists and cannot be read, is not a regular file or is over `max`.
+    pub(super) fn read_cached(&self, digest: &Digest, max: u64) -> Result<Cached, CacheCause> {
         let path = self.blob_path(digest);
+        let file = match open_regular(&path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Cached::Absent),
+            Err(e) => return Err(cause_of(&e)),
+        };
         let mut bytes = Vec::new();
-        open_regular(&path)
-            .ok()?
-            .take(max + 1)
+        file.take(max.saturating_add(1))
             .read_to_end(&mut bytes)
-            .ok()?;
-        if bytes.len() as u64 <= max && Digest::of(&bytes) == *digest {
-            #[cfg(feature = "test-support")]
-            self.observe(&path);
-            Some(bytes)
-        } else {
-            let _ = fs::remove_file(&path);
-            None
+            .map_err(|e| CacheCause::Io(e.kind()))?;
+        if bytes.len() as u64 > max {
+            return Err(CacheCause::TooLarge { cap: max });
         }
+        let actual = Digest::of(&bytes);
+        if actual != *digest {
+            return Ok(Cached::Mismatch(actual));
+        }
+        #[cfg(feature = "test-support")]
+        self.observe(&path);
+        Ok(Cached::Bytes(bytes))
     }
 
     /// Hash the cached archive `digest` as extraction would, in one read that also checks the
-    /// archive against its name.
+    /// archive against its name. The read is bounded by the compressed size limit plus one byte,
+    /// the drain included, and nothing is removed: sync repairs the cache.
     fn hash_cached_archive(
         &self,
         pack: &LockedPack,
@@ -153,28 +195,35 @@ impl Store {
         limits: Limits,
     ) -> Result<Option<TreeHash>, SyncError> {
         let path = self.blob_path(digest);
-        let Ok(file) = open_regular(&path) else {
-            return Ok(None);
+        let unreadable = |cause| self.unreadable(&pack.id, digest, cause);
+        let file = match open_regular(&path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(unreadable(cause_of(&e))),
         };
+        let cap = limits.compressed_bytes;
         let mut reader = Hashing {
-            inner: file,
+            inner: file.take(cap.saturating_add(1)),
             hasher: Sha256::new(),
+            read: 0,
         };
         let hashed = hash_targz(&mut reader, executables, limits);
-        // The archive must be read to its end, so a trailing swap cannot go unhashed.
-        io::copy(&mut reader, &mut io::sink()).map_err(|e| SyncError::Extract {
-            id: pack.id.clone(),
-            source: ExtractError::Io {
-                what: messages::opening(&path),
-                source: e,
-            },
-        })?;
+        // The archive must be read to its end, so a trailing swap cannot go unhashed, but never
+        // past the limit plus one byte.
+        io::copy(&mut reader, &mut io::sink()).map_err(|e| unreadable(CacheCause::Io(e.kind())))?;
+        if reader.read > cap {
+            return Err(unreadable(CacheCause::TooLarge { cap }));
+        }
         match Digest::parse_raw(&format!("sha256:{:x}", reader.hasher.finalize())) {
             Ok(actual) if actual == *digest => {}
-            _ => {
-                let _ = fs::remove_file(&path);
-                return Ok(None);
+            Ok(actual) => {
+                return Err(SyncError::DigestMismatch {
+                    id: pack.id.clone(),
+                    expected: digest.to_string(),
+                    actual: actual.to_string(),
+                });
             }
+            Err(_) => return Err(unreadable(CacheCause::Io(io::ErrorKind::InvalidData))),
         }
         hashed.map(Some).map_err(|source| SyncError::Extract {
             id: pack.id.clone(),

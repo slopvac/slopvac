@@ -93,6 +93,7 @@ impl<'a> InstalledPlugins<'a> {
         {
             Ok(Some(tree)) => Ok((tree.dir, tree.hash)),
             Ok(None) => Err(SyncedError::NotInstalled { id }.into()),
+            Err(SyncError::DigestMismatch { .. }) => Err(SyncedError::Tampered { id }.into()),
             Err(source) => Err(SyncedError::StoreUnreadable {
                 id,
                 source: Box::new(source),
@@ -112,7 +113,12 @@ impl<'a> InstalledPlugins<'a> {
         // before anything is parsed, and the parse reads only the kept bytes.
         let (hash, manifest) = match tree_hash_capturing(&root, "slopvac-plugin.toml") {
             Ok(done) => done,
-            Err(source @ ExtractError::Io { .. }) => {
+            Err(ExtractError::CaptureLimit { cap, .. }) => {
+                return Err(SyncedError::TooLarge { id: name, cap }.into());
+            }
+            // A failed read, a link or another file that is not regular: the walk did not
+            // finish, so nothing was compared and this is not tampering.
+            Err(source) => {
                 return Err(SyncedError::StoreUnreadable {
                     id: name,
                     source: Box::new(SyncError::Extract {
@@ -122,10 +128,6 @@ impl<'a> InstalledPlugins<'a> {
                 }
                 .into());
             }
-            Err(ExtractError::CaptureLimit { cap, .. }) => {
-                return Err(SyncedError::TooLarge { id: name, cap }.into());
-            }
-            Err(_) => return Err(SyncedError::Tampered { id: name }.into()),
         };
         if hash != expected {
             return Err(SyncedError::Tampered { id: name }.into());

@@ -5,12 +5,12 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest as _, Sha256};
 use tempfile::NamedTempFile;
 
-use super::error::SyncError;
+use super::error::{CacheCause, SyncError};
 use crate::extract::{
     Evicted, ExtractError, TreeHash, ensure_private_child, ensure_private_dir, evict,
     verify_tree_capturing,
 };
-use crate::lock::Digest as LockDigest;
+use crate::lock::{Digest as LockDigest, PackId};
 use crate::messages::sync as messages;
 use crate::oci::Digest;
 
@@ -189,6 +189,25 @@ impl Store {
         } else {
             let _ = fs::remove_file(&path);
             None
+        }
+    }
+
+    /// Remove the cached blob `digest`. Only sync calls it: a read-only lookup never deletes.
+    pub(super) fn remove_blob(&self, digest: &Digest) {
+        let _ = fs::remove_file(self.blob_path(digest));
+    }
+
+    /// The error of a cached blob that exists but cannot be read.
+    pub(super) fn unreadable(
+        &self,
+        id: &PackId,
+        digest: &Digest,
+        cause: CacheCause,
+    ) -> SyncError {
+        SyncError::CacheUnreadable {
+            id: id.clone(),
+            path: self.blob_path(digest),
+            cause,
         }
     }
 

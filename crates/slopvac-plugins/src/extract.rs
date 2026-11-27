@@ -1309,18 +1309,20 @@ fn is_executable(_: &Path) -> bool {
 /// A path checked a moment ago may have been swapped for a FIFO or a link to a device. The open
 /// does not block (a FIFO with no writer would hang an ordinary open), and the check runs on the
 /// handle, not the name, so a swap cannot slip between check and read. Regular files ignore the
-/// non-blocking flag.
+/// non-blocking flag. A link is not followed: the open of one fails, and that failure is reported
+/// like any other handle that is not a regular file.
 ///
 /// # Errors
-/// An [`io::ErrorKind::InvalidInput`] error when the handle is not a regular file, or the open's
-/// own error.
+/// An [`io::ErrorKind::InvalidInput`] error when the handle is not a regular file or the path is
+/// a link, or the open's own error.
 pub(crate) fn open_regular(path: &Path) -> io::Result<File> {
     let mut opts = OpenOptions::new();
     opts.read(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        opts.custom_flags(i32::try_from(rustix::fs::OFlags::NONBLOCK.bits()).unwrap_or_default());
+        let flags = rustix::fs::OFlags::NONBLOCK | rustix::fs::OFlags::NOFOLLOW;
+        opts.custom_flags(i32::try_from(flags.bits()).unwrap_or_default());
     }
     #[cfg(windows)]
     {
@@ -1329,15 +1331,26 @@ pub(crate) fn open_regular(path: &Path) -> io::Result<File> {
         // (InvalidInput) instead of the open failing with PermissionDenied.
         opts.custom_flags(0x0200_0000);
     }
-    let file = opts.open(path)?;
+    let file = opts.open(path).map_err(|e| {
+        #[cfg(unix)]
+        if e.raw_os_error() == Some(rustix::io::Errno::LOOP.raw_os_error()) {
+            return not_regular();
+        }
+        e
+    })?;
     if file.metadata()?.is_file() {
         Ok(file)
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            TransportPhrase::ExtractNotRegular.as_static(),
-        ))
+        Err(not_regular())
     }
+}
+
+/// The error of a handle that is not a regular file.
+fn not_regular() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        TransportPhrase::ExtractNotRegular.as_static(),
+    )
 }
 
 /// A reader that keeps a copy of what it reads, so a file hashed in one pass is parsed from the

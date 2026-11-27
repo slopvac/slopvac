@@ -69,6 +69,7 @@ use cache::Accepted;
 pub use cache::{Store, StoreLock, TreeState};
 pub use error::{CacheCause, SyncError};
 pub use verified::VerifiedTree;
+use verified::Cached;
 
 use crate::extract::{
     ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash_capturing,
@@ -731,8 +732,13 @@ impl<'a> Syncer<'a> {
         locked: &Digest,
         fetch: bool,
     ) -> Result<Vec<u8>, SyncError> {
-        if let Some(bytes) = self.store.read_cached(locked, MAX_MANIFEST_BYTES as u64) {
-            return Ok(bytes);
+        match self.store.read_cached(locked, MAX_MANIFEST_BYTES as u64) {
+            Ok(Cached::Bytes(bytes)) => return Ok(bytes),
+            Ok(Cached::Absent) => {}
+            // Sync repairs the cache: a blob that is not what its name says is removed and
+            // fetched again, or reported missing offline.
+            Ok(Cached::Mismatch(_)) => self.store.remove_blob(locked),
+            Err(cause) => return Err(self.store.unreadable(&pack.id, locked, cause)),
         }
         if !fetch {
             return Err(Self::missing(pack, SyncPhrase::WhatManifest.as_static()));
@@ -757,8 +763,11 @@ impl<'a> Syncer<'a> {
         what: &str,
         fetch: bool,
     ) -> Result<Vec<u8>, SyncError> {
-        if let Some(bytes) = self.store.read_cached(&desc.digest, max) {
-            return Ok(bytes);
+        match self.store.read_cached(&desc.digest, max) {
+            Ok(Cached::Bytes(bytes)) => return Ok(bytes),
+            Ok(Cached::Absent) => {}
+            Ok(Cached::Mismatch(_)) => self.store.remove_blob(&desc.digest),
+            Err(cause) => return Err(self.store.unreadable(&pack.id, &desc.digest, cause)),
         }
         if !fetch {
             return Err(Self::missing(pack, what));
