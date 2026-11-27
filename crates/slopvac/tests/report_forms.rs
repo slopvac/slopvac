@@ -126,10 +126,9 @@ fn every_command_a_form_names_is_a_valid_invocation_of_the_binary(#[case] key: &
             continue;
         }
         // The updater's own advice for an `uvx` install is the one `uvx` command a form may name.
-        let uvx_advice = slopvac_update::install::InstallMethod::Wheel(
-            slopvac_update::install::WheelTool::Uvx,
-        )
-        .upgrade_command();
+        let uvx_advice =
+            slopvac_update::install::InstallMethod::Wheel(slopvac_update::install::WheelTool::Uvx)
+                .upgrade_command();
         if launcher == "uvx" && uvx_advice == Some(span.as_str()) {
             continue;
         }
