@@ -391,6 +391,30 @@ mod tests {
         valid.then_some((name, begin))
     }
 
+    /// The level and title of an ATX heading: up to three spaces of indent, one to six `#`, then
+    /// a space or tab, or the end of the line (CommonMark). A closing run of `#` is not part
+    /// of the title.
+    fn atx_heading(line: &str) -> Option<(usize, &str)> {
+        let text = line.trim_start_matches(' ');
+        if line.len() - text.len() > 3 {
+            return None;
+        }
+        let level = text.chars().take_while(|&c| c == '#').count();
+        let rest = &text[level..];
+        if !(1..=6).contains(&level) || !(rest.is_empty() || rest.starts_with([' ', '\t'])) {
+            return None;
+        }
+        let title = rest.trim();
+        let closed = title.trim_end_matches('#');
+        let title =
+            if closed.len() < title.len() && (closed.is_empty() || closed.ends_with([' ', '\t'])) {
+                closed.trim_end()
+            } else {
+                title
+            };
+        Some((level, title))
+    }
+
     fn scan(doc: &str) -> Result<Scan, String> {
         let mut out = Scan::default();
         let mut fence: Option<(char, usize)> = None;
@@ -416,8 +440,9 @@ mod tests {
                 }
                 continue;
             }
-            if line.starts_with("## ") {
-                section = line.starts_with("## 10. Error codes");
+            // A heading of level one or two ends the section, and only the exact title opens it.
+            if let Some((level @ (1 | 2), title)) = atx_heading(line) {
+                section = level == 2 && title == "10. Error codes";
                 heading |= section;
             }
             if line.contains("<!-- generated:") {
