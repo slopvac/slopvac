@@ -3,6 +3,7 @@
 //! Contract: `docs/contract/policies.md`, section 1.5. The command files nothing unless the caller
 //! passes `--gh --yes`, and the body in the file is byte for byte the body it prints.
 //!
+//! - [`consent`]: `report consent on|off|show` and the per-user record.
 //! - [`fields`]: the field definitions. The GitHub issue forms are generated from them.
 //! - [`forms`]: the form renderer.
 //! - [`issue`]: validation of the `--field` values and the issue body.
@@ -10,6 +11,7 @@
 //! - [`github`]: the prefilled form URL and the browser.
 //! - [`gh`]: the GitHub CLI, which holds the login.
 
+pub mod consent;
 pub mod fields;
 pub mod forms;
 pub mod gate;
@@ -164,6 +166,9 @@ pub fn command() -> Command {
     let keys: Vec<&'static str> = categories().iter().map(|c| c.key).collect();
     Command::new("report")
         .about("Preview an issue report, and file it with the GitHub CLI.")
+        .args_conflicts_with_subcommands(true)
+        .subcommand_negates_reqs(true)
+        .subcommand(consent::command())
         .long_about(
             "Preview an issue report for the slopvac repository. The command prints the exact \
              target, title and body, with paths, user and host names and secrets removed \

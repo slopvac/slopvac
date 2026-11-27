@@ -24,6 +24,7 @@ path = "src/main.rs"
 rustix = { workspace = true, features = ["fs", "system"] }
 
 [dependencies]
+cap-std.workspace = true
 clap.workspace = true
 clap_complete = "4"
 clap_mangen = "0.3.3"

@@ -55,6 +55,21 @@ pub enum ReportError {
         /// A fixed phrase that names the problem, never the file contents.
         reason: String,
     },
+    /// The reporting record cannot be read or written, so it was left as it was.
+    #[code("report-state-failed")]
+    #[message(
+        "the issue reporting record cannot be used: {reason}. It was not changed. Remove the file `reporting.json` in the slopvac state directory to start again."
+    )]
+    StateFailed {
+        /// A fixed phrase that names the problem, never a path.
+        reason: String,
+    },
+    /// `report consent on` or `off` ran in CI.
+    #[code("report-ci-refused")]
+    #[message(
+        "issue reporting consent cannot be changed in CI (`CI` or `GITHUB_ACTIONS` is set). Nothing was changed. Run the command on your own machine."
+    )]
+    CiRefused,
 }
 
 impl From<ReportError> for crate::errors::CliError {
