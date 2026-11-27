@@ -18,9 +18,9 @@ fn common(proposal: bool, command_description: &'static str) -> Vec<Field> {
         Field::new("model", "Model", Kind::Input).describe("Record the active model name exactly as the harness reports it in its system prompt, context, or /model selection. Do not use self-description or config defaults. Write N/A when unavailable."),
         Field::new("harness", "Harness and version", Kind::Input).describe("Use the harness's version command, for example claude --version, codex --version, or omp --version. Write N/A when unavailable."),
         Field::new("version", "slopvac version", Kind::Input).describe("Output of `slopvac --version`."),
-        Field::new("latest", "Reproduces on the latest release", Kind::Dropdown).describe("Rerun the command with `uvx --from slopvac@latest slopvac ...`. If the latest release fixes it, upgrade instead of filing.").options(&["Yes", "Not checked"]),
+        Field::new("latest", "Reproduces on the latest release", Kind::Dropdown).describe("Run `slopvac self update`. It upgrades an installer install and prints the upgrade command for any other install method. Rerun your command on the latest release. If the latest release fixes it, upgrade instead of filing.").options(&["Yes", "Not checked"]),
         Field::new("duplicates", "Duplicate search", Kind::Checkboxes).checks(&[("I searched existing issues for duplicates", true)]),
-        with_required(Field::new("environment", "Environment", Kind::Textarea).render("json").describe("Output of `slopvac doctor --format json`, which contains no paths."), !proposal),
+        with_required(Field::new("environment", "Environment", Kind::Textarea).render("json").describe("Output of `slopvac doctor --format json`. It shows a path only relative to the working directory, or as `<external>/<file name>`."), !proposal),
         with_required(Field::new("command", "Command", Kind::Textarea).render("shell").describe(command_description), !proposal),
     ]
 }
@@ -31,6 +31,15 @@ fn with_required(field: Field, required: bool) -> Field {
 
 /// The default description of the command field.
 const COMMAND: &str = "The exact command or commands you ran. Pipe the sample into `slopvac lint --stdin`. Do not include paths or file names.";
+
+/// The help text of the Rule ID fields.
+const RULE_ID: &str = "The qualified ID from the finding's `rule_id`, written `<plugin>:<category>.<rule>`. `slopvac rules` lists every ID.";
+
+/// The help text of the genre and profile fields.
+const CONTEXT: &str = "Genre: the `genre.id` value, and profile: the `profile` value, of the `<stdin>` entry in the output of `slopvac lint --stdin --format json`, run with the same `--config` and `--mode` flags as your command.";
+
+/// The help text of the finding fields.
+const FINDING: &str = "A finding object from the `findings` list of the `<stdin>` entry in `slopvac lint --stdin --format json`.";
 
 /// Every report category, in the order of the Python registry.
 #[must_use]
@@ -47,7 +56,7 @@ pub fn categories() -> Vec<Category> {
             description: "Report a crash, incorrect result, or broken behavior.",
             title_prefix: "[bug]: ",
             labels: &["bug", "needs-triage"],
-            meaning: "Crash, traceback, wrong exit code, wrong or unstable output format, config/setup/init/Vale/cache/prime defects.",
+            meaning: "Crash, traceback, wrong exit code, wrong or unstable output format, config/setup/init/plugin/cache/prime defects.",
             fields: {
                 let mut fields = common(false, COMMAND);
                 fields.extend([
@@ -76,10 +85,10 @@ pub fn categories() -> Vec<Category> {
             fields: {
                 let mut fields = common(false, COMMAND);
                 fields.extend([
-                    Field::new("rule-id", "Rule ID", Kind::Input),
-                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the value of the top `profile:` line that `slopvac lint --stdin --explain-config` prints with the same `--profile`, `--config`, and `--mode` flags as your command."),
+                    Field::new("rule-id", "Rule ID", Kind::Input).describe(RULE_ID),
+                    Field::new("context", "Genre and profile", Kind::Input).describe(CONTEXT),
                     Field::new("input", "Flagged text", Kind::Textarea).render("markdown").describe("The smallest sample that still triggers the finding. Paste the sample text itself. A local file path is not enough."),
-                    Field::new("finding", "Finding", Kind::Textarea).render("json").describe("The finding object from `slopvac lint --stdin --format json`. Its path reads `<stdin>`."),
+                    Field::new("finding", "Finding", Kind::Textarea).render("json").describe(FINDING),
                     Field::new("why", "Why this is not slop", Kind::Textarea),
                 ]);
                 fields
@@ -96,7 +105,7 @@ pub fn categories() -> Vec<Category> {
             fields: {
                 let mut fields = common(false, COMMAND);
                 fields.extend([
-                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the value of the top `profile:` line that `slopvac lint --stdin --explain-config` prints with the same `--profile`, `--config`, and `--mode` flags as your command."),
+                    Field::new("context", "Genre and profile", Kind::Input).describe(CONTEXT),
                     Field::new("input", "Missed text", Kind::Textarea).render("markdown").describe("Paste the sample text itself. A local file path is not enough."),
                     Field::new("expected-rule", "Rule that should fire", Kind::Input).optional().describe("Leave empty when you do not know. When no rule covers the pattern, use the new rule form."),
                     Field::new("why", "Why this is slop", Kind::Textarea),
@@ -115,10 +124,10 @@ pub fn categories() -> Vec<Category> {
             fields: {
                 let mut fields = common(false, COMMAND);
                 fields.extend([
-                    Field::new("rule-id", "Rule ID", Kind::Input),
-                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the value of the top `profile:` line that `slopvac lint --stdin --explain-config` prints with the same `--profile`, `--config`, and `--mode` flags as your command."),
+                    Field::new("rule-id", "Rule ID", Kind::Input).describe(RULE_ID),
+                    Field::new("context", "Genre and profile", Kind::Input).describe(CONTEXT),
                     Field::new("input", "Flagged text", Kind::Textarea).render("markdown").describe("Paste the sample text itself. A local file path is not enough."),
-                    Field::new("finding", "Finding", Kind::Textarea).render("json").describe("The finding object from `slopvac lint --stdin --format json`. Its path reads `<stdin>`."),
+                    Field::new("finding", "Finding", Kind::Textarea).render("json").describe(FINDING),
                     Field::new("problem", "What is wrong", Kind::Dropdown).options(&["Wrong rule", "Wrong severity", "Wrong span or location"]).multiple(),
                     Field::new("expected", "Expected finding", Kind::Textarea).describe("The rule, severity, or span you expected."),
                 ]);
@@ -139,10 +148,10 @@ pub fn categories() -> Vec<Category> {
                     "The exact command or commands you ran. Pipe the sample into `slopvac lint --stdin`, or run `--fix` on a synthetic `sample.md`. Do not include other paths or file names.",
                 );
                 fields.extend([
-                    Field::new("rule-id", "Rule ID", Kind::Input),
-                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the value of the top `profile:` line that `slopvac lint --stdin --explain-config` prints with the same `--profile`, `--config`, and `--mode` flags as your command."),
+                    Field::new("rule-id", "Rule ID", Kind::Input).describe(RULE_ID),
+                    Field::new("context", "Genre and profile", Kind::Input).describe(CONTEXT),
                     Field::new("input", "Flagged text", Kind::Textarea).render("markdown").describe("Paste the sample text itself. A local file path is not enough."),
-                    Field::new("finding", "Finding", Kind::Textarea).render("json").describe("The finding object from `slopvac lint --stdin --format json`. Its path reads `<stdin>`."),
+                    Field::new("finding", "Finding", Kind::Textarea).render("json").describe(FINDING),
                     Field::new("problem", "What is wrong", Kind::Dropdown).options(&["Wrong suggested replacement", "--fix changed the meaning", "--fix produced broken text", "Misleading or unclear message", "Fix guidance does not apply here"]).multiple(),
                     Field::new("fixed-text", "Text after the fix", Kind::Textarea).optional().render("markdown").describe("Text after `slopvac lint sample.md --fix`, run on a synthetic sample in an empty temporary directory."),
                     Field::new("expected", "Expected suggestion", Kind::Textarea),
@@ -203,7 +212,7 @@ pub fn categories() -> Vec<Category> {
             fields: {
                 let mut fields = common(true, COMMAND);
                 fields.extend([
-                    Field::new("rule-id", "Rule ID", Kind::Input),
+                    Field::new("rule-id", "Rule ID", Kind::Input).describe(RULE_ID),
                     Field::new("aspect", "What to improve", Kind::Dropdown).options(&["Accuracy across many findings", "Message or fix wording", "Examples", "Exceptions", "Judgement question", "Severity or tier", "Genre recommendation", "Documentation"]).multiple(),
                     Field::new("current", "Current behavior", Kind::Textarea),
                     Field::new("proposal", "Proposed change", Kind::Textarea),

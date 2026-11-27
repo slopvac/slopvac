@@ -76,3 +76,97 @@ fn generated_forms_are_valid_yaml_with_unique_field_ids_github_accepts() {
         assert!(text.ends_with('\n'), "{}", category.key);
     }
 }
+/// The text in backticks, in the order it appears.
+fn code_spans(text: &str) -> Vec<&str> {
+    text.split('`').skip(1).step_by(2).collect()
+}
+
+/// The code spans of every field description of one category.
+fn description_spans(key: &str) -> Vec<String> {
+    let category = categories()
+        .into_iter()
+        .find(|c| c.key == key)
+        .unwrap_or_else(|| panic!("no category {key}"));
+    category
+        .fields
+        .iter()
+        .filter_map(|f| f.description)
+        .flat_map(|d| {
+            code_spans(d)
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Whether `flag` is a visible long option of `command` or of any command below it.
+fn has_visible_flag(command: &clap::Command, flag: &str) -> bool {
+    command
+        .get_arguments()
+        .any(|a| !a.is_hide_set() && a.get_long() == Some(flag))
+        || command
+            .get_subcommands()
+            .any(|sub| has_visible_flag(sub, flag))
+}
+
+#[rstest::rstest]
+#[case::bug("bug")]
+#[case::false_positive("false-positive")]
+#[case::missed_slop("missed-slop")]
+#[case::mis_tagged("mis-tagged")]
+#[case::wrong_fix("wrong-fix")]
+#[case::new_rule("new-rule")]
+#[case::rule_improvement("rule-improvement")]
+fn every_command_a_form_names_is_a_valid_invocation_of_the_binary(#[case] key: &str) {
+    let mut commands = 0;
+    for span in description_spans(key) {
+        let tokens: Vec<&str> = span.split_whitespace().collect();
+        let launcher = tokens.first().copied().unwrap_or_default();
+        if tokens.len() < 2 || !matches!(launcher, "slopvac" | "uvx") {
+            continue;
+        }
+        commands += 1;
+        assert_eq!(
+            launcher, "slopvac",
+            "{key}: `{span}` runs another launcher, not the installed binary"
+        );
+        let parsed = slopvac_cli::cli::command().try_get_matches_from(&tokens);
+        if let Err(e) = parsed {
+            assert!(
+                matches!(
+                    e.kind(),
+                    clap::error::ErrorKind::DisplayVersion | clap::error::ErrorKind::DisplayHelp
+                ),
+                "{key}: `{span}` is not a valid invocation: {e}"
+            );
+        }
+    }
+    assert!(commands > 0, "{key}: the form names no command to check");
+}
+
+#[rstest::rstest]
+#[case::bug("bug")]
+#[case::false_positive("false-positive")]
+#[case::missed_slop("missed-slop")]
+#[case::mis_tagged("mis-tagged")]
+#[case::wrong_fix("wrong-fix")]
+#[case::new_rule("new-rule")]
+#[case::rule_improvement("rule-improvement")]
+fn every_option_a_form_names_is_a_visible_option_of_the_binary(#[case] key: &str) {
+    let mut root = slopvac_cli::cli::command();
+    // `build` adds the generated `--help` and `--version`.
+    root.build();
+    for span in description_spans(key) {
+        for token in span.split_whitespace() {
+            let Some(flag) = token.strip_prefix("--") else {
+                continue;
+            };
+            let flag = flag.split('=').next().unwrap_or_default();
+            assert!(
+                has_visible_flag(&root, flag),
+                "{key}: `{span}` names --{flag}, which the binary does not offer"
+            );
+        }
+    }
+}
