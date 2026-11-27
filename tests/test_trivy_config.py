@@ -5,7 +5,6 @@ from __future__ import annotations
 import datetime
 import json
 import re
-import shutil
 import stat
 import subprocess
 import sys
@@ -85,20 +84,48 @@ def test_secret_job_keeps_read_only_permissions() -> None:
     }
 
 
+SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def install_step(job: str) -> dict:
+    found = [s for s in steps_of(job) if s.get("name") == "Install Trivy"]
+    assert len(found) == 1, f"{job}: expected one Install Trivy step"
+    return found[0]
+
+
 @pytest.mark.parametrize("job", JOBS)
-def test_trivy_comes_from_the_pinned_setup_action_at_the_main_version(
+def test_trivy_installs_before_checkout_from_the_pinned_release_asset(
     job: str,
 ) -> None:
-    found = [
-        s
-        for s in steps_of(job)
-        if str(s.get("uses", "")).startswith("aquasecurity/setup-trivy@")
-    ]
-    assert len(found) == 1, f"{job}: expected one setup-trivy step"
-    setup = found[0]
-    ref = setup["uses"].split("@")[1].split()[0]
-    assert len(ref) == 40 and set(ref) <= set("0123456789abcdef")
-    assert setup["with"]["version"] == MAIN_POLICY[job]["version"]
+    steps = steps_of(job)
+    install = install_step(job)
+    checkout = next(
+        i
+        for i, s in enumerate(steps)
+        if str(s.get("uses", "")).startswith("actions/checkout@")
+    )
+    assert steps.index(install) < checkout
+    assert "uses" not in install
+    env = install["env"]
+    assert env["VERSION"] == MAIN_POLICY[job]["version"].removeprefix("v")
+    assert SHA256.fullmatch(env["SHA256_X64"])
+    assert SHA256.fullmatch(env["SHA256_ARM64"])
+    run = install["run"]
+    assert "set -euo pipefail" in run
+    assert "--proto '=https' --tlsv1.2" in run
+    assert "sha256sum --check --strict" in run
+    assert "$GITHUB_PATH" in run
+    assert "RUNNER_TEMP" in run
+    assert "./trivy" not in run
+
+
+def test_both_jobs_pin_the_same_trivy_digests() -> None:
+    assert install_step("trivy")["env"] == install_step("trivy-secret")["env"]
+
+
+def test_no_workflow_uses_setup_trivy() -> None:
+    for path in WORKFLOWS.glob("*.y*ml"):
+        assert "aquasecurity/setup-trivy" not in path.read_text(), path.name
 
 
 @pytest.mark.parametrize("job", JOBS)
@@ -389,10 +416,9 @@ def test_reporter_escapes_every_field(field: str, tmp_path: Path) -> None:
 
 # --- the installer must not remove files from the scanned checkout ---------------
 #
-# aquasecurity/setup-trivy@3fb12ec (action.yaml, steps "Checkout install script" and
-# "Install Trivy") checks the Trivy repository out into ./trivy under the workspace,
-# and later runs `rm -rf ./trivy`. Its only path input moves the install directory,
-# not that checkout. Run before the repository checkout, it removes nothing of ours.
+# A past installer (aquasecurity/setup-trivy) checked the Trivy repository out into
+# ./trivy under the workspace and later ran `rm -rf ./trivy`. The install step now
+# writes under the runner temp directory only, and must not touch ./trivy.
 
 DESTRUCTIVE = ("rm ", "git clean", "git checkout", "git reset", "mv ")
 
@@ -420,10 +446,6 @@ def test_no_step_between_checkout_and_scan_can_remove_workspace_files(
     between = steps[checkout + 1 : scan_index(steps)]
     for step in between:
         name = step.get("name", step.get("uses"))
-        # The installer deletes ./trivy from the workspace (see above).
-        assert not str(step.get("uses", "")).startswith("aquasecurity/setup-trivy@"), (
-            f"{job}: step {name} runs after the checkout and removes ./trivy"
-        )
         for token in DESTRUCTIVE:
             assert token not in str(step.get("run", "")), f"{job}: step {name}"
 
@@ -431,8 +453,7 @@ def test_no_step_between_checkout_and_scan_can_remove_workspace_files(
 def apply_effects(steps: list[dict], workspace: Path) -> None:
     """Model what each step does to the workspace, from the cited action sources.
 
-    actions/checkout puts the repository files in; setup-trivy makes ./trivy and then
-    removes it. Every other step in these jobs leaves the workspace alone, which the
+    actions/checkout puts the repository files in. Every other step in these jobs leaves the workspace alone, which the
     test above checks for the run steps.
     """
     for step in steps:
@@ -441,9 +462,6 @@ def apply_effects(steps: list[dict], workspace: Path) -> None:
             (workspace / "trivy").mkdir(exist_ok=True)
             (workspace / "trivy" / "probe.txt").write_text("a file under trivy/\n")
             (workspace / "main.txt").write_text("another file\n")
-        elif uses.startswith("aquasecurity/setup-trivy@"):
-            (workspace / "trivy").mkdir(exist_ok=True)
-            shutil.rmtree(workspace / "trivy")
 
 
 @pytest.mark.parametrize("job", JOBS)
