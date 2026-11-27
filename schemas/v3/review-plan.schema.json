@@ -279,9 +279,6 @@
           },
           "report": false,
           "reviewer_model": false,
-          "reviewer_model_checked": {
-            "const": false
-          },
           "uses_provider": {
             "const": false
           }

@@ -662,13 +662,12 @@ fn errors_of(validator: &jsonschema::Validator, document: &Value) -> Vec<(String
 
 #[test]
 fn every_negative_case_changes_one_thing_and_fails_on_exactly_that() -> TestResult {
-    let cases: Vec<Case> = [
-        claims_cases(),
-        update_cases(),
-        rewrite_cases(),
-        mechanical_cases(),
-    ]
-    .concat();
+    let cases: Vec<Case> = claims_cases()
+        .into_iter()
+        .chain(update_cases())
+        .chain(rewrite_cases())
+        .chain(mechanical_cases())
+        .collect();
     let mut problems = Vec::new();
     for case in cases {
         let validator = validator(case.file)?;
