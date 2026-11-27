@@ -7,10 +7,11 @@
 use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use schemars::JsonSchema;
 use serde::Serialize;
 
 use slopvac_messages::Catalog;
-use slopvac_model::{Notice, NoticeLevel};
+use slopvac_model::{Notice, NoticeLevel, SchemaVersion};
 use slopvac_update::messages::UpdateMessage;
 
 use crate::claims::{self, Report};
@@ -33,7 +34,7 @@ const REWRITE_SHARE: f64 = 0.5;
 const BASE_EXTRA_BUDGET: usize = 5;
 
 /// How deep a review goes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ReviewType {
     /// Wording-only change: lint and the claims diff, no reviewer.
@@ -87,7 +88,7 @@ impl Approval {
 }
 
 /// What the claims diff says about the size and nature of a change.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct ChangeStats {
     /// Sentences in the original.
     pub original_sentences: usize,
@@ -173,7 +174,9 @@ pub fn select_type(stats: &ChangeStats, genre: Option<&str>) -> (ReviewType, Str
 }
 
 /// The checks a review must do and the extra checks it may add unasked.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
+// A rule's `Scope` already owns that `$defs` name in `rule.schema.json`.
+#[schemars(rename = "ReviewScope")]
 pub struct Scope {
     /// Changed and added claims plus lost-fact candidates. Always in scope.
     pub required: usize,
@@ -242,25 +245,31 @@ pub fn compare_models(author: Option<&str>, reviewer: &str) -> ModelCheck {
 }
 
 /// One piece of text sent to a provider.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
+#[schemars(transform = crate::schema::payload_item)]
 pub struct PayloadItem {
     /// What the text is: `changed`, `added`, `dropped`, `original_document` or
     /// `revised_document`.
+    #[schemars(extend("type" = "string", "enum" = ["changed", "added", "dropped", "original_document", "revised_document"]))]
     pub role: &'static str,
     /// Line of `text` in its document: the revision, except for `dropped` and
     /// `original_document`, which sit in the original.
+    #[schemars(range(min = 1))]
     pub line: usize,
     /// The text.
     pub text: String,
     /// For `changed`, the sentence before the change.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
     pub original: Option<String>,
 }
 
 /// The exact text a provider would receive.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
+#[schemars(transform = crate::schema::payload)]
 pub struct Payload {
     /// `none` (mechanical), `passages` (update) or `document` (rewrite).
+    #[schemars(extend("type" = "string", "enum" = ["none", "passages", "document"]))]
     pub kind: &'static str,
     /// The items.
     pub items: Vec<PayloadItem>,
@@ -422,8 +431,11 @@ pub struct ReviewEnv<'a> {
 }
 
 /// The plan a review run prints.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
+#[schemars(transform = crate::schema::plan)]
 pub struct Plan {
+    /// Always 3.
+    pub schema_version: SchemaVersion,
     /// Chosen type.
     pub review_type: ReviewType,
     /// Why.
@@ -438,9 +450,11 @@ pub struct Plan {
     pub uses_provider: bool,
     /// The author's model, if known.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
     pub author_model: Option<String>,
     /// The reviewer's model, if known.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
     pub reviewer_model: Option<String>,
     /// True when the reviewer model was compared with the author's.
     pub reviewer_model_checked: bool,
@@ -448,6 +462,7 @@ pub struct Plan {
     pub notices: Vec<Notice>,
     /// The provider's report; absent on `--dry-run`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
     pub report: Option<String>,
 }
 
@@ -586,6 +601,7 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
         (false, Vec::new())
     };
     let mut plan = Plan {
+        schema_version: SchemaVersion,
         review_type,
         reason,
         stats,
@@ -623,13 +639,34 @@ struct Sources {
     reviewer: &'static str,
 }
 
+/// Where a payload item sits, as a notice names it under `items`.
+#[derive(Debug, Serialize, JsonSchema)]
+pub(crate) struct ItemLocation {
+    /// The payload item's role.
+    role: &'static str,
+    /// The payload item's line.
+    line: usize,
+}
+
 /// The `{role, line}` locations of payload items, for a notice's `items` key.
-fn item_locations(payload: &Payload, indexes: &[usize]) -> serde_json::Value {
-    indexes
+fn item_locations(payload: &Payload, indexes: &[usize]) -> Result<serde_json::Value, AgentsError> {
+    let locations: Vec<ItemLocation> = indexes
         .iter()
         .filter_map(|&i| payload.items.get(i))
-        .map(|item| serde_json::json!({ "role": item.role, "line": item.line }))
-        .collect()
+        .map(|item| ItemLocation {
+            role: item.role,
+            line: item.line,
+        })
+        .collect();
+    serde_json::to_value(locations).map_err(|e| {
+        AgentsError::usage_from(
+            AgentsText::ReviewJsonFailed {
+                detail: e.to_string(),
+            }
+            .to_string(),
+            e,
+        )
+    })
 }
 
 /// The notices known before any call, and whether the reviewer was compared with the author.
@@ -733,6 +770,7 @@ fn call_provider(
         return Err(AgentsError::Coded {
             code: message.code(),
             message: message.to_string(),
+            source: None,
         });
     }
     let provider = env
@@ -757,7 +795,7 @@ fn call_provider(
         None => (declared.to_owned(), "provider"),
     };
     for (reported, indexes) in groups {
-        let items = item_locations(&plan.payload, &indexes);
+        let items = item_locations(&plan.payload, &indexes)?;
         if let Some(author) = plan.author_model.clone()
             && compare_models(Some(&author), &reported) == ModelCheck::Same
         {

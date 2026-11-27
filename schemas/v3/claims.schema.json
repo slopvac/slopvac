@@ -1,0 +1,317 @@
+{
+  "$defs": {
+    "Claim": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "change": {
+                "const": "changed"
+              }
+            },
+            "required": [
+              "change"
+            ]
+          },
+          "then": {
+            "properties": {
+              "similarity": {
+                "minimum": 0.35
+              }
+            },
+            "required": [
+              "original",
+              "original_line"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "change": {
+                "const": "added"
+              }
+            },
+            "required": [
+              "change"
+            ]
+          },
+          "then": {
+            "properties": {
+              "literals_removed": {
+                "maxItems": 0
+              },
+              "negation_changed": {
+                "const": false
+              },
+              "negations_original": {
+                "const": 0
+              },
+              "original": false,
+              "original_line": false,
+              "similarity": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ],
+      "description": "A changed or added sentence of the revision.",
+      "properties": {
+        "change": {
+          "description": "`changed` or `added`.",
+          "enum": [
+            "changed",
+            "added"
+          ]
+        },
+        "line": {
+          "description": "1-based line of the sentence in the revision.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "literals_added": {
+          "description": "Literals only the revision has.",
+          "items": {
+            "$ref": "#/$defs/Literal"
+          },
+          "type": "array"
+        },
+        "literals_removed": {
+          "description": "Literals only the original has.",
+          "items": {
+            "$ref": "#/$defs/Literal"
+          },
+          "type": "array"
+        },
+        "negation_changed": {
+          "description": "The two counts differ.",
+          "type": "boolean"
+        },
+        "negations_original": {
+          "description": "Negation words in the original sentence, 0 for `added`.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "negations_revised": {
+          "description": "Negation words in the revised sentence.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "original": {
+          "description": "The aligned original sentence, for `changed`.",
+          "type": "string"
+        },
+        "original_line": {
+          "description": "Line of the original sentence.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "similarity": {
+          "description": "TF-IDF cosine similarity of the pair, 0 for `added`.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "text": {
+          "description": "The revised sentence.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "line",
+        "text",
+        "change",
+        "similarity",
+        "literals_added",
+        "literals_removed",
+        "negations_original",
+        "negations_revised",
+        "negation_changed"
+      ],
+      "type": "object"
+    },
+    "Dropped": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "lost_literals": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "lost_literals"
+            ]
+          },
+          "then": {
+            "properties": {
+              "fact_candidate": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "token_coverage": {
+                "exclusiveMaximum": 0.6
+              }
+            },
+            "required": [
+              "token_coverage"
+            ]
+          },
+          "then": {
+            "properties": {
+              "fact_candidate": {
+                "const": true
+              }
+            }
+          }
+        }
+      ],
+      "description": "An original sentence with no aligned revised sentence.",
+      "properties": {
+        "fact_candidate": {
+          "description": "True when the sentence looks lost rather than merged.",
+          "type": "boolean"
+        },
+        "line": {
+          "description": "1-based line in the original.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "lost_literals": {
+          "description": "Literals that appear nowhere in the revision.",
+          "items": {
+            "$ref": "#/$defs/Literal"
+          },
+          "type": "array"
+        },
+        "text": {
+          "description": "The original sentence.",
+          "type": "string"
+        },
+        "token_coverage": {
+          "description": "Share of the sentence's content words found anywhere in the revision.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "line",
+        "text",
+        "lost_literals",
+        "token_coverage",
+        "fact_candidate"
+      ],
+      "type": "object"
+    },
+    "Literal": {
+      "description": "A literal that a reviewer must see survive.",
+      "properties": {
+        "kind": {
+          "description": "`number`, `code`, `flag`, `identifier` or `name`.",
+          "enum": [
+            "number",
+            "code",
+            "flag",
+            "identifier",
+            "name"
+          ]
+        },
+        "text": {
+          "description": "The literal text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "type": "object"
+    },
+    "Summary": {
+      "description": "Counts for a comparison.",
+      "properties": {
+        "added": {
+          "description": "Revised sentences with no original.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "changed": {
+          "description": "Aligned pairs with different text.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "dropped": {
+          "description": "Original sentences with no revision.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "original_sentences": {
+          "description": "Sentences in the original.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "revised_sentences": {
+          "description": "Sentences in the revision.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unchanged": {
+          "description": "Aligned pairs with equal text.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "original_sentences",
+        "revised_sentences",
+        "unchanged",
+        "changed",
+        "added",
+        "dropped"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/claims.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The document that `slopvac claims` prints by default: the sentences a revision changed or added, and the original sentences it dropped, with the literals and negations that differ. It is public output.",
+  "properties": {
+    "claims": {
+      "description": "Changed and added sentences, in revision order.",
+      "items": {
+        "$ref": "#/$defs/Claim"
+      },
+      "type": "array"
+    },
+    "dropped": {
+      "description": "Unaligned original sentences, in original order.",
+      "items": {
+        "$ref": "#/$defs/Dropped"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion",
+      "description": "Always 3."
+    },
+    "summary": {
+      "$ref": "#/$defs/Summary",
+      "description": "Counts."
+    }
+  },
+  "required": [
+    "schema_version",
+    "summary",
+    "claims",
+    "dropped"
+  ],
+  "title": "slopvac v3 claims report",
+  "type": "object"
+}

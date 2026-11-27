@@ -1,0 +1,435 @@
+{
+  "$defs": {
+    "ChangeStats": {
+      "description": "What the claims diff says about the size and nature of a change.",
+      "properties": {
+        "churn": {
+          "description": "Changed, added and dropped sentences.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fact_candidates": {
+          "description": "Dropped sentences that look lost.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "literal_claims": {
+          "description": "Changed or added claims that change a literal or negation.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "original_sentences": {
+          "description": "Sentences in the original.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "original_sentences",
+        "churn",
+        "literal_claims",
+        "fact_candidates"
+      ],
+      "type": "object"
+    },
+    "Payload": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "passages"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "role": {
+                      "enum": [
+                        "changed",
+                        "added",
+                        "dropped"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "document"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "properties": {
+                      "role": {
+                        "const": "original_document"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "role": {
+                        "const": "revised_document"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "description": "The exact text a provider would receive.",
+      "properties": {
+        "items": {
+          "description": "The items.",
+          "items": {
+            "$ref": "#/$defs/PayloadItem"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "description": "`none` (mechanical), `passages` (update) or `document` (rewrite).",
+          "enum": [
+            "none",
+            "passages",
+            "document"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "items"
+      ],
+      "type": "object"
+    },
+    "PayloadItem": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "changed"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "required": [
+              "original"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "enum": [
+                  "added",
+                  "dropped",
+                  "original_document",
+                  "revised_document"
+                ]
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "original": false
+            }
+          }
+        }
+      ],
+      "description": "One piece of text sent to a provider.",
+      "properties": {
+        "line": {
+          "description": "Line of `text` in its document: the revision, except for `dropped` and `original_document`, which sit in the original.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "original": {
+          "description": "For `changed`, the sentence before the change.",
+          "type": "string"
+        },
+        "role": {
+          "description": "What the text is: `changed`, `added`, `dropped`, `original_document` or `revised_document`.",
+          "enum": [
+            "changed",
+            "added",
+            "dropped",
+            "original_document",
+            "revised_document"
+          ]
+        },
+        "text": {
+          "description": "The text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "line",
+        "text"
+      ],
+      "type": "object"
+    },
+    "ReviewScope": {
+      "description": "The checks a review must do and the extra checks it may add unasked.",
+      "properties": {
+        "extra_budget": {
+          "description": "Extra checks allowed without the user: 5 plus half of `required`, rounded up.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required": {
+          "description": "Changed and added claims plus lost-fact candidates. Always in scope.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "required",
+        "extra_budget"
+      ],
+      "type": "object"
+    },
+    "ReviewType": {
+      "description": "How deep a review goes.",
+      "enum": [
+        "mechanical",
+        "update",
+        "rewrite"
+      ]
+    }
+  },
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/review-plan.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "review_type": {
+            "const": "mechanical"
+          }
+        },
+        "required": [
+          "review_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "author_model": false,
+          "notices": {
+            "maxItems": 0
+          },
+          "payload": {
+            "properties": {
+              "kind": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "report": false,
+          "reviewer_model": false,
+          "reviewer_model_checked": {
+            "const": false
+          },
+          "uses_provider": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "review_type": {
+            "const": "update"
+          }
+        },
+        "required": [
+          "review_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "kind": {
+                "const": "passages"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "uses_provider": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "review_type": {
+            "const": "rewrite"
+          }
+        },
+        "required": [
+          "review_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "kind": {
+                "const": "document"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "uses_provider": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reviewer_model_checked": {
+            "const": true
+          }
+        },
+        "required": [
+          "reviewer_model_checked"
+        ]
+      },
+      "then": {
+        "required": [
+          "author_model",
+          "reviewer_model"
+        ]
+      }
+    }
+  ],
+  "description": "The document that `slopvac review` prints: the review type and why, the change stats, the scope budget, the exact payload a provider receives, the model notices and, after a provider call, the provider's report. It is public output.",
+  "properties": {
+    "author_model": {
+      "description": "The author's model, if known.",
+      "type": "string"
+    },
+    "notices": {
+      "description": "Notices that leave the run intact, such as an unchecked model rule.",
+      "items": {
+        "$ref": "lint-report.schema.json#/$defs/Notice"
+      },
+      "type": "array"
+    },
+    "payload": {
+      "$ref": "#/$defs/Payload",
+      "description": "The exact provider payload."
+    },
+    "reason": {
+      "description": "Why.",
+      "type": "string"
+    },
+    "report": {
+      "description": "The provider's report; absent on `--dry-run`.",
+      "type": "string"
+    },
+    "review_type": {
+      "$ref": "#/$defs/ReviewType",
+      "description": "Chosen type."
+    },
+    "reviewer_model": {
+      "description": "The reviewer's model, if known.",
+      "type": "string"
+    },
+    "reviewer_model_checked": {
+      "description": "True when the reviewer model was compared with the author's.",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion",
+      "description": "Always 3."
+    },
+    "scope": {
+      "$ref": "#/$defs/ReviewScope",
+      "description": "Scope and budget."
+    },
+    "stats": {
+      "$ref": "#/$defs/ChangeStats",
+      "description": "Change stats."
+    },
+    "uses_provider": {
+      "description": "False for `mechanical`, which never calls a provider.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "review_type",
+    "reason",
+    "stats",
+    "scope",
+    "payload",
+    "uses_provider",
+    "reviewer_model_checked",
+    "notices"
+  ],
+  "title": "slopvac v3 review plan",
+  "type": "object"
+}

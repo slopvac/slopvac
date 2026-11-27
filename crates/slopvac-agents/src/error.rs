@@ -52,6 +52,9 @@ pub enum AgentsError {
         code: &'static str,
         /// The message.
         message: String,
+        /// The failure behind it, when there is one.
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
     /// The config could not be loaded; the code is the config crate's.
     ///
@@ -292,6 +295,22 @@ impl AgentsError {
         Self::Coded {
             code: message.code(),
             message: message.to_string(),
+            source: None,
+        }
+    }
+
+    /// A usage failure with the text `message`, caused by `source`.
+    pub(crate) fn usage_from(
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::Coded {
+            code: codes::USAGE,
+            message: AgentsMessage::Usage {
+                message: message.into(),
+            }
+            .to_string(),
+            source: Some(Box::new(source)),
         }
     }
 

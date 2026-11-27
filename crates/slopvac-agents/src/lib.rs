@@ -20,6 +20,7 @@ pub mod models;
 pub mod prime;
 pub mod review;
 pub mod reviewers;
+mod schema;
 pub mod setup;
 
 pub use error::AgentsError;

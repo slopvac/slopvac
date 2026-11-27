@@ -1,0 +1,93 @@
+{
+  "schema_version": 3,
+  "summary": {
+    "original_sentences": 15,
+    "revised_sentences": 13,
+    "unchanged": 10,
+    "changed": 2,
+    "added": 1,
+    "dropped": 3
+  },
+  "claims": [
+    {
+      "line": 7,
+      "text": "The default timeout is 60 seconds.",
+      "change": "changed",
+      "original": "The default timeout is 30 seconds.",
+      "original_line": 7,
+      "similarity": 0.704,
+      "literals_added": [
+        {
+          "kind": "number",
+          "text": "60"
+        }
+      ],
+      "literals_removed": [
+        {
+          "kind": "number",
+          "text": "30"
+        }
+      ],
+      "negations_original": 0,
+      "negations_revised": 0,
+      "negation_changed": false
+    },
+    {
+      "line": 7,
+      "text": "Slopvac retries a failed download once.",
+      "change": "changed",
+      "original": "Slopvac never retries a failed download.",
+      "original_line": 7,
+      "similarity": 0.687,
+      "literals_added": [],
+      "literals_removed": [],
+      "negations_original": 1,
+      "negations_revised": 0,
+      "negation_changed": true
+    },
+    {
+      "line": 11,
+      "text": "Use `--refresh` to force a download.",
+      "change": "added",
+      "similarity": 0.0,
+      "literals_added": [
+        {
+          "kind": "code",
+          "text": "--refresh"
+        }
+      ],
+      "literals_removed": [],
+      "negations_original": 0,
+      "negations_revised": 0,
+      "negation_changed": false
+    }
+  ],
+  "dropped": [
+    {
+      "line": 3,
+      "text": "Entries expire after 24 hours.",
+      "lost_literals": [
+        {
+          "kind": "number",
+          "text": "24"
+        }
+      ],
+      "token_coverage": 0.0,
+      "fact_candidate": true
+    },
+    {
+      "line": 9,
+      "text": "Each pack carries a minisign signature.",
+      "lost_literals": [],
+      "token_coverage": 0.2,
+      "fact_candidate": true
+    },
+    {
+      "line": 11,
+      "text": "The directory must be writable.",
+      "lost_literals": [],
+      "token_coverage": 0.0,
+      "fact_candidate": true
+    }
+  ]
+}

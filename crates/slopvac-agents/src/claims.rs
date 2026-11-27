@@ -10,8 +10,10 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use clap::{Arg, ArgMatches, Command};
+use schemars::JsonSchema;
 use serde::Serialize;
 use slopvac_messages::Catalog as _;
+use slopvac_model::SchemaVersion;
 
 use crate::error::AgentsError;
 use crate::messages::{AgentsPhrase, AgentsText};
@@ -36,30 +38,38 @@ struct Segment {
 }
 
 /// A literal that a reviewer must see survive.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, JsonSchema)]
 pub struct Literal {
     /// `number`, `code`, `flag`, `identifier` or `name`.
+    #[schemars(extend("type" = "string", "enum" = ["number", "code", "flag", "identifier", "name"]))]
     pub kind: &'static str,
     /// The literal text.
     pub text: String,
 }
 
 /// A changed or added sentence of the revision.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[schemars(transform = crate::schema::claim)]
 pub struct Claim {
     /// 1-based line of the sentence in the revision.
+    #[schemars(range(min = 1))]
     pub line: usize,
     /// The revised sentence.
     pub text: String,
     /// `changed` or `added`.
+    #[schemars(extend("type" = "string", "enum" = ["changed", "added"]))]
     pub change: &'static str,
     /// The aligned original sentence, for `changed`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
     pub original: Option<String>,
     /// Line of the original sentence.
+    #[schemars(range(min = 1))]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
     pub original_line: Option<usize>,
     /// TF-IDF cosine similarity of the pair, 0 for `added`.
+    #[schemars(range(min = 0.0, max = 1.0))]
     pub similarity: f64,
     /// Literals only the revision has.
     pub literals_added: Vec<Literal>,
@@ -74,22 +84,25 @@ pub struct Claim {
 }
 
 /// An original sentence with no aligned revised sentence.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[schemars(transform = crate::schema::dropped)]
 pub struct Dropped {
     /// 1-based line in the original.
+    #[schemars(range(min = 1))]
     pub line: usize,
     /// The original sentence.
     pub text: String,
     /// Literals that appear nowhere in the revision.
     pub lost_literals: Vec<Literal>,
     /// Share of the sentence's content words found anywhere in the revision.
+    #[schemars(range(min = 0.0, max = 1.0))]
     pub token_coverage: f64,
     /// True when the sentence looks lost rather than merged.
     pub fact_candidate: bool,
 }
 
 /// Counts for a comparison.
-#[derive(Debug, Clone, Serialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, JsonSchema, Default, PartialEq, Eq)]
 pub struct Summary {
     /// Sentences in the original.
     pub original_sentences: usize,
@@ -106,10 +119,10 @@ pub struct Summary {
 }
 
 /// The claims JSON for a reviewer.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Report {
-    /// Report format version.
-    pub schema_version: u8,
+    /// Always 3.
+    pub schema_version: SchemaVersion,
     /// Counts.
     pub summary: Summary,
     /// Changed and added sentences, in revision order.
@@ -501,7 +514,7 @@ fn align(old: &[Segment], new: &[Segment], revised: &str) -> Result<Report, Agen
     let dropped = dropped_facts(old, &old_to_new, revised)?;
     summary.dropped = dropped.len();
     Ok(Report {
-        schema_version: 1,
+        schema_version: SchemaVersion,
         summary,
         claims,
         dropped,
@@ -657,6 +670,7 @@ fn document_too_large(path: &std::path::Path) -> AgentsError {
     AgentsError::Coded {
         code: message.code(),
         message: message.to_string(),
+        source: None,
     }
 }
 

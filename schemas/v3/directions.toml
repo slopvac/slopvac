@@ -12,6 +12,7 @@
 [directions]
 "blocklist.schema.json" = "input"
 "category.schema.json" = "input"
+"claims.schema.json" = "output"
 "common.schema.json" = "both"
 "config.schema.json" = "input"
 "doctor-report.schema.json" = "output"
@@ -23,6 +24,7 @@
 "plugin-protocol-codes.schema.json" = "output"
 "plugin-protocol.schema.json" = "both"
 "plugins-lock.schema.json" = "both"
+"review-plan.schema.json" = "output"
 "rule.schema.json" = "both"
 "rules-output.schema.json" = "output"
 "style.schema.json" = "input"
