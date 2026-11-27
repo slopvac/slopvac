@@ -31,7 +31,12 @@ if "--explain-config" in args:
     case = json.loads(Path(os.environ["AUDIT_CASE"]).read_text())
     if case.get("routing-sleep"):
         time.sleep(30)
-    files = args[args.index("json") + 1:]
+    # A real run holds one record for each file, so two names for one file give one record.
+    files, seen = [], set()
+    for name in args[args.index("json") + 1:]:
+        if os.path.realpath(name) not in seen:
+            seen.add(os.path.realpath(name))
+            files.append(name)
     core = {{"layer": "core"}}
     project = {{"layer": "project", "file": "slopvac.toml"}}
     inputs = [
