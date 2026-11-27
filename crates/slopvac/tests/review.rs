@@ -179,3 +179,30 @@ fn a_different_reviewer_passes_the_author_model_check_in_a_dry_run() {
     let plan: Value = serde_json::from_slice(&out.stdout).expect("a JSON plan");
     assert_eq!(plan["reviewer_model_checked"], true, "{plan}");
 }
+
+/// A scope over the budget is approved with the flag only. The refusal names no config key,
+/// because none exists.
+#[test]
+fn a_scope_over_the_budget_names_only_the_approval_flag() {
+    let dir = project();
+    let out = slopvac(dir.path())
+        .args([
+            "review",
+            "new.md",
+            "--original",
+            "old.md",
+            "--dry-run",
+            "--extra",
+            "99",
+        ])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.starts_with("error[review-scope-approval]: "),
+        "{stderr}"
+    );
+    assert!(stderr.contains("--scope-approved"), "{stderr}");
+    assert!(!stderr.contains("review_approval"), "{stderr}");
+}

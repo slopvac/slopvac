@@ -369,10 +369,26 @@ fn prime_review_documents_scope_approval_and_the_reviewer_rule() {
     let ask = review_topic(None, Approval::Ask, Level::Default);
     assert!(ask.contains("ask the user to confirm the exact scope"));
     assert!(ask.contains("--scope-approved"));
-    assert!(ask.contains("`review_approval = \"auto\"` in the config skips the question"));
     assert!(ask.contains("should differ from the author's"));
-    let auto = review_topic(None, Approval::Auto, Level::Default);
-    assert!(auto.contains("so go ahead without asking"));
+}
+
+/// The flag is the only way to approve a larger scope: no config key can approve it for
+/// everyone who runs a review in a checkout.
+#[test]
+fn prime_review_offers_only_the_flag_to_approve_a_larger_scope() {
+    let text = prime::render(
+        Some("review"),
+        &Settings::default(),
+        &tree(),
+        Path::new("/nonexistent"),
+    )
+    .unwrap();
+    assert!(
+        text.contains("Then rerun with `--scope-approved`."),
+        "{text}"
+    );
+    assert!(!text.contains("review_approval"), "{text}");
+    assert!(!text.contains("in the config"), "{text}");
 }
 
 #[test]
