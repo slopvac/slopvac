@@ -10,6 +10,7 @@
 //!   ([`verify::ArtifactVerifier`]) and runs before anything touches the installed binary.
 //! - [`messages`]: the message catalog for the codes that the update lock and the installed
 //!   binary report.
+//! - [`document`]: the `--version --json` document, one type for the writer and the probe.
 //! - [`command`]: the clap subtree and the `self update` entry point.
 //!
 //! The crate uses blocking `ureq` and one worker thread with a deadline; there is no async runtime.
@@ -21,6 +22,7 @@
 )]
 
 pub mod command;
+pub mod document;
 pub mod fetch;
 pub mod install;
 mod lock;

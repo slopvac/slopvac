@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use thiserror::Error;
 
+use crate::document::Document;
 use crate::messages::{UpdatePhrase, UpdateText};
 
 /// How long the executable has to answer.
@@ -133,17 +134,14 @@ pub(crate) fn installed_version(
     parse(&output)
 }
 
-/// The version in a `--version --json` document, which must name `slopvac`.
+/// The version in a `--version --json` document, which must name `slopvac`. Members and notice
+/// fields that this build does not know are ignored: the executable may be a newer one.
 fn parse(output: &[u8]) -> Result<semver::Version, ProbeError> {
-    let doc: serde_json::Value =
-        serde_json::from_slice(output).map_err(|_| ProbeError::Unparseable)?;
-    if doc.pointer("/name").and_then(serde_json::Value::as_str) != Some("slopvac") {
+    let doc: Document = serde_json::from_slice(output).map_err(|_| ProbeError::Unparseable)?;
+    if doc.name != "slopvac" {
         return Err(ProbeError::Unparseable);
     }
-    doc.pointer("/version")
-        .and_then(serde_json::Value::as_str)
-        .and_then(|v| semver::Version::parse(v).ok())
-        .ok_or(ProbeError::Unparseable)
+    semver::Version::parse(&doc.version).map_err(|_| ProbeError::Unparseable)
 }
 
 #[cfg(all(test, unix))]
