@@ -1852,8 +1852,7 @@ mod native_archive {
             "{installed:?}"
         );
         assert_eq!(
-            fs::read_dir(trees.join(".staging"))
-                .map_or(0, Iterator::count),
+            fs::read_dir(trees.join(".staging")).map_or(0, Iterator::count),
             0
         );
     }
@@ -1863,7 +1862,10 @@ mod native_archive {
     #[test]
     fn status_of_an_installed_tree_with_a_manifest_over_1_mib_exits_2_with_sync_failed() {
         let f = Fixture::new();
-        let a = artifact_of(&[("slopvac-plugin.toml", b"# small\n"), ("plugin", b"#!/bin/sh\n")]);
+        let a = artifact_of(&[
+            ("slopvac-plugin.toml", b"# small\n"),
+            ("plugin", b"#!/bin/sh\n"),
+        ]);
         let server = serve(&a);
         let (entry, policy) = signed_style(&a, &server);
         f.write_lock(&[entry]);
