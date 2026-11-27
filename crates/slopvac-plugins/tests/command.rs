@@ -1843,10 +1843,19 @@ mod native_archive {
 
         assert_eq!(err.code(), "sync-failed");
         let trees = f.cache().join("trees");
-        let left: Vec<_> = fs::read_dir(&trees)
+        // The staging directory stays, empty. No tree was published.
+        let installed: Vec<_> = fs::read_dir(&trees)
             .map(|d| d.map(|e| e.unwrap().file_name()).collect())
             .unwrap_or_default();
-        assert_eq!(left, Vec::<std::ffi::OsString>::new(), "{err:?}");
+        assert!(
+            installed.iter().all(|n| n.to_str() == Some(".staging")),
+            "{installed:?}"
+        );
+        assert_eq!(
+            fs::read_dir(trees.join(".staging"))
+                .map_or(0, Iterator::count),
+            0
+        );
     }
 
     /// A manifest that grows past 1 MiB after sync stops `plugins status`, which reports
