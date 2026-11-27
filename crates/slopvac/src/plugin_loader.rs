@@ -10,7 +10,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use slopvac_packs::{CodePluginContext, CodePluginError, SyncedError, load_code_plugin};
+use slopvac_packs::{
+    CodePluginContext, CodePluginError, SyncedError, TooLargePart, load_code_plugin,
+};
 use slopvac_plugins::extract::{ExtractError, Limits, TreeHash, tree_hash_capturing};
 use slopvac_plugins::host::PluginSpec;
 use slopvac_plugins::lock::{LockedPack, SourceKind};
@@ -114,7 +116,12 @@ impl<'a> InstalledPlugins<'a> {
         let (hash, manifest) = match tree_hash_capturing(&root, "slopvac-plugin.toml") {
             Ok(done) => done,
             Err(ExtractError::CaptureLimit { cap, .. }) => {
-                return Err(SyncedError::TooLarge { id: name, cap }.into());
+                return Err(SyncedError::TooLarge {
+                    id: name,
+                    part: TooLargePart::Manifest,
+                    cap,
+                }
+                .into());
             }
             // A failed read, a link or another file that is not regular: the walk did not
             // finish, so nothing was compared and this is not tampering.

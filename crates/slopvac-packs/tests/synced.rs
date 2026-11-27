@@ -18,7 +18,7 @@ use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
     ArtifactFault, Budget, Limits, LoadedPack, PackError, Packs, Reference, Source, SourceError,
-    SyncedError, core_source, load_synced, load_synced_within,
+    SyncedError, TooLargePart, core_source, load_synced, load_synced_within,
 };
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::Lockfile;
@@ -1040,7 +1040,7 @@ fn a_budget_refusal_exposes_its_budget_name_and_limit(
 #[case::not_locked(SyncedError::NotLocked { id: "a".into() }, Some("plugin-not-locked"))]
 #[case::not_installed(SyncedError::NotInstalled { id: "a".into() }, Some("plugin-not-installed"))]
 #[case::tampered(SyncedError::Tampered { id: "a".into() }, Some("plugin-tampered"))]
-#[case::too_large(SyncedError::TooLarge { id: "a".into(), cap: 7 }, Some("plugin-too-large"))]
+#[case::too_large(SyncedError::TooLarge { id: "a".into(), part: TooLargePart::Tree, cap: 7 }, Some("plugin-too-large"))]
 #[case::api(SyncedError::ApiUnsupported { id: "a".into(), api: 9 }, Some("plugin-api-unsupported"))]
 #[case::mismatch(SyncedError::ManifestMismatch { id: "a".into(), field: "id" }, Some("plugin-manifest-mismatch"))]
 #[case::cycle(SyncedError::RequiresCycle { cycle: vec!["a".into(), "a".into()] }, Some("plugin-requires-cycle"))]

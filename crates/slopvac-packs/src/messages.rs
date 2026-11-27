@@ -10,6 +10,26 @@ use slopvac_messages::{Catalog, Entry};
 
 use crate::{Provenance, QualifiedName, Reference};
 
+/// The part of a plugin whose size cap a load refused, as the `plugin-too-large` message names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TooLargePart {
+    /// The installed tree of a data plugin, which a load hashes and keeps in memory.
+    Tree,
+    /// The manifest `slopvac-plugin.toml` of a code plugin, the one file a load keeps.
+    Manifest,
+}
+
+impl TooLargePart {
+    /// The phrase that fills `{part}` in the message.
+    fn phrase(self) -> &'static str {
+        match self {
+            Self::Tree => "installed tree",
+            Self::Manifest => "manifest `slopvac-plugin.toml`",
+        }
+    }
+}
+
 /// Every sentence the loader reports for a synced plugin.
 #[derive(Debug, Clone, PartialEq, Eq, Catalog)]
 pub(crate) enum PackMessage {
@@ -39,11 +59,12 @@ pub(crate) enum PackMessage {
     #[code("plugin-file-not-text")]
     #[message("plugin file `{path}` is not valid UTF-8 text")]
     FileNotText { path: String },
-    /// The installed tree of a plugin is over what a load keeps in memory.
+    /// The part of a plugin that a load keeps in memory is over its cap.
     #[code("plugin-too-large")]
-    #[message("the installed tree of plugin `{id}` is over the {cap} byte limit for a load")]
+    #[message("the {part} of plugin `{id}` is over the {cap} byte limit for a load")]
     TooLarge {
         id: String,
+        part: String,
         #[count]
         cap: u64,
     },

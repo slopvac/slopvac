@@ -57,10 +57,12 @@ pub enum SyncedError {
     },
     /// The stored tree is over the number of bytes a load keeps in memory. The tree is not
     /// known to be damaged.
-    #[error("{}", PackMessage::TooLarge { id: String::from(.id), cap: *.cap })]
+    #[error("{}", PackMessage::TooLarge { id: String::from(.id), part: String::from(.part.phrase()), cap: *.cap })]
     TooLarge {
         /// The plugin id.
         id: String,
+        /// The part of the plugin that is over its cap.
+        part: crate::messages::TooLargePart,
         /// The limit, in bytes.
         cap: u64,
     },
@@ -128,7 +130,7 @@ impl SyncedError {
             Self::NotLocked { .. } => code_of!(NotLocked { id }),
             Self::NotInstalled { .. } => code_of!(NotInstalled { id }),
             Self::Tampered { .. } => code_of!(Tampered { id }),
-            Self::TooLarge { .. } => code_of!(TooLarge { id, cap }),
+            Self::TooLarge { .. } => code_of!(TooLarge { id, part, cap }),
             Self::StoreUnreadable { .. } => code_of!(StoreUnreadable { id }),
             Self::ApiUnsupported { .. } => code_of!(ApiUnsupported { id, api }),
             Self::ManifestMismatch { .. } => code_of!(ManifestMismatch { id, field }),
@@ -354,7 +356,11 @@ fn load_inner(
             // Only a hash that was computed and differs is tampering.
             Ok(_) => return Err(SyncedError::Tampered { id }),
             Err(ExtractError::CaptureLimit { cap, .. }) => {
-                return Err(SyncedError::TooLarge { id, cap });
+                return Err(SyncedError::TooLarge {
+                    id,
+                    part: crate::messages::TooLargePart::Tree,
+                    cap,
+                });
             }
             // A failed read, a link or another file that is not regular: the walk did not
             // finish, so nothing was compared.

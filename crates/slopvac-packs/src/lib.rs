@@ -29,7 +29,7 @@ pub use code_plugin::{CodePluginContext, CodePluginError, load_code_plugin};
 pub use core::core_source;
 pub use error::PackError;
 pub use expand::{GLOB_MAX_ALTERNATIVES, GLOB_MAX_BYTES, GLOB_MAX_DEPTH};
-pub use messages::message_entries;
+pub use messages::{TooLargePart, message_entries};
 pub use pack::{LoadedPack, Packs};
 pub use problem::{ArtifactFault, RuleFault, RuleProblem};
 pub use source::{DirSource, EmbeddedSource, FileTable, MANIFEST_FILE, PackSource, SourceError};
