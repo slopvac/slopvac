@@ -43,26 +43,6 @@ const PENDING: &[(&str, &str, &str)] = &[
         "/$defs/IndexExtraSource",
         "slopvac-8l4.4.18",
     ),
-    (
-        "plugin-protocol.schema.json",
-        "/$defs/FeatureName",
-        "slopvac-8l4.2.95",
-    ),
-    (
-        "plugin-protocol.schema.json",
-        "/$defs/BinaryDocument/properties/path",
-        "slopvac-8l4.2.95",
-    ),
-    (
-        "plugin-protocol.schema.json",
-        "/$defs/PluginDocument/properties/path",
-        "slopvac-8l4.2.95",
-    ),
-    (
-        "plugin-protocol.schema.json",
-        "/$defs/RecipeFile/properties/path",
-        "slopvac-8l4.2.95",
-    ),
     ("style.schema.json", "/$defs/RelPath", "slopvac-8l4.8.14"),
 ];
 

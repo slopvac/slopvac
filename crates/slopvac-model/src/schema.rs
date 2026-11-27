@@ -22,7 +22,7 @@ pub const SLUG: &str = r"^[a-z][a-z0-9-]*(?![\s\S])";
 pub(crate) const CATEGORY_NAME: &str = r"^(?!core:)([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\s\S])";
 
 /// Stable kebab-case: lower-case words of letters and digits joined by single hyphens.
-pub(crate) const KEBAB: &str = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\s\S])";
+pub const KEBAB: &str = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\s\S])";
 
 /// A qualified rule id `<pack>:<id>`.
 pub(crate) const RULE_ID: &str = r"^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*(?![\s\S])";

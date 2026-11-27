@@ -13,9 +13,16 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 
+use super::schema::{
+    Documents, FeatureNameSchema, FindingsEntry, HookIdSchema, HookKindSchema, MinOne, ObjectSchema,
+    Over, ProtocolVersion, ReportStub, TaskKind, UniqueItems, bare_entry, bare_fields,
+    min_version_is_optional, options_are_optional,
+};
+use super::text;
 use crate::error::{EncodeCause, PluginError};
-use crate::hooks::CompleteItem;
+use crate::hooks::{CompleteItem, Document};
 use crate::host::MAX_REQUEST_ID;
+use crate::protocol::NameVersion;
 
 /// The JSON-RPC version member: always the string `"2.0"`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -30,6 +37,10 @@ impl Serialize for JsonRpc {
 impl JsonSchema for JsonRpc {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "JsonRpcVersion".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
     }
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
@@ -63,7 +74,12 @@ impl JsonSchema for RequestId {
     }
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({ "type": "integer", "minimum": 1, "maximum": MAX_REQUEST_ID })
+        schemars::json_schema!({
+            "description": text::REQUEST_ID,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": MAX_REQUEST_ID
+        })
     }
 }
 
@@ -127,41 +143,56 @@ pub(crate) struct HostInfo<'a> {
 
 /// What the host offers in `initialize`.
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(inline, transform = bare_entry)]
 pub(crate) struct HostCapabilities<'a> {
     /// Features the host grants.
+    #[schemars(with = "UniqueItems<FeatureNameSchema>")]
     pub(crate) features: &'a [String],
     /// Hook kinds the host can call.
+    #[schemars(with = "UniqueItems<HookKindSchema>")]
     pub(crate) hooks: Vec<&'static str>,
 }
 
 /// The host's ceilings in `initialize`.
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(inline, transform = bare_entry)]
 pub(crate) struct HostLimits {
     /// Documents per request.
     #[serde(rename = "maxBatchDocuments")]
+    #[schemars(range(min = 1))]
     pub(crate) max_batch_documents: usize,
     /// Body size limit, both directions.
     #[serde(rename = "maxMessageBytes")]
+    #[schemars(range(min = 65536))]
     pub(crate) max_message_bytes: usize,
 }
 
 /// The first request, from host to plugin.
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(
+    description = text::INITIALIZE_PARAMS,
+    transform = bare_fields,
+    transform = min_version_is_optional
+)]
 pub(crate) struct InitializeParams<'a> {
     /// Hook kinds and features the host offers.
     pub(crate) capabilities: HostCapabilities<'a>,
     /// Who the host is.
     #[serde(rename = "hostInfo")]
+    #[schemars(with = "NameVersion")]
     pub(crate) host_info: HostInfo<'a>,
     /// The host's ceilings.
     pub(crate) limits: HostLimits,
-    /// Lowest protocol version the host speaks.
+    /// Lowest protocol version the host speaks. The schema does not require it: the default is 1,
+    /// and the host always sends it.
     #[serde(rename = "minProtocolVersion")]
+    #[schemars(with = "ProtocolVersion")]
     pub(crate) min_protocol_version: u32,
     /// Whether offline mode is on.
     pub(crate) offline: bool,
     /// Highest protocol version the host speaks.
     #[serde(rename = "protocolVersion")]
+    #[schemars(with = "ProtocolVersion")]
     pub(crate) protocol_version: u32,
 }
 
@@ -171,6 +202,7 @@ pub(crate) struct InitializedParams {}
 
 /// `$/cancelRequest`: the request the host no longer wants answered.
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(description = text::CANCEL_PARAMS, transform = bare_fields)]
 pub(crate) struct CancelParams {
     /// The request to cancel.
     pub(crate) id: RequestId,
@@ -179,14 +211,21 @@ pub(crate) struct CancelParams {
 /// Define the params of one documents hook: the batch, and the hook id under the key that
 /// names the kind.
 macro_rules! documents_params {
-    ($(#[$meta:meta])* $name:ident, $key:literal) => {
+    ($(#[$meta:meta])* $name:ident, $key:literal, $batch:literal, $description:path) => {
         $(#[$meta])*
         #[derive(Debug, Serialize, JsonSchema)]
+        #[schemars(
+            rename = stringify!($name),
+            description = $description,
+            transform = bare_fields
+        )]
         pub(crate) struct $name<'a, D> {
             /// The batch.
+            #[schemars(with = $batch)]
             pub(crate) documents: &'a [D],
             /// The hook id.
             #[serde(rename = $key)]
+            #[schemars(with = "HookIdSchema")]
             pub(crate) hook: &'a str,
         }
     };
@@ -195,56 +234,85 @@ macro_rules! documents_params {
 documents_params!(
     /// `tagger/tag`.
     TagParams,
-    "tagger"
+    "tagger",
+    "Documents",
+    text::TAG_PARAMS
 );
 documents_params!(
     /// `extractor/extract`.
     ExtractParams,
-    "extractor"
+    "extractor",
+    "Documents",
+    text::EXTRACT_PARAMS
 );
 documents_params!(
     /// `fixer/fix`.
     FixParams,
-    "fixer"
+    "fixer",
+    "MinOne<Over<Document, FindingsEntry>>",
+    text::FIX_PARAMS
 );
 documents_params!(
     /// `scorer/score`.
     ScoreParams,
-    "scorer"
+    "scorer",
+    "MinOne<Over<Document, FindingsEntry>>",
+    text::SCORE_PARAMS
 );
 
 /// `reporter/render`.
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(
+    description = text::RENDER_PARAMS,
+    transform = bare_fields,
+    transform = options_are_optional
+)]
 pub(crate) struct RenderParams<'a> {
-    /// Reporter settings from the config.
+    /// Reporter settings from the config. The schema does not require them.
+    #[schemars(with = "ObjectSchema")]
     pub(crate) options: &'a Value,
     /// The lint report.
+    #[schemars(with = "ReportStub")]
     pub(crate) report: &'a Value,
     /// The hook id.
+    #[schemars(with = "HookIdSchema")]
     pub(crate) reporter: &'a str,
 }
 
 /// `provider/complete`.
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(description = text::COMPLETE_PARAMS, transform = bare_fields)]
 pub(crate) struct CompleteParams<'a> {
     /// What to ask about.
+    #[schemars(length(min = 1))]
     pub(crate) items: &'a [CompleteItem],
     /// The model name from the config.
+    #[schemars(length(min = 1))]
     pub(crate) model: &'a str,
     /// The hook id.
+    #[schemars(with = "HookIdSchema")]
     pub(crate) provider: &'a str,
     /// The review type.
+    #[schemars(with = "TaskKind")]
     pub(crate) task: &'a str,
 }
 
 /// `recipe/plan`.
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(
+    description = text::RECIPE_PARAMS,
+    transform = bare_fields,
+    transform = options_are_optional
+)]
 pub(crate) struct RecipeParams<'a> {
     /// The agent harness to set up.
+    #[schemars(length(min = 1))]
     pub(crate) harness: &'a str,
-    /// The flags of the setup command.
+    /// The flags of the setup command. The schema does not require them.
+    #[schemars(with = "ObjectSchema")]
     pub(crate) options: &'a Value,
     /// The hook id.
+    #[schemars(with = "HookIdSchema")]
     pub(crate) recipe: &'a str,
 }
 

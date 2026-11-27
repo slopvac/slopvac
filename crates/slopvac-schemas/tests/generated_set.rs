@@ -17,7 +17,6 @@ const NOT_GENERATED: &[(&str, &str)] = &[
     ("config.schema.json", "slopvac-8l4.4.18"),
     ("frontmatter.schema.json", "slopvac-8l4.4.18"),
     ("genre.schema.json", "slopvac-8l4.5.57"),
-    ("plugin-protocol.schema.json", "slopvac-8l4.2.95"),
     ("rules-output.schema.json", "slopvac-8l4.12.88"),
     ("style.schema.json", "slopvac-8l4.8.14"),
     ("terms.schema.json", "slopvac-8l4.8.14"),

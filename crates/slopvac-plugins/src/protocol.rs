@@ -3,9 +3,18 @@
 //! Shapes follow `schemas/v3/plugin-protocol.schema.json`. Unknown fields are
 //! ignored in every message (plugin-protocol.md section 9).
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 mod requests;
+pub(crate) mod schema;
+pub(crate) mod text;
+
+pub use schema::{ProtocolMessage, result_defs};
+use schema::{
+    FeatureNameSchema, HookIdSchema, HookKindSchema, ProtocolVersion, UniqueItems, bare_entry,
+    bare_fields, network_note,
+};
 
 pub(crate) use requests::{
     CancelParams, CompleteParams, ExtractParams, FixParams, HostCapabilities, HostInfo, HostLimits,
@@ -32,6 +41,22 @@ pub(crate) mod method {
     pub(crate) const EXIT: &str = "exit";
     /// The notification that withdraws a request.
     pub(crate) const CANCEL_REQUEST: &str = "$/cancelRequest";
+    /// The tagger hook.
+    pub(crate) const TAGGER_TAG: &str = "tagger/tag";
+    /// The extractor hook.
+    pub(crate) const EXTRACTOR_EXTRACT: &str = "extractor/extract";
+    /// The reporter hook.
+    pub(crate) const REPORTER_RENDER: &str = "reporter/render";
+    /// The fixer hook.
+    pub(crate) const FIXER_FIX: &str = "fixer/fix";
+    /// The scorer hook.
+    pub(crate) const SCORER_SCORE: &str = "scorer/score";
+    /// The provider hook.
+    pub(crate) const PROVIDER_COMPLETE: &str = "provider/complete";
+    /// The recipe hook.
+    pub(crate) const RECIPE_PLAN: &str = "recipe/plan";
+    /// The binary extractor hook. It has no [`HookKind`](super::HookKind) yet.
+    pub(crate) const BINARY_EXTRACTOR_EXTRACT: &str = "binary-extractor/extract";
 }
 
 /// A hook kind the host knows.
@@ -83,13 +108,13 @@ impl HookKind {
     #[must_use]
     pub fn method(self) -> &'static str {
         match self {
-            Self::Tagger => "tagger/tag",
-            Self::Extractor => "extractor/extract",
-            Self::Reporter => "reporter/render",
-            Self::Fixer => "fixer/fix",
-            Self::Scorer => "scorer/score",
-            Self::Provider => "provider/complete",
-            Self::Recipe => "recipe/plan",
+            Self::Tagger => method::TAGGER_TAG,
+            Self::Extractor => method::EXTRACTOR_EXTRACT,
+            Self::Reporter => method::REPORTER_RENDER,
+            Self::Fixer => method::FIXER_FIX,
+            Self::Scorer => method::SCORER_SCORE,
+            Self::Provider => method::PROVIDER_COMPLETE,
+            Self::Recipe => method::RECIPE_PLAN,
         }
     }
 
@@ -101,25 +126,47 @@ impl HookKind {
 }
 
 /// One hook a plugin offers or may offer.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[schemars(
+    description = text::HOOK_DECL,
+    transform = bare_fields,
+    extend("allOf" = [{
+        "if": {"properties": {"kind": {"const": "binary-extractor"}}, "required": ["kind"]},
+        "then": {
+            "properties": {"formats": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/BinaryFormat"},
+                "minItems": 1,
+                "uniqueItems": true
+            }},
+            "required": ["formats"]
+        }
+    }])
+)]
 pub struct HookDecl {
     /// Hook kind name.
+    #[schemars(with = "HookKindSchema")]
     pub kind: String,
     /// Plugin-local hook id.
+    #[schemars(with = "HookIdSchema")]
     pub id: String,
 }
 
 /// Features a plugin requires or would like.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(inline, transform = bare_entry)]
 pub struct FeatureSet {
     /// Features that must be granted.
+    #[schemars(with = "UniqueItems<FeatureNameSchema>")]
     pub required: Vec<String>,
     /// Features used when granted.
+    #[schemars(with = "UniqueItems<FeatureNameSchema>")]
     pub optional: Vec<String>,
 }
 
 /// The pre-spawn declaration in the trusted manifest (section 4.3).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(description = text::PLUGIN_DECLARATION, transform = bare_fields)]
 pub struct PluginDeclaration {
     /// Whether the plugin may open connections.
     pub network: bool,
@@ -130,16 +177,20 @@ pub struct PluginDeclaration {
 }
 
 /// Name and version pair.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[schemars(rename = "Name", description = text::NAME, transform = bare_fields)]
 pub struct NameVersion {
     /// Program name.
+    #[schemars(length(min = 1))]
     pub name: String,
     /// Program version.
+    #[schemars(length(min = 1))]
     pub version: String,
 }
 
 /// Capabilities in the plugin's `initialize` reply.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[schemars(inline, transform = bare_entry, transform = network_note)]
 pub struct ReplyCapabilities {
     /// Hooks offered.
     pub hooks: Vec<HookDecl>,
@@ -151,24 +202,30 @@ pub struct ReplyCapabilities {
 }
 
 /// Limits in the plugin's `initialize` reply.
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[schemars(inline, transform = bare_entry)]
 pub struct ReplyLimits {
     /// Body size limit, both directions.
     #[serde(rename = "maxMessageBytes")]
+    #[schemars(range(min = 65536))]
     pub max_message_bytes: u64,
     /// Documents per request.
     #[serde(rename = "maxBatchDocuments")]
+    #[schemars(range(min = 1))]
     pub max_batch_documents: u64,
     /// Requests the plugin handles at once.
     #[serde(rename = "maxInFlight")]
+    #[schemars(range(min = 1))]
     pub max_in_flight: u64,
 }
 
 /// The plugin's `initialize` result.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[schemars(description = text::INITIALIZE_RESULT, transform = bare_fields)]
 pub struct InitializeResult {
     /// Picked version.
     #[serde(rename = "protocolVersion")]
+    #[schemars(with = "ProtocolVersion")]
     pub protocol_version: u32,
     /// Who the plugin says it is.
     #[serde(rename = "pluginInfo")]
