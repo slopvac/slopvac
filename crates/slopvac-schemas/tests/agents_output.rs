@@ -395,6 +395,19 @@ fn claims_invariant_cases() -> Vec<Case> {
             |d| set(d, "/dropped/0/line", json!(0)),
             &[("minimum", "/dropped/0/line")],
         ),
+    ]
+}
+
+/// The dropped-sentence invariants: ranges and the fact-candidate rule.
+fn dropped_cases() -> Vec<Case> {
+    let c = |name, change, expect| Case {
+        name,
+        file: CLAIMS,
+        start: Start::Claims,
+        change,
+        expect,
+    };
+    vec![
         c(
             "claims: coverage above one",
             |d| set(d, "/dropped/1/token_coverage", json!(1.5)),
@@ -695,6 +708,7 @@ fn every_negative_case_changes_one_thing_and_fails_on_exactly_that() -> TestResu
     let cases: Vec<Case> = claims_cases()
         .into_iter()
         .chain(claims_invariant_cases())
+        .chain(dropped_cases())
         .chain(update_cases())
         .chain(update_invariant_cases())
         .chain(rewrite_cases())
