@@ -6,12 +6,14 @@
 //! read is never rewritten: the command exits 2 with `report-state-failed`, and the user
 //! removes the file to start again.
 
+use std::ffi::OsStr;
 use std::fs::{DirBuilder, File, OpenOptions};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use clap::{ArgMatches, Command};
 use serde::{Deserialize, Serialize};
+use cap_std::fs::Dir;
 use slopvac_fs::{InputKind, ReadOptions, WriteOptions};
 use slopvac_messages::Catalog;
 
@@ -58,39 +60,61 @@ struct Record {
     unattended: Vec<u64>,
 }
 
-/// Why the record cannot be used. Each variant is a fixed phrase for `report-state-failed`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Why the record cannot be used. Each variant is a fixed phrase for the `reason` of
+/// `report-state-failed`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Catalog)]
 enum StateProblem {
+    /// The record does not parse, or it lacks the shape of schema 1.
+    #[code("report-state-damaged")]
+    #[text("it is damaged")]
     Damaged,
+    /// The record is over the cap.
+    #[code("report-state-too-large")]
+    #[text("it is larger than 64 KiB")]
     TooLarge,
+    /// The new record would be over the cap.
+    #[code("report-state-rewrite-too-large")]
+    #[text("the new record would be larger than 64 KiB")]
+    WouldExceed,
+    /// The path is a link, a directory or another special file.
+    #[code("report-state-not-regular")]
+    #[text("it is not a regular file")]
     NotRegular,
+    /// The record could not be read.
+    #[code("report-state-unreadable")]
+    #[text("it cannot be read")]
     Unreadable,
+    /// The record could not be written.
+    #[code("report-state-unwritable")]
+    #[text("it cannot be written")]
     Unwritable,
+    /// Another process changed the record while the command ran.
+    #[code("report-state-changed")]
+    #[text("it changed while the command ran")]
+    Changed,
+    /// The state directory is not known.
+    #[code("report-state-no-directory")]
+    #[text("the state directory cannot be found")]
     Directory,
+    /// The clock cannot give a time.
+    #[code("report-state-clock")]
+    #[text("the clock is set before 1970")]
     Clock,
-}
-
-impl StateProblem {
-    const fn phrase(self) -> &'static str {
-        match self {
-            Self::Damaged => "it is damaged",
-            Self::TooLarge => "it is larger than 64 KiB",
-            Self::NotRegular => "it is not a regular file",
-            Self::Unreadable => "it cannot be read",
-            Self::Unwritable => "it cannot be written",
-            Self::Directory => "the state directory cannot be found",
-            Self::Clock => "the clock is set before 1970",
-        }
-    }
 }
 
 impl From<StateProblem> for CliError {
     fn from(problem: StateProblem) -> Self {
         ReportError::StateFailed {
-            reason: problem.phrase().to_owned(),
+            reason: problem.as_static().to_owned(),
         }
         .into()
     }
+}
+
+/// The catalog entries of the reasons `report-state-failed` gives, for the message registry.
+#[must_use]
+pub fn state_entries() -> &'static [slopvac_messages::Entry] {
+    StateProblem::entries()
 }
 
 /// What `show` and `on|off` print.
@@ -145,10 +169,20 @@ pub fn command() -> Command {
 }
 
 /// Whether the process runs in CI. `CI` counts with any value, the same test as the update
-/// check (`silenced` in `slopvac-update/src/notice.rs`). `GITHUB_ACTIONS` counts the same way:
-/// a workflow can override `CI`, but not `GITHUB_*`.
+/// check (`silenced` in `slopvac-update/src/notice.rs`), and a value that is not UTF-8 counts
+/// too. `GITHUB_ACTIONS` counts the same way: a workflow can override `CI`, but not `GITHUB_*`.
 fn in_ci(env: &dyn Env) -> bool {
-    env.var("CI").is_some() || env.var("GITHUB_ACTIONS").is_some()
+    env.var_is_set("CI") || env.var_is_set("GITHUB_ACTIONS")
+}
+
+/// The refusal for a `report consent on` or `off` in CI, found in the parsed command line.
+///
+/// The caller runs this before it reads any project file, so the refusal never depends on one.
+#[must_use]
+pub fn ci_refusal(root: &ArgMatches, env: &dyn Env) -> Option<CliError> {
+    let consent = root.subcommand_matches("report")?.subcommand_matches("consent")?;
+    (matches!(consent.subcommand_name(), Some("on" | "off")) && in_ci(env))
+        .then(|| ReportError::CiRefused.into())
 }
 
 /// Run `report consent`. `clock` gives the time in Unix seconds, or `None` before 1970.
@@ -210,6 +244,55 @@ fn unwritable<E: std::fmt::Display>(what: &'static str) -> impl FnOnce(E) -> Sta
     }
 }
 
+/// Map a failed confined read: a missing file is `Ok(None)` for the caller to handle.
+fn classify(e: &slopvac_fs::Error) -> Option<StateProblem> {
+    match e.input_kind() {
+        Some(InputKind::NotFound) => None,
+        Some(InputKind::TooLarge) => Some(StateProblem::TooLarge),
+        Some(InputKind::Symlink | InputKind::NotRegular | InputKind::MultiplyLinked) => {
+            Some(StateProblem::NotRegular)
+        }
+        _ => {
+            tracing::debug!(error = %e, "the reporting record cannot be read");
+            Some(StateProblem::Unreadable)
+        }
+    }
+}
+
+/// Parse the bytes of a record. The log gets the kind of failure and its position, never the
+/// text of the record: a parse error quotes the value it stopped at.
+fn parse(bytes: &[u8]) -> Result<Record, StateProblem> {
+    // A struct also reads from a JSON array, so the top level is checked on its own.
+    if bytes.iter().find(|b| !b.is_ascii_whitespace()) != Some(&b'{') {
+        return Err(StateProblem::Damaged);
+    }
+    let record: Record = serde_json::from_slice(bytes).map_err(|e| {
+        tracing::debug!(
+            category = ?e.classify(),
+            line = e.line(),
+            column = e.column(),
+            "the reporting record does not parse"
+        );
+        StateProblem::Damaged
+    })?;
+    if record.schema == SCHEMA {
+        Ok(record)
+    } else {
+        Err(StateProblem::Damaged)
+    }
+}
+
+/// Whether the record at `name` still holds exactly the bytes that were validated.
+fn unchanged(dir: &Dir, name: &OsStr, seen: Option<&[u8]>) -> std::io::Result<bool> {
+    Ok(
+        match slopvac_fs::read_capped_regular_in(dir, Path::new(name), MAX_RECORD_BYTES) {
+            Ok(now) => seen == Some(now.as_slice()),
+            Err(e) if e.input_kind() == Some(InputKind::NotFound) => seen.is_none(),
+            Err(_) => false,
+        },
+    )
+}
+
 /// The record in one state directory.
 struct Store {
     dir: PathBuf,
@@ -224,36 +307,17 @@ impl Store {
     fn read(&self) -> Result<Option<Record>, StateProblem> {
         let path = self.dir.join(RECORD_FILE);
         let opts = ReadOptions::new().reject_multiply_linked(true);
-        let bytes = match slopvac_fs::read_capped_regular(&path, MAX_RECORD_BYTES, opts) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                return match e.input_kind() {
-                    Some(InputKind::NotFound) => Ok(None),
-                    Some(InputKind::TooLarge) => Err(StateProblem::TooLarge),
-                    Some(
-                        InputKind::Symlink | InputKind::NotRegular | InputKind::MultiplyLinked,
-                    ) => Err(StateProblem::NotRegular),
-                    _ => {
-                        tracing::debug!(error = %e, "the reporting record cannot be read");
-                        Err(StateProblem::Unreadable)
-                    }
-                };
-            }
-        };
-        let record: Record = serde_json::from_slice(&bytes).map_err(|e| {
-            tracing::debug!(error = %e, "the reporting record does not parse");
-            StateProblem::Damaged
-        })?;
-        if record.schema == SCHEMA {
-            Ok(Some(record))
-        } else {
-            Err(StateProblem::Damaged)
+        match slopvac_fs::read_capped_regular(&path, MAX_RECORD_BYTES, opts) {
+            Ok(bytes) => parse(&bytes).map(Some),
+            Err(e) => classify(&e).map_or(Ok(None), Err),
         }
     }
 
     /// Record `consent` at `now`, keeping the `unattended` entries of the current record.
     ///
-    /// Under the guard lock: read the record, refuse a damaged one, then replace the file.
+    /// Under the guard lock: read the record through one directory handle, refuse a damaged
+    /// one, force the file private, then replace it only if it still holds the bytes that were
+    /// read.
     fn set(&self, consent: Consent, now: u64) -> Result<(), StateProblem> {
         DirBuilder::new()
             .recursive(true)
@@ -263,25 +327,55 @@ impl Store {
         let _guard = self
             .lock()
             .map_err(unwritable("the guard file cannot be locked"))?;
-        let unattended = self.read()?.map(|r| r.unattended).unwrap_or_default();
+        let dir = Dir::open_ambient_dir(&self.dir, cap_std::ambient_authority())
+            .map_err(unwritable("the state directory cannot be opened"))?;
+        let name = Path::new(RECORD_FILE);
+        let seen = match slopvac_fs::read_capped_regular_in(&dir, name, MAX_RECORD_BYTES) {
+            Ok(bytes) => Some(bytes),
+            Err(e) => match classify(&e) {
+                None => None,
+                Some(problem) => return Err(problem),
+            },
+        };
+        let unattended = seen
+            .as_deref()
+            .map(parse)
+            .transpose()?
+            .map(|r| r.unattended)
+            .unwrap_or_default();
         let record = Record {
             schema: SCHEMA,
             consent,
             recorded: now,
             unattended,
         };
-        let mut bytes = serde_json::to_vec_pretty(&record)
+        let mut bytes = serde_json::to_vec(&record)
             .map_err(unwritable("the record cannot be encoded"))?;
         bytes.push(b'\n');
-        let dir = cap_std::fs::Dir::open_ambient_dir(&self.dir, cap_std::ambient_authority())
-            .map_err(unwritable("the state directory cannot be opened"))?;
-        slopvac_fs::write_atomic(
+        if u64::try_from(bytes.len()).map_or(true, |n| n > MAX_RECORD_BYTES) {
+            return Err(StateProblem::WouldExceed);
+        }
+        if seen.is_some() {
+            // `write_atomic` keeps the mode of the file it replaces, so set it first.
+            dir.open(name)
+                .and_then(|f| {
+                    f.set_permissions(cap_std::fs::Permissions::from_std(
+                        std::fs::Permissions::from_mode(0o600),
+                    ))
+                })
+                .map_err(unwritable("the record cannot be made private"))?;
+        }
+        slopvac_fs::write_atomic_if(
             &dir,
-            Path::new(RECORD_FILE),
+            name,
             &bytes,
             WriteOptions::new().new_file_mode(0o600),
+            |d, file| unchanged(d, file, seen.as_deref()),
         )
-        .map_err(unwritable("the record cannot be written"))
+        .map_err(|e| match e {
+            slopvac_fs::Error::Precondition { .. } => StateProblem::Changed,
+            other => unwritable("the record cannot be written")(other),
+        })
     }
 
     /// Take the exclusive guard lock. It is released when the returned file drops.

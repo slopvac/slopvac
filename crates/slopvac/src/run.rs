@@ -119,6 +119,13 @@ where
         let _ = writeln!(err_out, "{err}");
         return exit::code(exit::INCOMPLETE);
     }
+    // A consent change in CI is refused before any project file is read.
+    if let Invocation::Parsed(matches) = &invocation
+        && let Some(err) = report::consent::ci_refusal(matches, env)
+    {
+        let _ = writeln!(err_out, "{err}");
+        return exit::code(exit::INCOMPLETE);
+    }
     let policy = match slopvac_update::policy::network_policy(&cwd) {
         Ok(policy) => policy,
         // `doctor` exists to report this state, so it runs on the default policy and its own

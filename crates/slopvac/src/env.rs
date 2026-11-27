@@ -9,6 +9,11 @@ pub trait Env {
     fn var(&self, name: &str) -> Option<String>;
     /// Whether standard output is a terminal.
     fn stdout_is_terminal(&self) -> bool;
+    /// Whether a variable is set, to any value. A value that is not Unicode counts as set,
+    /// which [`Env::var`] cannot show.
+    fn var_is_set(&self, name: &str) -> bool {
+        self.var(name).is_some()
+    }
 }
 
 /// The real process environment.
@@ -18,6 +23,10 @@ pub struct SystemEnv;
 impl Env for SystemEnv {
     fn var(&self, name: &str) -> Option<String> {
         std::env::var(name).ok()
+    }
+
+    fn var_is_set(&self, name: &str) -> bool {
+        std::env::var_os(name).is_some()
     }
 
     fn stdout_is_terminal(&self) -> bool {
