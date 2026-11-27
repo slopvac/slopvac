@@ -22,7 +22,7 @@ pub enum TooLargePart {
 
 impl TooLargePart {
     /// The phrase that fills `{part}` in the message.
-    fn phrase(self) -> &'static str {
+    pub(crate) fn phrase(self) -> &'static str {
         match self {
             Self::Tree => "installed tree",
             Self::Manifest => "manifest `slopvac-plugin.toml`",
