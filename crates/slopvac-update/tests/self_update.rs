@@ -413,7 +413,8 @@ const WITH_NOTICE: &str = concat!(
     r#"your configuration.","x-current":"3.0.0","x-latest":"4.0.0","#,
     r#""x-migrate-hint":"This is a new major version. Run `slopvac migrate` to update your "#,
     r#"configuration.","x-upgrade-command":"slopvac self update"}],"#,
-    r#""schema_versions":{"alpha":[3],"beta":[2,3]},"slopvac_api":[1,2],"version":"3.0.0"}"#,
+    r#""schema_version":3,"schema_versions":{"alpha":[3],"beta":[2,3]},"slopvac_api":[1,2],"#,
+    r#""version":"3.0.0"}"#,
     "\n"
 );
 
@@ -449,7 +450,7 @@ fn version_json_bytes_without_a_notice(#[case] offline: bool) {
         command::version_json(&rt, &Supported::default()),
         concat!(
             r#"{"install_method":"installer","name":"slopvac","notices":[],"#,
-            r#""schema_versions":{},"slopvac_api":[],"version":"3.0.0"}"#,
+            r#""schema_version":3,"schema_versions":{},"slopvac_api":[],"version":"3.0.0"}"#,
             "\n"
         )
     );

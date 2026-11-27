@@ -202,6 +202,27 @@ mod tests {
     }
 
     #[test]
+    fn a_document_with_the_current_schema_version_is_read() {
+        let (_dir, exe) = script(
+            r#"echo '{"install_method":"cargo","name":"slopvac","notices":[],"schema_version":3,"schema_versions":{"version":[3]},"slopvac_api":[1],"version":"3.5.0"}'"#,
+        );
+        assert_eq!(
+            installed_version(&exe, LONG).unwrap(),
+            semver::Version::new(3, 5, 0)
+        );
+    }
+
+    #[test]
+    fn a_document_of_another_schema_version_is_refused() {
+        // The caller treats an unknown version as a reason to refuse. A document this build
+        // cannot read says nothing it can trust, like any other artifact of another version.
+        let (_dir, exe) =
+            script(r#"echo '{"name":"slopvac","schema_version":4,"version":"4.0.0"}'"#);
+        let err = installed_version(&exe, LONG).unwrap_err();
+        assert!(matches!(err, ProbeError::Unparseable), "{err}");
+    }
+
+    #[test]
     fn the_probe_passes_the_flags_that_print_the_version_document() {
         let (_dir, exe) = script(
             r#"[ "$*" = "--offline --version --json" ] && echo '{"name":"slopvac","version":"3.3.0"}'"#,

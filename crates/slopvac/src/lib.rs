@@ -38,6 +38,7 @@ pub mod severity;
 pub mod stdin;
 pub mod summary;
 mod update_notice;
+pub mod versions;
 
 pub use env::{Env, SystemEnv};
 pub use migrate_lint::MigrateConfigure;

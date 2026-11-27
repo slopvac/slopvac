@@ -23,6 +23,7 @@ slopvac-plugins = { workspace = true }
 slopvac-rules = { workspace = true }
 slopvac-sanitize = { workspace = true }
 slopvac-terms = { workspace = true }
+slopvac-update = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

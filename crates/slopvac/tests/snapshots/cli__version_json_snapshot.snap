@@ -6,6 +6,7 @@ expression: doc
   "install_method": "[method]",
   "name": "slopvac",
   "notices": [],
+  "schema_version": 3,
   "schema_versions": {
     "blocklist": [
       3
@@ -13,10 +14,16 @@ expression: doc
     "category": [
       3
     ],
+    "claims": [
+      3
+    ],
     "config": [
       3
     ],
     "doctor-report": [
+      3
+    ],
+    "explain-config": [
       3
     ],
     "genre": [
@@ -26,6 +33,9 @@ expression: doc
       3
     ],
     "plugins-lock": [
+      3
+    ],
+    "review-plan": [
       3
     ],
     "rules-output": [
@@ -38,6 +48,9 @@ expression: doc
       3
     ],
     "terms": [
+      3
+    ],
+    "version": [
       3
     ]
   },

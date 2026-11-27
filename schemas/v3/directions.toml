@@ -31,3 +31,4 @@
 "style.schema.json" = "input"
 "tagger.schema.json" = "input"
 "terms.schema.json" = "both"
+"version.schema.json" = "output"

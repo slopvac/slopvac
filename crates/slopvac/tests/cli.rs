@@ -412,15 +412,19 @@ fn version_json_lists_supported_versions_from_the_owning_crates() {
         serde_json::json!({
             "blocklist": [slopvac_terms::BLOCKLIST_SCHEMA_VERSION],
             "category": [slopvac_model::SchemaVersion::VALUE],
+            "claims": [slopvac_model::SchemaVersion::VALUE],
             "config": [slopvac_config::version::SUPPORTED],
             "doctor-report": [slopvac_cli::doctor::SCHEMA_VERSION],
+            "explain-config": [slopvac_model::SchemaVersion::VALUE],
             "genre": [slopvac_context::GENRE_SCHEMA_VERSION],
             "lint-report": [slopvac_model::SchemaVersion::VALUE],
             "plugins-lock": [slopvac_plugins::lock::LOCK_SCHEMA_VERSION],
+            "review-plan": [slopvac_model::SchemaVersion::VALUE],
             "rules-output": [slopvac_model::SchemaVersion::VALUE],
             "style": [slopvac_config::version::SUPPORTED],
             "tagger": [slopvac_context::TAGGER_SCHEMA_VERSION],
             "terms": [slopvac_terms::TERMS_SCHEMA_VERSION],
+            "version": [slopvac_model::SchemaVersion::VALUE],
         })
     );
     assert_eq!(
@@ -429,13 +433,15 @@ fn version_json_lists_supported_versions_from_the_owning_crates() {
     );
 }
 
-/// The `schema_versions` object of this build, in the order it is printed. Every artifact is at
-/// version 3, which `docs/contract/policies.md` section 3.2 and the schemas under `schemas/v3`
-/// state independently of the code.
+/// The `schema_version` and `schema_versions` members of this build, in the order they are
+/// printed. Every artifact is at version 3, which `docs/contract/policies.md` section 3.2 and the
+/// schemas under `schemas/v3` state independently of the code. The list holds the artifacts of
+/// section 3.2, and `version`, the document itself.
 const SCHEMA_VERSIONS: &str = concat!(
-    r#""schema_versions":{"blocklist":[3],"category":[3],"config":[3],"doctor-report":[3],"#,
-    r#""genre":[3],"lint-report":[3],"plugins-lock":[3],"rules-output":[3],"style":[3],"#,
-    r#""tagger":[3],"terms":[3]}"#
+    r#""schema_version":3,"schema_versions":{"blocklist":[3],"category":[3],"claims":[3],"#,
+    r#""config":[3],"doctor-report":[3],"explain-config":[3],"genre":[3],"lint-report":[3],"#,
+    r#""plugins-lock":[3],"review-plan":[3],"rules-output":[3],"style":[3],"tagger":[3],"#,
+    r#""terms":[3],"version":[3]}"#
 );
 
 /// The raw bytes of `--version --json` with the notice array and the build version filled in.

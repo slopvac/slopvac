@@ -353,6 +353,7 @@ Owners: `slopvac-8l4.12.1` for CLI messages, `slopvac-8l4.4.7` for config diagno
 | Lint JSON report | `schema_version` (integer) | Report root | `lint-report` | `slopvac-8l4.2.2` |
 | Claims JSON | `schema_version` (integer) | Report root | `claims` | `slopvac-8l4.11.40` |
 | Review plan JSON | `schema_version` (integer) | Plan root | `review-plan` | `slopvac-8l4.11.40` |
+| Version JSON (`slopvac --version --json`) | `schema_version` (integer) | Document root | `version` | `slopvac-8l4.12.89` |
 | Explain-config JSON | `schema_version` (integer) | Document root | `explain-config` | `slopvac-1kz.8` |
 | Config file | `schema_version` (integer) | `slopvac.toml` root | `config` | `slopvac-8l4.2.5` |
 | Front matter block | `v` | `slopvac:` key | `frontmatter` | `slopvac-8l4.2.5` |

@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use slopvac_messages::Catalog;
-use slopvac_model::x_extensions;
+use slopvac_model::{absent_not_null, x_extensions};
 use thiserror::Error;
 
 use crate::fetch::{FetchError, Fetcher};
@@ -60,6 +60,7 @@ pub struct Notice {
         default,
         skip_serializing_if = "Option::is_none"
     )]
+    #[schemars(transform = absent_not_null)]
     pub migrate_hint: Option<String>,
     /// The command that upgrades this install, when the channel is known.
     #[serde(
@@ -67,6 +68,7 @@ pub struct Notice {
         default,
         skip_serializing_if = "Option::is_none"
     )]
+    #[schemars(transform = absent_not_null)]
     pub upgrade_command: Option<String>,
 }
 

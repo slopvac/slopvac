@@ -1,0 +1,30 @@
+{
+  "install_method": "unknown",
+  "name": "slopvac",
+  "notices": [
+    {
+      "code": "update-available",
+      "level": "info",
+      "message": "slopvac 4.0.0 is available (you have 3.4.0). See https://github.com/slopvac/slopvac/releases. This is a new major version. Run `slopvac migrate` to update your configuration.",
+      "x-current": "3.4.0",
+      "x-latest": "4.0.0",
+      "x-migrate-hint": "This is a new major version. Run `slopvac migrate` to update your configuration."
+    }
+  ],
+  "schema_version": 3,
+  "schema_versions": {
+    "config": [
+      3
+    ],
+    "lint-report": [
+      3
+    ],
+    "version": [
+      3
+    ]
+  },
+  "slopvac_api": [
+    1
+  ],
+  "version": "3.4.0"
+}
