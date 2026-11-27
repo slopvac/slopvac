@@ -47,7 +47,7 @@ body:
     id: latest
     attributes:
       label: "Reproduces on the latest release"
-      description: "Upgrade to the latest release and rerun your command. Installer install: `slopvac self update`. uv tool: `uv tool upgrade slopvac`. pip: `python -m pip install --upgrade slopvac`. uv pip: `uv pip install --upgrade slopvac`. Homebrew: `brew upgrade slopvac/tap/slopvac`. mise: `mise upgrade slopvac`. Any other install: download the latest release from https://github.com/slopvac/slopvac/releases. GitHub Action: change the version pin in your workflow. If the latest release fixes it, upgrade instead of filing."
+      description: "Upgrade to the latest release and rerun your command. Installer install: `slopvac self update`. uv tool: `uv tool upgrade slopvac`. uvx: `uvx slopvac@latest`, because uvx reuses a cached environment. pip: `python -m pip install --upgrade slopvac`. uv pip: `uv pip install --upgrade slopvac`. Homebrew: `brew upgrade slopvac/tap/slopvac`. mise: `mise upgrade slopvac`. Any other install: download the latest release from https://github.com/slopvac/slopvac/releases. GitHub Action: change the version pin in your workflow. If the latest release fixes it, upgrade instead of filing."
       options:
         - "Yes"
         - "Not checked"
