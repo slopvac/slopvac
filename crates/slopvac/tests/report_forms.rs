@@ -83,12 +83,10 @@ fn code_spans(text: &str) -> Vec<&str> {
 
 /// The code spans of every field description of one category.
 fn description_spans(key: &str) -> Vec<String> {
-    let found = categories().into_iter().find(|c| c.key == key);
-    assert!(found.is_some(), "no category {key}");
-    let category = found.unwrap();
-    category
-        .fields
-        .iter()
+    let spans: Vec<String> = categories()
+        .into_iter()
+        .filter(|c| c.key == key)
+        .flat_map(|c| c.fields)
         .filter_map(|f| f.description)
         .flat_map(|d| {
             code_spans(d)
@@ -96,7 +94,9 @@ fn description_spans(key: &str) -> Vec<String> {
                 .map(str::to_owned)
                 .collect::<Vec<_>>()
         })
-        .collect()
+        .collect();
+    assert!(!spans.is_empty(), "no code spans for category {key}");
+    spans
 }
 
 /// Whether `flag` is a visible long option of `command` or of any command below it.
