@@ -20,7 +20,7 @@ fn common(proposal: bool, command_description: &'static str) -> Vec<Field> {
         Field::new("version", "slopvac version", Kind::Input).describe("Output of `slopvac --version`."),
         Field::new("latest", "Reproduces on the latest release", Kind::Dropdown).describe("Upgrade to the latest release and rerun your command. Installer install: `slopvac self update`. uv tool: `uv tool upgrade slopvac`. pip: `python -m pip install --upgrade slopvac`. uv pip: `uv pip install --upgrade slopvac`. Homebrew: `brew upgrade slopvac/tap/slopvac`. mise: `mise upgrade slopvac`. Any other install: download the latest release from https://github.com/slopvac/slopvac/releases. GitHub Action: change the version pin in your workflow. If the latest release fixes it, upgrade instead of filing.").options(&["Yes", "Not checked"]),
         Field::new("duplicates", "Duplicate search", Kind::Checkboxes).checks(&[("I searched existing issues for duplicates", true)]),
-        with_required(Field::new("environment", "Environment", Kind::Textarea).render("json").describe("Output of `slopvac doctor --format json`. It shows a path only relative to the working directory, or as `<external>/<file name>`."), !proposal),
+        with_required(Field::new("environment", "Environment", Kind::Textarea).render("json").describe("Output of `slopvac doctor --format json`. It shows a path only relative to the working directory, or as `<external>/<file name>`. Redact relative paths and external file names before you post it."), !proposal),
         with_required(Field::new("command", "Command", Kind::Textarea).render("shell").describe(command_description), !proposal),
     ]
 }
