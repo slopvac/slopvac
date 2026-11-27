@@ -47,7 +47,7 @@ body:
     id: latest
     attributes:
       label: "Reproduces on the latest release"
-      description: "Rerun the command with `uvx --from slopvac@latest slopvac ...`. If the latest release fixes it, upgrade instead of filing."
+      description: "Run `slopvac self update`. It upgrades an installer install and prints the upgrade command for any other install method. Rerun your command on the latest release. If the latest release fixes it, upgrade instead of filing."
       options:
         - "Yes"
         - "Not checked"
@@ -64,7 +64,7 @@ body:
     id: environment
     attributes:
       label: "Environment"
-      description: "Output of `slopvac doctor --format json`, which contains no paths."
+      description: "Output of `slopvac doctor --format json`. It shows a path only relative to the working directory, or as `<external>/<file name>`."
       render: "json"
     validations:
       required: true
@@ -80,7 +80,7 @@ body:
     id: context
     attributes:
       label: "Genre and profile"
-      description: "Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the value of the top `profile:` line that `slopvac lint --stdin --explain-config` prints with the same `--profile`, `--config`, and `--mode` flags as your command."
+      description: "Genre: the `genre.id` value, and profile: the `profile` value, of the `<stdin>` entry in the output of `slopvac lint --stdin --format json`, run with the same `--config` and `--mode` flags as your command."
     validations:
       required: true
   - type: textarea
