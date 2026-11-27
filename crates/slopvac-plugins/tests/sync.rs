@@ -2872,8 +2872,9 @@ mod cache_reads {
 
     #[test]
     fn a_failed_rewind_of_a_staged_copy_keeps_its_kind_and_os_code_and_names_no_path() {
+        use sha2::Digest as _;
         let env = Env::new();
-        let (lock, _) = installed_archive(&env, "a");
+        let (lock, archive) = installed_archive(&env, "a");
         let revs = env.revocations(NOW);
         let pol = KeyPolicy::default();
         // 29 is ESPIPE: the staged copy cannot seek.
@@ -2904,14 +2905,15 @@ mod cache_reads {
             }
         }
         assert!(matches!(&err, SyncError::CacheUnreadable { .. }), "{err:?}");
-        // The staged copy has a random name, so the text is pinned around it: the plugin, the
-        // redacted file and the cause.
-        let text = err.to_string();
-        let name = text
-            .strip_prefix("plugin `a`: cannot read the cached file <external>/")
-            .and_then(|rest| rest.strip_suffix(": seek on unseekable file"))
-            .unwrap_or_else(|| panic!("{text}"));
-        assert!(!name.is_empty() && !name.contains('/'), "{text}");
+        // The error names the cached blob the copy was made from, and the store names a blob by
+        // the SHA-256 of its bytes, so the file name is worked out here from the archive.
+        let name: String = sha2::Sha256::digest(&archive)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let expected =
+            format!("plugin `a`: cannot read the cached file <external>/{name}: seek on unseekable file");
+        assert_eq!(err.to_string(), expected);
         let cause = std::error::Error::source(&err).and_then(|e| e.downcast_ref::<CacheCause>());
         assert_eq!(
             cause,
