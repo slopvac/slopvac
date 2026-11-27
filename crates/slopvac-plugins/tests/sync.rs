@@ -2394,7 +2394,10 @@ mod cache_reads {
         };
         grow(&c.layer, 4 << 20);
         let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let store = c.env.store().with_archive_byte_counter(std::sync::Arc::clone(&counter));
+        let store = c
+            .env
+            .store()
+            .with_archive_byte_counter(std::sync::Arc::clone(&counter));
 
         let result = store.verified_tree(&c.lock.packs()[0], &HashSet::new(), limits);
 
