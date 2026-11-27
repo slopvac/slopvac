@@ -137,7 +137,7 @@ fn read_lock_file(project_root: &Path, required: bool) -> Result<Lockfile> {
     let path = project_root.join(".slopvac/plugins.lock");
     let invalid = |source: LockError| {
         let detail = source.diagnostic();
-        LockReadError::Unreadable(LockFailure(RunError::LockInvalid {
+        LockReadError::Invalid(LockFailure(RunError::LockInvalid {
             // The parser's own error can echo the rejected value, so the cause keeps only the
             // location.
             source: Redacted::new(detail.clone()),
