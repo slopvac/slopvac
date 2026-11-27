@@ -5,13 +5,11 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from itertools import islice
-from pathlib import Path
 from typing import Any
 
 from .. import framing
+from .._schema import COMMON, PROTOCOL, schema_dir
 
-PROTOCOL = "plugin-protocol.schema.json"
-COMMON = "common.schema.json"
 MAX_REPORTED = 3
 # Longest array the suite checks for uniqueness, and longest hook list it accepts.
 # The protocol sets no count (the Rust host has none either); this bounds suite work
@@ -52,18 +50,6 @@ def bounded_unique_items(
 
 class MissingDependency(RuntimeError):
     """The conformance suite needs the ``jsonschema`` package."""
-
-
-def schema_dir() -> Path:
-    """The wheel's copy of the schemas, else the repository's ``schemas/v3``."""
-    here = Path(__file__).resolve()
-    vendored = here.parents[1] / "schemas"
-    if (vendored / PROTOCOL).is_file():
-        return vendored
-    for parent in here.parents:
-        if (parent / "schemas" / "v3" / PROTOCOL).is_file():
-            return parent / "schemas" / "v3"
-    raise FileNotFoundError("plugin-protocol.schema.json not found")
 
 
 class Schemas:

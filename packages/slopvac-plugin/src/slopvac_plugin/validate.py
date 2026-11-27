@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Sequence
 
+from ._schema import COMMON, PROTOCOL, load_pattern
 from .errors import OutputInvalid
 from .framing import MAX_SAFE_INT
 from .types import Edit, Finding, RecipeFile, Segment, Span, Tag
 
-# The schemas end a pattern with (?![\s\S]). Python's $ also matches before a
-# trailing newline, so these use \Z.
-KEBAB = re.compile(r"^[a-z][a-z0-9-]*\Z")
-# Same pattern as RecipeFile.path in the schema.
-RELATIVE_PATH = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*\\)(?!(.*/)?\.\.(/|\Z)).+\Z")
+# Read from the vendored schemas, with their end-of-string lookahead as \Z.
+KEBAB = load_pattern(COMMON, "/$defs/ContextTag/pattern")
+RELATIVE_PATH = load_pattern(PROTOCOL, "/$defs/RecipeFile/properties/path/pattern")
 ACTIONS = ("write", "merge", "remove")
 
 

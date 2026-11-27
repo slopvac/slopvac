@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import queue
-import re
 import sys
 import threading
 import traceback
@@ -15,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, BinaryIO, NoReturn
 
 from . import framing
+from ._schema import PROTOCOL, load_pattern
 from .errors import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -38,7 +38,7 @@ PROTOCOL_MIN = 1
 PROTOCOL_MAX = 1
 DEFAULT_MAX_BATCH_DOCUMENTS = 64
 DEFAULT_MAX_IN_FLIGHT = 1
-FEATURE_NAME = re.compile(r"^[a-z][a-z0-9-]*\Z|^x-[a-z0-9-]+\Z")
+FEATURE_NAME = load_pattern(PROTOCOL, "/$defs/FeatureName/pattern")
 
 
 @dataclass(frozen=True)
