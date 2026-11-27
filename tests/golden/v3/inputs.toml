@@ -166,7 +166,7 @@ language = "markdown"
 id = "rule-examples-ste-procedural"
 tier = "rule-examples"
 path = "tests/golden/v3/inputs/rule-examples/ste-procedural.md"
-sha256 = "2ac1b2bd45f0a5df60775093a6b5228e595bbf8e67be7423b963bcfb270e17d8"
+sha256 = "5fa2c8bfb44131c7d11d78d117e5946f7e4ab7e2bfbacaed35d44dad79fd6984"
 surface = "prose"
 language = "markdown"
 

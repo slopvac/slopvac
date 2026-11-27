@@ -64,7 +64,7 @@
         "ste-practices.latin-abbreviation": "off",
         "ste-practices.unclear-pronoun": "off"
       },
-      "rule_entries": 89,
+      "rule_entries": 90,
       "severity_shift": 0,
       "style": "core:legacy-strict",
       "thresholds": {

@@ -1799,3 +1799,24 @@ fn a_budget_tripped_outside_the_project_shows_no_path_of_the_outside_directory()
         "{text}"
     );
 }
+
+/// `condition-after-command` is advisory: the default styles report it as a suggestion in
+/// every profile, so an error-count or warning gate never fails on it.
+#[rstest]
+#[case::normal("normal")]
+#[case::relaxed("relaxed")]
+#[case::strict("strict")]
+fn condition_after_command_is_a_suggestion_in_every_default_profile(#[case] profile: &str) {
+    let config = format!("schema_version = 3\nprofile = \"{profile}\"\n");
+    let doc = "# Title\n\nRestart the worker if the queue depth is above one thousand.\n";
+    let (_dir, path) = project("steps.md", doc, Some(&config));
+    let report = json_report(&path, &[]);
+    let severities: Vec<&str> = report["documents"][0]["findings"]
+        .as_array()
+        .expect("findings")
+        .iter()
+        .filter(|f| f["rule_id"] == "core:ste-procedural.condition-after-command")
+        .map(|f| f["severity"].as_str().expect("severity"))
+        .collect();
+    assert_eq!(severities, ["suggestion"]);
+}

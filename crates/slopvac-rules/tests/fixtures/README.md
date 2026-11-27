@@ -13,5 +13,7 @@ Regenerate from the repository root:
 mise exec -- uv run --extra dev python crates/slopvac-rules/tests/fixtures/generate.py
 ```
 
+Add `--refresh` to keep every stored corpus text and append only the new rule examples. A plain run rebuilds the corpus from the rule examples and the repository prose, and drops stored texts that no source produces any more.
+
 A pytest test in `tests/contract` runs `--check`, so a rule change that moves a span fails
 until you regenerate and commit.

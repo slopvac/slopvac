@@ -258,13 +258,13 @@
       {
         "budget": 0.4,
         "category": "ste-procedural",
-        "errors": 8,
+        "errors": 6,
         "findings": 8,
-        "gating_per_100_words": 2.996,
+        "gating_per_100_words": 2.247,
         "over_budget": true,
         "per_100_words": 2.996,
         "score": 0.0,
-        "suggestions": 0,
+        "suggestions": 2,
         "warnings": 0
       },
       {
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 29,
+    "errors": 27,
     "findings": [
       {
         "ai_signal": "none",
@@ -494,7 +494,7 @@
         "message": "The condition follows the command (\"Ensure that the migration completed before you restart the worker.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 340,
           "start": 274
@@ -511,7 +511,7 @@
         "message": "The condition follows the command (\"Make sure that the migration completed before you restart the worker.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 411,
           "start": 342
@@ -946,12 +946,12 @@
     "gate": {
       "passed": false,
       "reasons": [
-        "29 error(s), limit 0",
-        "12.17 severity-weighted findings per 100 words, budget 1.5",
+        "27 error(s), limit 0",
+        "11.42 severity-weighted findings per 100 words, budget 1.5",
         "score 0.0, minimum 85.0",
         "prose-craft at 1.31 severity-weighted findings per 100 words, budget 0.8",
         "prose-inflation at 0.75 severity-weighted findings per 100 words, budget 0.3",
-        "ste-procedural at 3.00 severity-weighted findings per 100 words, budget 0.4",
+        "ste-procedural at 2.25 severity-weighted findings per 100 words, budget 0.4",
         "ste-sentences at 1.87 severity-weighted findings per 100 words, budget 0.5",
         "ste-verbs at 0.75 severity-weighted findings per 100 words, budget 0.4",
         "ste-words at 4.12 severity-weighted findings per 100 words, budget 0.5"
@@ -962,14 +962,14 @@
     "per_100_words": 13.483,
     "profile": "strict",
     "prose": {
-      "errors": 29,
+      "errors": 27,
       "findings": 36,
       "per_100_words": 13.483,
       "warnings": 7
     },
     "score": 0.0,
     "sentences": 30,
-    "suggestions": 0,
+    "suggestions": 2,
     "total_findings": 36,
     "unchecked": [],
     "warnings": 7,

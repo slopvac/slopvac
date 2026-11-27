@@ -10,6 +10,8 @@ extend-exclude = [
   # Third-party text kept verbatim as eval data, plus manifests of hashes.
   "evals/corpus/",
   "evals/manifest.json",
+  # Hand labels quote findings from the corpus verbatim, misspellings included.
+  "evals/labels/rule-accuracy/ste-procedural.condition-after-command.jsonl",
   "evals/defect-bank.json",
   "evals/candidates-diagrams.json",
   "packages/slopvac-lint/tests/fixtures/text_type/runbook-labels-v1.jsonl",
