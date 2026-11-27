@@ -126,10 +126,17 @@ pub fn categories() -> Vec<Category> {
                 fields.extend([
                     Field::new("rule-id", "Rule ID", Kind::Input).describe(RULE_ID),
                     Field::new("context", "Genre and profile", Kind::Input).describe(CONTEXT),
-                    Field::new("input", "Flagged text", Kind::Textarea).render("markdown").describe("Paste the sample text itself. A local file path is not enough."),
-                    Field::new("finding", "Finding", Kind::Textarea).render("json").describe(FINDING),
-                    Field::new("problem", "What is wrong", Kind::Dropdown).options(&["Wrong rule", "Wrong severity", "Wrong span or location"]).multiple(),
-                    Field::new("expected", "Expected finding", Kind::Textarea).describe("The rule, severity, or span you expected."),
+                    Field::new("input", "Flagged text", Kind::Textarea)
+                        .render("markdown")
+                        .describe("Paste the sample text itself. A local file path is not enough."),
+                    Field::new("finding", "Finding", Kind::Textarea)
+                        .render("json")
+                        .describe(FINDING),
+                    Field::new("problem", "What is wrong", Kind::Dropdown)
+                        .options(&["Wrong rule", "Wrong severity", "Wrong span or location"])
+                        .multiple(),
+                    Field::new("expected", "Expected finding", Kind::Textarea)
+                        .describe("The rule, severity, or span you expected."),
                 ]);
                 fields
             },

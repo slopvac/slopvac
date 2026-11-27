@@ -83,10 +83,9 @@ fn code_spans(text: &str) -> Vec<&str> {
 
 /// The code spans of every field description of one category.
 fn description_spans(key: &str) -> Vec<String> {
-    let category = categories()
-        .into_iter()
-        .find(|c| c.key == key)
-        .unwrap_or_else(|| panic!("no category {key}"));
+    let found = categories().into_iter().find(|c| c.key == key);
+    assert!(found.is_some(), "no category {key}");
+    let category = found.unwrap();
     category
         .fields
         .iter()
