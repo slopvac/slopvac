@@ -1,0 +1,41 @@
+{
+  "schema_version": 3,
+  "slopvac_version": "3.0.0",
+  "inputs": [
+    {
+      "path": "docs/a.md",
+      "config_root": ".",
+      "config_sources": [
+        {
+          "layer": "core"
+        }
+      ],
+      "profile": "normal",
+      "genre": {
+        "id": "reference",
+        "source": "default"
+      },
+      "settings": [
+        {
+          "key": "profile.name",
+          "value": "normal",
+          "source": {
+            "layer": "core"
+          },
+          "replaced": []
+        }
+      ],
+      "rules": {
+        "total": 120,
+        "configured": {
+          "error": 0,
+          "warning": 0,
+          "suggestion": 0,
+          "off": 0
+        }
+      },
+      "configured_rules": [],
+      "front_matter_resolved": false
+    }
+  ]
+}

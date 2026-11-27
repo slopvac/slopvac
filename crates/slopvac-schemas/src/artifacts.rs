@@ -194,6 +194,22 @@ pub const ARTIFACTS: &[Artifact] = &[
         keep: &[],
         build: review_plan,
     },
+    Artifact {
+        file: "explain-config.schema.json",
+        title: "slopvac v3 explain-config",
+        description: Some(
+            "The document that `slopvac lint --explain-config --format json` prints: for each \
+             input, the resolved config with the layer and location that set each value, the \
+             rules a layer gave a level and whether front matter took part. Paths are relative \
+             to the working directory, or `<external>/<name>` outside it (policies.md, section \
+             1.7). It carries no document text and no front matter value. Semantics are \
+             specified in docs/contract/config.md, section 1.4.1.",
+        ),
+        imports: &["common.schema.json"],
+        inline: &[],
+        keep: &[],
+        build: explain_config,
+    },
 ];
 
 /// The producer contract: what the generated reference file holds.
@@ -233,6 +249,14 @@ fn review_plan() -> Value {
     schema_settings(Contract::Serialize)
         .into_generator()
         .into_root_schema_for::<slopvac_agents::review::Plan>()
+        .to_value()
+}
+
+/// The producer contract: what `slopvac lint --explain-config --format json` serializes.
+fn explain_config() -> Value {
+    schema_settings(Contract::Serialize)
+        .into_generator()
+        .into_root_schema_for::<slopvac_cli::explain_config::Document>()
         .to_value()
 }
 

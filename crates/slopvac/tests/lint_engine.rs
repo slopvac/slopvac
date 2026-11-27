@@ -1521,10 +1521,9 @@ fn explain_config_redacts_a_config_root_above_the_working_directory() {
     assert!(!stdout.contains(parent.as_ref()), "{stdout}");
 }
 
-#[rstest::rstest]
-#[case::json("json")]
-#[case::sarif("sarif")]
-fn explain_config_with_a_report_format_refuses_before_reading_any_file(#[case] format: &str) {
+#[test]
+fn explain_config_with_a_report_format_refuses_before_reading_any_file() {
+    let format = "sarif";
     let out = slopvac()
         .args(["lint", "--explain-config", "--format", format, "missing.md"])
         .output()
@@ -1533,7 +1532,7 @@ fn explain_config_with_a_report_format_refuses_before_reading_any_file(#[case] f
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
         format!(
-            "error[explain-config-format-unsupported]: `--explain-config` prints text only; remove `--format {format}`.\n"
+            "error[explain-config-format-unsupported]: `--explain-config` prints `text` or `json` only; remove `--format {format}`.\n"
         )
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout), "");
@@ -1575,13 +1574,13 @@ fn explain_config_refuses_a_format_before_it_reads_slopvac_toml() {
     fs::write(dir.path().join("slopvac.toml"), [0xff, 0xfe, 0x00]).expect("write config");
     let out = slopvac()
         .current_dir(dir.path())
-        .args(["lint", "--explain-config", "--format", "json", "a.md"])
+        .args(["lint", "--explain-config", "--format", "sarif", "a.md"])
         .output()
         .expect("run");
     assert_eq!(out.status.code(), Some(2));
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
-        "error[explain-config-format-unsupported]: `--explain-config` prints text only; remove `--format json`.\n"
+        "error[explain-config-format-unsupported]: `--explain-config` prints `text` or `json` only; remove `--format sarif`.\n"
     );
 }
 

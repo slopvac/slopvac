@@ -1,0 +1,86 @@
+{
+  "schema_version": 3,
+  "slopvac_version": "3.0.0",
+  "inputs": [
+    {
+      "path": "docs/a.md",
+      "config_root": ".",
+      "config_sources": [
+        {
+          "layer": "core"
+        },
+        {
+          "layer": "project",
+          "file": "slopvac.toml"
+        }
+      ],
+      "profile": "normal",
+      "genre": {
+        "id": "reference",
+        "source": "default"
+      },
+      "settings": [
+        {
+          "key": "locale",
+          "value": "en-US",
+          "source": {
+            "layer": "override",
+            "file": "slopvac.toml",
+            "line": 6,
+            "column": 1
+          },
+          "replaced": [
+            {
+              "value": "en-GB",
+              "source": {
+                "layer": "project",
+                "file": "slopvac.toml",
+                "line": 2,
+                "column": 1
+              }
+            }
+          ]
+        },
+        {
+          "key": "profile.name",
+          "value": "normal",
+          "source": {
+            "layer": "core"
+          },
+          "replaced": []
+        }
+      ],
+      "rules": {
+        "total": 120,
+        "configured": {
+          "error": 1,
+          "warning": 0,
+          "suggestion": 0,
+          "off": 1
+        }
+      },
+      "configured_rules": [
+        {
+          "id": "core:prose-craft.first-person-plural",
+          "level": "off",
+          "source": {
+            "layer": "project",
+            "file": "slopvac.toml",
+            "line": 5,
+            "column": 1
+          }
+        },
+        {
+          "id": "core:ste-practices.latin-abbreviation",
+          "level": "error",
+          "source": {
+            "layer": "project",
+            "file": "slopvac.toml",
+            "line": 4,
+            "column": 1
+          }
+        }
+      ]
+    }
+  ]
+}

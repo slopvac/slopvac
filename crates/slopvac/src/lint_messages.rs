@@ -5,9 +5,9 @@ use slopvac_messages::Catalog;
 /// Why `slopvac lint` refused its options.
 #[derive(Debug, Catalog)]
 pub enum LintOptionError {
-    /// `--explain-config` was given with a report format other than `text`.
+    /// `--explain-config` was given with a format other than `text` or `json`.
     #[code("explain-config-format-unsupported")]
-    #[message("`--explain-config` prints text only; remove `--format {format}`.")]
+    #[message("`--explain-config` prints `text` or `json` only; remove `--format {format}`.")]
     ExplainConfigFormat {
         /// The `--format` value from the command line, one of the fixed format names.
         format: String,

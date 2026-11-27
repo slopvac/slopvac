@@ -1,0 +1,321 @@
+{
+  "$defs": {
+    "ExplainConfiguredRule": {
+      "additionalProperties": false,
+      "description": "A rule whose level a layer set.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/RuleId",
+          "description": "The qualified id: `core:<category>.<rule>` or `<plugin>:<category>.<rule>`."
+        },
+        "level": {
+          "description": "The level lint applies.",
+          "enum": [
+            "error",
+            "warning",
+            "suggestion",
+            "off"
+          ],
+          "x-slopvac-extensible": true
+        },
+        "source": {
+          "$ref": "common.schema.json#/$defs/ConfigSource",
+          "description": "The layer and location that set the level."
+        }
+      },
+      "required": [
+        "id",
+        "level",
+        "source"
+      ],
+      "type": "object"
+    },
+    "ExplainGenre": {
+      "additionalProperties": false,
+      "description": "The genre the config sets.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "id": {
+          "description": "The genre id.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "description": "`explicit` when a config layer sets the genre, `default` otherwise.",
+          "enum": [
+            "explicit",
+            "detected",
+            "default"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "source"
+      ],
+      "type": "object"
+    },
+    "ExplainInput": {
+      "additionalProperties": false,
+      "description": "The resolved config of one input.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "config_root": {
+          "$ref": "#/$defs/ShownPath",
+          "description": "The directory of the nearest config: `.`, a path relative to the working directory, or `<external>/<name>`."
+        },
+        "config_sources": {
+          "description": "The built-in defaults, then each config file, lowest layer first, as the lint report lists them.",
+          "items": {
+            "$ref": "common.schema.json#/$defs/ConfigSource"
+          },
+          "type": "array"
+        },
+        "configured_rules": {
+          "description": "The rules whose level a layer set, sorted by id.",
+          "items": {
+            "$ref": "#/$defs/ExplainConfiguredRule"
+          },
+          "type": "array"
+        },
+        "front_matter_resolved": {
+          "description": "Whether front matter took part in resolution. False until it does. When it does, the document gains key names and their source locations, never values.",
+          "type": "boolean"
+        },
+        "genre": {
+          "$ref": "#/$defs/ExplainGenre",
+          "description": "The genre the config sets. The genre that detection picks reads the document, so it is not resolved here."
+        },
+        "path": {
+          "$ref": "#/$defs/ShownPath",
+          "description": "The input as a report names it: relative to the working directory, `<external>/<file name>` outside it, `<stdin>` for standard input."
+        },
+        "profile": {
+          "description": "The profile name.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "rules": {
+          "$ref": "#/$defs/ExplainRuleCounts",
+          "description": "How many rules there are, and how many a layer gave a level."
+        },
+        "settings": {
+          "description": "Each resolved setting, in key order.",
+          "items": {
+            "$ref": "#/$defs/ExplainSetting"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "path",
+        "config_root",
+        "config_sources",
+        "profile",
+        "genre",
+        "settings",
+        "rules",
+        "configured_rules",
+        "front_matter_resolved"
+      ],
+      "type": "object"
+    },
+    "ExplainLevelCounts": {
+      "additionalProperties": false,
+      "description": "Rules by configured level.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "error": {
+          "description": "Rules set to `error`.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "off": {
+          "description": "Rules set to `off`.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "suggestion": {
+          "description": "Rules set to `suggestion`.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "warning": {
+          "description": "Rules set to `warning`.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "error",
+        "warning",
+        "suggestion",
+        "off"
+      ],
+      "type": "object"
+    },
+    "ExplainReplaced": {
+      "additionalProperties": false,
+      "description": "A value a setting replaced.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "source": {
+          "$ref": "common.schema.json#/$defs/ConfigSource",
+          "description": "The layer and location that set it."
+        },
+        "value": {
+          "$ref": "#/$defs/ExplainValue",
+          "description": "The replaced value, as configured."
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "type": "object"
+    },
+    "ExplainRuleCounts": {
+      "additionalProperties": false,
+      "description": "How many rules there are, and how many of them a layer gave a level.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "configured": {
+          "$ref": "#/$defs/ExplainLevelCounts",
+          "description": "The rules a layer gave a level, by that level."
+        },
+        "total": {
+          "description": "Every rule in the catalogue. A rule no layer named keeps the level of its definition and its genre.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "configured"
+      ],
+      "type": "object"
+    },
+    "ExplainSetting": {
+      "additionalProperties": false,
+      "description": "One resolved setting.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "key": {
+          "description": "The key path, such as `thresholds.min_score`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "replaced": {
+          "description": "The values the final value replaced, highest layer first.",
+          "items": {
+            "$ref": "#/$defs/ExplainReplaced"
+          },
+          "type": "array"
+        },
+        "source": {
+          "$ref": "common.schema.json#/$defs/ConfigSource",
+          "description": "The layer and location that set the final value."
+        },
+        "value": {
+          "$ref": "#/$defs/ExplainValue",
+          "description": "The final value, as configured. A URL has no user-info, query or fragment."
+        }
+      },
+      "required": [
+        "key",
+        "value",
+        "source",
+        "replaced"
+      ],
+      "type": "object"
+    },
+    "ExplainValue": {
+      "anyOf": [
+        {
+          "description": "No value.",
+          "type": "null"
+        },
+        {
+          "description": "A flag.",
+          "type": "boolean"
+        },
+        {
+          "description": "A number.",
+          "type": "number"
+        },
+        {
+          "description": "Text.",
+          "type": "string"
+        },
+        {
+          "description": "A list.",
+          "items": {
+            "$ref": "#/$defs/ExplainValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/ExplainValue"
+          },
+          "description": "A table.",
+          "type": "object"
+        }
+      ],
+      "description": "A setting value as configured: null, a flag, a number, text, a list or a table."
+    },
+    "ShownPath": {
+      "description": "A path made safe to show: relative to the working directory (`.` for the directory itself), `<external>/<file name>` outside it, or `<stdin>`. Never absolute (policies.md, section 1.7).",
+      "minLength": 1,
+      "pattern": "^(?!/)",
+      "type": "string"
+    }
+  },
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/explain-config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The document that `slopvac lint --explain-config --format json` prints: for each input, the resolved config with the layer and location that set each value, the rules a layer gave a level and whether front matter took part. Paths are relative to the working directory, or `<external>/<name>` outside it (policies.md, section 1.7). It carries no document text and no front matter value. Semantics are specified in docs/contract/config.md, section 1.4.1.",
+  "patternProperties": {
+    "^x-": true
+  },
+  "properties": {
+    "inputs": {
+      "description": "The inputs that resolved, in argument order. An input that could not be read is left out, and the run exits 2.",
+      "items": {
+        "$ref": "#/$defs/ExplainInput"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion",
+      "description": "Always 3."
+    },
+    "slopvac_version": {
+      "description": "Version of the tool that wrote the document. Not a schema version.",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "slopvac_version",
+    "inputs"
+  ],
+  "title": "slopvac v3 explain-config",
+  "type": "object"
+}

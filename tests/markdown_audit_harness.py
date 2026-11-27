@@ -26,6 +26,48 @@ import json, os, sys, time
 from pathlib import Path
 
 args = sys.argv[1:]
+if "--explain-config" in args:
+    # The routing check: one record per input, as `--explain-config --format json` prints.
+    case = json.loads(Path(os.environ["AUDIT_CASE"]).read_text())
+    if case.get("routing-sleep"):
+        time.sleep(30)
+    # A real run holds one record for each file, so two names for one file give one record.
+    files, seen = [], set()
+    for name in args[args.index("json") + 1:]:
+        if os.path.realpath(name) not in seen:
+            seen.add(os.path.realpath(name))
+            files.append(name)
+    core = {{"layer": "core"}}
+    project = {{"layer": "project", "file": "slopvac.toml"}}
+    inputs = [
+        {{
+            "path": path,
+            "config_root": ".",
+            "config_sources": [core, project],
+            "profile": "normal",
+            "genre": {{"id": "reference", "source": "default"}},
+            "settings": [
+                {{
+                    "key": "thresholds.min_score",
+                    "value": 0,
+                    "source": {{"layer": "override", "file": "slopvac.toml", "line": 9, "column": 1}}
+                    if path.rsplit("/", 1)[-1] == "README.md"
+                    else core,
+                    "replaced": [],
+                }}
+            ],
+            "rules": {{"total": 120, "configured": {{"error": 0, "warning": 0, "suggestion": 8, "off": 0}}}},
+            "configured_rules": [],
+            "front_matter_resolved": False,
+        }}
+        for path in files
+    ]
+    document = {{"schema_version": 3, "slopvac_version": "0.0.0", "inputs": inputs}}
+    exec(case.get("routing", ""), {{"document": document}})
+    if not case.get("routing-noreport"):
+        print(json.dumps(document))
+    print(case.get("routing-stderr", ""), end="", file=sys.stderr)
+    sys.exit(case.get("routing-exit", 0))
 out = Path(args[args.index("--out") + 1])
 files = args[args.index("--out") + 2:]
 scan = out.stem

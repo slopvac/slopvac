@@ -9,6 +9,9 @@ the diagnostic scans, which may fail, and not in the authored scan.
 from __future__ import annotations
 
 import importlib.util
+import json
+import subprocess
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -94,7 +97,7 @@ def test_the_authored_report_holds_exactly_the_authored_documents(reported, prob
 
 # ---- the audit step's real script, against a stub linter ---------------------------
 
-from markdown_audit_harness import assert_output_contract, run_audit  # noqa: E402
+from markdown_audit_harness import assert_output_contract, audit_script, run_audit  # noqa: E402
 
 HOSTILE_PATH = "::error::pwned\n::add-mask::x"
 
@@ -336,3 +339,189 @@ def test_a_launcher_warning_with_a_payload_reaches_no_stream(tmp_path) -> None:
     assert_output_contract(done, tmp_path)
     assert "WARNPAYLOAD" not in done.stdout + done.stderr
     assert "WARNPAYLOAD" in _stderr_file(tmp_path)
+
+
+# ---- the routing check on `--explain-config --format json` -------------------------
+
+
+def test_a_correct_audit_prints_the_routing_counts(tmp_path) -> None:
+    done = run_audit(tmp_path, {})
+    assert_output_contract(done, tmp_path)
+    lines = [ln for ln in done.stdout.splitlines() if ln.startswith("ROUTING ")]
+    assert len(lines) == 1, done.stdout
+    counts = json.loads(lines[0].removeprefix("ROUTING "))
+    # The harness repository has two authored documents besides the hostile-named one.
+    assert counts == {"documents": 3, "rules_total": 120, "front_matter_resolved": False}
+
+
+_ROUTING_FAULTS = {
+    "config-root": (
+        'document["inputs"][0]["config_root"] = "docs"',
+        "routing: 1 document(s) do not resolve to the repository config",
+    ),
+    "extra-config-source": (
+        'document["inputs"][0]["config_sources"].append({"layer": "extends", "file": "base.toml"})',
+        "routing: 1 document(s) do not resolve to the repository config",
+    ),
+    "profile": (
+        'document["inputs"][0]["profile"] = "::error::pwned"',
+        "routing: 1 document(s) do not resolve to the normal profile",
+    ),
+    "readme-without-override": (
+        'next(i for i in document["inputs"] if i["path"] == "README.md")["settings"] = []',
+        "routing: 1 document(s) have the wrong README override",
+    ),
+    "other-document-with-override": (
+        'next(i for i in document["inputs"] if i["path"] == "docs/a.md")["settings"][0]["source"]'
+        ' = {"layer": "override", "file": "slopvac.toml", "line": 9, "column": 1}',
+        "routing: 1 document(s) have the wrong README override",
+    ),
+    "unexpected-style": (
+        'document["inputs"][0]["settings"].append({"key": "styles", "value": ["ste"],'
+        ' "source": {"layer": "project", "file": "slopvac.toml", "line": 3, "column": 1},'
+        ' "replaced": []})',
+        "routing: 1 document(s) do not resolve to the repository styles",
+    ),
+    "settings-missing": (
+        'del next(i for i in document["inputs"] if i["path"] == "docs/a.md")["settings"]',
+        "routing: 1 document(s) have no resolved settings",
+    ),
+    "settings-null": (
+        'next(i for i in document["inputs"] if i["path"] == "docs/a.md")["settings"] = None',
+        "routing: 1 document(s) have no resolved settings",
+    ),
+    "settings-not-a-list": (
+        'next(i for i in document["inputs"] if i["path"] == "docs/a.md")["settings"] = "thresholds.min_score"',
+        "routing: 1 document(s) have no resolved settings",
+    ),
+    "settings-entry-not-an-object": (
+        'next(i for i in document["inputs"] if i["path"] == "docs/a.md")["settings"].append("styles")',
+        "routing: 1 document(s) have no resolved settings",
+    ),
+    "readme-settings-missing": (
+        'del next(i for i in document["inputs"] if i["path"] == "README.md")["settings"]',
+        "routing: 1 document(s) have no resolved settings",
+    ),
+    "no-rules": (
+        'document["inputs"][0]["rules"]["total"] = 0',
+        "routing: 1 document(s) have no rule that runs",
+    ),
+    "every-rule-off": (
+        'document["inputs"][0]["rules"] = {"total": 5, "configured": {"off": 5}}',
+        "routing: 1 document(s) have no rule that runs",
+    ),
+    "document-omitted": (
+        'del document["inputs"][0]',
+        "routing: the report omits 1 expected document(s)",
+    ),
+    "document-repeated": (
+        'document["inputs"].append(dict(document["inputs"][0]))',
+        "routing: the report holds 1 duplicate document(s)",
+    ),
+    "path-outside-the-root": (
+        'document["inputs"][0]["path"] = "/outside/::error::pwned.md"',
+        "routing: document 0 lies outside the repository",
+    ),
+    "path-missing": (
+        'del document["inputs"][0]["path"]',
+        "routing: input 0 has no path",
+    ),
+    "schema-version": (
+        'document["schema_version"] = 2',
+        "routing: the output has no schema_version 3",
+    ),
+    "inputs-missing": (
+        'del document["inputs"]',
+        "routing: the output has no `inputs` list",
+    ),
+    "schema-version-missing": (
+        'del document["schema_version"]',
+        "routing: the output has no schema_version 3",
+    ),
+}
+
+
+@pytest.mark.parametrize("fault", list(_ROUTING_FAULTS))
+def test_a_wrong_routing_fails_the_audit_step_with_fixed_text(tmp_path, fault) -> None:
+    snippet, line = _ROUTING_FAULTS[fault]
+    done = run_audit(tmp_path, {"routing": snippet})
+    assert_output_contract(done, tmp_path, line, payload_free=True)
+    assert not [ln for ln in done.stdout.splitlines() if ln.startswith("ROUTING ")]
+
+
+@pytest.mark.parametrize("code", [1, 2])
+def test_a_failed_routing_run_fails_with_the_exit_code_and_no_output(tmp_path, code) -> None:
+    case = {"routing-exit": code, "routing-stderr": _PAYLOAD}
+    done = run_audit(tmp_path, case)
+    assert_output_contract(done, tmp_path, f"routing: the linter exited {code}", payload_free=True)
+
+
+def test_a_routing_run_that_prints_no_json_fails_with_fixed_text(tmp_path) -> None:
+    done = run_audit(tmp_path, {"routing-noreport": True})
+    assert_output_contract(
+        done, tmp_path, "routing: the linter wrote no JSON document", payload_free=True
+    )
+
+
+def test_a_routing_timeout_fails_with_fixed_text(tmp_path) -> None:
+    case = {"routing-sleep": True, "env": {"AUDIT_LINTER_TIMEOUT": "1"}}
+    done = run_audit(tmp_path, case)
+    assert_output_contract(done, tmp_path, "routing: the linter timed out after 1 s", payload_free=True)
+
+
+_STYLED_CONFIG = 'schema_version = 3\nstyles = ["ste"]\nexclude = [\n  "CHANGELOG.md",\n]\n'
+_STYLES_SETTING = (
+    'for record in document["inputs"]: record["settings"].append({"key": "styles",'
+    ' "value": ["ste"], "source": {"layer": "project", "file": "slopvac.toml", "line": 2,'
+    ' "column": 1}, "replaced": []})'
+)
+
+
+def test_the_styles_of_the_repository_config_are_the_expected_styles(tmp_path) -> None:
+    case = {"files": {"slopvac.toml": _STYLED_CONFIG}, "routing": _STYLES_SETTING}
+    done = run_audit(tmp_path, case)
+    assert_output_contract(done, tmp_path)
+
+
+def _document_class():
+    """The audit step's own `document_class`, taken from the workflow script."""
+    script = audit_script()
+    start = script.index("def document_class(path):")
+    end = script.index('return "authored"\n', start) + len('return "authored"\n')
+    namespace: dict = {}
+    exec(textwrap.dedent(script[start:end]), namespace)  # noqa: S102 - the repository's own step
+    return namespace["document_class"]
+
+
+def test_no_authored_document_resolves_to_a_config_of_its_own() -> None:
+    # The routing check requires every authored document to resolve to the root
+    # `slopvac.toml`. A tracked document under a directory with its own config is an input
+    # for that directory's tool, so the audit must not class it as authored.
+    document_class = _document_class()
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "--", "*.md", "*.mdx"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout.decode("utf-8").split("\0")
+    nested = []
+    for name in filter(None, tracked):
+        if document_class(name) != "authored":
+            continue
+        parent = (ROOT / name).parent
+        while parent != ROOT:
+            if (parent / "slopvac.toml").is_file():
+                nested.append(name)
+                break
+            parent = parent.parent
+    assert nested == []
+
+
+def test_a_document_that_resolves_without_the_configured_styles_fails(tmp_path) -> None:
+    done = run_audit(tmp_path, {"files": {"slopvac.toml": _STYLED_CONFIG}})
+    assert_output_contract(
+        done,
+        tmp_path,
+        "routing: 3 document(s) do not resolve to the repository styles",
+        payload_free=True,
+    )

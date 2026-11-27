@@ -207,7 +207,7 @@ fn lint_run_args(cmd: Command) -> Command {
             Arg::new("explain-config")
                 .long("explain-config")
                 .action(ArgAction::SetTrue)
-                .help("Print each resolved setting with its source, then exit."),
+                .help("Print each resolved setting with its source, then exit. Takes --format text or json."),
         );
     with_removed(cmd, &REMOVED_LINT_NAMES)
 }

@@ -15,6 +15,7 @@ pub mod engine;
 pub mod env;
 pub mod errors;
 pub mod exit;
+pub mod explain_config;
 pub mod generate;
 pub mod init;
 pub mod inspect;
