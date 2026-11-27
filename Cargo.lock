@@ -2804,6 +2804,7 @@ dependencies = [
  "roxmltree",
  "rstest",
  "scraper",
+ "serde",
  "serde_json",
  "slopvac-messages",
  "slopvac-model",
