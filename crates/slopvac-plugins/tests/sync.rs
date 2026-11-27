@@ -2766,7 +2766,11 @@ mod cache_reads {
         let store = env
             .store()
             .with_read_observer({
-                let (paused, go_rx, held_tx) = (paused.clone(), go_rx.clone(), held_tx.clone());
+                let (paused, go_rx, held_tx) = (
+                    std::sync::Arc::clone(&paused),
+                    std::sync::Arc::clone(&go_rx),
+                    std::sync::Arc::clone(&held_tx),
+                );
                 std::sync::Arc::new(move |path: &Path| {
                     let is_tree = path
                         .file_name()
@@ -2778,7 +2782,10 @@ mod cache_reads {
                 })
             })
             .with_lock_hook({
-                let (lock_calls, waiting_tx) = (lock_calls.clone(), waiting_tx.clone());
+                let (lock_calls, waiting_tx) = (
+                    std::sync::Arc::clone(&lock_calls),
+                    std::sync::Arc::clone(&waiting_tx),
+                );
                 std::sync::Arc::new(move || {
                     // The first call is A's. Every later call is B's, and B is about to wait.
                     if lock_calls.fetch_add(1, Ordering::SeqCst) >= 1 {
