@@ -211,7 +211,7 @@ pub(crate) struct CancelParams {
 /// Define the params of one documents hook: the batch, and the hook id under the key that
 /// names the kind.
 macro_rules! documents_params {
-    ($(#[$meta:meta])* $name:ident, $rename:literal, $key:literal, $batch:literal, $description:path) => {
+    ($(#[$meta:meta])* $name:ident, $rename:tt, $key:literal, $batch:literal, $description:path) => {
         $(#[$meta])*
         #[derive(Debug, Serialize, JsonSchema)]
         #[schemars(
