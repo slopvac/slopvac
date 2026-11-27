@@ -571,7 +571,10 @@ fn move_tree_to(
 /// refusal and the plugin id `fmt`. Any other field, such as a path or a refusal sentence, fails.
 fn assert_debug_line(stderr: &str, code: &str) {
     let line = stderr.lines().find(|l| l.contains("plugin loader refused"));
-    assert!(line.is_some(), "no `plugin loader refused` event:\n{stderr}");
+    assert!(
+        line.is_some(),
+        "no `plugin loader refused` event:\n{stderr}"
+    );
     let fields: std::collections::BTreeMap<&str, &str> = line
         .unwrap()
         .split_whitespace()
@@ -587,13 +590,21 @@ fn assert_debug_line(stderr: &str, code: &str) {
 
 /// Every file under `dir`, by relative path, with its bytes.
 fn snapshot(dir: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
-    fn walk(base: &std::path::Path, dir: &std::path::Path, out: &mut std::collections::BTreeMap<String, Vec<u8>>) {
+    fn walk(
+        base: &std::path::Path,
+        dir: &std::path::Path,
+        out: &mut std::collections::BTreeMap<String, Vec<u8>>,
+    ) {
         for entry in fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
             if path.is_dir() {
                 walk(base, &path, out);
             } else {
-                let rel = path.strip_prefix(base).unwrap().to_string_lossy().into_owned();
+                let rel = path
+                    .strip_prefix(base)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
                 out.insert(rel, fs::read(&path).unwrap());
             }
         }

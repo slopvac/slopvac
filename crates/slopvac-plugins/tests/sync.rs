@@ -2894,10 +2894,7 @@ mod cache_reads {
         for text in shown {
             assert!(!text.contains(&data), "{text}");
         }
-        assert!(
-            matches!(&err, SyncError::CacheUnreadable { .. }),
-            "{err:?}"
-        );
+        assert!(matches!(&err, SyncError::CacheUnreadable { .. }), "{err:?}");
         let cause = std::error::Error::source(&err).and_then(|e| e.downcast_ref::<CacheCause>());
         assert_eq!(
             cause,
