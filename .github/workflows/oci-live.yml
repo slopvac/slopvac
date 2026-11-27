@@ -76,7 +76,8 @@ jobs:
         run: |
           args=()
           if [[ "$FIRST_PUBLICATION" == true ]]; then
-            echo "::warning::first_publication is set: the anonymous pull test is skipped. Make the package public, then run again without it."
+            msg="first_publication is set: the anonymous pull test is skipped."
+            echo "::warning::${msg} Make the package public, then run again without it."
             args+=(-E 'not test(/^anonymous_pull/)')
           fi
           cargo nextest run -p slopvac-plugins --test ghcr_live --run-ignored only --locked --no-fail-fast "${args[@]}"
@@ -86,7 +87,9 @@ jobs:
     needs: live
     # Weekly only. The job still runs when `live` failed, so a broken week does not let
     # the package grow. It never deletes a version this run pushed.
-    if: ${{ !cancelled() && github.event_name == 'schedule' && github.repository == 'slopvac/slopvac' && github.ref == 'refs/heads/main' }}
+    if: >-
+      ${{ !cancelled() && github.event_name == 'schedule'
+      && github.repository == 'slopvac/slopvac' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
