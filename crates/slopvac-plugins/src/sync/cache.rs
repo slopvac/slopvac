@@ -292,12 +292,7 @@ impl Store {
         }
     }
 
-    fn copy_verified(
-        &self,
-        id: &PackId,
-        digest: &Digest,
-        max: u64,
-    ) -> Result<Copied, SyncError> {
+    fn copy_verified(&self, id: &PackId, digest: &Digest, max: u64) -> Result<Copied, SyncError> {
         let path = self.blob_path(digest);
         let file = match open_regular(&path) {
             Ok(file) => file,

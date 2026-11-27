@@ -1316,7 +1316,7 @@ fn trust_shows_no_absolute_path_from_a_loader_refusal_in_its_text_or_chain() {
 /// A loader that names another plugin than the one that was loaded.
 struct OtherIdLoader;
 
-impl PluginLoader for PathAsIdLoader {
+impl PluginLoader for OtherIdLoader {
     fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
         Err(LoadError::StoreUnreadable {
             id: "other".parse().unwrap(),

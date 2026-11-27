@@ -2583,20 +2583,35 @@ mod cache_reads {
         let (b, b_archive) = archive_entry(
             &env,
             "b",
-            &[("slopvac-plugin.toml", b"id = \"b\"\n"), ("b.txt", b"honest")],
+            &[
+                ("slopvac-plugin.toml", b"id = \"b\"\n"),
+                ("b.txt", b"honest"),
+            ],
         );
         let revs = env.revocations(NOW);
         let pol = KeyPolicy::default();
         // `b` is installed and cached; `a` is new in the second run.
-        Syncer::new(&env.store(), Network::Offline, &pol, env.project.path(), &revs)
-            .sync(&lock_text(std::slice::from_ref(&b)))
-            .unwrap();
+        Syncer::new(
+            &env.store(),
+            Network::Offline,
+            &pol,
+            env.project.path(),
+            &revs,
+        )
+        .sync(&lock_text(std::slice::from_ref(&b)))
+        .unwrap();
         let (a, a_archive) = archive_entry(
             &env,
             "a",
-            &[("slopvac-plugin.toml", b"id = \"a\"\n"), ("a.txt", b"honest")],
+            &[
+                ("slopvac-plugin.toml", b"id = \"a\"\n"),
+                ("a.txt", b"honest"),
+            ],
         );
-        let evil = targz(&[("slopvac-plugin.toml", b"id = \"b\"\n"), ("evil.txt", b"evil")]);
+        let evil = targz(&[
+            ("slopvac-plugin.toml", b"id = \"b\"\n"),
+            ("evil.txt", b"evil"),
+        ]);
         let target = env
             .data
             .path()
@@ -2639,20 +2654,40 @@ mod cache_reads {
         let (a, _) = archive_entry(&env, "a", &[("a.txt", b"honest")]);
         let revs = env.revocations(NOW);
         let pol = KeyPolicy::default();
-        Syncer::new(&env.store(), Network::Offline, &pol, env.project.path(), &revs)
-            .sync(&lock_text(std::slice::from_ref(&a)))
-            .unwrap();
-        assert_eq!(staged(&env), Vec::<String>::new(), "after a sync that succeeded");
+        Syncer::new(
+            &env.store(),
+            Network::Offline,
+            &pol,
+            env.project.path(),
+            &revs,
+        )
+        .sync(&lock_text(std::slice::from_ref(&a)))
+        .unwrap();
+        assert_eq!(
+            staged(&env),
+            Vec::<String>::new(),
+            "after a sync that succeeded"
+        );
 
         let missing = format!(
             "\n[[plugins]]\nid = \"z\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
              source = \"dist/none.tar.gz\"\ndigest = \"{}\"\n",
             Digest::of(b"x")
         );
-        let refused = Syncer::new(&env.store(), Network::Offline, &pol, env.project.path(), &revs)
-            .sync(&lock_text(&[a, missing]));
+        let refused = Syncer::new(
+            &env.store(),
+            Network::Offline,
+            &pol,
+            env.project.path(),
+            &revs,
+        )
+        .sync(&lock_text(&[a, missing]));
 
         assert!(refused.is_err());
-        assert_eq!(staged(&env), Vec::<String>::new(), "after a sync that was refused");
+        assert_eq!(
+            staged(&env),
+            Vec::<String>::new(),
+            "after a sync that was refused"
+        );
     }
 }
