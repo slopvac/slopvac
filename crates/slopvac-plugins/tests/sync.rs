@@ -1984,7 +1984,12 @@ mod cache_reads {
         }
 
         fn online(&self) -> Result<slopvac_plugins::sync::SyncReport, SyncError> {
-            run(&self.env, Network::Online(&client()), &self.policy, &self.lock)
+            run(
+                &self.env,
+                Network::Online(&client()),
+                &self.policy,
+                &self.lock,
+            )
         }
 
         /// What `plugins trust` calls: the cached signature check, which reads the cache only.
@@ -2217,7 +2222,11 @@ mod cache_reads {
         #[case] statement: bool,
     ) {
         let c = cached();
-        let blob = if statement { &c.statement } else { &c.signature };
+        let blob = if statement {
+            &c.statement
+        } else {
+            &c.signature
+        };
         let original = fs::read(blob).unwrap();
         grow(blob, 16 << 20);
 
@@ -2241,7 +2250,11 @@ mod cache_reads {
         let err = c.cached_signature().unwrap_err();
 
         assert_eq!(err.code(), "digest-mismatch", "{err:?}");
-        assert_eq!(fs::read(blob).unwrap(), b"swapped", "trust rewrote the file");
+        assert_eq!(
+            fs::read(blob).unwrap(),
+            b"swapped",
+            "trust rewrote the file"
+        );
     }
 
     #[rstest]
@@ -2256,7 +2269,11 @@ mod cache_reads {
         let err = c.cached_signature().unwrap_err();
 
         assert!(matches!(err, SyncError::CacheUnreadable { .. }), "{err:?}");
-        assert_eq!(fs::metadata(blob).unwrap().len(), 16 << 20, "trust removed or rewrote it");
+        assert_eq!(
+            fs::metadata(blob).unwrap().len(),
+            16 << 20,
+            "trust removed or rewrote it"
+        );
     }
 
     /// Sync on a cache whose archive blob is in a state that it cannot repair.
@@ -2279,7 +2296,10 @@ mod cache_reads {
             "{err:?}"
         );
         assert_eq!(err.code(), "plugin-store-unreadable");
-        assert!(fs::symlink_metadata(&c.layer).is_ok(), "sync removed the entry");
+        assert!(
+            fs::symlink_metadata(&c.layer).is_ok(),
+            "sync removed the entry"
+        );
     }
 
     #[test]
@@ -2325,7 +2345,16 @@ mod cache_reads {
             assert!(!text.contains(&data), "{text}");
         }
         assert!(
-            matches!(&err, SyncError::CacheUnreadable { cause: CacheCause::Io { os_code: Some(_), .. }, .. }),
+            matches!(
+                &err,
+                SyncError::CacheUnreadable {
+                    cause: CacheCause::Io {
+                        os_code: Some(_),
+                        ..
+                    },
+                    ..
+                }
+            ),
             "{err:?}"
         );
     }
@@ -2345,7 +2374,13 @@ mod cache_reads {
         }
         let err = result.unwrap_err();
         assert!(
-            matches!(&err, SyncError::CacheUnreadable { cause: CacheCause::Io { .. }, .. }),
+            matches!(
+                &err,
+                SyncError::CacheUnreadable {
+                    cause: CacheCause::Io { .. },
+                    ..
+                }
+            ),
             "{err:?}"
         );
     }
@@ -2359,7 +2394,7 @@ mod cache_reads {
         };
         grow(&c.layer, 4 << 20);
         let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let store = c.env.store().with_archive_byte_counter(counter.clone());
+        let store = c.env.store().with_archive_byte_counter(std::sync::Arc::clone(&counter));
 
         let result = store.verified_tree(&c.lock.packs()[0], &HashSet::new(), limits);
 

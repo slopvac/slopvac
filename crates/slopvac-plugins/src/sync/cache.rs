@@ -448,7 +448,13 @@ mod tests {
         let err = store.evict_blob(&id, &digest).unwrap_err();
 
         assert!(
-            matches!(err, SyncError::CacheUnreadable { cause: CacheCause::Io { .. }, .. }),
+            matches!(
+                err,
+                SyncError::CacheUnreadable {
+                    cause: CacheCause::Io { .. },
+                    ..
+                }
+            ),
             "{err:?}"
         );
         assert!(!store.take_repaired(&id), "a failed removal is no repair");

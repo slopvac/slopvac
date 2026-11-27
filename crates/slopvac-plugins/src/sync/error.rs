@@ -40,7 +40,10 @@ impl std::fmt::Display for CacheCause {
                 kind,
                 os_code: Some(code),
             } => write!(f, "{kind} (os error {code})"),
-            Self::Io { kind, os_code: None } => write!(f, "{kind}"),
+            Self::Io {
+                kind,
+                os_code: None,
+            } => write!(f, "{kind}"),
             Self::NotRegular => f.write_str("not a regular file"),
             Self::TooLarge { cap } => write!(f, "over {cap} bytes"),
         }

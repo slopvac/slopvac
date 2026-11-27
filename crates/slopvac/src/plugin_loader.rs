@@ -11,13 +11,13 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use slopvac_packs::{CodePluginContext, CodePluginError, SyncedError, load_code_plugin};
-use slopvac_plugins::{LoadError, PluginLoader};
 use slopvac_plugins::extract::{ExtractError, Limits, TreeHash, tree_hash_capturing};
 use slopvac_plugins::host::PluginSpec;
 use slopvac_plugins::lock::{LockedPack, SourceKind};
 use slopvac_plugins::sign::{KeyPolicy, PublicKey};
 use slopvac_plugins::sync::{Store, SyncError};
 use slopvac_plugins::trust::VerifiedPlugin;
+use slopvac_plugins::{LoadError, PluginLoader};
 
 /// The `PATH` of a plugin child. The host never passes its own, and the value enters the trust
 /// hash, so it is the same on every machine: the system directories only.

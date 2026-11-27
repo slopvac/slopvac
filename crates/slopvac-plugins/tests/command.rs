@@ -1259,7 +1259,9 @@ fn a_loader_refusal_with_a_code_is_reported_under_that_code() {
     let f = Fixture::new();
     f.write_lock(&[fake_code_entry()]);
     let err = f
-        .run(&["trust", "fake"], false, |s| s.loader(UnreadableCacheLoader))
+        .run(&["trust", "fake"], false, |s| {
+            s.loader(UnreadableCacheLoader)
+        })
         .result
         .unwrap_err();
     assert_eq!(err.code(), "plugin-store-unreadable");
