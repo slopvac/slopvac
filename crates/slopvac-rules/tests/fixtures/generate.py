@@ -14,8 +14,11 @@ Python implementation and never from the Rust code:
   point offsets; the Rust test converts them to bytes.
 
 ``--check`` recomputes both and fails when a file differs. The corpus texts are frozen: it
-only recomputes the spans for the stored texts. Without ``--check`` the corpus is rebuilt
-from the rule examples, the repository's own prose and the Unicode probes below.
+only recomputes the spans for the stored texts. Without a flag the corpus is rebuilt from
+the rule examples, the repository's own prose and the Unicode probes below, which drops
+every stored text that no source produces any more. ``--refresh`` keeps every stored text
+and appends the texts of the current rule examples and probes that are not stored yet,
+so a rule change adds its cases and takes none away.
 """
 
 from __future__ import annotations
@@ -140,7 +143,7 @@ def paragraphs(path: Path) -> list[str]:
     return out
 
 
-def build_corpus(rules) -> list[str]:
+def build_corpus(rules, prose: bool = True) -> list[str]:
     seen: set[str] = set()
     texts: list[str] = []
 
@@ -158,12 +161,21 @@ def build_corpus(rules) -> list[str]:
         for example in rule.examples[:2]:
             for transform in TRANSFORMS.values():
                 add(transform(example.bad))
-    for name in PROSE_SOURCES:
+    for name in PROSE_SOURCES if prose else []:
         for block in paragraphs(ROOT / name):
             add(block)
     for probe in PROBES:
         add(probe)
     return texts
+
+
+def merge_corpus(stored: list[str], built: list[str]) -> list[str]:
+    """The stored texts in their order, then each built text that is not stored yet.
+
+    A text never leaves the corpus, so a rule change cannot drop the cases of other rules.
+    """
+    seen = set(stored)
+    return stored + [t for t in dict.fromkeys(built) if t not in seen]
 
 
 # PCRE2 does not fold U+0130 (dotted capital I) and U+0131 (dotless i) onto `i` and `I` when it
@@ -256,7 +268,11 @@ def main() -> None:
     for name, text in core.items():
         (CORE / name).write_text(text, encoding="utf-8")
     rules = lexical_rules()
-    texts = build_corpus(rules)
+    if "--refresh" in sys.argv:
+        stored = json.loads(PARITY.read_text(encoding="utf-8"))["texts"]
+        texts = merge_corpus(stored, build_corpus(rules, prose=False))
+    else:
+        texts = build_corpus(rules)
     PARITY.write_text(parity_text(texts), encoding="utf-8")
     print(f"{len(core)} categories, {len(rules)} lexical rules, {len(texts)} texts")
 
