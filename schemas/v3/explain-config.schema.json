@@ -277,7 +277,7 @@
           "type": "object"
         }
       ],
-      "description": "A setting value as configured: any JSON value."
+      "description": "A setting value as configured: null, a flag, a number, text, a list or a table."
     },
     "ShownPath": {
       "description": "A path made safe to show: relative to the working directory (`.` for the directory itself), `<external>/<file name>` outside it, or `<stdin>`. Never absolute (policies.md, section 1.7).",
