@@ -429,6 +429,72 @@ fn version_json_lists_supported_versions_from_the_owning_crates() {
     );
 }
 
+/// The `schema_versions` object of this build, in the order it is printed. Every artifact is at
+/// version 3, which `docs/contract/policies.md` section 3.2 and the schemas under `schemas/v3`
+/// state independently of the code.
+const SCHEMA_VERSIONS: &str = concat!(
+    r#""schema_versions":{"blocklist":[3],"category":[3],"config":[3],"doctor-report":[3],"#,
+    r#""genre":[3],"lint-report":[3],"plugins-lock":[3],"rules-output":[3],"style":[3],"#,
+    r#""tagger":[3],"terms":[3]}"#
+);
+
+/// The raw bytes of `--version --json` with the notice array and the build version filled in.
+/// An unmanaged test binary has no upgrade command and so no `x-upgrade-command`.
+fn expected_version_bytes(notices: &str) -> String {
+    format!(
+        concat!(
+            r#"{{"install_method":"unknown","name":"slopvac","notices":{notices},{versions},"#,
+            r#""slopvac_api":[1],"version":"{version}"}}"#,
+            "\n"
+        ),
+        notices = notices,
+        versions = SCHEMA_VERSIONS,
+        version = env!("CARGO_PKG_VERSION"),
+    )
+}
+
+fn raw_version_output(cmd: &mut Command, cache: &std::path::Path, args: &[&str]) -> String {
+    let out = cmd
+        .env("SLOPVAC_CACHE_DIR", cache)
+        .args(args)
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(out).unwrap()
+}
+
+#[test]
+fn version_json_bytes_offline() {
+    let cache = tempfile::tempdir().unwrap();
+    let raw = raw_version_output(
+        &mut slopvac(),
+        cache.path(),
+        &["--offline", "--version", "--json"],
+    );
+    assert_eq!(raw, expected_version_bytes("[]"));
+}
+
+#[test]
+fn version_json_bytes_online_with_a_cached_newer_release() {
+    let cache = cache_with_newer_release();
+    let raw = raw_version_output(
+        &mut update_enabled(),
+        cache.path(),
+        &["--version", "--json"],
+    );
+    let notice = concat!(
+        r#"[{"code":"update-available","level":"info","message":"slopvac 99.0.0 is available "#,
+        r#"(you have CURRENT). See https://github.com/slopvac/slopvac/releases. This is a new "#,
+        r#"major version. Run `slopvac migrate` to update your configuration.","#,
+        r#""x-current":"CURRENT","x-latest":"99.0.0","x-migrate-hint":"This is a new major "#,
+        r#"version. Run `slopvac migrate` to update your configuration."}]"#
+    )
+    .replace("CURRENT", env!("CARGO_PKG_VERSION"));
+    assert_eq!(raw, expected_version_bytes(&notice));
+}
+
 /// insta: the whole document, with the two values that vary by build and install redacted.
 /// Review changes with `cargo insta review`.
 #[test]

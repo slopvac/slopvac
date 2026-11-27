@@ -173,6 +173,36 @@ mod tests {
         );
     }
 
+    /// The document that the 3.x writer before the typed document printed: every key, a notice,
+    /// and no `schema_version`. A binary that was installed earlier still prints this.
+    const OLD_WRITER_DOCUMENT: &str = concat!(
+        r#"{"install_method":"installer","name":"slopvac","notices":[{"code":"update-available","#,
+        r#""level":"info","message":"slopvac 3.9.0 is available (you have 3.3.0). Upgrade with "#,
+        r#"`slopvac self update`.","x-current":"3.3.0","x-latest":"3.9.0","#,
+        r#""x-upgrade-command":"slopvac self update"}],"schema_versions":{"config":[3],"#,
+        r#""lint-report":[3]},"slopvac_api":[1],"version":"3.3.0"}"#
+    );
+
+    #[test]
+    fn a_document_from_the_old_writer_is_read() {
+        let (_dir, exe) = script(&format!("echo '{OLD_WRITER_DOCUMENT}'"));
+        assert_eq!(
+            installed_version(&exe, LONG).unwrap(),
+            semver::Version::new(3, 3, 0)
+        );
+    }
+
+    #[test]
+    fn keys_and_notice_fields_of_a_newer_binary_are_ignored() {
+        let (_dir, exe) = script(
+            r#"echo '{"name":"slopvac","version":"3.4.0","install_method":"cargo","future":{"a":[1]},"notices":[{"code":"c","level":"info","message":"m","x-current":"3.4.0","x-latest":"3.5.0","new-field":1}],"schema_versions":{"config":[3,4],"newer":[1]},"slopvac_api":[1,2]}'"#,
+        );
+        assert_eq!(
+            installed_version(&exe, LONG).unwrap(),
+            semver::Version::new(3, 4, 0)
+        );
+    }
+
     #[test]
     fn the_probe_passes_the_flags_that_print_the_version_document() {
         let (_dir, exe) = script(

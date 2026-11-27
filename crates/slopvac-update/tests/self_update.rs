@@ -403,6 +403,58 @@ fn version_json_lists_supported_versions_per_artifact() {
     assert_eq!(doc["slopvac_api"], serde_json::json!([1, 2]));
 }
 
+/// The document with a cached notice, byte for byte: keys in alphabetical order, no spaces, one
+/// trailing newline. The text is worked out from the message catalog, not read back from the
+/// writer: 3.0.0 to 4.0.0 is a new major version on an installer install.
+const WITH_NOTICE: &str = concat!(
+    r#"{"install_method":"installer","name":"slopvac","notices":[{"code":"update-available","#,
+    r#""level":"info","message":"slopvac 4.0.0 is available (you have 3.0.0). Upgrade with "#,
+    r#"`slopvac self update`. This is a new major version. Run `slopvac migrate` to update "#,
+    r#"your configuration.","x-current":"3.0.0","x-latest":"4.0.0","#,
+    r#""x-migrate-hint":"This is a new major version. Run `slopvac migrate` to update your "#,
+    r#"configuration.","x-upgrade-command":"slopvac self update"}],"#,
+    r#""schema_versions":{"alpha":[3],"beta":[2,3]},"slopvac_api":[1,2],"version":"3.0.0"}"#,
+    "\n"
+);
+
+#[rstest::rstest]
+#[case::online(false)]
+#[case::offline(true)]
+fn version_json_bytes_with_a_cached_notice(#[case] offline: bool) {
+    let fx = installed();
+    let mut rt = runtime(&fx, server("3.1.0"), Box::new(Fixed(Ok(()))));
+    rt.offline = offline;
+    Cache::default_for(&*rt.var)
+        .unwrap()
+        .write(&slopvac_update::notice::Entry {
+            checked_at: 5_000,
+            latest: "4.0.0".into(),
+        })
+        .unwrap();
+    let supported = Supported {
+        schema_versions: BTreeMap::from([("alpha", vec![3]), ("beta", vec![2, 3])]),
+        slopvac_api: vec![1, 2],
+    };
+    assert_eq!(command::version_json(&rt, &supported), WITH_NOTICE);
+}
+
+#[rstest::rstest]
+#[case::online(false)]
+#[case::offline(true)]
+fn version_json_bytes_without_a_notice(#[case] offline: bool) {
+    let fx = installed();
+    let mut rt = runtime(&fx, server("3.1.0"), Box::new(Fixed(Ok(()))));
+    rt.offline = offline;
+    assert_eq!(
+        command::version_json(&rt, &Supported::default()),
+        concat!(
+            r#"{"install_method":"installer","name":"slopvac","notices":[],"#,
+            r#""schema_versions":{},"slopvac_api":[],"version":"3.0.0"}"#,
+            "\n"
+        )
+    );
+}
+
 #[test]
 fn version_json_never_starts_a_refresh() {
     let fx = installed();
