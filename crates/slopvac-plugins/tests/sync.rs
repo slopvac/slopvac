@@ -2690,4 +2690,139 @@ mod cache_reads {
             "after a sync that was refused"
         );
     }
+
+    /// A path-source plugin that a first sync installed, and its lock.
+    fn installed_archive(env: &Env, id: &str) -> (Lockfile, Vec<u8>) {
+        let (entry, archive) = archive_entry(
+            env,
+            id,
+            &[
+                ("slopvac-plugin.toml", format!("id = \"{id}\"\n").as_bytes()),
+                ("a.txt", b"honest"),
+            ],
+        );
+        let lock = lock_text(&[entry]);
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        Syncer::new(&env.store(), Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&lock)
+            .unwrap();
+        (lock, archive)
+    }
+
+    /// Sync A repairs a cached file and is held after its install, with the store lock. Sync B,
+    /// on a clone of the same store, asks for the lock and waits. A's report must still show its
+    /// repair: B must not drop the marks before it holds the lock.
+    #[test]
+    fn a_second_sync_waiting_for_the_lock_does_not_erase_the_repair_marks_of_the_first() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        use std::sync::mpsc::channel;
+        use std::time::Duration;
+        let wait = Duration::from_secs(60);
+        let env = Env::new();
+        let (lock, archive) = installed_archive(&env, "a");
+        let blob = env
+            .data
+            .path()
+            .join("slopvac/blobs")
+            .join(Digest::of(&archive).hex());
+        fs::set_permissions(&blob, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&blob, b"swapped").unwrap();
+
+        let (held_tx, held_rx) = channel::<()>();
+        let (go_tx, go_rx) = channel::<()>();
+        let (waiting_tx, waiting_rx) = channel::<()>();
+        let go_rx = std::sync::Mutex::new(go_rx);
+        let held_tx = std::sync::Mutex::new(held_tx);
+        let waiting_tx = std::sync::Mutex::new(waiting_tx);
+        let paused = AtomicBool::new(false);
+        let lock_calls = AtomicUsize::new(0);
+        let paused = std::sync::Arc::new(paused);
+        let lock_calls = std::sync::Arc::new(lock_calls);
+        let go_rx = std::sync::Arc::new(go_rx);
+        let held_tx = std::sync::Arc::new(held_tx);
+        let waiting_tx = std::sync::Arc::new(waiting_tx);
+        // The first tree that is installed holds sync A until B is waiting for the lock.
+        let store = env
+            .store()
+            .with_read_observer({
+                let (paused, go_rx, held_tx) = (paused.clone(), go_rx.clone(), held_tx.clone());
+                std::sync::Arc::new(move |path: &Path| {
+                    let is_tree = path
+                        .file_name()
+                        .is_some_and(|n| n.to_string_lossy().starts_with("tree-"));
+                    if is_tree && !paused.swap(true, Ordering::SeqCst) {
+                        held_tx.lock().unwrap().send(()).unwrap();
+                        let _ = go_rx.lock().unwrap().recv_timeout(Duration::from_secs(60));
+                    }
+                })
+            })
+            .with_lock_hook({
+                let (lock_calls, waiting_tx) = (lock_calls.clone(), waiting_tx.clone());
+                std::sync::Arc::new(move || {
+                    // The first call is A's. Every later call is B's, and B is about to wait.
+                    if lock_calls.fetch_add(1, Ordering::SeqCst) >= 1 {
+                        let _ = waiting_tx.lock().unwrap().send(());
+                    }
+                })
+            });
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+
+        let (a, b) = std::thread::scope(|scope| {
+            let sync = || {
+                Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs).sync(&lock)
+            };
+            let a = scope.spawn(sync);
+            assert!(
+                matches!(held_rx.recv_timeout(wait), Ok(())),
+                "sync A never reached its install"
+            );
+            let b = scope.spawn(sync);
+            let waiting = waiting_rx.recv_timeout(wait);
+            // Let A go whether or not B was seen, so a failure cannot hang the test.
+            go_tx.send(()).unwrap();
+            assert_eq!(waiting, Ok(()), "sync B never asked for the lock");
+            (a.join().unwrap(), b.join().unwrap())
+        });
+
+        let a = a.unwrap();
+        b.unwrap();
+        assert!(a.packs[0].repaired, "sync B erased the repair of sync A: {a:?}");
+    }
+
+    #[test]
+    fn a_failed_write_to_a_staged_copy_keeps_its_kind_and_os_code_and_names_no_path() {
+        let env = Env::new();
+        let (lock, _) = installed_archive(&env, "a");
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        // 28 is ENOSPC: the disk of the staging area is full.
+        let store = env.store().with_staging_write_fault(28);
+
+        let err = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&lock)
+            .unwrap_err();
+
+        let data = env.data.path().to_str().unwrap().to_owned();
+        let mut shown = vec![err.to_string(), format!("{err:?}")];
+        let mut source = std::error::Error::source(&err);
+        while let Some(e) = source {
+            shown.push(e.to_string());
+            shown.push(format!("{e:?}"));
+            source = e.source();
+        }
+        for text in shown {
+            assert!(!text.contains(&data), "{text}");
+        }
+        let cause = std::error::Error::source(&err).and_then(|e| e.downcast_ref::<CacheCause>());
+        assert_eq!(
+            cause,
+            Some(&CacheCause::Io {
+                kind: std::io::ErrorKind::StorageFull,
+                os_code: Some(28),
+            }),
+            "{err:?}"
+        );
+    }
 }

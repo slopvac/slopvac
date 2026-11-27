@@ -94,6 +94,12 @@ pub struct Store {
     observer: Option<ReadObserver>,
     #[cfg(feature = "test-support")]
     archive_bytes: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
+    /// Called each time the store lock is asked for, before it can block.
+    #[cfg(feature = "test-support")]
+    lock_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// An OS error code that every write to a staged copy fails with.
+    #[cfg(feature = "test-support")]
+    staging_fault: Option<i32>,
     /// Plugins whose cached files sync removed and fetched again in this run.
     repaired: std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<PackId>>>,
 }
@@ -120,6 +126,10 @@ impl Store {
             observer: None,
             #[cfg(feature = "test-support")]
             archive_bytes: None,
+            #[cfg(feature = "test-support")]
+            lock_hook: None,
+            #[cfg(feature = "test-support")]
+            staging_fault: None,
             repaired: std::sync::Arc::default(),
         }
     }
@@ -148,6 +158,33 @@ impl Store {
     ) -> Self {
         self.archive_bytes = Some(counter);
         self
+    }
+
+    /// Call `hook` each time the store lock is asked for, before the call can block.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "test-support")]
+    pub fn with_lock_hook(mut self, hook: std::sync::Arc<dyn Fn() + Send + Sync>) -> Self {
+        self.lock_hook = Some(hook);
+        self
+    }
+
+    /// Make every write to a staged copy fail with the OS error `code`.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "test-support")]
+    pub fn with_staging_write_fault(mut self, code: i32) -> Self {
+        self.staging_fault = Some(code);
+        self
+    }
+
+    /// Write `chunk` to the staged copy, or fail as a test asked.
+    fn write_staged(&self, staged: &mut NamedTempFile, chunk: &[u8]) -> io::Result<()> {
+        #[cfg(feature = "test-support")]
+        if let Some(code) = self.staging_fault {
+            return Err(io::Error::from_raw_os_error(code));
+        }
+        staged.write_all(chunk)
     }
 
     /// Count `n` bytes of a cached archive, if a test set a counter.
@@ -210,6 +247,10 @@ impl Store {
     /// # Errors
     /// [`SyncError::Store`] when the data directory or lock file cannot be used.
     pub fn lock(&self) -> Result<StoreLock, SyncError> {
+        #[cfg(feature = "test-support")]
+        if let Some(hook) = &self.lock_hook {
+            hook();
+        }
         self.prepare()?;
         let path = self.root.join(".lock");
         if fs::symlink_metadata(&path).is_ok_and(|m| !m.is_file()) {
@@ -312,8 +353,7 @@ impl Store {
                 break;
             }
             hasher.update(&buf[..n]);
-            staged
-                .write_all(&buf[..n])
+            self.write_staged(&mut staged, &buf[..n])
                 .map_err(|e| SyncError::Store(messages::download_write(&e)))?;
             read += n as u64;
         }
