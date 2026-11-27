@@ -392,7 +392,7 @@ mod tests {
     }
 
     /// The level and title of an ATX heading: up to three spaces of indent, one to six `#`, then
-    /// a space or tab, or the end of the line (CommonMark). A closing run of `#` is not part
+    /// a space or tab, or the end of the line (`CommonMark`). A closing run of `#` is not part
     /// of the title.
     fn atx_heading(line: &str) -> Option<(usize, &str)> {
         let text = line.trim_start_matches(' ');
