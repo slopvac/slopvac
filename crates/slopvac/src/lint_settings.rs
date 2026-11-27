@@ -217,7 +217,7 @@ pub struct Located {
 
 /// `source` with its file shown as policies section 1.7 says: relative to `root` under it,
 /// else `<external>/<file name>`.
-fn redacted(source: &ConfigSource, root: &Path) -> ConfigSource {
+pub(crate) fn redacted(source: &ConfigSource, root: &Path) -> ConfigSource {
     let mut shown = source.clone();
     shown.file = source
         .file

@@ -7,6 +7,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::Serialize;
@@ -16,7 +17,7 @@ use slopvac_model::{
     ConfigSource, GenreSource, NonEmptyString, RuleId, SchemaVersion, Severity, x_extensions,
 };
 
-use crate::lint_settings::RuleOrigin;
+use crate::lint_settings::{RuleOrigin, redacted};
 use crate::rule_catalog::Catalog;
 
 /// The document: one record per input, in argument order. Field order is the JSON key order.
@@ -90,11 +91,13 @@ impl ExplainInput {
     ///
     /// `explained` holds the settings with their values already redacted, `settings` and
     /// `origins` come from the same build that lint uses, and `config_root` is the root as the
-    /// text form shows it.
+    /// text form shows it. `root` is the config root itself: the file of every origin shows
+    /// under it, or as `<external>/<file name>` outside it (policies.md, section 1.7).
     #[must_use]
     pub(crate) fn new(
         path: &str,
         config_root: &str,
+        root: &Path,
         settings: &Settings,
         explained: &[Explained],
         origins: &[RuleOrigin],
@@ -109,7 +112,7 @@ impl ExplainInput {
                 ExplainConfiguredRule {
                     id: origin.id.clone(),
                     level,
-                    source: origin.source.clone(),
+                    source: redacted(&origin.source, root),
                 }
             })
             .collect();
@@ -117,13 +120,20 @@ impl ExplainInput {
         Self {
             path: ShownPath(path.to_owned()),
             config_root: ShownPath(config_root.to_owned()),
-            config_sources: settings.config_sources.clone(),
+            config_sources: settings
+                .config_sources
+                .iter()
+                .map(|source| redacted(source, root))
+                .collect(),
             profile: settings.profile.as_str().to_owned(),
             genre: ExplainGenre {
                 id: settings.genre.id.as_str().to_owned(),
                 source: settings.genre.source,
             },
-            settings: explained.iter().map(ExplainSetting::of).collect(),
+            settings: explained
+                .iter()
+                .map(|entry| ExplainSetting::of(entry, root))
+                .collect(),
             rules: ExplainRuleCounts {
                 total: catalog.rules().count(),
                 configured: counts,
@@ -181,18 +191,18 @@ struct ExplainSetting {
 }
 
 impl ExplainSetting {
-    fn of(entry: &Explained) -> Self {
+    fn of(entry: &Explained, root: &Path) -> Self {
         Self {
             key: entry.path.clone(),
             value: ExplainValue::of(&entry.value),
-            source: entry.source.clone(),
+            source: redacted(&entry.source, root),
             replaced: entry
                 .overridden
                 .iter()
                 .rev()
                 .map(|c| ExplainReplaced {
                     value: ExplainValue::of(&c.value),
-                    source: c.source.clone(),
+                    source: redacted(&c.source, root),
                 })
                 .collect(),
         }

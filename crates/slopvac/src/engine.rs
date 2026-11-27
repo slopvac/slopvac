@@ -448,6 +448,7 @@ impl Linter for EngineLinter {
                 Ok((settings, origins)) => inputs.push(crate::explain_config::ExplainInput::new(
                     &item.shown,
                     &root,
+                    &config.root,
                     &settings,
                     &explained,
                     &origins,
