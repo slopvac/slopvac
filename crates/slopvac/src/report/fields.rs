@@ -4,10 +4,61 @@
 //! Ported from `slopvac.reporting` in the Python reference, with the help texts the forms carry.
 //! `tests/report_forms.rs` regenerates the forms from these definitions and fails on any drift.
 
+use std::sync::LazyLock;
+
+use slopvac_update::install::{InstallMethod, RELEASES_URL, WheelTool};
+
 use super::{Category, Field, Kind};
 
 /// The note at the top of every form.
 pub const INTRO: &str = "An AI agent filing a report MUST disclose itself: tick Reported by an AI agent and fill in Agent, Model, and Harness and version. Reports must not contain paths or file names. Do not include user names, host names, repository names, organization names, or other private data. For security vulnerabilities, use the private vulnerability report on the Security tab.";
+
+/// The install methods the upgrade help names, in order, with the form's label and an optional
+/// reason. The updater supplies each command, so the help follows it.
+const UPGRADE_METHODS: [(&str, InstallMethod, &str); 7] = [
+    ("Installer install", InstallMethod::Installer, ""),
+    ("uv tool", InstallMethod::Wheel(WheelTool::Uv), ""),
+    (
+        "uvx",
+        InstallMethod::Wheel(WheelTool::Uvx),
+        ", because uvx reuses a cached environment",
+    ),
+    ("pip", InstallMethod::Wheel(WheelTool::Pip), ""),
+    ("uv pip", InstallMethod::Wheel(WheelTool::UvPip), ""),
+    ("Homebrew", InstallMethod::Homebrew, ""),
+    ("mise", InstallMethod::Mise, ""),
+];
+
+/// The help of the `latest` field. Commands and the releases link come from `slopvac-update`.
+static LATEST_HELP: LazyLock<String> = LazyLock::new(latest_help);
+
+fn latest_help() -> String {
+    let mut text = String::from("Upgrade to the latest release and rerun your command.");
+    for (label, method, reason) in UPGRADE_METHODS {
+        text.push(' ');
+        text.push_str(label);
+        text.push_str(": ");
+        match method.upgrade_command() {
+            Some(command) => {
+                text.push('`');
+                text.push_str(command);
+                text.push('`');
+            }
+            None => {
+                text.push_str("download the latest release from ");
+                text.push_str(RELEASES_URL);
+            }
+        }
+        text.push_str(reason);
+        text.push('.');
+    }
+    text.push_str(" Any other install: download the latest release from ");
+    text.push_str(RELEASES_URL);
+    text.push_str(
+        ". GitHub Action: change the version pin in your workflow. If the latest release fixes it, upgrade instead of filing.",
+    );
+    text
+}
 
 /// Fields every category starts with. Proposals (`new-rule`, `rule-improvement`) do not require
 /// the environment and command.
@@ -18,7 +69,7 @@ fn common(proposal: bool, command_description: &'static str) -> Vec<Field> {
         Field::new("model", "Model", Kind::Input).describe("Record the active model name exactly as the harness reports it in its system prompt, context, or /model selection. Do not use self-description or config defaults. Write N/A when unavailable."),
         Field::new("harness", "Harness and version", Kind::Input).describe("Use the harness's version command, for example claude --version, codex --version, or omp --version. Write N/A when unavailable."),
         Field::new("version", "slopvac version", Kind::Input).describe("Output of `slopvac --version`."),
-        Field::new("latest", "Reproduces on the latest release", Kind::Dropdown).describe("Upgrade to the latest release and rerun your command. Installer install: `slopvac self update`. uv tool: `uv tool upgrade slopvac`. uvx: `uvx slopvac@latest`, because uvx reuses a cached environment. pip: `python -m pip install --upgrade slopvac`. uv pip: `uv pip install --upgrade slopvac`. Homebrew: `brew upgrade slopvac/tap/slopvac`. mise: `mise upgrade slopvac`. Any other install: download the latest release from https://github.com/slopvac/slopvac/releases. GitHub Action: change the version pin in your workflow. If the latest release fixes it, upgrade instead of filing.").options(&["Yes", "Not checked"]),
+        Field::new("latest", "Reproduces on the latest release", Kind::Dropdown).describe(&LATEST_HELP).options(&["Yes", "Not checked"]),
         Field::new("duplicates", "Duplicate search", Kind::Checkboxes).checks(&[("I searched existing issues for duplicates", true)]),
         with_required(Field::new("environment", "Environment", Kind::Textarea).render("json").describe("Output of `slopvac doctor --format json`. It shows a path only relative to the working directory, or as `<external>/<file name>`. Redact relative paths and external file names before you post it."), !proposal),
         with_required(Field::new("command", "Command", Kind::Textarea).render("shell").describe(command_description), !proposal),
