@@ -87,7 +87,7 @@ body:
     id: context
     attributes:
       label: "Genre and profile"
-      description: "Genre: the `genre.id` value, and profile: the `profile` value, of the `<stdin>` entry in the output of `slopvac lint --stdin --format json`, run with the same `--config` and `--mode` flags as your command."
+      description: "Genre: the `genre.id` value, and profile: the `profile` value, of the `<stdin>` entry in the output of `slopvac lint --stdin --format json`, run with the same `--config` and `--mode` flags as your command. For source comments, run it in code-comments mode, for example `slopvac lint --stdin --mode code-comments --language python --format json`. Code-comments mode needs `--language` on stdin to name the language of the sample."
     validations:
       required: true
   - type: textarea
