@@ -226,3 +226,123 @@ fn show_still_works_in_ci() {
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert!(stdout(&out).starts_with("Issue reporting consent: on, recorded at Unix time "));
 }
+
+#[test]
+fn an_existing_wider_record_is_owner_only_after_a_write() {
+    let dir = tempfile::tempdir().unwrap();
+    stage(
+        dir.path(),
+        br#"{"schema":1,"consent":"off","recorded":5,"unattended":[]}"#,
+    );
+    fs::set_permissions(record_path(dir.path()), fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(consent(dir.path(), "on").status.code(), Some(0));
+    let mode = fs::metadata(record_path(dir.path()))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+}
+
+#[rstest]
+#[case::unknown_key(
+    br#"{"schema":1,"consent":"on","recorded":5,"unattended":[],"SENTINEL-4f2a":1}"#.as_slice()
+)]
+#[case::bad_value(
+    br#"{"schema":1,"consent":"SENTINEL-4f2a","recorded":5,"unattended":[]}"#.as_slice()
+)]
+#[case::bad_type(
+    br#"{"schema":1,"consent":"on","recorded":"SENTINEL-4f2a","unattended":[]}"#.as_slice()
+)]
+fn a_damaged_record_never_leaks_its_text_into_the_debug_log(#[case] bytes: &[u8]) {
+    let dir = tempfile::tempdir().unwrap();
+    stage(dir.path(), bytes);
+    let out = slopvac(dir.path())
+        .env("SLOPVAC_LOG", "debug")
+        .args(["report", "consent", "on"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(stderr(&out).contains("error[report-state-failed]"));
+    assert!(
+        !stderr(&out).contains("SENTINEL-4f2a"),
+        "the record text reached stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn a_rewrite_that_would_pass_64_kib_is_refused_and_the_record_stays() {
+    let dir = tempfile::tempdir().unwrap();
+    let head = br#"{"schema":1,"consent":"on","recorded":5,"unattended":["#;
+    let mut bytes = head.to_vec();
+    // Fill the record to 64 KiB. The tail `0]}` takes 3 bytes. At most one space of padding is
+    // left, so the longer `recorded` and the newline of a rewrite pass the cap.
+    while bytes.len() + 11 <= 64 * 1024 - 3 {
+        bytes.extend_from_slice(b"1700000000,");
+    }
+    while bytes.len() + 2 <= 64 * 1024 - 3 {
+        bytes.extend_from_slice(b"0,");
+    }
+    bytes.extend_from_slice(b"0]}");
+    bytes.resize(64 * 1024, b' ');
+    assert_eq!(bytes.len(), 64 * 1024);
+    stage(dir.path(), &bytes);
+    let out = consent(dir.path(), "off");
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(stderr(&out).contains("error[report-state-failed]"));
+    assert_eq!(fs::read(record_path(dir.path())).unwrap(), bytes);
+}
+
+#[rstest]
+fn a_positional_array_is_not_a_record(#[values("on", "off", "show")] arg: &str) {
+    let dir = tempfile::tempdir().unwrap();
+    let bytes = br#"[1,"on",5,[]]"#;
+    stage(dir.path(), bytes);
+    let out = consent(dir.path(), arg);
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(stderr(&out).contains("error[report-state-failed]"));
+    assert_eq!(fs::read(record_path(dir.path())).unwrap(), bytes);
+}
+
+#[rstest]
+fn a_ci_value_that_is_not_utf8_still_refuses_a_change(
+    #[values("CI", "GITHUB_ACTIONS")] var: &str,
+    #[values("on", "off")] arg: &str,
+) {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+    let dir = tempfile::tempdir().unwrap();
+    let out = slopvac(dir.path())
+        .env(var, OsString::from_vec(vec![0xff, 0xfe]))
+        .args(["report", "consent", arg])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("error[report-ci-refused]"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn the_ci_refusal_comes_before_the_project_policy_is_read() {
+    let state = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    // Over the 1 MiB cap on the policy read, so the policy read fails.
+    fs::write(project.path().join("slopvac.toml"), vec![b'#'; 1024 * 1024 + 1]).unwrap();
+    let out = slopvac(state.path())
+        .env("CI", "true")
+        .current_dir(project.path())
+        .args(["report", "consent", "on"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("error[report-ci-refused]"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(fs::read_dir(state.path()).unwrap().count(), 0);
+}
