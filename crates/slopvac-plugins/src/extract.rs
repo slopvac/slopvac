@@ -1419,7 +1419,10 @@ fn hash_captured<R: Read>(
     let Ok(limit) = usize::try_from(cap.min(budget).saturating_add(1 + HASH_CHUNK as u64)) else {
         return Captured {
             hashed: Err(refused(
-                TransportText::ExtractTreeSize { path: rel.to_owned() }.to_string(),
+                TransportText::ExtractTreeSize {
+                    path: rel.to_owned(),
+                }
+                .to_string(),
             )),
             kept: Vec::new(),
             over: false,
@@ -1446,10 +1449,17 @@ fn hash_captured<R: Read>(
 /// the walk. Without it the type is zero-sized and its methods are empty, so a release build
 /// compiles the hooks, the byte counter they report and the calls to them out.
 #[cfg(feature = "test-support")]
+type BeforeRead<'a> = &'a mut dyn FnMut(&str, &Path);
+
+/// Called with the bytes pulled from a file, the capacity of its buffer and the bytes retained.
+#[cfg(feature = "test-support")]
+type AfterRead<'a> = &'a mut dyn FnMut(u64, usize, usize);
+
+#[cfg(feature = "test-support")]
 #[derive(Default)]
 struct Hooks<'a> {
-    before_read: Option<&'a mut dyn FnMut(&str, &Path)>,
-    after_read: Option<&'a mut dyn FnMut(u64, usize, usize)>,
+    before_read: Option<BeforeRead<'a>>,
+    after_read: Option<AfterRead<'a>>,
 }
 
 #[cfg(feature = "test-support")]
@@ -1703,13 +1713,7 @@ fn hash_walk(
     keep: &Keep<'_>,
     after_hash: &mut dyn FnMut(&str, &Path),
 ) -> Result<(TreeHash, std::collections::BTreeMap<String, Vec<u8>>), ExtractError> {
-    hash_walk_with(
-        dir,
-        keep,
-        after_hash,
-        &mut Hooks::default(),
-        MAX_TREE_BYTES,
-    )
+    hash_walk_with(dir, keep, after_hash, &mut Hooks::default(), MAX_TREE_BYTES)
 }
 
 /// [`hash_walk`] with the tree byte budget given, and `before_read` called for each file after its
@@ -1826,10 +1830,7 @@ fn hash_walk_with(
                     let tee = hash_captured(&mut f, cap, bound, budget, wanted, &rel);
                     hooks.after_read(&tee);
                     let Captured {
-                        hashed,
-                        kept,
-                        over,
-                        ..
+                        hashed, kept, over, ..
                     } = tee;
                     // The capture cap decides first: a file that outgrew it is a capture limit,
                     // whether or not the tree budget ran out in the same read.
