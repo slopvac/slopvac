@@ -567,25 +567,40 @@ fn move_tree_to(
     fs::rename(&done.root, trees.join(format!("tree-{}", name.hex()))).unwrap();
 }
 
-/// The line of the debug log that names `code` and the plugin `fmt`. It names nothing else:
-/// no refusal sentence and no path.
-fn assert_debug_line(stderr: &str, code: &str, sandbox: &Sandbox) {
-    let line = stderr
-        .lines()
-        .find(|l| l.contains(code) && l.contains("fmt"));
-    assert!(
-        line.is_some(),
-        "no debug line with `{code}` and `fmt`:\n{stderr}"
+/// The debug event of a refused load. It carries exactly two fields, the stable `code` of the
+/// refusal and the plugin id `fmt`. Any other field, such as a path or a refusal sentence, fails.
+fn assert_debug_line(stderr: &str, code: &str) {
+    let line = stderr.lines().find(|l| l.contains("plugin loader refused"));
+    assert!(line.is_some(), "no `plugin loader refused` event:\n{stderr}");
+    let fields: std::collections::BTreeMap<&str, &str> = line
+        .unwrap()
+        .split_whitespace()
+        .filter_map(|word| word.split_once('='))
+        .map(|(key, value)| (key, value.trim_matches('"')))
+        .collect();
+    assert_eq!(
+        fields,
+        std::collections::BTreeMap::from([("code", code), ("plugin", "fmt")]),
+        "{line:?}"
     );
-    let line = line.unwrap();
-    for text in [
-        "differs from",
-        "locked but not installed",
-        "slopvac plugins sync",
-        sandbox.dir.path().to_str().unwrap(),
-    ] {
-        assert!(!line.contains(text), "`{text}` in the debug line: {line}");
+}
+
+/// Every file under `dir`, by relative path, with its bytes.
+fn snapshot(dir: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    fn walk(base: &std::path::Path, dir: &std::path::Path, out: &mut std::collections::BTreeMap<String, Vec<u8>>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(base, &path, out);
+            } else {
+                let rel = path.strip_prefix(base).unwrap().to_string_lossy().into_owned();
+                out.insert(rel, fs::read(&path).unwrap());
+            }
+        }
     }
+    let mut out = std::collections::BTreeMap::new();
+    walk(dir, dir, &mut out);
+    out
 }
 
 /// Once sync has installed a code plugin, `plugins trust` records trust from the installed
@@ -644,7 +659,7 @@ fn trust_of_a_locked_code_plugin_that_is_not_synced_exits_2() {
         ))
         .stderr(predicate::str::contains("the plugin files are not loaded").not());
     let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
-    assert_debug_line(&stderr, "plugin-not-installed", &sandbox);
+    assert_debug_line(&stderr, "plugin-not-installed");
 }
 
 /// Trust is pinned to the synced tree: a file changed after sync is refused, and nothing is
@@ -675,7 +690,7 @@ fn trust_of_a_code_plugin_changed_since_sync_exits_2_and_records_nothing() {
             "error[plugins-trust-inputs-failed]: ",
         ));
     let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
-    assert_debug_line(&stderr, "plugin-tampered", &sandbox);
+    assert_debug_line(&stderr, "plugin-tampered");
     // Checked before the manifest is restored, and in the trust store itself.
     assert_eq!(trust_records(&sandbox), 0);
 }
@@ -720,6 +735,7 @@ fn trust_of_an_archive_plugin_with_a_swapped_tree_and_a_forged_record_exits_2() 
     let forged = extract_plugin(&evil, &trees);
     fs::write(&record, forged.hash.hex()).unwrap();
 
+    let before = snapshot(&trees);
     let out = sandbox
         .slopvac()
         .env("SLOPVAC_LOG", "debug")
@@ -730,8 +746,10 @@ fn trust_of_an_archive_plugin_with_a_swapped_tree_and_a_forged_record_exits_2() 
             "error[plugins-trust-inputs-failed]: ",
         ));
     let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
-    assert_debug_line(&stderr, "plugin-tampered", &sandbox);
+    assert_debug_line(&stderr, "plugin-tampered");
     assert_eq!(trust_records(&sandbox), 0);
+    // A read path removes nothing: the trees are byte for byte what they were.
+    assert_eq!(snapshot(&trees), before, "trust changed the store");
 }
 
 /// A lock edited to name a planted artifact has no signature that sync ever checked. `trust` is

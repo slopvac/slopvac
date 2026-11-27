@@ -632,6 +632,7 @@ fn a_tampered_tree_is_refused_offline_and_removed() {
     tamper_edit(&first.packs[0].tree);
     let err = run(&env, Network::Offline, &pol, &lock).unwrap_err();
     assert!(matches!(err, SyncError::CacheTampered { .. }), "{err:?}");
+    assert_eq!(err.code(), "cache-tampered");
     assert_eq!(err.exit_code(), 2);
     env.assert_no_trees();
 }

@@ -1,7 +1,8 @@
 //! Load the plugins that the config lists from the lock and the store.
 //!
-//! The config decides which plugins load (threat model X6). The lock pins each one, and the
-//! store holds its tree, which `Store::inspect` hashes again before the loader reads a file.
+//! The config decides which plugins load (threat model X6). The lock pins each one. The load
+//! derives the trusted tree hash from the lock and the cached archive (`Store::verified_tree`),
+//! hashes the installed tree again and compares the two before the loader reads a file.
 //! A plugin the lock lacks, a tree that is absent or differs from its digest, an extension API
 //! this build does not implement and a `requires` loop each stop the run.
 

@@ -150,7 +150,6 @@ fn a_plugin_takes_its_identity_from_the_lock_and_the_context() {
     let (plugin, _) = load_from(&path_locked(), dir.path(), &context).unwrap();
     assert_eq!(plugin.name, "acme");
     assert_eq!(plugin.version.as_deref(), Some("1.0.0"));
-    assert_eq!(plugin.tree, context.tree().clone());
 }
 
 #[test]

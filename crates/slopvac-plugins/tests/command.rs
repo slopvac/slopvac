@@ -295,10 +295,7 @@ fn oci_entry(id: &str, kind: &str, version: &str, registry: &str, digest: &str) 
 /// A lock entry for the code plugin `fake` that comes from the project, so `plugins trust` has
 /// no cached signature to check for it.
 fn fake_code_entry() -> String {
-    format!(
-        "\n[[plugins]]\nid = \"fake\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
-         slopvac_api = 1\nsource = \"plugins/fake\"\ndigest = \"{OTHER_HASH}\"\n"
-    )
+    code_path_entry("fake", "plugins/fake", OTHER_HASH)
 }
 
 /// A lock entry for a project directory.
@@ -765,19 +762,20 @@ fn update_offline_fails_with_the_update_error_as_its_cause() {
 fn trust_records_the_content_hash_and_says_trust_is_not_containment() {
     let f = Fixture::new();
     f.write_lock(&[fake_code_entry()]);
-    let ran = f.run(&["trust", "fake"], false, |s| {
-        s.loader(TreeLoader::new(f.base.path(), "fake"))
-    });
+    let loader = TreeLoader::new(f.base.path(), "fake");
+    // The hash of the fixture tree, worked out before `trust` runs.
+    let expected = tree_hash(&f.base.path().join("tree-fake")).unwrap().to_string();
+    let ran = f.run(&["trust", "fake"], false, |s| s.loader(loader));
     assert_eq!(ran.result.unwrap(), 0);
     let records = TrustStore::open(f.state()).records().unwrap();
     assert_eq!(records.len(), 1);
+    assert_eq!(records[0].hash.to_string(), expected);
     assert_eq!(
         ran.out,
         format!(
-            "trusted `fake` with content hash {}\n\
+            "trusted `fake` with content hash {expected}\n\
              source: path plugins/fake; unsigned\n\
-             Trust is not containment: a trusted plugin runs with your rights, and slopvac has no sandbox.\n",
-            records[0].hash
+             Trust is not containment: a trusted plugin runs with your rights, and slopvac has no sandbox.\n"
         )
     );
 }
@@ -800,7 +798,9 @@ fn trust_of_a_data_plugin_exits_2_with_plugin_not_code_and_records_nothing() {
 #[test]
 fn trust_refuses_a_plugin_that_the_revocation_list_names() {
     let f = Fixture::new();
-    f.write_lock(&[fake_code_entry()]);
+    // An OCI entry with no signature: the revocation check must come before the signature
+    // check, or `trust` would report `sync-unsigned`.
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
     f.revoke(&[OTHER_HASH]);
     let err = f
         .run(&["trust", "fake"], false, |s| {

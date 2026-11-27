@@ -342,11 +342,14 @@ fn a_tampered_pack_tree_fails_the_load_with_a_typed_error() {
     let mut w = World::new();
     let tree = w.install(&Spec::new("acme"));
     tamper(&tree);
+    let before = fs::read(tree.join("slopvac-plugin.toml")).unwrap();
 
     let err = w.load(&["acme"]).unwrap_err();
 
     assert!(matches!(err, SyncedError::Tampered { .. }), "{err}");
     assert_eq!(err.code(), Some("plugin-tampered"));
+    // A load removes nothing: the changed file is still there, byte for byte.
+    assert_eq!(fs::read(tree.join("slopvac-plugin.toml")).unwrap(), before);
 }
 
 /// The one cached archive that `install` left in the store.
@@ -1795,4 +1798,5 @@ fn a_forged_record_and_a_swapped_tree_do_not_load_a_data_plugin() {
     let err = load_synced(&ids(&["acme"]), &lock, &w.store()).unwrap_err();
 
     assert!(matches!(err, SyncedError::Tampered { .. }), "{err}");
+    assert_eq!(err.code(), Some("plugin-tampered"));
 }
