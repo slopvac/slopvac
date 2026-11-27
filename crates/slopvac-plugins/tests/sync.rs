@@ -2873,6 +2873,7 @@ mod cache_reads {
     #[test]
     fn a_failed_rewind_of_a_staged_copy_keeps_its_kind_and_os_code_and_names_no_path() {
         use sha2::Digest as _;
+        use std::fmt::Write as _;
         let env = Env::new();
         let (lock, archive) = installed_archive(&env, "a");
         let revs = env.revocations(NOW);
@@ -2907,10 +2908,12 @@ mod cache_reads {
         assert!(matches!(&err, SyncError::CacheUnreadable { .. }), "{err:?}");
         // The error names the cached blob the copy was made from, and the store names a blob by
         // the SHA-256 of its bytes, so the file name is worked out here from the archive.
-        let name: String = sha2::Sha256::digest(&archive)
+        let name = sha2::Sha256::digest(&archive)
             .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
+            .fold(String::new(), |mut hex, b| {
+                write!(hex, "{b:02x}").unwrap();
+                hex
+            });
         let expected = format!(
             "plugin `a`: cannot read the cached file <external>/{name}: {}",
             "seek on unseekable file"
