@@ -2501,7 +2501,7 @@ mod cache_reads {
     fn a_repair_of_a_failed_sync_is_not_reported_by_the_next_sync_on_the_same_store() {
         let env = Env::new();
         let (a, archive) = archive_entry(&env, "a", &[("a.txt", b"honest")]);
-        let first = lock_text(&[a.clone()]);
+        let first = lock_text(std::slice::from_ref(&a));
         let store = env.store();
         let revs = env.revocations(NOW);
         let pol = KeyPolicy::default();
