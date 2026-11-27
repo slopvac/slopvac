@@ -12,6 +12,8 @@ use serde_json::Value;
 
 use crate::error::{PluginError, RpcError};
 use crate::messages::host::{HostPhrase, HostText};
+use crate::protocol::schema::{bare_entry, bare_fields};
+use crate::protocol::text;
 
 /// Most edits a fixer may return for one document (threat model section 5.5).
 pub const MAX_EDITS_PER_DOCUMENT: usize = 1000;
@@ -58,18 +60,38 @@ impl Span {
     }
 }
 
+/// The pattern that the schema publishes for the `path` of a document and of a recipe file:
+/// relative, with no drive letter, no backslash and no `..` segment. The text is the published
+/// string, byte for byte, so a reader of the schema sees no change. It uses `.`, which the schema
+/// pattern subset forbids, so `patterns.rs` lists it as pending. The checks of
+/// [`check_relative_path`] are stricter, and the host applies them to every path. The host does not
+/// compile this pattern.
+pub(crate) const RELATIVE_PATH_PATTERN: &str =
+    r"^(?!/)(?![A-Za-z]:)(?!.*\\)(?!(.*/)?\.\.(/|(?![\s\S]))).+(?![\s\S])";
+
 /// One document sent to a hook.
 ///
 /// Fields sit in alphabetical order, the order of the wire bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[schemars(
+    rename = "PluginDocument",
+    description = text::PLUGIN_DOCUMENT,
+    transform = bare_fields
+)]
 pub struct Document {
     /// Id unique inside the request.
+    #[schemars(length(min = 1))]
     pub id: String,
     /// Media type, when known.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
     pub media_type: Option<String>,
     /// Relative path. Sent only when `document-path` is granted.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        transform = slopvac_model::absent_not_null,
+        extend("pattern" = RELATIVE_PATH_PATTERN)
+    )]
     pub path: Option<String>,
     /// UTF-8 text.
     pub text: String,
@@ -79,14 +101,22 @@ pub struct Document {
 ///
 /// Fields sit in alphabetical order, the order of the wire bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(
+    rename = "PluginFinding",
+    description = text::PLUGIN_FINDING,
+    transform = bare_fields
+)]
 pub struct Finding {
     /// Message text.
     pub message: String,
     /// Qualified rule id.
+    #[schemars(with = "slopvac_model::RuleId")]
     pub rule: String,
     /// `error`, `warning` or `suggestion`.
+    #[schemars(with = "slopvac_model::Severity")]
     pub severity: String,
     /// Where the finding sits.
+    #[schemars(with = "slopvac_model::Span")]
     pub span: Span,
 }
 
@@ -104,27 +134,35 @@ pub struct FindingsDocument {
 }
 
 /// A context tag from a tagger.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
+#[schemars(description = text::TAG, transform = bare_fields)]
 pub struct Tag {
     /// Context tag name.
+    #[schemars(with = "slopvac_model::ContextTag")]
     pub kind: String,
     /// Where it applies.
+    #[schemars(with = "slopvac_model::Span")]
     pub span: Span,
     /// 0 to 1.
+    #[schemars(extend("minimum" = 0, "maximum" = 1))]
     pub confidence: f64,
     /// Why the tagger thinks so.
     pub evidence: String,
 }
 
 /// A prose segment from an extractor.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
+#[schemars(description = text::SEGMENT, transform = bare_fields)]
 pub struct Segment {
     /// Source span.
+    #[schemars(with = "slopvac_model::Span")]
     pub span: Span,
     /// Context of the segment.
+    #[schemars(with = "slopvac_model::ContextTag")]
     pub context: String,
     /// Converted text when it differs from the source.
     #[serde(default, deserialize_with = "present_string")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
     pub text: Option<String>,
 }
 
@@ -134,19 +172,22 @@ fn present_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Strin
 }
 
 /// An edit from a fixer.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
+#[schemars(description = text::FIX_EDIT, transform = bare_fields)]
 pub struct FixEdit {
     /// Index into the findings sent for the document.
     pub finding: u64,
     /// Replaced range.
+    #[schemars(with = "slopvac_model::Span")]
     pub span: Span,
     /// Replacement text.
     pub text: String,
 }
 
 /// What a recipe wants done to a file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline, transform = bare_entry)]
 pub enum RecipeAction {
     /// Create or replace.
     Write,
@@ -157,19 +198,34 @@ pub enum RecipeAction {
 }
 
 /// One file in a recipe plan.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
+#[schemars(
+    description = text::RECIPE_FILE,
+    transform = bare_fields,
+    extend(
+        "if" = {"properties": {"action": {"enum": ["write", "merge"]}}},
+        "then" = {"required": ["content"]}
+    )
+)]
 pub struct RecipeFile {
     /// Path relative to the project root.
+    #[schemars(extend("pattern" = RELATIVE_PATH_PATTERN))]
     pub path: String,
     /// What to do.
     pub action: RecipeAction,
     /// New content for write and merge.
     #[serde(default, deserialize_with = "present_string")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
     pub content: Option<String>,
 }
 
 /// A rendered report.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
+#[schemars(
+    rename = "RenderResult",
+    description = text::RENDER_RESULT,
+    transform = bare_fields
+)]
 pub struct Rendered {
     /// The text. Callers sanitise it before a terminal write.
     pub output: String,
@@ -192,11 +248,14 @@ pub struct Completion {
 ///
 /// Fields sit in alphabetical order, the order of the wire bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[schemars(inline, transform = bare_entry)]
 pub struct CompleteItem {
     /// Id unique inside the request.
+    #[schemars(length(min = 1))]
     pub id: String,
     /// Extra instruction.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
     pub instruction: Option<String>,
     /// Text to review.
     pub text: String,

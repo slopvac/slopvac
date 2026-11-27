@@ -169,6 +169,36 @@ pub const ARTIFACTS: &[Artifact] = &[
         build: protocol_codes,
     },
     Artifact {
+        file: "plugin-protocol.schema.json",
+        title: "slopvac plugin protocol v1",
+        description: Some(
+            "One JSON-RPC 2.0 message of plugin protocol v1, as carried in the body of a \
+             Content-Length frame. The root validates a whole message: a request or \
+             notification is dispatched on method, a response is checked as a success or an \
+             error. Result shapes are separate $defs because a response names no method; \
+             validate one against the def of the method it answers. No object here sets \
+             additionalProperties false: a reader ignores unknown fields, and keys with the \
+             prefix x- never carry meaning. Semantics are in \
+             docs/contract/plugin-protocol.md. Owner: slopvac-8l4.2.6.",
+        ),
+        imports: &["common.schema.json"],
+        inline: &[],
+        // The result definitions: a response names no method, so no message refers to them.
+        keep: &[
+            "BinaryExtractResult",
+            "CompleteResult",
+            "ExtractResult",
+            "FixResult",
+            "InitializeResult",
+            "PluginDeclaration",
+            "RecipeResult",
+            "RenderResult",
+            "ScoreResult",
+            "TagResult",
+        ],
+        build: plugin_protocol,
+    },
+    Artifact {
         file: "claims.schema.json",
         title: "slopvac v3 claims report",
         description: Some(
@@ -233,6 +263,15 @@ fn plugins_lock() -> Value {
     schema_settings(Contract::Deserialize)
         .into_generator()
         .into_root_schema_for::<PluginsLock>()
+        .to_value()
+}
+
+/// One message of the plugin protocol. Both sides read and write messages, so the schema holds
+/// what a reader accepts.
+fn plugin_protocol() -> Value {
+    schema_settings(Contract::Deserialize)
+        .into_generator()
+        .into_root_schema_for::<slopvac_plugins::ProtocolMessage>()
         .to_value()
 }
 

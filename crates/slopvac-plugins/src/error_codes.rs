@@ -53,6 +53,16 @@ impl HostCode {
     }
 }
 
+/// The code of a binary extractor that declines a whole document. The protocol schema names it
+/// in the rule for `data.reason`.
+pub(crate) const BINARY_INPUT_DECLINED: &str = "binary-input-declined";
+/// The code of a binary extractor that hit a limit. The protocol schema names it in the rule
+/// for `data.budget` and `data.limit`.
+pub(crate) const EXTRACT_BUDGET: &str = "extract-budget";
+/// The notice for content that an extractor skipped. It is never a per-document error, and the
+/// protocol schema refuses it as one.
+pub(crate) const EXTRACT_UNSUPPORTED: &str = "extract-unsupported";
+
 /// The numeric JSON-RPC codes, in document order.
 pub(crate) const RPC_CODES: &[RpcCode] = &[
     RpcCode::new(-32700, "parse-error", true, "The body is not valid JSON."),
@@ -119,7 +129,7 @@ pub(crate) const RPC_CODES: &[RpcCode] = &[
     ),
     RpcCode::new(
         -32008,
-        "binary-input-declined",
+        BINARY_INPUT_DECLINED,
         false,
         "A binary extractor declines this whole document. -32008 has no other meaning. `extract-unsupported` is a host notice with no number, and a plugin never sends it as an error. A plugin sends this number with `data.reason` `unknown-format` or `variant-unsupported` (section 5.5.4).",
     ),
@@ -131,7 +141,7 @@ pub(crate) const RPC_CODES: &[RpcCode] = &[
     ),
     RpcCode::new(
         -32010,
-        "extract-budget",
+        EXTRACT_BUDGET,
         false,
         "A binary extractor hit a limit.",
     ),
@@ -221,7 +231,7 @@ pub(crate) const HOST_CODES: &[HostCode] = &[
         "The host's existing code for a named input that it does not lint. It also covers a file the user named whose format no enabled extractor reads, such as EPUB or PDF. The document goes in `unchecked`, `data.format` names the detected format (section 5.5.1), and the run exits 2. The binary extraction contract adds no code of its own for it.",
     ),
     HostCode::new(
-        "extract-unsupported",
+        EXTRACT_UNSUPPORTED,
         "An `info` notice for content that an extractor skipped inside a document it read (section 5.5.4). A plugin lists the content in the result's `unsupported` field and sends no error number. The run exits 0.",
     ),
     HostCode::new(

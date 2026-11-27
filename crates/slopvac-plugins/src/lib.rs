@@ -61,4 +61,4 @@ pub use host::{
 pub use messages::cli::{Redacted, Reported, RunError};
 pub use messages::message_entries;
 pub use process::{Teardown, kill_all_live};
-pub use protocol::{HookKind, PluginDeclaration};
+pub use protocol::{HookKind, PluginDeclaration, ProtocolMessage};

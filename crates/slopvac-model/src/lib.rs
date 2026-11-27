@@ -42,7 +42,8 @@ pub use reserved::{
     FIRST_PARTY_NAMESPACE, RESERVED_ID, RESERVED_NAMESPACES, is_reserved_namespace,
 };
 pub use schema::{
-    SLUG, absent_not_null, id as schema_id, if_then, settings as schema_settings, x_extensions,
+    KEBAB, SLUG, absent_not_null, id as schema_id, if_then, settings as schema_settings,
+    x_extensions,
 };
 #[cfg(feature = "test-counters")]
 #[doc(hidden)]
