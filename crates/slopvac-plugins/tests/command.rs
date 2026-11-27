@@ -555,7 +555,11 @@ fn sync_reports_a_repaired_cache_file_by_plugin_and_without_a_path() {
         "{}",
         ran.out
     );
-    assert!(!ran.out.contains(f.base.path().to_str().unwrap()), "{}", ran.out);
+    assert!(
+        !ran.out.contains(f.base.path().to_str().unwrap()),
+        "{}",
+        ran.out
+    );
 }
 
 #[test]
@@ -1290,7 +1294,9 @@ struct PathNamingLoader;
 
 impl PluginLoader for PathNamingLoader {
     fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
-        Err("cannot read /home/someone/secret-dir/blob".to_owned().into())
+        Err("cannot read /home/someone/secret-dir/blob"
+            .to_owned()
+            .into())
     }
 }
 

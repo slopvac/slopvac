@@ -2419,8 +2419,14 @@ mod cache_reads {
     #[test]
     fn an_archive_swapped_after_its_digest_check_is_not_what_sync_installs() {
         let env = Env::new();
-        let good = targz(&[("slopvac-plugin.toml", b"id = \"a\"\n"), ("a.txt", b"honest")]);
-        let evil = targz(&[("slopvac-plugin.toml", b"id = \"a\"\n"), ("evil.txt", b"evil")]);
+        let good = targz(&[
+            ("slopvac-plugin.toml", b"id = \"a\"\n"),
+            ("a.txt", b"honest"),
+        ]);
+        let evil = targz(&[
+            ("slopvac-plugin.toml", b"id = \"a\"\n"),
+            ("evil.txt", b"evil"),
+        ]);
         fs::create_dir_all(env.project.path().join("dist")).unwrap();
         fs::write(env.project.path().join("dist/a.tar.gz"), &good).unwrap();
         let lock = lock_text(&[format!(
@@ -2431,9 +2437,15 @@ mod cache_reads {
         let revs = env.revocations(NOW);
         let pol = KeyPolicy::default();
         // The first sync fills the cache with the archive.
-        Syncer::new(&env.store(), Network::Offline, &pol, env.project.path(), &revs)
-            .sync(&lock)
-            .unwrap();
+        Syncer::new(
+            &env.store(),
+            Network::Offline,
+            &pol,
+            env.project.path(),
+            &revs,
+        )
+        .sync(&lock)
+        .unwrap();
         let blob = env
             .data
             .path()
@@ -2449,14 +2461,20 @@ mod cache_reads {
                 }
             }));
 
-        let result = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
-            .sync(&lock);
+        let result =
+            Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs).sync(&lock);
 
         // Either sync refuses, or what it installed is the archive that was checked.
         if let Ok(report) = result {
             let tree = &report.packs[0].tree;
-            assert!(!tree.join("evil.txt").exists(), "the swapped archive was installed");
-            assert!(tree.join("a.txt").exists(), "the checked archive was not installed");
+            assert!(
+                !tree.join("evil.txt").exists(),
+                "the swapped archive was installed"
+            );
+            assert!(
+                tree.join("a.txt").exists(),
+                "the checked archive was not installed"
+            );
         }
     }
 

@@ -439,7 +439,7 @@ impl<'a> Syncer<'a> {
             id: pack.id.clone(),
             source,
         };
-        let blob = match how {
+        let archive = match how {
             Acquired::InPlace(dir, manifest) => {
                 let hash = Self::locked_tree_hash(pack)?;
                 return Ok((
@@ -474,7 +474,9 @@ impl<'a> Syncer<'a> {
         };
         // The archive is read once, here, and extracted from the bytes that were checked: a file
         // swapped after the earlier check cannot reach the tree.
-        let bytes = self.store.read_archive(&pack.id, &archive, self.limits.compressed_bytes)?;
+        let bytes = self
+            .store
+            .read_archive(&pack.id, &archive, self.limits.compressed_bytes)?;
         let exec = self.executables.get(&pack.id).cloned().unwrap_or_default();
         let done = extract_targz(bytes.as_slice(), &self.store.trees(), &exec, self.limits)
             .map_err(extract)?;
