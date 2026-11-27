@@ -767,11 +767,7 @@ fn call_provider(
         let message = UpdateMessage::OfflineNetworkNeeded {
             command: "review".to_owned(),
         };
-        return Err(AgentsError::Coded {
-            code: message.code(),
-            message: message.to_string(),
-            source: None,
-        });
+        return Err(AgentsError::new_coded(message.code(), message.to_string()));
     }
     let provider = env
         .provider

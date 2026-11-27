@@ -135,7 +135,6 @@ pub(crate) fn plan(schema: &mut Schema) {
                     "uses_provider": {"const": false},
                     "author_model": false,
                     "reviewer_model": false,
-                    "reviewer_model_checked": {"const": false},
                     "notices": {"maxItems": 0},
                     "report": false,
                 }}),

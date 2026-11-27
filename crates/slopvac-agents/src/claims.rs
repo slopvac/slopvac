@@ -667,11 +667,7 @@ fn document_too_large(path: &std::path::Path) -> AgentsError {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let shown = slopvac_fs::display_under_root(path, &cwd);
     let message = slopvac_config::document_size_message(shown, slopvac_fs::MAX_DOCUMENT_BYTES);
-    AgentsError::Coded {
-        code: message.code(),
-        message: message.to_string(),
-        source: None,
-    }
+    AgentsError::new_coded(message.code(), message.to_string())
 }
 
 /// Run the parsed `claims` command. Reads two local files, each up to the document cap,
