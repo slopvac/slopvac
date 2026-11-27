@@ -2192,6 +2192,16 @@ mod cache_reads {
         assert_eq!(err.code(), "plugin-store-unreadable");
     }
 
+    /// Sync on `c`, which holds a cached file that sync must remove and fetch again.
+    fn repaired(c: &Cached) -> slopvac_plugins::sync::SyncReport {
+        let result = c.online();
+        assert!(
+            result.is_ok(),
+            "sync must remove the wrong cached file, fetch it again and succeed: {result:?}"
+        );
+        result.unwrap()
+    }
+
     /// Make `path` a sparse file of `len` bytes, whatever its mode.
     fn grow(path: &Path, len: u64) {
         fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
@@ -2208,7 +2218,7 @@ mod cache_reads {
         let c = cached();
         grow(&c.manifest, MAX_MANIFEST_BYTES as u64 + 1);
 
-        let report = c.online().unwrap();
+        let report = repaired(&c);
 
         assert!(report.packs[0].repaired, "{report:?}");
         assert_eq!(report.packs[0].change, Change::Unchanged);
@@ -2230,7 +2240,7 @@ mod cache_reads {
         let original = fs::read(blob).unwrap();
         grow(blob, 16 << 20);
 
-        let report = c.online().unwrap();
+        let report = repaired(&c);
 
         assert!(report.packs[0].repaired, "{report:?}");
         assert_eq!(fs::read(blob).unwrap(), original);
@@ -2307,7 +2317,7 @@ mod cache_reads {
         let c = cached();
         grow(&c.layer, c.layer_bytes.len() as u64 + 1);
 
-        let report = c.online().unwrap();
+        let report = repaired(&c);
 
         assert!(report.packs[0].repaired, "{report:?}");
         assert_eq!(fs::read(&c.layer).unwrap(), c.layer_bytes);
@@ -2318,7 +2328,7 @@ mod cache_reads {
         let c = cached();
         swap(&c.layer, b"swapped");
 
-        let report = c.online().unwrap();
+        let report = repaired(&c);
 
         assert!(report.packs[0].repaired, "{report:?}");
         assert_eq!(fs::read(&c.layer).unwrap(), c.layer_bytes);
