@@ -1234,15 +1234,9 @@ fn hash_stream(
     let mut buf = vec![0u8; HASH_CHUNK];
     let mut len = 0u64;
     loop {
-        let n = src.read(&mut buf).map_err(|e| {
-            ExtractError::Malformed(
-                TransportText::ExtractEntryRead {
-                    what: what.to_owned(),
-                    detail: e.to_string(),
-                }
-                .to_string(),
-            )
-        })?;
+        let n = src
+            .read(&mut buf)
+            .map_err(|e| read_failure(what, e))?;
         if n == 0 {
             break;
         }
@@ -1409,7 +1403,30 @@ impl std::error::Error for CaptureAlloc {
 
 /// Reserve room for exactly `additional` more bytes in `kept`.
 fn reserve_exact(kept: &mut Vec<u8>, additional: usize) -> io::Result<()> {
-    kept.try_reserve_exact(additional).map_err(io::Error::other)
+    kept.try_reserve_exact(additional)
+        .map_err(|e| io::Error::new(io::ErrorKind::OutOfMemory, CaptureAlloc(e)))
+}
+
+/// The error of a failed read of `what` while it is hashed. A failed capture reservation keeps
+/// its cause as [`ExtractError::Io`], whose source chain ends in the allocator's error. Any
+/// other failed read is a malformed entry, as it was.
+fn read_failure(what: &str, e: io::Error) -> ExtractError {
+    if e.get_ref().is_some_and(|inner| inner.is::<CaptureAlloc>()) {
+        return ExtractError::Io {
+            what: TransportText::ExtractReadingFile {
+                path: what.to_owned(),
+            }
+            .to_string(),
+            source: e,
+        };
+    }
+    ExtractError::Malformed(
+        TransportText::ExtractEntryRead {
+            what: what.to_owned(),
+            detail: e.to_string(),
+        }
+        .to_string(),
+    )
 }
 
 /// What one captured read left behind.
@@ -1437,9 +1454,14 @@ fn hash_captured<R: Read>(
     let mut limited = src.take(bound);
     // The buffer holds what was read, which is at most the smaller of the cap and the budget plus
     // the chunk that crossed it.
-    // `budget` and `cap` are caller values and need not fit a `usize`, so the conversion is
-    // checked and a failure is a refusal of the file, never a silently smaller or larger buffer.
-    let Ok(limit) = usize::try_from(cap.min(budget).saturating_add(1 + HASH_CHUNK as u64)) else {
+    // `budget` and `cap` are caller values: the sum may overflow `u64` and the result need not
+    // fit a `usize`. Both are checked, and a failure is a refusal of the file, never a silently
+    // smaller or larger buffer.
+    let limit = cap
+        .min(budget)
+        .checked_add(1 + HASH_CHUNK as u64)
+        .and_then(|n| usize::try_from(n).ok());
+    let Some(limit) = limit else {
         return Captured {
             hashed: Err(refused(
                 TransportText::ExtractTreeSize {
