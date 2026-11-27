@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -95,7 +97,7 @@ def test_the_authored_report_holds_exactly_the_authored_documents(reported, prob
 
 # ---- the audit step's real script, against a stub linter ---------------------------
 
-from markdown_audit_harness import assert_output_contract, run_audit  # noqa: E402
+from markdown_audit_harness import assert_output_contract, audit_script, run_audit  # noqa: E402
 
 HOSTILE_PATH = "::error::pwned\n::add-mask::x"
 
@@ -479,6 +481,40 @@ def test_the_styles_of_the_repository_config_are_the_expected_styles(tmp_path) -
     case = {"files": {"slopvac.toml": _STYLED_CONFIG}, "routing": _STYLES_SETTING}
     done = run_audit(tmp_path, case)
     assert_output_contract(done, tmp_path)
+
+
+def _document_class():
+    """The audit step's own `document_class`, taken from the workflow script."""
+    script = audit_script()
+    start = script.index("def document_class(path):")
+    end = script.index('return "authored"\n', start) + len('return "authored"\n')
+    namespace: dict = {}
+    exec(textwrap.dedent(script[start:end]), namespace)  # noqa: S102 - the repository's own step
+    return namespace["document_class"]
+
+
+def test_no_authored_document_resolves_to_a_config_of_its_own() -> None:
+    # The routing check requires every authored document to resolve to the root
+    # `slopvac.toml`. A tracked document under a directory with its own config is an input
+    # for that directory's tool, so the audit must not class it as authored.
+    document_class = _document_class()
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "--", "*.md", "*.mdx"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout.decode("utf-8").split("\0")
+    nested = []
+    for name in filter(None, tracked):
+        if document_class(name) != "authored":
+            continue
+        parent = (ROOT / name).parent
+        while parent != ROOT:
+            if (parent / "slopvac.toml").is_file():
+                nested.append(name)
+                break
+            parent = parent.parent
+    assert nested == []
 
 
 def test_a_document_that_resolves_without_the_configured_styles_fails(tmp_path) -> None:
