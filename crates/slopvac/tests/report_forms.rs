@@ -185,7 +185,8 @@ const CATEGORY_KEYS: [&str; 7] = [
 ];
 
 #[test]
-fn the_code_comments_invocation_a_form_documents_runs_and_reports() {
+fn the_code_comments_invocation_a_form_documents_runs_and_reports()
+-> Result<(), Box<dyn std::error::Error>> {
     use snapbox::cmd::{Command, cargo_bin};
 
     let mut invocations: Vec<String> = CATEGORY_KEYS
@@ -199,7 +200,7 @@ fn the_code_comments_invocation_a_form_documents_runs_and_reports() {
         !invocations.is_empty(),
         "no form documents a code-comments invocation"
     );
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir()?;
     for span in invocations {
         let tokens: Vec<&str> = span.split_whitespace().collect();
         let out = Command::new(cargo_bin!("slopvac"))
@@ -209,17 +210,17 @@ fn the_code_comments_invocation_a_form_documents_runs_and_reports() {
             .env("SLOPVAC_NO_UPDATE_CHECK", "1")
             .current_dir(dir.path())
             .stdin("# Parse the input.\nvalue = 1\n")
-            .output()
-            .unwrap();
+            .output()?;
         assert!(
             matches!(out.status.code(), Some(0 | 1)),
             "`{span}` exited {:?}: {}",
             out.status.code(),
             String::from_utf8_lossy(&out.stderr)
         );
-        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout)?;
         assert_eq!(report["schema_version"], 3, "`{span}`");
     }
+    Ok(())
 }
 
 #[test]
