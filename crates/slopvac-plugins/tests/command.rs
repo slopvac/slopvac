@@ -1843,7 +1843,10 @@ mod native_archive {
 
         assert_eq!(err.code(), "sync-failed");
         let trees = f.cache().join("trees");
-        assert!(!trees.exists() || fs::read_dir(trees).unwrap().next().is_none());
+        let left: Vec<_> = fs::read_dir(&trees)
+            .map(|d| d.map(|e| e.unwrap().file_name()).collect())
+            .unwrap_or_default();
+        assert_eq!(left, Vec::<std::ffi::OsString>::new(), "{err:?}");
     }
 
     /// A manifest that grows past 1 MiB after sync stops `plugins status`, which reports
