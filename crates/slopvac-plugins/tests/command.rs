@@ -1914,6 +1914,7 @@ fn trust_of_an_unsigned_path_or_git_plugin_succeeds_and_says_it_is_unsigned(
     let line = provenance_line(&ran.out);
     assert!(line.starts_with(&format!("source: {kind} ")), "{line}");
     assert!(line.ends_with("; unsigned"), "{line}");
+    assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 1);
 }
 
 #[test]
