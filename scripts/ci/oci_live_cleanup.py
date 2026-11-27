@@ -71,7 +71,12 @@ def select_stale(
     versions: Iterable[Version], now: datetime, days: int, keep_prefix: str
 ) -> list[Version]:
     """The versions older than `days` that carry no tag starting with `keep_prefix`."""
-    return []
+    cutoff = now - timedelta(days=days)
+    return [
+        v
+        for v in versions
+        if v.created_at < cutoff and not any(t.startswith(keep_prefix) for t in v.tags)
+    ]
 
 
 def gh(args: Sequence[str]) -> str:
