@@ -36,7 +36,7 @@ const COMMAND: &str = "The exact command or commands you ran. Pipe the sample in
 const RULE_ID: &str = "The qualified ID from the finding's `rule_id`, written `<plugin>:<category>.<rule>`. `slopvac rules` lists every ID.";
 
 /// The help text of the genre and profile fields.
-const CONTEXT: &str = "Genre: the `genre.id` value, and profile: the `profile` value, of the `<stdin>` entry in the output of `slopvac lint --stdin --format json`, run with the same `--config` and `--mode` flags as your command. For source comments, run it in code-comments mode, for example `slopvac lint --stdin --mode code-comments --language python --format json`. Code-comments mode needs `--language` on stdin to name the language of the sample.";
+const CONTEXT: &str = "Genre: the `genre.id` value, and profile: the `profile` value, of the `<stdin>` entry in the output of `slopvac lint --stdin --format json`, run with the same `--config` and `--mode` flags as your command. For source comments, run it in code-comments mode: `slopvac lint --stdin --mode code-comments --language <language> --format json`, for example `slopvac lint --stdin --mode code-comments --language python --format json`. Code-comments mode needs `--language` on stdin to name the language of the sample.";
 
 /// The help text of the finding fields.
 const FINDING: &str = "A finding object from the `findings` list of the `<stdin>` entry in `slopvac lint --stdin --format json`.";
