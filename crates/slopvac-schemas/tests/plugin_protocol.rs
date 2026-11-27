@@ -14,7 +14,7 @@ fn every_method_result_has_a_definition_in_the_published_schema() {
     let schema: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     let defs = schema["$defs"].as_object().unwrap();
     let results = slopvac_plugins::result_defs();
-    assert!(!results.is_empty());
+    assert!(results.iter().any(|name| name == "InitializeResult"));
     let missing: Vec<_> = results
         .iter()
         .filter(|name| !defs.contains_key(*name))

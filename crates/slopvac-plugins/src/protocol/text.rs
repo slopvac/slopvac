@@ -18,10 +18,12 @@ pub(crate) const HOOK_ID: &str = "Plugin-local hook identifier. The host qualifi
 pub(crate) const FEATURE_NAME: &str = "Optional capability name. The v1 registry holds one name, document-path. A name with the prefix x- is a private extension and a reader ignores it unless it understands it.";
 
 /// Description of `ProtocolVersion`.
-pub(crate) const PROTOCOL_VERSION: &str = "Protocol version. Same value space as ApiVersion in common.schema.json.";
+pub(crate) const PROTOCOL_VERSION: &str =
+    "Protocol version. Same value space as ApiVersion in common.schema.json.";
 
 /// Description of `Name`.
-pub(crate) const NAME: &str = "Program name and version of the host or the plugin. For logs only; never branch on it.";
+pub(crate) const NAME: &str =
+    "Program name and version of the host or the plugin. For logs only; never branch on it.";
 
 /// Description of `ErrorObject`.
 pub(crate) const ERROR_OBJECT: &str = "JSON-RPC error. code follows docs/contract/plugin-protocol.md, section Error codes. data.slopvac_code is the stable kebab-case string code that policies.md section 3.5 requires. A code from -32099 to -32000 is slopvac-defined.";
@@ -57,16 +59,19 @@ pub(crate) const HOOK_DECL: &str = "One hook a plugin implements. The host calls
 pub(crate) const INITIALIZE_RESULT: &str = "Reply to initialize. protocolVersion is the negotiated version: the highest version both sides support. It must lie in the host's range. capabilities repeat the pre-spawn declaration: the host compares them with the manifest and rejects the reply, with plugin-declaration-mismatch, when requiresNetwork differs, a hook is absent from the manifest, or a required feature is absent from it. features.required names features the plugin cannot work without; the host stops the load if it lacks one. limits.maxMessageBytes, maxBatchDocuments and maxInFlight may lower the host ceilings but not raise them; a higher value is plugin-output-invalid.";
 
 /// Description of `CancelParams`.
-pub(crate) const CANCEL_PARAMS: &str = "Parameters of $/cancelRequest. id names a request the sender no longer wants answered.";
+pub(crate) const CANCEL_PARAMS: &str =
+    "Parameters of $/cancelRequest. id names a request the sender no longer wants answered.";
 
 /// Description of `Tag`.
-pub(crate) const TAG: &str = "A context tag: kind, span, confidence and evidence, as the plan defines for taggers.";
+pub(crate) const TAG: &str =
+    "A context tag: kind, span, confidence and evidence, as the plan defines for taggers.";
 
 /// Description of `TagParams`.
 pub(crate) const TAG_PARAMS: &str = "tagger/tag. Run the named tagger over each document.";
 
 /// Description of `TagResult`.
-pub(crate) const TAG_RESULT: &str = "One entry per requested document. Tags may overlap and may arrive in any order.";
+pub(crate) const TAG_RESULT: &str =
+    "One entry per requested document. Tags may overlap and may arrive in any order.";
 
 /// Description of `Segment`.
 pub(crate) const SEGMENT: &str = "A region of prose that the extractor hands to the rules. span is the source range it came from. text is the converted text when it differs from the source bytes in span; a finding in converted text maps to the whole span. context labels the region, for example prose or code.";
@@ -75,7 +80,8 @@ pub(crate) const SEGMENT: &str = "A region of prose that the extractor hands to 
 pub(crate) const EXTRACT_PARAMS: &str = "extractor/extract. Split each document into segments.";
 
 /// Description of `ExtractResult`.
-pub(crate) const EXTRACT_RESULT: &str = "One entry per requested document. Segments are in source order and do not overlap.";
+pub(crate) const EXTRACT_RESULT: &str =
+    "One entry per requested document. Segments are in source order and do not overlap.";
 
 /// Description of `BinaryFormat`.
 pub(crate) const BINARY_FORMAT: &str = "Format id of a binary document, from the 3.0 list in docs/contract/plugin-protocol.md section 5.5.1. The enum is extensible (x-slopvac-extensible): a later release may add ids without a new protocol version. A plugin or reader that receives an id it does not know declines that document with binary-input-declined, reason unknown-format, and does not fail the request. Manifest validation applies the list strictly: the host refuses a manifest that declares an id outside its own list.";
@@ -147,4 +153,5 @@ pub(crate) const PLUGIN_DECLARATION: &str = "Pre-spawn declaration. The plugin m
 pub(crate) const FIX_EDIT: &str = "An edit with the finding that authorizes it. finding is the zero-based index into the findings array of the same document in the request. The host accepts the edit only when span lies inside the span of that finding, endpoints included. A zero-width span is an insertion and follows the same rule.";
 
 /// Description of the `requiresNetwork` member of the `initialize` reply.
-pub(crate) const REQUIRES_NETWORK: &str = "Must equal PluginDeclaration.network. It informs and cannot grant anything.";
+pub(crate) const REQUIRES_NETWORK: &str =
+    "Must equal PluginDeclaration.network. It informs and cannot grant anything.";

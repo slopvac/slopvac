@@ -784,10 +784,10 @@
         }
       },
       "required": [
-        "provider",
-        "task",
+        "items",
         "model",
-        "items"
+        "provider",
+        "task"
       ],
       "type": "object"
     },
@@ -937,8 +937,8 @@
         }
       },
       "required": [
-        "extractor",
-        "documents"
+        "documents",
+        "extractor"
       ],
       "type": "object"
     },
@@ -1031,8 +1031,8 @@
         }
       },
       "required": [
-        "fixer",
-        "documents"
+        "documents",
+        "fixer"
       ],
       "type": "object"
     },
@@ -1142,8 +1142,8 @@
             }
           },
           "required": [
-            "hooks",
-            "features"
+            "features",
+            "hooks"
           ],
           "type": "object"
         },
@@ -1162,8 +1162,8 @@
             }
           },
           "required": [
-            "maxMessageBytes",
-            "maxBatchDocuments"
+            "maxBatchDocuments",
+            "maxMessageBytes"
           ],
           "type": "object"
         },
@@ -1178,11 +1178,11 @@
         }
       },
       "required": [
-        "protocolVersion",
-        "hostInfo",
         "capabilities",
+        "hostInfo",
+        "limits",
         "offline",
-        "limits"
+        "protocolVersion"
       ],
       "type": "object"
     },
@@ -1371,10 +1371,10 @@
         }
       },
       "required": [
+        "message",
         "rule",
         "severity",
-        "span",
-        "message"
+        "span"
       ],
       "type": "object"
     },
@@ -1436,8 +1436,8 @@
         }
       },
       "required": [
-        "recipe",
-        "harness"
+        "harness",
+        "recipe"
       ],
       "type": "object"
     },
@@ -1478,8 +1478,8 @@
         }
       },
       "required": [
-        "reporter",
-        "report"
+        "report",
+        "reporter"
       ],
       "type": "object"
     },
@@ -1552,8 +1552,8 @@
         }
       },
       "required": [
-        "scorer",
-        "documents"
+        "documents",
+        "scorer"
       ],
       "type": "object"
     },
@@ -1664,8 +1664,8 @@
         }
       },
       "required": [
-        "tagger",
-        "documents"
+        "documents",
+        "tagger"
       ],
       "type": "object"
     },

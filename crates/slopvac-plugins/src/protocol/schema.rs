@@ -15,7 +15,9 @@ use std::marker::PhantomData;
 
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde_json::{Map, Value, json};
-use slopvac_model::{ApiVersion, ContextTag, KEBAB, SLUG, SchemaVersion, absent_not_null as absent};
+use slopvac_model::{
+    ApiVersion, ContextTag, KEBAB, SLUG, SchemaVersion, absent_not_null as absent,
+};
 
 use super::requests::{
     CancelParams, CompleteParams, ExtractParams, FixParams, InitializeParams, JsonRpc,
@@ -755,9 +757,7 @@ impl JsonSchema for BinaryEntry {
                 "required": ["error"]
             })
         };
-        let outcome = |condition: Value| {
-            json!({"properties": {"outcome": condition}, "required": ["outcome"]})
-        };
+        let outcome = |condition: Value| json!({"properties": {"outcome": condition}, "required": ["outcome"]});
         let detail = |members: Value, required: &[&str]| {
             json!({"properties": {"error": {"properties": {"data": {
                 "properties": members,

@@ -14,9 +14,9 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::schema::{
-    Documents, FeatureNameSchema, FindingsEntry, HookIdSchema, HookKindSchema, MinOne, ObjectSchema,
-    Over, ProtocolVersion, ReportStub, TaskKind, UniqueItems, bare_entry, bare_fields,
-    min_version_is_optional, options_are_optional,
+    Documents, FeatureNameSchema, FindingsEntry, HookIdSchema, HookKindSchema, MinOne,
+    ObjectSchema, Over, ProtocolVersion, ReportStub, TaskKind, UniqueItems, bare_entry,
+    bare_fields, min_version_is_optional, options_are_optional,
 };
 use super::text;
 use crate::error::{EncodeCause, PluginError};
