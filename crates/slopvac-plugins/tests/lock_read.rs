@@ -1,8 +1,5 @@
 //! Reading the lock of a project reports each failure as its own variant with its own code.
-#![allow(
-    clippy::unwrap_used,
-    reason = "test code: a panic is a failed test"
-)]
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 
@@ -31,7 +28,7 @@ fn a_missing_lock_that_is_not_required_is_empty() {
 
     let lock = read_project_lock(dir.path(), false).unwrap();
 
-    assert!(lock.packs().is_empty());
+    assert_eq!(lock.packs().len(), 0);
 }
 
 #[test]

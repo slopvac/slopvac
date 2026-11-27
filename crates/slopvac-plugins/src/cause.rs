@@ -159,7 +159,10 @@ mod tests {
 
         let reported = sync(Path::new("/project"), &e);
 
-        assert_eq!(slopvac_messages::Catalog::code(&reported), "plugin-store-unreadable");
+        assert_eq!(
+            slopvac_messages::Catalog::code(&reported),
+            "plugin-store-unreadable"
+        );
         assert_eq!(
             reported.to_string(),
             "plugin `demo`: cannot read the cached file <external>/ab12: permission denied"
