@@ -527,6 +527,38 @@ fn sync_installs_the_lock_and_tells_a_missing_revocation_list() {
 }
 
 #[test]
+fn sync_reports_a_repaired_cache_file_by_plugin_and_without_a_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::new();
+    let archive = signed_fixture::targz(&[("rules.yml", b"a: b\n")]);
+    fs::create_dir_all(f.project().join("dist")).unwrap();
+    fs::write(f.project().join("dist/style.tar.gz"), &archive).unwrap();
+    let digest = slopvac_plugins::oci::Digest::of(&archive);
+    f.write_lock(&[path_entry(
+        "style",
+        "1.0.0",
+        "dist/style.tar.gz",
+        &digest.to_string(),
+    )]);
+    assert_eq!(f.run(&["sync"], false, |s| s).result.unwrap(), 0);
+    let blob = f.cache().join("blobs").join(digest.hex());
+    fs::set_permissions(&blob, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::write(&blob, b"swapped").unwrap();
+
+    let ran = f.run(&["sync"], false, |s| s);
+
+    assert_eq!(ran.result.unwrap(), 0);
+    assert!(
+        ran.out.contains(
+            "style: a cached file was not what it should be; it was removed and fetched again\n"
+        ),
+        "{}",
+        ran.out
+    );
+    assert!(!ran.out.contains(f.base.path().to_str().unwrap()), "{}", ran.out);
+}
+
+#[test]
 fn sync_keeps_its_verification_a_revoked_digest_stops_it_with_the_cause() {
     let f = Fixture::new();
     let digest = in_place_project(&f);
@@ -1252,6 +1284,31 @@ impl PluginLoader for UnreadableCacheLoader {
                 .with_code("plugin-store-unreadable"),
         )
     }
+}
+
+/// A loader whose refusal carries a code and a sentence that names an absolute path.
+struct LeakyLoader;
+
+impl PluginLoader for LeakyLoader {
+    fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        Err(
+            LoadError::new("cannot read /home/someone/secret-dir/blob")
+                .with_code("plugin-store-unreadable"),
+        )
+    }
+}
+
+#[test]
+fn trust_shows_no_absolute_path_from_a_loader_refusal_in_its_text_or_chain() {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    let err = f
+        .run(&["trust", "fake"], false, |s| s.loader(LeakyLoader))
+        .result
+        .unwrap_err();
+    let shown = format!("{}\n{err:?}", names_in_chain(&err));
+    assert!(!shown.contains("/home/someone"), "{shown}");
+    assert!(!shown.contains("secret-dir"), "{shown}");
 }
 
 #[test]

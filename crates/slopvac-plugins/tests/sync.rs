@@ -2354,18 +2354,16 @@ mod cache_reads {
         for text in shown {
             assert!(!text.contains(&data), "{text}");
         }
-        assert!(
-            matches!(
-                &err,
-                SyncError::CacheUnreadable {
-                    cause: CacheCause::Io {
-                        os_code: Some(_),
-                        ..
-                    },
-                    ..
-                }
-            ),
-            "{err:?}"
+        // The source is the scrubbed cause itself: its kind and its raw OS code (EACCES).
+        let cause = std::error::Error::source(&err)
+            .and_then(|e| e.downcast_ref::<CacheCause>())
+            .expect("the error has the scrubbed cause as its source");
+        assert_eq!(
+            *cause,
+            CacheCause::Io {
+                kind: std::io::ErrorKind::PermissionDenied,
+                os_code: Some(13),
+            }
         );
     }
 
@@ -2414,5 +2412,122 @@ mod cache_reads {
         assert!(result.is_err(), "{result:?}");
         let consumed = counter.load(std::sync::atomic::Ordering::SeqCst);
         assert_eq!(consumed, (1 << 20) + 1, "bytes consumed, drain included");
+    }
+
+    /// An archive that is swapped right after the store checked it must not be what is installed:
+    /// the bytes that were hashed are the bytes that are extracted.
+    #[test]
+    fn an_archive_swapped_after_its_digest_check_is_not_what_sync_installs() {
+        let env = Env::new();
+        let good = targz(&[("slopvac-plugin.toml", b"id = \"a\"\n"), ("a.txt", b"honest")]);
+        let evil = targz(&[("slopvac-plugin.toml", b"id = \"a\"\n"), ("evil.txt", b"evil")]);
+        fs::create_dir_all(env.project.path().join("dist")).unwrap();
+        fs::write(env.project.path().join("dist/a.tar.gz"), &good).unwrap();
+        let lock = lock_text(&[format!(
+            "\n[[plugins]]\nid = \"a\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"dist/a.tar.gz\"\ndigest = \"{}\"\n",
+            Digest::of(&good)
+        )]);
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        // The first sync fills the cache with the archive.
+        Syncer::new(&env.store(), Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&lock)
+            .unwrap();
+        let blob = env
+            .data
+            .path()
+            .join("slopvac/blobs")
+            .join(Digest::of(&good).hex());
+        let target = blob.clone();
+        let store = env
+            .store()
+            .with_read_observer(std::sync::Arc::new(move |path: &Path| {
+                if path == target {
+                    fs::remove_file(path).unwrap();
+                    fs::write(path, &evil).unwrap();
+                }
+            }));
+
+        let result = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&lock);
+
+        // Either sync refuses, or what it installed is the archive that was checked.
+        if let Ok(report) = result {
+            let tree = &report.packs[0].tree;
+            assert!(!tree.join("evil.txt").exists(), "the swapped archive was installed");
+            assert!(tree.join("a.txt").exists(), "the checked archive was not installed");
+        }
+    }
+
+    /// A path-source plugin `id` whose archive is `files`, written to `dist/<id>.tar.gz`.
+    fn archive_entry(env: &Env, id: &str, files: &[(&str, &[u8])]) -> (String, Vec<u8>) {
+        let archive = targz(files);
+        fs::create_dir_all(env.project.path().join("dist")).unwrap();
+        fs::write(
+            env.project.path().join(format!("dist/{id}.tar.gz")),
+            &archive,
+        )
+        .unwrap();
+        let entry = format!(
+            "\n[[plugins]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"dist/{id}.tar.gz\"\ndigest = \"{}\"\n",
+            Digest::of(&archive)
+        );
+        (entry, archive)
+    }
+
+    /// A failed sync must leave no repair behind: the next sync on the same store reports only
+    /// what it repaired itself.
+    #[test]
+    fn a_repair_of_a_failed_sync_is_not_reported_by_the_next_sync_on_the_same_store() {
+        let env = Env::new();
+        let (a, archive) = archive_entry(&env, "a", &[("a.txt", b"honest")]);
+        let first = lock_text(&[a.clone()]);
+        let store = env.store();
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&first)
+            .unwrap();
+        let blob = env
+            .data
+            .path()
+            .join("slopvac/blobs")
+            .join(Digest::of(&archive).hex());
+        fs::set_permissions(&blob, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&blob, b"swapped").unwrap();
+        // `b` points at a file that does not exist, so the sync fails after it repaired `a`.
+        let missing = format!(
+            "\n[[plugins]]\nid = \"b\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"dist/none.tar.gz\"\ndigest = \"{}\"\n",
+            Digest::of(b"x")
+        );
+        let broken = lock_text(&[a, missing]);
+        let failed =
+            Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs).sync(&broken);
+        assert!(failed.is_err(), "the second plugin has no archive");
+
+        let report = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&first)
+            .unwrap();
+
+        assert!(!report.packs[0].repaired, "{report:?}");
+    }
+
+    #[test]
+    fn a_tree_that_cannot_be_inspected_is_an_error_and_not_absent_for_status() {
+        let c = cached();
+        let trees = c.env.data.path().join("slopvac/trees");
+        fs::set_permissions(&trees, fs::Permissions::from_mode(0o000)).unwrap();
+        let blocked = fs::read_dir(&trees).is_err();
+
+        let result = c.env.store().inspect(&c.lock.packs()[0].digest);
+
+        fs::set_permissions(&trees, fs::Permissions::from_mode(0o755)).unwrap();
+        if !blocked {
+            return; // the test runs with rights that ignore modes
+        }
+        assert!(result.is_err(), "{result:?}");
     }
 }

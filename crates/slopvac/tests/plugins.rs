@@ -779,3 +779,76 @@ fn trust_of_a_planted_registry_plugin_without_a_valid_signature_exits_2() {
         .stderr(predicate::str::starts_with("error[signature-invalid]: "));
     assert_eq!(trust_records(&sandbox), 0);
 }
+
+/// A cached signature file that is not what its name says is an input `trust` cannot use, so it
+/// is reported under the code of the command, as a tree that differs is. The command leaves
+/// the cache as it found it: it repairs nothing.
+#[test]
+fn trust_of_a_registry_plugin_with_a_swapped_signature_file_exits_2_and_changes_nothing() {
+    use slopvac_plugins::oci::{Descriptor, Digest, MEDIA_EMPTY, MEDIA_MANIFEST, Manifest};
+    use slopvac_plugins::sign::{MEDIA_MINISIG, MEDIA_STATEMENT};
+    use slopvac_plugins::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER};
+    let sandbox = Sandbox::new();
+    let archive = plugin_targz(PLUGIN_MANIFEST);
+    let statement = b"{}".to_vec();
+    let minisig = b"untrusted comment: x\n".to_vec();
+    let manifest = Manifest {
+        schema_version: 2,
+        media_type: Some(MEDIA_MANIFEST.to_owned()),
+        artifact_type: Some(ARTIFACT_TYPE_PACK.to_owned()),
+        config: Descriptor::for_bytes(MEDIA_EMPTY, b"{}"),
+        layers: vec![
+            Descriptor::for_bytes(MEDIA_PACK_LAYER, &archive),
+            Descriptor::for_bytes(MEDIA_STATEMENT, &statement),
+            Descriptor::for_bytes(MEDIA_MINISIG, &minisig),
+        ],
+        subject: None,
+        annotations: std::collections::BTreeMap::new(),
+    };
+    let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+    let digest = Digest::of(&manifest_bytes);
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"oci://registry.invalid/acme/fmt:1.0.0\"\ndigest = \"{digest}\"\n\
+         [plugins.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00Z\"\n"
+    ));
+    let store = plugin_store(&sandbox);
+    let blobs = store.join("blobs");
+    fs::create_dir_all(&blobs).unwrap();
+    fs::write(blobs.join(digest.hex()), &manifest_bytes).unwrap();
+    fs::write(blobs.join(Digest::of(&archive).hex()), &archive).unwrap();
+    // The statement file holds other bytes than its name says.
+    fs::write(blobs.join(Digest::of(&statement).hex()), b"swapped").unwrap();
+    fs::write(blobs.join(Digest::of(&minisig).hex()), &minisig).unwrap();
+    let done = extract_plugin(&archive, &store.join("trees"));
+    fs::create_dir_all(store.join("refs")).unwrap();
+    fs::write(store.join("refs").join(digest.hex()), done.hash.hex()).unwrap();
+    let before = cached_files(&blobs);
+
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[plugins-trust-inputs-failed]: ",
+        ));
+
+    assert_eq!(cached_files(&blobs), before, "trust changed the cache");
+    assert_eq!(trust_records(&sandbox), 0);
+}
+
+/// Every file in `dir`, by name, with its bytes.
+fn cached_files(dir: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap())
+        .filter(|e| e.path().is_file())
+        .map(|e| {
+            (
+                e.file_name().to_string_lossy().into_owned(),
+                fs::read(e.path()).unwrap(),
+            )
+        })
+        .collect()
+}
