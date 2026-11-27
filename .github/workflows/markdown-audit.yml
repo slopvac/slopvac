@@ -137,7 +137,7 @@ jobs:
               canonical[path] = str(resolved.relative_to(root))
           aliases = {p: target for p, target in canonical.items() if p != target}
           expected_paths = set(canonical.values())
-          print("SYMLINK_ALIASES", json.dumps(aliases), flush=True)
+          print("SYMLINK_ALIASES", escape(json.dumps(aliases)), flush=True)
           print("DISTINCT_DOCUMENTS", len(expected_paths), flush=True)
 
           def command(name, args):
@@ -236,9 +236,9 @@ jobs:
               for p, d in scanned.items()
               if any(u.get("level") != "info" for u in d.get("unchecked", []))
           }
-          print("CONFIGURED_EXCLUSIONS", json.dumps(excluded), flush=True)
-          print("MISSING_FROM_FULL_AUDIT", json.dumps(missing), flush=True)
-          print("UNEXPECTED_DOCUMENTS", json.dumps(unexpected), flush=True)
+          print("CONFIGURED_EXCLUSIONS", escape(json.dumps(excluded)), flush=True)
+          print("MISSING_FROM_FULL_AUDIT", escape(json.dumps(missing)), flush=True)
+          print("UNEXPECTED_DOCUMENTS", escape(json.dumps(unexpected)), flush=True)
           print("UNCHECKED", escape(json.dumps(unchecked)), flush=True)
           for path in files:
               target = canonical[path]
@@ -303,9 +303,9 @@ jobs:
               if reason:
                   broken.append({"path": path, "link": href, "reason": reason})
           link_report = {"checked": local_links, "external_not_checked": external_links, "broken": broken}
-          print("LOCAL_LINK_AUDIT", json.dumps(link_report), flush=True)
+          print("LOCAL_LINK_AUDIT", escape(json.dumps(link_report)), flush=True)
           print("INTENTIONAL_EXAMPLE_DIRECTIVES", intentional_example_directives, flush=True)
-          print("REVIEW_CANDIDATES", json.dumps(stale), flush=True)
+          print("REVIEW_CANDIDATES", escape(json.dumps(stale)), flush=True)
           summary = "\n".join((
               "# Markdown audit",
               "",

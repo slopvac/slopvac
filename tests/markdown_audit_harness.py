@@ -87,7 +87,7 @@ def _git(repo: Path, *args: str) -> None:
     )
 
 
-def make_repo(root: Path) -> Path:
+def make_repo(root: Path, extra_files: dict | None = None, symlinks: dict | None = None) -> Path:
     repo = root / "repo"
     bin_dir = root / "bin"
     repo.mkdir()
@@ -101,10 +101,14 @@ def make_repo(root: Path) -> Path:
         "packages/slopvac-lint/docs/rules.md": "# Rules\n",
         "slopvac.toml": 'schema_version = 3\nexclude = [\n  "CHANGELOG.md",\n]\n',
     }
+    files.update(extra_files or {})
     for name, text in files.items():
         path = repo / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
+    # Tracked symlinks: `{name: target}`, so a case can plant an alias with a hostile name.
+    for name, target in (symlinks or {}).items():
+        (repo / name).symlink_to(target)
     _git(repo, "init", "-q")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "x")
@@ -152,7 +156,7 @@ def assert_output_contract(
 
 
 def run_audit(root: Path, case: dict) -> subprocess.CompletedProcess[str]:
-    repo = make_repo(root)
+    repo = make_repo(root, case.get("files"), case.get("symlinks"))
     # The step calls `tempfile.mkdtemp`, so keep its files under the test directory.
     scratch = root / "tmp"
     scratch.mkdir()
