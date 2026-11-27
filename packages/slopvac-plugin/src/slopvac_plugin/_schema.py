@@ -30,10 +30,13 @@ class SchemaError(RuntimeError):
 def _source_tree_schemas() -> Path | None:
     """``schemas/v3`` of this repository, when the module runs from its source tree."""
     package = Path(__file__).resolve().parent
-    # <repo>/packages/slopvac-plugin/src/slopvac_plugin
-    if package.parent.name != "src" or package.parents[1].name != "slopvac-plugin":
+    # <repo>/packages/slopvac-plugin/src/slopvac_plugin, the whole suffix
+    if package.name != "slopvac_plugin" or package.parent.name != "src":
         return None
-    if package.parents[2].name != "packages":
+    if (
+        package.parents[1].name != "slopvac-plugin"
+        or package.parents[2].name != "packages"
+    ):
         return None
     candidate = package.parents[3] / "schemas" / "v3"
     return candidate if (candidate / PROTOCOL).is_file() else None
@@ -41,7 +44,7 @@ def _source_tree_schemas() -> Path | None:
 
 def schema_dir() -> Path:
     """The wheel's copy of the schemas, else the repository's, in a source tree."""
-    vendored = Path(str(resources.files("slopvac_plugin") / "schemas"))
+    vendored = Path(str(resources.files(__package__) / "schemas"))
     if (vendored / PROTOCOL).is_file():
         return vendored
     source = _source_tree_schemas()
@@ -63,15 +66,14 @@ def _document(directory: Path, name: str) -> Any:
 
 
 def _pattern(directory: Path, document: str, pointer: str) -> str:
-    where = f"{document}#{pointer}"
     node = _document(directory, document)
     try:
         for part in pointer.removeprefix("/").split("/"):
             node = node[part.replace("~1", "/").replace("~0", "~")]
     except (KeyError, IndexError, TypeError) as exc:
-        raise SchemaError(f"{where}: no such location in the schema") from exc
+        raise SchemaError("no such location in the schema") from exc
     if not isinstance(node, str):
-        raise SchemaError(f"{where}: is not a string pattern")
+        raise SchemaError("is not a string pattern")
     return node
 
 
@@ -84,7 +86,10 @@ def load_pattern(
     with the lookahead is refused, so a schema change to another ending cannot pass
     unnoticed. ``directory`` is for tests; it defaults to ``schema_dir()``.
     """
-    pattern = _pattern(directory or schema_dir(), document, pointer)
+    try:
+        pattern = _pattern(directory or schema_dir(), document, pointer)
+    except SchemaError as exc:
+        raise SchemaError(f"{document}#{pointer}: {exc}") from exc
     if not pattern.endswith(END):
         raise SchemaError(
             f"{document}#{pointer}: pattern does not end with {END}: {pattern!r}"
