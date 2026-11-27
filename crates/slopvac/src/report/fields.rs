@@ -38,16 +38,13 @@ fn latest_help() -> String {
         text.push(' ');
         text.push_str(label);
         text.push_str(": ");
-        match method.upgrade_command() {
-            Some(command) => {
-                text.push('`');
-                text.push_str(command);
-                text.push('`');
-            }
-            None => {
-                text.push_str("download the latest release from ");
-                text.push_str(RELEASES_URL);
-            }
+        if let Some(command) = method.upgrade_command() {
+            text.push('`');
+            text.push_str(command);
+            text.push('`');
+        } else {
+            text.push_str("download the latest release from ");
+            text.push_str(RELEASES_URL);
         }
         text.push_str(reason);
         text.push('.');
