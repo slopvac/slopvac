@@ -46,7 +46,7 @@ class Invalid(Exception):
 
 
 def parse_version(raw: object) -> Version:
-    """Read one version object, and refuse anything that lacks an id or a valid time."""
+    """Read one version object. Anything that lacks an id, a time or tag metadata is refused."""
     if not isinstance(raw, dict):
         raise Invalid("a version entry is not an object")
     version_id = raw.get("id")
@@ -54,13 +54,13 @@ def parse_version(raw: object) -> Version:
     metadata = raw.get("metadata")
     container = metadata.get("container") if isinstance(metadata, dict) else None
     tags = container.get("tags") if isinstance(container, dict) else None
-    tags = tags or []
     if not isinstance(version_id, int) or isinstance(version_id, bool):
         raise Invalid("a version entry has no integer id")
     if not isinstance(created, str):
         raise Invalid(f"version {version_id} has no created_at")
+    # Absent or broken tag metadata is not "no tags": a protected tag may hide behind it.
     if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
-        raise Invalid(f"version {version_id} has malformed tags")
+        raise Invalid(f"version {version_id} has missing or malformed tag metadata")
     try:
         when = datetime.fromisoformat(created)
     except ValueError as err:
@@ -144,6 +144,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.package != PACKAGE:
         print(f"error: only the {PACKAGE} package may be cleaned", file=sys.stderr)
+        return 2
+    if args.now is not None and args.now.tzinfo is None:
+        print("error: --now needs a time zone", file=sys.stderr)
         return 2
     if args.days < 1:
         print("error: --days must be at least 1", file=sys.stderr)
