@@ -257,7 +257,7 @@ fn a_refused_provider_result_exits_2_as_an_invalid_reply(#[case] script: Value) 
     assert!(out.stdout.is_empty(), "no plan on a failed run");
 }
 
-/// Failures outside the result check keep their host codes.
+/// Failures outside the result check keep their host codes and the host's own text for them.
 #[rstest]
 #[case::malformed_error_object(json!({"bad_error": ["1"]}), "plugin-output-invalid")]
 #[case::request_level_error(json!({"request_error": -32603}), "internal-error")]
@@ -272,7 +272,7 @@ fn a_failure_outside_the_result_check_keeps_its_host_code(
     let out = world.review(&[]);
 
     assert_refused(&out, code);
-    assert!(!stderr(&out).contains("PLUGIN-SECRET-MESSAGE"));
+    assert!(out.stdout.is_empty(), "no plan on a failed run");
 }
 
 /// An entry with `error` stops the review: no plan, the code of the first failed item in
@@ -566,7 +566,8 @@ fn notice<'a>(list: &'a [Value], code: &str) -> &'a Value {
 }
 
 /// A reviewer named as the author's model gets the pre-call notice, located nowhere, and the
-/// review still passes.
+/// review still passes. The provider then reports that model for every item, so the second
+/// phase adds its own located notice (policies.md section 1.5).
 #[test]
 fn a_reviewer_on_the_author_model_gets_a_pre_call_notice_and_the_review_passes() {
     let world = World::new(
@@ -580,10 +581,22 @@ fn a_reviewer_on_the_author_model_gets_a_pre_call_notice_and_the_review_passes()
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let plan = plan(&out);
     let list = notices(&plan);
-    let same = notice(&list, "review-model-same");
-    assert_eq!(same["level"], "warning");
-    assert_eq!(same["data"]["reviewer_source"], "config");
-    assert!(same["data"].get("items").is_none(), "{same}");
+    let same: Vec<&Value> = list
+        .iter()
+        .filter(|n| n["code"] == "review-model-same")
+        .collect();
+    assert_eq!(same.len(), 2, "one notice per phase: {list:?}");
+    assert_eq!(same[0]["level"], "warning");
+    assert_eq!(same[0]["data"]["reviewer_source"], "config");
+    assert!(same[0]["data"].get("items").is_none(), "{}", same[0]);
+    assert_eq!(same[1]["data"]["reviewer_source"], "reported");
+    assert_eq!(
+        same[1]["data"]["items"],
+        json!([
+            {"role": "original_document", "line": 1},
+            {"role": "revised_document", "line": 1}
+        ])
+    );
     assert!(plan["report"].is_string());
 }
 
