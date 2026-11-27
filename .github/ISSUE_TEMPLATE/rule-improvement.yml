@@ -47,7 +47,7 @@ body:
     id: latest
     attributes:
       label: "Reproduces on the latest release"
-      description: "Run `slopvac self update`. It upgrades an installer install and prints the upgrade command for any other install method. Rerun your command on the latest release. If the latest release fixes it, upgrade instead of filing."
+      description: "Run `slopvac self update`. It upgrades an installer install and tells you how to upgrade any other install. Rerun your command on the latest release. If the latest release fixes it, upgrade instead of filing."
       options:
         - "Yes"
         - "Not checked"
