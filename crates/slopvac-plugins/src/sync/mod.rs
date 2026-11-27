@@ -475,15 +475,10 @@ impl<'a> Syncer<'a> {
         };
         // The copy was verified when acquisition made it. It is extracted from its own handle, and
         // dropped (removed) when this function returns.
-        let mut archive = archive;
         let exec = self.executables.get(&pack.id).cloned().unwrap_or_default();
-        let reader = archive.reader().map_err(|e| {
-            extract(ExtractError::Io {
-                what: messages::reading_staged(),
-                source: e,
-            })
-        })?;
-        let done = extract_targz(reader, &self.store.trees(), &exec, self.limits).map_err(extract)?;
+        let done = extract_targz(archive.reader(), &self.store.trees(), &exec, self.limits)
+            .map_err(extract)?;
+        drop(archive);
         #[cfg(feature = "test-support")]
         self.store.observe(&done.root);
         self.store.record(&pack.digest, &done.hash)?;
