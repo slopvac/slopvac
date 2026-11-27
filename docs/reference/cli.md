@@ -159,6 +159,46 @@ Preview an issue report, and file it with the GitHub CLI.
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
 
+#### `slopvac report consent`
+
+Record whether agents may report slopvac problems for you.
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+##### `slopvac report consent on`
+
+Allow agents to report slopvac problems.
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+##### `slopvac report consent off`
+
+Do not allow agents to report slopvac problems.
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+##### `slopvac report consent show`
+
+Print the recorded answer and when it was recorded.
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
 ### `slopvac terms`
 
 Manage project terms
