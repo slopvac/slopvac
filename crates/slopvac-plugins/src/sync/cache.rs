@@ -366,7 +366,7 @@ impl Store {
             }
             hasher.update(&buf[..n]);
             self.write_staged(&mut staged, &buf[..n])
-                .map_err(|e| SyncError::Store(messages::download_write(&e)))?;
+                .map_err(|e| self.unreadable(id, digest, CacheCause::io(&e)))?;
             read += n as u64;
         }
         if read > max {
@@ -379,7 +379,7 @@ impl Store {
         staged
             .as_file_mut()
             .rewind()
-            .map_err(|e| SyncError::Store(messages::download_write(&e)))?;
+            .map_err(|e| self.unreadable(id, digest, CacheCause::io(&e)))?;
         #[cfg(feature = "test-support")]
         self.observe(&path);
         Ok(Copied::Staged(StagedArchive(staged)))

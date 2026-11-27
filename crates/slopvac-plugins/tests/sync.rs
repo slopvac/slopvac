@@ -2155,18 +2155,34 @@ mod cache_reads {
     /// A blob that mode 000 hides. False when the process ignores modes (root).
     /// Removes all access to a directory and gives it back when dropped, also when the test
     /// panics, so the scratch directory can be deleted.
-    struct NoAccess(PathBuf);
+    struct NoAccess {
+        dir: PathBuf,
+        restored: bool,
+    }
 
     impl NoAccess {
         fn new(dir: &Path) -> Self {
             fs::set_permissions(dir, fs::Permissions::from_mode(0o000)).unwrap();
-            Self(dir.to_owned())
+            Self {
+                dir: dir.to_owned(),
+                restored: false,
+            }
+        }
+
+        /// Give the access back and report a failure to do so. A test calls it on its way out.
+        fn restore(mut self) -> std::io::Result<()> {
+            self.restored = true;
+            fs::set_permissions(&self.dir, fs::Permissions::from_mode(0o755))
         }
     }
 
+    /// The restore for a test that panics. It cannot report, so it tries once and goes on.
     impl Drop for NoAccess {
         fn drop(&mut self) {
-            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+            if !self.restored {
+                let _best_effort =
+                    fs::set_permissions(&self.dir, fs::Permissions::from_mode(0o755));
+            }
         }
     }
 
@@ -2388,10 +2404,12 @@ mod cache_reads {
     fn a_tree_directory_that_cannot_be_inspected_is_an_error_and_not_absence() {
         let c = cached();
         let trees = c.env.data.path().join("slopvac/trees");
-        let _restore = NoAccess::new(&trees);
+        let guard = NoAccess::new(&trees);
         let blocked = fs::read_dir(&trees).is_err();
 
         let result = c.verified(Limits::default());
+
+        guard.restore().expect("the permissions of the trees directory are restored");
 
         if !blocked {
             return; // the test runs with rights that ignore modes
@@ -2553,10 +2571,12 @@ mod cache_reads {
     fn a_tree_that_cannot_be_inspected_is_an_error_and_not_absent_for_status() {
         let c = cached();
         let trees = c.env.data.path().join("slopvac/trees");
-        let _restore = NoAccess::new(&trees);
+        let guard = NoAccess::new(&trees);
         let blocked = fs::read_dir(&trees).is_err();
 
         let result = c.env.store().inspect(&c.lock.packs()[0].digest);
+
+        guard.restore().expect("the permissions of the trees directory are restored");
 
         if !blocked {
             return; // the test runs with rights that ignore modes
