@@ -395,8 +395,7 @@ fn plugins(
     let dirs = plugin_dirs(env, root.clone())?;
     let dirs_state = dirs.state_dir.clone();
     let store_dir = dirs.cache_dir.clone();
-    let (mut ranges, mut configured) = (std::collections::BTreeMap::new(), Vec::new());
-    let mut configured_packs = Vec::new();
+    let mut configured = Vec::new();
     // A path source is relative to the config file that declares the `plugins` list
     // (config.md, rule 9). Its provenance names that file relative to the project root.
     let declaring_dir = config
@@ -421,7 +420,6 @@ fn plugins(
             // an invalid source: dropping any of them would let the drift check and `outdated`
             // ignore the entry.
             let pack = slopvac_plugins::config_id(index + 1, id).map_err(plugin_config_invalid)?;
-            configured.push(id.to_owned());
             let text = entry.get("source").and_then(|v| v.as_str()).unwrap_or("");
             let source = slopvac_plugins::config_source(id, text, &root, &declaring_dir)
                 .map_err(plugin_config_invalid)?;
@@ -431,10 +429,7 @@ fn plugins(
                 }
                 None => None,
             };
-            if let Some(range) = &range {
-                ranges.insert(pack.clone(), range.clone());
-            }
-            configured_packs.push(slopvac_plugins::lock::ConfiguredPack::new(
+            configured.push(slopvac_plugins::lock::ConfiguredPack::new(
                 pack, source, range,
             ));
         }
@@ -459,9 +454,7 @@ fn plugins(
     let ci = env.var("CI").is_some();
     let loader = crate::plugin_loader::InstalledPlugins::new(&root, &store_dir, &policy);
     let runner = Runner::new(dirs, network, &policy, &revocations, now)
-        .with_ranges(ranges)
-        .with_configured(configured)
-        .with_configured_packs(configured_packs)
+        .with_configured_packs(configured)
         .with_core_version(env!("CARGO_PKG_VERSION"))
         .with_loader(&loader)
         .with_locked(ci);

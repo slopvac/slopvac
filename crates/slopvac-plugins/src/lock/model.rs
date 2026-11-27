@@ -24,6 +24,11 @@ pub const MAX_STRING_BYTES: usize = 4096;
 pub struct ValueError(String);
 
 impl ValueError {
+    /// A rejection with `message`, which must not repeat the rejected value.
+    pub(super) fn new(message: &str) -> Self {
+        Self(message.to_owned())
+    }
+
     /// The reason as built, for a caller that escapes it itself.
     pub(super) fn raw(&self) -> &str {
         &self.0

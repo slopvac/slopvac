@@ -25,7 +25,7 @@ use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::{
-    ConfiguredPack, ConfiguredSource, LockedPack, PackId, VersionReq, parse_version_req,
+    ConfiguredPack, ConfiguredSource, LockedPack, PackId, parse_version_req,
 };
 use slopvac_plugins::oci::{Anonymous, Client};
 use slopvac_plugins::pyenv::EnvStore;
@@ -148,8 +148,6 @@ impl Fixture {
         };
         let dirs = Dirs::new(self.project(), self.cache(), self.state());
         let mut runner = Runner::new(dirs, network, &policy, &revocations, NOW)
-            .with_ranges(setup.ranges)
-            .with_configured(setup.configured)
             .with_configured_packs(setup.packs)
             .with_core_version("3.0.0");
         if let Some(loader) = &setup.loader {
@@ -172,8 +170,6 @@ impl Fixture {
 
 #[derive(Default)]
 struct Setup<'a> {
-    ranges: BTreeMap<PackId, VersionReq>,
-    configured: Vec<String>,
     packs: Vec<ConfiguredPack>,
     loader: Option<Box<dyn PluginLoader + 'a>>,
     policy: Option<KeyPolicy>,
@@ -199,15 +195,14 @@ impl<'a> Setup<'a> {
         self
     }
 
-    fn range(mut self, id: &str, req: &str) -> Self {
-        self.ranges
-            .insert(id.parse().unwrap(), parse_version_req(req).unwrap());
-        self
+    /// A configured `id` with the version requirement `req`.
+    fn range(self, id: &str, req: &str) -> Self {
+        self.pack(id, Some(req))
     }
 
-    fn configured(mut self, ids: &[&str]) -> Self {
-        self.configured = ids.iter().map(ToString::to_string).collect();
-        self
+    /// Configured entries for `ids`, with no version requirement.
+    fn configured(self, ids: &[&str]) -> Self {
+        ids.iter().fold(self, |s, id| s.pack(id, None))
     }
 
     /// A configured entry for `id` from the OCI repository `r.example/acme/<id>`.

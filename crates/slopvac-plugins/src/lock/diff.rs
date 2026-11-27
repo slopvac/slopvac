@@ -4,9 +4,10 @@ use std::path::Path;
 
 use semver::{Version, VersionReq};
 
-use crate::messages::sync as messages;
-
 use slopvac_fs::lexical_normalize;
+
+use crate::messages::sync::{self as messages, SyncPhrase};
+use crate::oci::{Reference, redact_url};
 
 use super::model::{Digest, Lockfile, PackId, Source, SourceKind, ValueError};
 
@@ -93,7 +94,10 @@ impl OutOfRange {
 }
 
 /// The `source` of a `[[plugins]]` entry in the config, as the drift check compares it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` drops the user-info, the query and the fragment of a URL, which can carry a
+/// credential (policies.md, section 1.7).
+#[derive(Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ConfiguredSource {
     /// A source of a form the lock accepts. A path is relative to the project root.
@@ -116,10 +120,16 @@ impl ConfiguredSource {
     /// text, which can carry a credential.
     pub fn parse(text: &str, root: &Path, dir: &Path) -> Result<Self, ValueError> {
         let parsed = text.parse::<Source>();
-        if let Ok(source) = &parsed
-            && !matches!(source.kind(), SourceKind::Path(_))
-        {
-            return Ok(Self::Named(source.clone()));
+        if let Ok(source) = &parsed {
+            match source.kind() {
+                SourceKind::Path(_) => {}
+                // The lock reads an `oci://` source as text. The config may leave out the
+                // tag or digest, but the rest must parse as the registry client parses it.
+                SourceKind::Oci(oci) if oci_name(oci).is_none() => {
+                    return Err(ValueError::new(SyncPhrase::OciReferenceInvalid.as_static()));
+                }
+                _ => return Ok(Self::Named(source.clone())),
+            }
         }
         // The lock refuses `..`, which a config path may use to reach the root from its own
         // file. Every other rule of the lock applies to the text as written.
@@ -148,26 +158,56 @@ impl ConfiguredSource {
     }
 
     /// True when this names the source `locked` holds. An `oci://` source compares its
-    /// registry and repository only, because the locked version and digest pin the content.
+    /// registry and repository only, because the locked version and digest pin the content,
+    /// and the registry name without regard to case. A path compares after both sides are
+    /// normalised, so `./a/` and `a` name the same directory.
     fn names(&self, locked: &Source) -> bool {
         let Self::Named(source) = self else {
             return false;
         };
         match (source.kind(), locked.kind()) {
-            (SourceKind::Oci(a), SourceKind::Oci(b)) => oci_repository(a) == oci_repository(b),
+            (SourceKind::Oci(a), SourceKind::Oci(b)) => match (oci_name(a), oci_name(b)) {
+                (Some((ra, pa)), Some((rb, pb))) => same_registry(&ra, &rb) && pa == pb,
+                _ => false,
+            },
+            (SourceKind::Path(a), SourceKind::Path(b)) => {
+                lexical_normalize(Path::new(a)) == lexical_normalize(Path::new(b))
+            }
             _ => source == locked,
         }
     }
 }
 
-/// The registry and repository of an `oci://` reference: the text before the first `@`, less a
-/// `:<tag>` whose `:` comes after the last `/`, so a registry port stays.
-fn oci_repository(text: &str) -> &str {
-    let name = text.split_once('@').map_or(text, |(name, _)| name);
-    match name.rsplit_once(':') {
-        Some((repository, tag)) if !tag.contains('/') => repository,
-        _ => name,
+impl fmt::Debug for ConfiguredSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Named(source) => f
+                .debug_tuple("Named")
+                .field(&redact_url(&source.to_string()))
+                .finish(),
+            Self::OutsideProject => f.write_str("OutsideProject"),
+        }
     }
+}
+
+/// The registry and the repository of an `oci://` source, parsed as the registry client
+/// parses a reference, with any tag or digest dropped. `None` when the reference is malformed.
+fn oci_name(text: &str) -> Option<(String, String)> {
+    let reference = text.strip_prefix("oci://")?;
+    let (registry, repository, _) = Reference::parse_parts(reference).ok()?;
+    Some((registry, repository))
+}
+
+/// True when two registries name the same machine and port. The name is not case sensitive;
+/// the port must be the same.
+fn same_registry(a: &str, b: &str) -> bool {
+    fn split(registry: &str) -> (&str, Option<&str>) {
+        registry
+            .rsplit_once(':')
+            .map_or((registry, None), |(name, port)| (name, Some(port)))
+    }
+    let ((name_a, port_a), (name_b, port_b)) = (split(a), split(b));
+    name_a.eq_ignore_ascii_case(name_b) && port_a == port_b
 }
 
 /// One `[[plugins]]` entry of the config, as the drift check reads it.

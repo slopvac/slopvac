@@ -159,9 +159,7 @@ pub struct Runner<'a> {
     policy: &'a KeyPolicy,
     revocations: &'a Revocations,
     now: String,
-    ranges: BTreeMap<PackId, VersionReq>,
-    configured: Vec<String>,
-    configured_packs: Vec<ConfiguredPack>,
+    configured: Vec<ConfiguredPack>,
     core_version: String,
     trusted_env: Vec<Digest>,
     loader: Option<&'a dyn PluginLoader>,
@@ -188,9 +186,7 @@ impl<'a> Runner<'a> {
             policy,
             revocations,
             now: now.into(),
-            ranges: BTreeMap::new(),
             configured: Vec::new(),
-            configured_packs: Vec::new(),
             core_version: String::new(),
             trusted_env: Vec::new(),
             loader: None,
@@ -201,27 +197,22 @@ impl<'a> Runner<'a> {
         }
     }
 
-    /// The version ranges that the config sets, by plugin id. A plugin with no range is
-    /// never updated.
-    #[must_use]
-    pub fn with_ranges(mut self, ranges: BTreeMap<PackId, VersionReq>) -> Self {
-        self.ranges = ranges;
-        self
-    }
-
-    /// The ids of the plugins that the config names, for `plugins list`.
-    #[must_use]
-    pub fn with_configured(mut self, ids: Vec<String>) -> Self {
-        self.configured = ids;
-        self
-    }
-
-    /// The `[[plugins]]` entries of the config with their sources and requirements, which
-    /// `sync` in CI compares with the lock.
+    /// The `[[plugins]]` entries of the config, in config order: the one list of configured
+    /// plugins. `list` names the ones that are not locked, `outdated` and `update` read their
+    /// version requirements (a plugin with none is never updated), and `sync` in CI compares
+    /// them with the lock.
     #[must_use]
     pub fn with_configured_packs(mut self, packs: Vec<ConfiguredPack>) -> Self {
-        self.configured_packs = packs;
+        self.configured = packs;
         self
+    }
+
+    /// The version requirement of each configured plugin that sets one, by plugin id.
+    fn ranges(&self) -> BTreeMap<PackId, VersionReq> {
+        self.configured
+            .iter()
+            .filter_map(|p| Some((p.id.clone(), p.range.clone()?)))
+            .collect()
     }
 
     /// The version of the built-in core, which is the binary's own version.
@@ -632,9 +623,14 @@ fn run_list(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
             },
         )?;
     }
-    for id in &runner.configured {
-        if id != "core" && !lock.packs().iter().any(|p| p.id.as_str() == id) {
-            say(out, &CliText::ListNotLocked { id: line(id) })?;
+    for pack in &runner.configured {
+        if lock.get(&pack.id).is_none() {
+            say(
+                out,
+                &CliText::ListNotLocked {
+                    id: line(pack.id.as_str()),
+                },
+            )?;
         }
     }
     Ok(0)
@@ -648,14 +644,9 @@ fn run_sync(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
         // configured needs, a configured source that names another source, or a locked
         // version outside the configured requirement. It reads the config and the lock only,
         // before any fetch; the digests are checked by the sync that follows.
-        let configured: Vec<PackId> = runner
-            .configured
-            .iter()
-            .filter(|id| id.as_str() != "core")
-            .filter_map(|id| id.parse().ok())
-            .collect();
+        let configured: Vec<PackId> = runner.configured.iter().map(|p| p.id.clone()).collect();
         let mut drift = config_drift(&lock, &configured);
-        let entries = entry_drift(&lock, &runner.configured_packs);
+        let entries = entry_drift(&lock, &runner.configured);
         drift.source_differs = entries.source_differs;
         drift.out_of_range = entries.out_of_range;
         if !drift.is_empty() {
@@ -716,14 +707,9 @@ fn run_outdated(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError
         });
     };
     let lock = read_lock(runner, false)?;
-    let listed = list_candidates(
-        client,
-        &lock,
-        &runner.ranges,
-        |_| true,
-        LISTING_BUDGET_BYTES,
-    );
-    for line_text in update_notices(&lock, &runner.ranges, &listed.available) {
+    let ranges = runner.ranges();
+    let listed = list_candidates(client, &lock, &ranges, |_| true, LISTING_BUDGET_BYTES);
+    for line_text in update_notices(&lock, &ranges, &listed.available) {
         write(out, format!("{line_text}\n").as_bytes())?;
     }
     for (id, e) in &listed.results {
@@ -736,7 +722,7 @@ fn run_outdated(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError
         )?;
     }
     // Keep the pure query in the path, so the lines above and this check agree.
-    let _ = lock_outdated(&lock, &runner.ranges, &listed.available);
+    let _ = lock_outdated(&lock, &ranges, &listed.available);
     Ok(if listed.results.is_empty() { 0 } else { 2 })
 }
 
@@ -748,8 +734,9 @@ fn run_update(runner: &Runner<'_>, only: &[String], out: &mut dyn Write) -> Resu
                 .map_err(|_| RunError::UnknownPlugin { id: line(text) })?,
         );
     }
+    let ranges = runner.ranges();
     let report = Updater::new(runner.network, runner.policy, runner.revocations)
-        .update(&runner.dirs.project_root, &runner.ranges, &ids)
+        .update(&runner.dirs.project_root, &ranges, &ids)
         .map_err(|e| RunError::Failed {
             source: cause::update(&runner.dirs.project_root, &e),
         })?;

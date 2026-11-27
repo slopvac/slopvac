@@ -723,6 +723,13 @@ pub(crate) enum SyncPhrase {
     #[code("plugins-lock-oci-whitespace")]
     #[text("an oci:// source needs a reference without whitespace")]
     OciWhitespace,
+    /// An `oci://` source in the config is not a registry and a repository with an optional
+    /// valid tag or digest.
+    #[code("plugins-lock-oci-reference-invalid")]
+    #[text(
+        "an oci:// source needs a registry and a repository, and a valid tag or digest if it names one"
+    )]
+    OciReferenceInvalid,
     /// An `https://` source has whitespace or no URL.
     #[code("plugins-lock-https-whitespace")]
     #[text("an https:// source needs a URL without whitespace")]
@@ -2217,6 +2224,10 @@ mod tests {
             (
                 SyncPhrase::OciWhitespace,
                 "an oci:// source needs a reference without whitespace",
+            ),
+            (
+                SyncPhrase::OciReferenceInvalid,
+                "an oci:// source needs a registry and a repository, and a valid tag or digest if it names one",
             ),
             (
                 SyncPhrase::HttpsWhitespace,

@@ -79,15 +79,37 @@ impl Reference {
     /// # Errors
     /// [`OciError::Invalid`] for any malformed part.
     pub fn parse(s: &str) -> Result<Self, OciError> {
-        let bad = |why: &str| {
-            OciError::Invalid(
-                TransportText::OciReference {
-                    reference: s.to_owned(),
-                    reason: why.to_owned(),
-                }
-                .to_string(),
-            )
-        };
+        let (registry, repository, target) = Self::parse_parts(s)?;
+        let target = target
+            .ok_or_else(|| Self::invalid(s, TransportPhrase::OciTargetRequired.as_static()))?;
+        Ok(Self {
+            registry,
+            repository,
+            target,
+        })
+    }
+
+    fn invalid(s: &str, why: &str) -> OciError {
+        OciError::Invalid(
+            TransportText::OciReference {
+                reference: s.to_owned(),
+                reason: why.to_owned(),
+            }
+            .to_string(),
+        )
+    }
+
+    /// Parse `registry/repository[:tag][@sha256:...]` under the same rules as [`parse`], with
+    /// the tag and digest optional. Returns the registry, the repository and the target, if
+    /// any. A config names a repository this way and leaves the version to the lock.
+    ///
+    /// # Errors
+    /// [`OciError::Invalid`] for any malformed part, a present but malformed tag or digest
+    /// included.
+    ///
+    /// [`parse`]: Self::parse
+    pub(crate) fn parse_parts(s: &str) -> Result<(String, String, Option<Target>), OciError> {
+        let bad = |why: &str| Self::invalid(s, why);
         let (rest, digest) = match s.split_once('@') {
             Some((r, d)) => (r, Some(Digest::parse(d)?)),
             None => (s, None),
@@ -106,16 +128,12 @@ impl Reference {
             return Err(bad(TransportPhrase::OciBadRepository.as_static()));
         }
         let target = match (digest, tag) {
-            (Some(d), _) => Target::Digest(d),
-            (None, Some(t)) if valid_tag(t) => Target::Tag(t.to_owned()),
+            (Some(d), _) => Some(Target::Digest(d)),
+            (None, Some(t)) if valid_tag(t) => Some(Target::Tag(t.to_owned())),
             (None, Some(_)) => return Err(bad(TransportPhrase::OciBadTag.as_static())),
-            (None, None) => return Err(bad(TransportPhrase::OciTargetRequired.as_static())),
+            (None, None) => None,
         };
-        Ok(Self {
-            registry: registry.to_owned(),
-            repository: repository.to_owned(),
-            target,
-        })
+        Ok((registry.to_owned(), repository.to_owned(), target))
     }
 
     /// The same repository with another target.

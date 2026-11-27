@@ -1042,6 +1042,7 @@ plugins-lock-locked-twice text
 plugins-lock-missing-key text
 plugins-lock-must-be-string text
 plugins-lock-must-be-table text
+plugins-lock-oci-reference-invalid text
 plugins-lock-oci-whitespace text
 plugins-lock-path-absolute text
 plugins-lock-path-colon text
