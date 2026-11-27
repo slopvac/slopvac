@@ -154,6 +154,11 @@ impl World {
             .success();
     }
 
+    /// Replace the project config.
+    fn write_config(&self, text: &str) {
+        fs::write(self.project().join("slopvac.toml"), text).unwrap();
+    }
+
     /// How the plugin answers its next request.
     fn script(&self, script: &Value) {
         fs::write(self.logs().join("script.json"), script.to_string()).unwrap();
@@ -309,55 +314,105 @@ enum Setup {
     Untrusted,
 }
 
-/// Paths that never call the provider start no plugin process (policies.md N11, N12). A
-/// missing reviewer model stops a run that would call it before the plugin starts, and a dry
-/// run needs no model.
+/// How a test lifts the one gate that kept the provider idle, for the control run.
+#[derive(Debug, Clone)]
+enum Lift {
+    /// Run again with these flags in place of the gated ones.
+    Flags(&'static [&'static str]),
+    /// Trust the plugin, then run again with the same flags.
+    Trust,
+    /// Write this config, then run again with the same flags.
+    Config(String),
+}
+
+/// The control: with only the gate lifted, the same project starts the plugin once. It shows
+/// that the gate, and nothing else in the setup, kept the plugin idle.
+fn assert_lifting_the_gate_starts_it_once(world: &World, flags: &[&str], lift: &Lift) {
+    let flags: Vec<&str> = match lift {
+        Lift::Flags(lifted) => lifted.to_vec(),
+        Lift::Trust => {
+            world.trust();
+            flags.to_vec()
+        }
+        Lift::Config(text) => {
+            world.write_config(text);
+            flags.to_vec()
+        }
+    };
+    let out = world.review(&flags);
+    assert_eq!(out.status.code(), Some(0), "control: {}", stderr(&out));
+    assert_eq!(world.spawns(), 1, "control: the plugin starts once");
+}
+
+/// Each gate alone keeps the provider from starting (policies.md N11, N12). A missing or blank
+/// reviewer model stops a run that would call it before the plugin starts, and a dry run needs
+/// no model.
 #[rstest]
-#[case::dry_run(REWRITE, configured(), Setup::Trusted, &["--dry-run"][..], None)]
-#[case::offline(REWRITE, configured(), Setup::Trusted, &["--offline"][..], Some("offline-network-needed"))]
-#[case::untrusted(REWRITE, configured(), Setup::Untrusted, &[][..], Some("plugin-untrusted"))]
+#[case::dry_run(REWRITE, configured(), Setup::Trusted, &["--dry-run"][..], None, Lift::Flags(&[]))]
+#[case::offline(
+    REWRITE,
+    configured(),
+    Setup::Trusted,
+    &["--offline"][..],
+    Some("offline-network-needed"),
+    Lift::Flags(&[])
+)]
+#[case::untrusted(REWRITE, configured(), Setup::Untrusted, &[][..], Some("plugin-untrusted"), Lift::Trust)]
 #[case::absent_from_the_config(
     REWRITE,
     config("model = \"reviewer-model\"\n"),
     Setup::Trusted,
     &[][..],
-    Some("review-provider-missing")
+    Some("review-provider-missing"),
+    Lift::Config(configured())
 )]
-#[case::mechanical(MECHANICAL, configured(), Setup::Trusted, &[][..], None)]
+#[case::mechanical(
+    MECHANICAL,
+    configured(),
+    Setup::Trusted,
+    &[][..],
+    None,
+    Lift::Flags(&["--type", "rewrite"])
+)]
 #[case::no_reviewer_model(
     REWRITE,
     config("provider = \"provider\"\n"),
     Setup::Trusted,
     &[][..],
-    Some("review-model-missing")
+    Some("review-model-missing"),
+    Lift::Flags(&["--reviewer-model", "reviewer-model"])
 )]
 #[case::blank_reviewer_model(
     REWRITE,
     config("provider = \"provider\"\nmodel = \"  \"\n"),
     Setup::Trusted,
     &[][..],
-    Some("review-model-missing")
+    Some("review-model-missing"),
+    Lift::Flags(&["--reviewer-model", "reviewer-model"])
 )]
 #[case::blank_reviewer_model_flag(
     REWRITE,
     config("provider = \"provider\"\n"),
     Setup::Trusted,
     &["--reviewer-model", " "][..],
-    Some("review-model-missing")
+    Some("review-model-missing"),
+    Lift::Flags(&["--reviewer-model", "reviewer-model"])
 )]
 #[case::dry_run_without_a_reviewer_model(
     REWRITE,
     config("provider = \"provider\"\n"),
     Setup::Trusted,
     &["--dry-run"][..],
-    None
+    None,
+    Lift::Flags(&["--reviewer-model", "reviewer-model"])
 )]
-fn a_run_that_calls_no_provider_starts_no_plugin(
+fn each_gate_alone_keeps_the_provider_from_starting(
     #[case] docs: (&str, &str),
     #[case] config: String,
     #[case] setup: Setup,
     #[case] flags: &[&str],
     #[case] refusal: Option<&str>,
+    #[case] lift: Lift,
 ) {
     let world = World::new(docs, &config);
     if matches!(setup, Setup::Trusted) {
@@ -374,9 +429,11 @@ fn a_run_that_calls_no_provider_starts_no_plugin(
         }
     }
     assert_eq!(world.spawns(), 0, "the plugin started");
+    assert_lifting_the_gate_starts_it_once(&world, flags, &lift);
 }
 
-/// A plugin that declares no provider hook is not a model provider, and it never starts.
+/// A plugin that declares no provider hook is not a model provider, and it never starts. The
+/// same plugin with a provider hook starts.
 #[test]
 fn a_plugin_without_a_provider_hook_never_starts() {
     let world = World::with_hooks(REWRITE, &configured(), "[]");
@@ -386,6 +443,9 @@ fn a_plugin_without_a_provider_hook_never_starts() {
 
     assert_refused(&out, "review-provider-missing");
     assert_eq!(world.spawns(), 0, "the plugin started");
+    let control = World::new(REWRITE, &configured());
+    control.trust();
+    assert_lifting_the_gate_starts_it_once(&control, &[], &Lift::Flags(&[]));
 }
 
 /// `lint` leaves a configured provider idle (policies.md N11).
@@ -398,6 +458,7 @@ fn lint_leaves_a_configured_provider_idle() {
 
     assert!(matches!(out.status.code(), Some(0 | 1)), "{}", stderr(&out));
     assert_eq!(world.spawns(), 0, "lint started the provider");
+    assert_lifting_the_gate_starts_it_once(&world, &[], &Lift::Flags(&[]));
 }
 
 /// The model sent is the one `--reviewer-model` names, else `[review] model`.
