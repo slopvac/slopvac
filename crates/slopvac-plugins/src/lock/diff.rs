@@ -6,7 +6,9 @@ use semver::{Version, VersionReq};
 
 use crate::messages::sync as messages;
 
-use super::model::{Digest, Lockfile, PackId, Source, ValueError};
+use slopvac_fs::lexical_normalize;
+
+use super::model::{Digest, Lockfile, PackId, Source, SourceKind, ValueError};
 
 /// One pack as the sync code resolved it, before comparing to the lock.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,10 +115,58 @@ impl ConfiguredSource {
     /// `git+https://` URL pinned to a commit or a relative path. The message never repeats the
     /// text, which can carry a credential.
     pub fn parse(text: &str, root: &Path, dir: &Path) -> Result<Self, ValueError> {
-        let _ = (root, dir);
-        Ok(text
-            .parse::<Source>()
-            .map_or(Self::OutsideProject, Self::Named))
+        let parsed = text.parse::<Source>();
+        if let Ok(source) = &parsed
+            && !matches!(source.kind(), SourceKind::Path(_))
+        {
+            return Ok(Self::Named(source.clone()));
+        }
+        // The lock refuses `..`, which a config path may use to reach the root from its own
+        // file. Every other rule of the lock applies to the text as written.
+        let probe = text
+            .split('/')
+            .map(|segment| if segment == ".." { "_" } else { segment })
+            .collect::<Vec<_>>()
+            .join("/");
+        match (parsed, probe.parse::<Source>()) {
+            (Ok(_), _) | (Err(_), Ok(_)) => Ok(Self::resolve(text, root, dir)),
+            (Err(e), Err(_)) => Err(e),
+        }
+    }
+
+    /// The path `text`, which the lock's rules accept but for `..`, resolved against `dir` and
+    /// written relative to `root` with `/` between segments.
+    fn resolve(text: &str, root: &Path, dir: &Path) -> Self {
+        let resolved = lexical_normalize(&dir.join(text));
+        let Ok(relative) = resolved.strip_prefix(lexical_normalize(root)) else {
+            return Self::OutsideProject;
+        };
+        let segments: Option<Vec<&str>> = relative.iter().map(|s| s.to_str()).collect();
+        segments
+            .and_then(|s| s.join("/").parse::<Source>().ok())
+            .map_or(Self::OutsideProject, Self::Named)
+    }
+
+    /// True when this names the source `locked` holds. An `oci://` source compares its
+    /// registry and repository only, because the locked version and digest pin the content.
+    fn names(&self, locked: &Source) -> bool {
+        let Self::Named(source) = self else {
+            return false;
+        };
+        match (source.kind(), locked.kind()) {
+            (SourceKind::Oci(a), SourceKind::Oci(b)) => oci_repository(a) == oci_repository(b),
+            _ => source == locked,
+        }
+    }
+}
+
+/// The registry and repository of an `oci://` reference: the text before the first `@`, less a
+/// `:<tag>` whose `:` comes after the last `/`, so a registry port stays.
+fn oci_repository(text: &str) -> &str {
+    let name = text.split_once('@').map_or(text, |(name, _)| name);
+    match name.rsplit_once(':') {
+        Some((repository, tag)) if !tag.contains('/') => repository,
+        _ => name,
     }
 }
 
@@ -273,13 +323,20 @@ pub fn entry_drift(lock: &Lockfile, configured: &[ConfiguredPack]) -> LockDiff {
         let Some(locked) = lock.get(&entry.id) else {
             continue;
         };
-        let same = match &entry.source {
-            ConfiguredSource::Named(source) => *source == locked.source,
-            ConfiguredSource::OutsideProject => false,
-        };
-        if !same {
+        if !entry.source.names(&locked.source) {
             out.source_differs.push(entry.id.clone());
         }
+        if let Some(range) = &entry.range
+            && !range.matches(&locked.version)
+        {
+            out.out_of_range.push(OutOfRange::new(
+                entry.id.clone(),
+                locked.version.clone(),
+                range.clone(),
+            ));
+        }
     }
+    out.source_differs.sort();
+    out.out_of_range.sort_by(|a, b| a.id.cmp(&b.id));
     out
 }

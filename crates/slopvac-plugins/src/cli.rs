@@ -644,8 +644,10 @@ fn run_sync(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
     let lock = read_lock(runner, runner.locked)?;
     if runner.locked {
         // CI runs from the lock, so a lock that the config has outgrown is a failure
-        // (policies.md, 1.4). Only ids are checked here: versions, sources and digests need
-        // the resolver.
+        // (policies.md, 1.4): a configured id with no lock entry, a lock entry that nothing
+        // configured needs, a configured source that names another source, or a locked
+        // version outside the configured requirement. It reads the config and the lock only,
+        // before any fetch; the digests are checked by the sync that follows.
         let configured: Vec<PackId> = runner
             .configured
             .iter()
