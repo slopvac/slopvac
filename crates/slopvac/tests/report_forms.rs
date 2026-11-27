@@ -217,3 +217,37 @@ fn the_code_comments_invocation_a_form_documents_runs_and_reports() {
         assert_eq!(report["schema_version"], 3, "`{span}`");
     }
 }
+
+#[test]
+fn the_latest_release_help_gives_the_upgrade_advice_the_binary_gives() {
+    use slopvac_update::install::{InstallMethod, RELEASES_URL, WheelTool};
+
+    // `uvx` runs an ephemeral environment, so the form leaves it out.
+    let methods = [
+        InstallMethod::Installer,
+        InstallMethod::Wheel(WheelTool::Uv),
+        InstallMethod::Wheel(WheelTool::UvPip),
+        InstallMethod::Wheel(WheelTool::Pip),
+        InstallMethod::Homebrew,
+        InstallMethod::Mise,
+        InstallMethod::Cargo,
+        InstallMethod::Unknown,
+    ];
+    for category in categories() {
+        let help = category
+            .fields
+            .iter()
+            .find(|f| f.id == "latest")
+            .and_then(|f| f.description)
+            .unwrap_or_default();
+        assert!(!help.is_empty(), "{}: no help on `latest`", category.key);
+        for method in methods {
+            let advice = method.upgrade_command().unwrap_or(RELEASES_URL);
+            assert!(
+                help.contains(advice),
+                "{}: the help on `latest` lacks `{advice}` ({method:?}): {help}",
+                category.key
+            );
+        }
+    }
+}
