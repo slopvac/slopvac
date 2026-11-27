@@ -203,7 +203,7 @@ fn state_dir(env: &dyn Env) -> Result<PathBuf, StateProblem> {
 }
 
 /// Log a failure without a path and map it to [`StateProblem::Unwritable`].
-fn unwritable(what: &'static str) -> impl FnOnce(impl std::fmt::Display) -> StateProblem {
+fn unwritable<E: std::fmt::Display>(what: &'static str) -> impl FnOnce(E) -> StateProblem {
     move |e| {
         tracing::debug!(error = %e, "{what}");
         StateProblem::Unwritable
