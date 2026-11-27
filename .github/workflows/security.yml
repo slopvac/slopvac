@@ -263,8 +263,9 @@ jobs:
       # and never raw to the job log. The step downloads the release asset directly
       # and checks it against a committed sha256, so the install does not depend on
       # a version-resolution page or a helper script. It runs before the repository
-      # checkout, so nothing from the change under review can influence it, and it
-      # writes only under the runner temp directory, never to ./trivy.
+      # checkout, so files in the checkout cannot influence the install, and it
+      # writes only under the runner temp directory, never to ./trivy. A change can
+      # still edit this workflow, which runs from the same commit.
       # To upgrade: change VERSION and both digests together. The digests come from
       # trivy_<VERSION>_checksums.txt in the release. Keep VERSION equal in both jobs.
       - name: Install Trivy
@@ -331,8 +332,9 @@ jobs:
       # and never raw to the job log. The step downloads the release asset directly
       # and checks it against a committed sha256, so the install does not depend on
       # a version-resolution page or a helper script. It runs before the repository
-      # checkout, so nothing from the change under review can influence it, and it
-      # writes only under the runner temp directory, never to ./trivy.
+      # checkout, so files in the checkout cannot influence the install, and it
+      # writes only under the runner temp directory, never to ./trivy. A change can
+      # still edit this workflow, which runs from the same commit.
       # To upgrade: change VERSION and both digests together. The digests come from
       # trivy_<VERSION>_checksums.txt in the release. Keep VERSION equal in both jobs.
       - name: Install Trivy

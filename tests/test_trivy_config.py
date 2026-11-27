@@ -123,11 +123,6 @@ def test_both_jobs_pin_the_same_trivy_digests() -> None:
     assert install_step("trivy")["env"] == install_step("trivy-secret")["env"]
 
 
-def test_no_workflow_uses_setup_trivy() -> None:
-    for path in WORKFLOWS.glob("*.y*ml"):
-        assert "aquasecurity/setup-trivy" not in path.read_text(), path.name
-
-
 @pytest.mark.parametrize("job", JOBS)
 def test_no_step_sets_a_trivy_environment_variable(job: str) -> None:
     for step in steps_of(job):

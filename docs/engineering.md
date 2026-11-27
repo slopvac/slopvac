@@ -123,6 +123,7 @@ Detail and tool choice: [`testing-rust.md`](testing-rust.md).
   - Trust on first use: `mise lock` records the checksum of the file it downloads, because upstream publishes no checksum or signature for these assets. Later installs verify against the committed value, so review a checksum change in `mise.lock` like any other pin change.
 
   Source: [`mise.lock`](../mise.lock), [`lint.yml`](../.github/workflows/lint.yml).
+- CI installs Trivy from the pinned release asset, checked against a committed sha256 before extraction, and not through `setup-trivy`. The step runs before the checkout. Source: [`security.yml`](../.github/workflows/security.yml).
 - Before you push, run each Rust check:
   - `cargo fmt --all --check`
   - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
