@@ -2548,4 +2548,97 @@ mod cache_reads {
         }
         assert!(result.is_err(), "{result:?}");
     }
+
+    /// Every file or directory in the staging area of the store.
+    fn staged(env: &Env) -> Vec<String> {
+        let dir = env.data.path().join("slopvac/blobs/.tmp");
+        match fs::read_dir(dir) {
+            Ok(entries) => entries
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// The second pack is swapped after its check. Sync verifies every pack before it extracts
+    /// the first, so a pack that cannot be installed leaves the store as it was.
+    #[test]
+    fn a_pack_swapped_after_its_check_leaves_no_tree_of_the_packs_before_it() {
+        let env = Env::new();
+        let (b, b_archive) = archive_entry(
+            &env,
+            "b",
+            &[("slopvac-plugin.toml", b"id = \"b\"\n"), ("b.txt", b"honest")],
+        );
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        // `b` is installed and cached; `a` is new in the second run.
+        Syncer::new(&env.store(), Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&lock_text(std::slice::from_ref(&b)))
+            .unwrap();
+        let (a, a_archive) = archive_entry(
+            &env,
+            "a",
+            &[("slopvac-plugin.toml", b"id = \"a\"\n"), ("a.txt", b"honest")],
+        );
+        let evil = targz(&[("slopvac-plugin.toml", b"id = \"b\"\n"), ("evil.txt", b"evil")]);
+        let target = env
+            .data
+            .path()
+            .join("slopvac/blobs")
+            .join(Digest::of(&b_archive).hex());
+        let store = env
+            .store()
+            .with_read_observer(std::sync::Arc::new(move |path: &Path| {
+                if path == target {
+                    fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+                    fs::write(path, &evil).unwrap();
+                }
+            }));
+        // Drop the tree record of `b`, so the run extracts it again.
+        let both = lock_text(&[a, b]);
+
+        let result =
+            Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs).sync(&both);
+
+        match result {
+            Err(_) => {
+                let state = env.store().inspect(&both.packs()[0].digest).unwrap();
+                assert_eq!(
+                    state,
+                    slopvac_plugins::sync::TreeState::Absent,
+                    "the tree of the first pack was installed before the second was refused"
+                );
+            }
+            Ok(report) => {
+                for pack in &report.packs {
+                    assert!(!pack.tree.join("evil.txt").exists(), "{report:?}");
+                }
+            }
+        }
+        let _ = a_archive;
+    }
+
+    #[test]
+    fn no_staged_copy_is_left_after_a_sync_that_succeeds_or_is_refused() {
+        let env = Env::new();
+        let (a, _) = archive_entry(&env, "a", &[("a.txt", b"honest")]);
+        let revs = env.revocations(NOW);
+        let pol = KeyPolicy::default();
+        Syncer::new(&env.store(), Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&lock_text(std::slice::from_ref(&a)))
+            .unwrap();
+        assert_eq!(staged(&env), Vec::<String>::new(), "after a sync that succeeded");
+
+        let missing = format!(
+            "\n[[plugins]]\nid = \"z\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"dist/none.tar.gz\"\ndigest = \"{}\"\n",
+            Digest::of(b"x")
+        );
+        let refused = Syncer::new(&env.store(), Network::Offline, &pol, env.project.path(), &revs)
+            .sync(&lock_text(&[a, missing]));
+
+        assert!(refused.is_err());
+        assert_eq!(staged(&env), Vec::<String>::new(), "after a sync that was refused");
+    }
 }

@@ -1313,6 +1313,31 @@ fn trust_shows_no_absolute_path_from_a_loader_refusal_in_its_text_or_chain() {
     assert!(!shown.contains("secret-dir"), "{shown}");
 }
 
+/// A loader that puts an absolute path where the plugin id goes.
+struct PathAsIdLoader;
+
+impl PluginLoader for PathAsIdLoader {
+    fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        Err(LoadError::StoreUnreadable {
+            id: "/home/someone/secret-dir".to_owned(),
+        })
+    }
+}
+
+#[test]
+fn trust_names_the_locked_plugin_and_never_the_id_a_loader_supplies() {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    let err = f
+        .run(&["trust", "fake"], false, |s| s.loader(PathAsIdLoader))
+        .result
+        .unwrap_err();
+    let shown = format!("{}\n{err:?}", names_in_chain(&err));
+    assert!(!shown.contains("/home/someone"), "{shown}");
+    assert!(!shown.contains("secret-dir"), "{shown}");
+    assert!(shown.contains("plugin `fake`"), "{shown}");
+}
+
 #[test]
 fn a_loader_refusal_with_a_code_is_reported_under_that_code() {
     let f = Fixture::new();

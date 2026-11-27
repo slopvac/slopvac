@@ -1400,6 +1400,7 @@ plugins-sync-not-plain-file text
 plugins-sync-notice-outside text
 plugins-sync-notice-update text
 plugins-sync-one-layer text
+plugins-sync-opening text
 plugins-sync-pack-env text
 plugins-sync-path-io text
 plugins-sync-path-link text
