@@ -2911,8 +2911,10 @@ mod cache_reads {
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect();
-        let expected =
-            format!("plugin `a`: cannot read the cached file <external>/{name}: seek on unseekable file");
+        let expected = format!(
+            "plugin `a`: cannot read the cached file <external>/{name}: {}",
+            "seek on unseekable file"
+        );
         assert_eq!(err.to_string(), expected);
         let cause = std::error::Error::source(&err).and_then(|e| e.downcast_ref::<CacheCause>());
         assert_eq!(

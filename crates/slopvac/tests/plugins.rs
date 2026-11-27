@@ -575,10 +575,14 @@ fn assert_debug_line(stderr: &str, code: &str) {
         .lines()
         .filter(|l| l.contains("plugin loader refused"))
         .collect();
-    assert_eq!(events.len(), 1, "one `plugin loader refused` event:\n{stderr}");
-    let (timestamp, event) = events[0]
-        .split_once(" DEBUG ")
-        .unwrap_or_else(|| panic!("no DEBUG level: {:?}", events[0]));
+    assert_eq!(
+        events.len(),
+        1,
+        "one `plugin loader refused` event:\n{stderr}"
+    );
+    let split = events[0].split_once(" DEBUG ");
+    assert!(split.is_some(), "no DEBUG level: {:?}", events[0]);
+    let (timestamp, event) = split.unwrap();
     assert!(!timestamp.contains(' '), "{:?}", events[0]);
     assert_eq!(
         event.trim_start(),
