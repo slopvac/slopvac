@@ -63,7 +63,7 @@ pub(super) enum Cached {
 }
 
 /// The cause for a failed open or read of a cached file.
-fn cause_of(e: &io::Error) -> CacheCause {
+pub(super) fn cause_of(e: &io::Error) -> CacheCause {
     if e.kind() == io::ErrorKind::InvalidInput {
         CacheCause::NotRegular
     } else {
@@ -123,9 +123,11 @@ impl Store {
             }
         };
         let dir = self.tree_dir(&hash);
-        Ok(fs::symlink_metadata(&dir)
-            .is_ok()
-            .then_some(VerifiedTree { dir, hash }))
+        match fs::symlink_metadata(&dir) {
+            Ok(_) => Ok(Some(VerifiedTree { dir, hash })),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(Store::unreadable_at(&pack.id, &dir, CacheCause::io(&e))),
+        }
     }
 
     /// The digest of the pack layer of the cached manifest that the lock pins. The manifest is

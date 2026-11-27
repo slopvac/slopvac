@@ -33,6 +33,23 @@ pub enum CacheCause {
     },
 }
 
+impl std::fmt::Display for CacheCause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io {
+                kind,
+                os_code: Some(code),
+            } => write!(f, "{kind} (os error {code})"),
+            Self::Io { kind, os_code: None } => write!(f, "{kind}"),
+            Self::NotRegular => f.write_str("not a regular file"),
+            Self::TooLarge { cap } => write!(f, "over {cap} bytes"),
+        }
+    }
+}
+
+/// A scrubbed cause: the kind and the OS code, never a path.
+impl std::error::Error for CacheCause {}
+
 impl CacheCause {
     /// The cause of a failed open or read, scrubbed of whatever path the error carries.
     #[must_use]
@@ -161,9 +178,10 @@ pub enum SyncError {
     CacheUnreadable {
         /// Pack id.
         id: PackId,
-        /// The file.
+        /// The file, already redacted: `<external>/<file name>`, never an absolute path.
         path: PathBuf,
         /// Why it cannot be read.
+        #[source]
         cause: CacheCause,
     },
     /// Safe extraction refused the archive, or a file operation failed.

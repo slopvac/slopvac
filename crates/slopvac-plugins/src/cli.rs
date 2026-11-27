@@ -17,7 +17,7 @@ use crate::lock::{
     LockReadError, LockedPack, Lockfile, PackId, PackKind, SourceKind, VersionReq, config_drift,
     outdated as lock_outdated, read_project_lock,
 };
-use crate::messages::cli::{CliText, Redacted, RunError};
+use crate::messages::cli::{CliText, Redacted, Reported, RunError};
 use crate::oci::Digest;
 use crate::pyenv::{EnvStore, PythonRuntime};
 use crate::revoke::{RevocationError, RevocationNotice, Revocations};
@@ -798,7 +798,13 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
     }
     let (vp, spec) = loader
         .load(pack)
-        .map_err(|_| refused(withheld(TRUST_INPUTS)))?;
+        .map_err(|e| match e.code() {
+            // A refusal that carries a code is reported under it, with its own redacted sentence.
+            Some(code) => RunError::Failed {
+                source: Reported::new(code, e.text().to_owned()),
+            },
+            None => refused(withheld(TRUST_INPUTS)),
+        })?;
     // The cache is not trusted (threat model E8), so the signature is checked again here, from
     // the cached files only, before a person's trust is recorded for what they hold.
     let store = Store::new(&runner.dirs.cache_dir);

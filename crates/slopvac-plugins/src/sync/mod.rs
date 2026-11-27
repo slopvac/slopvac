@@ -374,6 +374,7 @@ impl<'a> Syncer<'a> {
         for ((pack, how), (before, aside)) in acquired.into_iter().zip(states) {
             let (mut outcome, accepted) = self.install(pack, how, &before)?;
             outcome.python_env = self.python_env(pack, &outcome.tree, &accepted)?;
+            outcome.repaired = self.store.take_repaired(&pack.id);
             // A modified tree too large to delete was moved aside; keep reporting it.
             outcome.quarantined = outcome.quarantined.or(aside);
             report.packs.push(outcome);
@@ -634,7 +635,7 @@ impl<'a> Syncer<'a> {
         }
 
         let layer = payload_layer(&manifest, &self.limits).map_err(layout)?;
-        if let Some(path) = self.store.blob(&layer.digest, layer.size) {
+        if let Some(path) = self.store.blob(&pack.id, &layer.digest, layer.size)? {
             return Ok(Acquired::Archive(path));
         }
         let client = self.client(pack, SyncPhrase::WhatArchive.as_static())?;
@@ -729,6 +730,38 @@ impl<'a> Syncer<'a> {
         Ok(verified.key().key_id())
     }
 
+    /// The cached bytes of a small blob, or `None` when it is absent or, under `repair`, was
+    /// removed because it was wrong. Only sync repairs (`repair`): a blob that is over `max` or
+    /// not what its name says is removed, so the caller fetches it again, and the repair is
+    /// recorded. Inspection (`repair` false) deletes nothing: a wrong digest is
+    /// [`SyncError::DigestMismatch`], and any other failure is [`SyncError::CacheUnreadable`].
+    fn cached_small(
+        &self,
+        pack: &LockedPack,
+        digest: &Digest,
+        max: u64,
+        repair: bool,
+    ) -> Result<Option<Vec<u8>>, SyncError> {
+        match self.store.read_cached(digest, max) {
+            Ok(Cached::Bytes(bytes)) => Ok(Some(bytes)),
+            Ok(Cached::Absent) => Ok(None),
+            Ok(Cached::Mismatch(_)) if repair => {
+                self.store.evict_blob(&pack.id, digest).map(|()| None)
+            }
+            Ok(Cached::Mismatch(actual)) => Err(SyncError::DigestMismatch {
+                id: pack.id.clone(),
+                expected: digest.to_string(),
+                actual: actual.to_string(),
+            }),
+            // Slopvac never writes a cached file over its cap, so an oversize file is as wrong
+            // as one with the wrong digest.
+            Err(CacheCause::TooLarge { .. }) if repair => {
+                self.store.evict_blob(&pack.id, digest).map(|()| None)
+            }
+            Err(cause) => Err(self.store.unreadable(&pack.id, digest, cause)),
+        }
+    }
+
     fn manifest_bytes(
         &self,
         pack: &LockedPack,
@@ -736,13 +769,8 @@ impl<'a> Syncer<'a> {
         locked: &Digest,
         fetch: bool,
     ) -> Result<Vec<u8>, SyncError> {
-        match self.store.read_cached(locked, MAX_MANIFEST_BYTES as u64) {
-            Ok(Cached::Bytes(bytes)) => return Ok(bytes),
-            Ok(Cached::Absent) => {}
-            // Sync repairs the cache: a blob that is not what its name says is removed and
-            // fetched again, or reported missing offline.
-            Ok(Cached::Mismatch(_)) => self.store.remove_blob(locked),
-            Err(cause) => return Err(self.store.unreadable(&pack.id, locked, cause)),
+        if let Some(bytes) = self.cached_small(pack, locked, MAX_MANIFEST_BYTES as u64, fetch)? {
+            return Ok(bytes);
         }
         if !fetch {
             return Err(Self::missing(pack, SyncPhrase::WhatManifest.as_static()));
@@ -767,11 +795,8 @@ impl<'a> Syncer<'a> {
         what: &str,
         fetch: bool,
     ) -> Result<Vec<u8>, SyncError> {
-        match self.store.read_cached(&desc.digest, max) {
-            Ok(Cached::Bytes(bytes)) => return Ok(bytes),
-            Ok(Cached::Absent) => {}
-            Ok(Cached::Mismatch(_)) => self.store.remove_blob(&desc.digest),
-            Err(cause) => return Err(self.store.unreadable(&pack.id, &desc.digest, cause)),
+        if let Some(bytes) = self.cached_small(pack, &desc.digest, max, fetch)? {
+            return Ok(bytes);
         }
         if !fetch {
             return Err(Self::missing(pack, what));
@@ -916,7 +941,10 @@ impl<'a> Syncer<'a> {
 
     fn acquire_archive(&self, pack: &LockedPack, url: &str) -> Result<Acquired, SyncError> {
         let locked = Self::locked_digest(pack)?;
-        if let Some(path) = self.store.blob(&locked, self.limits.compressed_bytes) {
+        if let Some(path) = self
+            .store
+            .blob(&pack.id, &locked, self.limits.compressed_bytes)?
+        {
             return Ok(Acquired::Archive(path));
         }
         let client = self.client(pack, SyncPhrase::WhatRelease.as_static())?;
@@ -980,7 +1008,10 @@ impl<'a> Syncer<'a> {
             return Ok(Acquired::InPlace(path, manifest));
         }
         let locked = Self::locked_digest(pack)?;
-        if let Some(cached) = self.store.blob(&locked, self.limits.compressed_bytes) {
+        if let Some(cached) = self
+            .store
+            .blob(&pack.id, &locked, self.limits.compressed_bytes)?
+        {
             // Still check the file in the project: it is what the lock names.
             let actual = cache_hash(&path).map_err(|e| source(messages::path_reading(rel, &e)))?;
             if actual != locked {

@@ -6,8 +6,9 @@ use sha2::{Digest as _, Sha256};
 use tempfile::NamedTempFile;
 
 use super::error::{CacheCause, SyncError};
+use super::verified::cause_of;
 use crate::extract::{
-    Evicted, ExtractError, TreeHash, ensure_private_child, ensure_private_dir, evict,
+    Evicted, ExtractError, TreeHash, ensure_private_child, ensure_private_dir, evict, open_regular,
     verify_tree_capturing,
 };
 use crate::lock::{Digest as LockDigest, PackId};
@@ -63,6 +64,8 @@ pub struct Store {
     observer: Option<ReadObserver>,
     #[cfg(feature = "test-support")]
     archive_bytes: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
+    /// Plugins whose cached files sync removed and fetched again in this run.
+    repaired: std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<PackId>>>,
 }
 
 /// What a test hangs on the read boundary of the store.
@@ -87,6 +90,7 @@ impl Store {
             observer: None,
             #[cfg(feature = "test-support")]
             archive_bytes: None,
+            repaired: std::sync::Arc::default(),
         }
     }
 
@@ -198,34 +202,85 @@ impl Store {
         self.trees().join(format!("tree-{}", hash.hex()))
     }
 
-    /// A cached blob whose content hashes to `digest`, or `None`. A file that
-    /// is not a plain file, is too large or hashes differently is deleted.
-    pub(super) fn blob(&self, digest: &Digest, max: u64) -> Option<PathBuf> {
-        let path = self.blobs().join(digest.hex());
-        let meta = fs::symlink_metadata(&path).ok()?;
-        let ok = meta.is_file()
-            && meta.len() <= max
-            && hash_file(&path).is_ok_and(|actual| actual == *digest);
-        if ok {
+    /// A cached blob whose content hashes to `digest`, or `None` when it is absent or sync
+    /// removed it because it was over `max` or hashed to something else (the repair is recorded).
+    /// Only sync calls it. The file is opened once and the bytes that are hashed are the bytes
+    /// that are read, never more than `max` plus one.
+    ///
+    /// # Errors
+    /// [`SyncError::CacheUnreadable`] when the file exists and cannot be read, is not a regular
+    /// file, or cannot be removed. Nothing is removed in the first two cases.
+    pub(super) fn blob(
+        &self,
+        id: &PackId,
+        digest: &Digest,
+        max: u64,
+    ) -> Result<Option<PathBuf>, SyncError> {
+        let path = self.blob_path(digest);
+        let file = match open_regular(&path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(self.unreadable(id, digest, cause_of(&e))),
+        };
+        let mut reader = file.take(max.saturating_add(1));
+        let mut hasher = Sha256::new();
+        let mut read = 0u64;
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let n = reader
+                .read(&mut buf)
+                .map_err(|e| self.unreadable(id, digest, CacheCause::io(&e)))?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            read += n as u64;
+        }
+        if read <= max && Digest::from_hasher(hasher) == *digest {
             #[cfg(feature = "test-support")]
             self.observe(&path);
-            Some(path)
-        } else {
-            let _ = fs::remove_file(&path);
-            None
+            return Ok(Some(path));
         }
+        self.evict_blob(id, digest)?;
+        Ok(None)
     }
 
-    /// Remove the cached blob `digest`. Only sync calls it: a read-only lookup never deletes.
-    pub(super) fn remove_blob(&self, digest: &Digest) {
-        let _ = fs::remove_file(self.blob_path(digest));
+    /// Remove the cached blob `digest` that sync found to be wrong, and record the repair. Only
+    /// sync calls it: a read-only lookup never deletes. A blob that is already gone is fine; any
+    /// other failure to remove it stops the run.
+    ///
+    /// # Errors
+    /// [`SyncError::CacheUnreadable`] when the file cannot be removed.
+    pub(super) fn evict_blob(&self, id: &PackId, digest: &Digest) -> Result<(), SyncError> {
+        match fs::remove_file(self.blob_path(digest)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(self.unreadable(id, digest, CacheCause::io(&e))),
+        }
+        if let Ok(mut repaired) = self.repaired.lock() {
+            repaired.insert(id.clone());
+        }
+        Ok(())
+    }
+
+    /// Whether sync repaired a cached file of `id` since the last call, and clear the record.
+    pub(super) fn take_repaired(&self, id: &PackId) -> bool {
+        self.repaired
+            .lock()
+            .is_ok_and(|mut repaired| repaired.remove(id))
     }
 
     /// The error of a cached blob that exists but cannot be read.
     pub(super) fn unreadable(&self, id: &PackId, digest: &Digest, cause: CacheCause) -> SyncError {
+        Self::unreadable_at(id, &self.blob_path(digest), cause)
+    }
+
+    /// The error of a cached path that cannot be read. The path is redacted here, so no text of
+    /// the error, `Debug` included, holds an absolute path.
+    pub(super) fn unreadable_at(id: &PackId, path: &Path, cause: CacheCause) -> SyncError {
         SyncError::CacheUnreadable {
             id: id.clone(),
-            path: self.blob_path(digest),
+            path: PathBuf::from(slopvac_fs::display_under_root(path, Path::new("."))),
             cause,
         }
     }
