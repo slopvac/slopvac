@@ -104,12 +104,17 @@ pub trait Linter {
 }
 
 /// The result of `--explain-config`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct ExplainOutcome {
     /// One block per input, each headed by its redacted path.
     pub text: String,
+    /// The records of the inputs that resolved, for `--format json`.
+    pub inputs: Vec<crate::explain_config::Input>,
     /// Inputs that could not be read, or a failure that stopped the run.
     pub incomplete: Vec<CliError>,
+    /// What `lint` would report when the run could not start, as when a config cannot be
+    /// read. `--format json` prints it as `lint --format json` does.
+    pub refusal: Option<RunOutcome>,
 }
 
 /// The linter backed by `slopvac-engine`.
@@ -400,22 +405,26 @@ impl Linter for EngineLinter {
     fn explain_config(&self, request: &LintRequest) -> ExplainOutcome {
         let mut run = Run::default();
         let (catalog, items) = match prepare(request, &mut run) {
-            Ok((catalog, items)) => (Some(catalog), items),
+            Ok(prepared) => prepared,
             Err(err) => {
-                run.incomplete.push(err);
-                (None, Vec::new())
+                let refusal = failed(request, run, &err);
+                return ExplainOutcome {
+                    incomplete: refusal.incomplete.clone(),
+                    refusal: Some(refusal),
+                    ..ExplainOutcome::default()
+                };
             }
         };
         let none = LoadedConfig::without_files(request.root.clone());
         let mut text = String::new();
+        let mut inputs = Vec::new();
         for item in &items {
             let (config, rel) = match &item.config {
                 Some((config, rel)) => (config.as_ref(), rel.clone()),
                 None => (&none, PathBuf::from(&item.shown)),
             };
-            let Some(catalog) = &catalog else { break };
-            let mut explained =
-                lint_settings::explain(&lint_settings::resolve(config, &rel), catalog);
+            let resolved = lint_settings::resolve(config, &rel);
+            let mut explained = lint_settings::explain(&resolved, &catalog);
             for entry in &mut explained {
                 redact_urls(&mut entry.value);
                 for replaced in &mut entry.overridden {
@@ -429,10 +438,29 @@ impl Linter for EngineLinter {
             text.push_str(&slopvac_sanitize::line(&item.shown));
             text.push('\n');
             text.push_str(&slopvac_config::render_explain(config, &explained, &root));
+            // The levels come from the function lint builds its settings with.
+            match lint_settings::build_with_origins(
+                &catalog,
+                &resolved,
+                lint_settings::config_sources(&config_files(config)),
+                &Overrides::default(),
+            ) {
+                Ok((settings, origins)) => inputs.push(crate::explain_config::Input::new(
+                    &item.shown,
+                    &root,
+                    &settings,
+                    &explained,
+                    &origins,
+                    &catalog,
+                )),
+                Err(err) => run.incomplete.push(err),
+            }
         }
         ExplainOutcome {
             text,
+            inputs,
             incomplete: run.incomplete,
+            refusal: None,
         }
     }
 }

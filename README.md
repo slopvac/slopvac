@@ -242,6 +242,8 @@ changed-file selection. See [action.yml](action.yml) for its inputs and outputs.
 slopvac lint --explain-config README.md
 ```
 
+Add `--format json` to print the same data as one JSON document.
+
 The default profile is `normal`. Use `strict` for reference material or
 `relaxed` for informal text. Configure thresholds and rule severities in
 `slopvac.toml`, with `[[overrides]]` for path-specific settings.

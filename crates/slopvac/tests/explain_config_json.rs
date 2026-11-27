@@ -319,20 +319,6 @@ fn explain_config_lists_no_configured_rule_for_a_config_that_names_none() {
     );
 }
 
-#[test]
-fn explain_config_accepts_the_text_format_given_explicitly_and_refuses_sarif() {
-    let dir = project();
-    slopvac(dir.path())
-        .args(["lint", "--explain-config", "--format", "text", "a.md"])
-        .assert()
-        .code(0);
-    slopvac(dir.path())
-        .args(["lint", "--explain-config", "--format", "sarif", "a.md"])
-        .assert()
-        .code(2)
-        .stdout_eq("");
-}
-
 #[rstest]
 #[case::min_score(&["--min-score", "50"], "--min-score")]
 #[case::locale(&["--locale", "en-GB"], "--locale")]

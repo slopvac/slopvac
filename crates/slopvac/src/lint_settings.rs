@@ -665,6 +665,16 @@ struct CategoryKey<'a> {
     bare: Option<&'a str>,
 }
 
+/// What the layers say about the level of one rule.
+struct RuleLevel {
+    /// The level a layer set, after the profile shift and the category floor.
+    level: Option<Level>,
+    /// Whether a config `rules` entry named the rule.
+    named_by_config: bool,
+    /// The layer and location that set the level, when one did.
+    source: Option<ConfigSource>,
+}
+
 /// The level that the config gives one rule, and whether a config `rules` entry named it.
 ///
 /// Only a `rules` entry from a config layer counts as naming the rule: a category entry, a
@@ -676,7 +686,7 @@ fn rule_level(
     category: &CategoryKey<'_>,
     shift: i64,
     floor: Option<&str>,
-) -> (Option<Level>, bool) {
+) -> RuleLevel {
     let id = rule.id();
     // A judgement rule has no finding to grade: a category entry never sets its level, only
     // a `rules` entry does (docs/contract/profiles.md).
@@ -695,7 +705,11 @@ fn rule_level(
     let keys = by_rank(keys);
     let Some(named) = resolved.level_by_any_unfloored(&keys, &categories) else {
         // No layer names the rule: the engine shifts its genre or definition level.
-        return (None, false);
+        return RuleLevel {
+            level: None,
+            named_by_config: false,
+            source: None,
+        };
     };
     let by_config = named.from == LevelFrom::Rule && !is_inherited(named.source.layer);
     // `severity_shift` moves levels that come from rule definitions, styles and the genre
@@ -712,7 +726,22 @@ fn rule_level(
             l
         }
     });
-    (level, by_config && level.is_some())
+    RuleLevel {
+        named_by_config: by_config && level.is_some(),
+        level,
+        source: Some(named.source),
+    }
+}
+
+/// A rule whose level a layer set, with that level and the layer that set it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RuleOrigin {
+    /// The qualified id.
+    pub(crate) id: RuleId,
+    /// The level lint applies to the rule.
+    pub(crate) level: Level,
+    /// Where the level came from.
+    pub(crate) source: ConfigSource,
 }
 
 /// Build the engine settings for a file from its resolved config.
@@ -728,7 +757,22 @@ pub fn build(
     sources: Vec<ConfigSource>,
     cli: &Overrides,
 ) -> Result<Settings, CliError> {
+    build_with_origins(rules, resolved, sources, cli).map(|(settings, _)| settings)
+}
+
+/// [`build`], and the rules whose level a layer set, each with that layer. `--explain-config`
+/// reads them, so it shows the levels lint applies.
+///
+/// # Errors
+/// As [`build`].
+pub(crate) fn build_with_origins(
+    rules: &Catalog,
+    resolved: &Resolved,
+    sources: Vec<ConfigSource>,
+    cli: &Overrides,
+) -> Result<(Settings, Vec<RuleOrigin>), CliError> {
     let mut settings = base_settings(resolved, sources, cli)?;
+    let mut origins = Vec::new();
 
     let shift = resolved
         .get(&["profile", "severity_shift"])
@@ -772,7 +816,11 @@ pub fn build(
             .and_then(Json::as_str);
         for rule in category.rules() {
             let id = rule.id();
-            let (level, named_by_config) = rule_level(
+            let RuleLevel {
+                level,
+                named_by_config,
+                source,
+            } = rule_level(
                 rules,
                 resolved,
                 rule,
@@ -785,6 +833,13 @@ pub fn build(
             );
             if let Some(level) = level {
                 settings.rule_levels.insert(id.clone(), level);
+                if let Some(source) = source {
+                    origins.push(RuleOrigin {
+                        id: id.clone(),
+                        level,
+                        source,
+                    });
+                }
             }
             let hit = |list: &[Selected]| {
                 list.iter().any(|n| match n {
@@ -815,7 +870,7 @@ pub fn build(
             .map(str::to_owned)
             .collect();
     }
-    Ok(settings)
+    Ok((settings, origins))
 }
 
 /// The `config_sources` of a document: the built-in defaults, then each config file.

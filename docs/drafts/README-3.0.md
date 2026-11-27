@@ -123,7 +123,7 @@ Run this to see where each value comes from:
 slopvac lint --explain-config README.md
 ```
 
-It prints the layer, the file, and the line for each value, and what the value overrode. An unknown
+It prints the layer, the file, and the line for each value, and what the value overrode. Add `--format json` to print the same data as one JSON document. An unknown
 key in a user file is an error. Keys that start with `x-` are ignored.
 
 Terms live in `.slopvac/terms.toml`. Each term needs only `term`.

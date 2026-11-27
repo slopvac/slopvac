@@ -14,6 +14,7 @@ pub mod doctor;
 pub mod engine;
 pub mod env;
 pub mod errors;
+pub mod explain_config;
 pub mod exit;
 pub mod generate;
 pub mod init;

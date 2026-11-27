@@ -491,10 +491,11 @@ fn reject_unwired_lint_flags(m: &ArgMatches) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Refuse `--explain-config` with a report format, or with an option it would ignore.
+/// Refuse `--explain-config` with a format other than `text` or `json`, or with an option it
+/// would ignore.
 ///
-/// It prints text only, from the config files. A setting flag, a rule selection or a report
-/// route has no effect on it, and the command never says so by itself.
+/// It prints from the config files. A setting flag, a rule selection or a report route has no
+/// effect on it, and the command never says so by itself.
 fn reject_explain_config_options(m: &ArgMatches) -> Result<(), CliError> {
     use crate::lint_messages::LintOptionError;
     if !m.get_flag("explain-config") {
@@ -502,6 +503,7 @@ fn reject_explain_config_options(m: &ArgMatches) -> Result<(), CliError> {
     }
     if let Some(format) = m.get_one::<String>("format")
         && format != "text"
+        && format != "json"
     {
         return Err(LintOptionError::ExplainConfigFormat {
             format: format.clone(),
@@ -719,7 +721,20 @@ fn lint_with(
         for err in &explained.incomplete {
             let _ = writeln!(err_out, "{err}");
         }
-        write_stdout(out, explained.text.as_bytes())?;
+        if m.get_one::<String>("format").map(String::as_str) == Some("json") {
+            // A run that could not start prints what `lint --format json` prints.
+            match &explained.refusal {
+                Some(refusal) => output::deliver(m, refusal, out, err_out)?,
+                None => {
+                    let document = crate::explain_config::Document::new(explained.inputs)
+                        .render()
+                        .map_err(|err| CliError::new("render-failed", err.to_string()))?;
+                    write_stdout(out, document.as_bytes())?;
+                }
+            }
+        } else {
+            write_stdout(out, explained.text.as_bytes())?;
+        }
         return Ok(if explained.incomplete.is_empty() {
             exit::PASS
         } else {

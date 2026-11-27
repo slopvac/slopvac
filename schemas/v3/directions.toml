@@ -16,6 +16,7 @@
 "common.schema.json" = "both"
 "config.schema.json" = "input"
 "doctor-report.schema.json" = "output"
+"explain-config.schema.json" = "output"
 "frontmatter.schema.json" = "input"
 "genre.schema.json" = "input"
 "lint-report.schema.json" = "output"
