@@ -26,3 +26,19 @@ def test_rules_fixtures_are_current() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr or result.stdout
+
+
+def _generate_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("rules_fixtures_generate", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_merge_corpus_keeps_every_stored_text_in_order_and_appends_new_ones() -> None:
+    merge = _generate_module().merge_corpus
+    stored = ["b", "a", "stale"]
+    built = ["a", "new", "b", "new"]
+    assert merge(stored, built) == ["b", "a", "stale", "new"]

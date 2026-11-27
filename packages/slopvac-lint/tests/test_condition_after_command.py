@@ -64,6 +64,8 @@ def _fired_lines(tmp_path, text: str) -> list[int]:
         "Run the integration test if the service is available.",
         "Add a type check if the service is available.",
         "Run the unit tests when the service is available.",
+        # A coordinated pair of nouns is objects, not a verb that takes a clause.
+        "Run either the lint or test if the branch is ready.",
         "Mute the alerts if the pager is down.",
         "Note warnings before you deploy.",
         # `before`/`after` followed by a noun is still a condition.
@@ -227,6 +229,8 @@ _AGREEMENT = [
     ("For production, always back up the database before you deploy.", True),
     ("Do run migrations before you deploy.", True),
     ("For production, do run migrations before you deploy.", True),
+    ("Run either the lint or test if the branch is ready.", True),
+    ("Run the build and check if it passes.", False),
     ("Always available, the API responds when clients reconnect.", False),
     ("Never again, the worker restarts when the queue empties.", False),
     ("Release builds run before deployment.", False),
