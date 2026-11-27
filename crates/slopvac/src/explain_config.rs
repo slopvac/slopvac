@@ -209,7 +209,7 @@ struct ExplainReplaced {
     source: ConfigSource,
 }
 
-/// A setting value as configured: any JSON value.
+/// A setting value as configured: null, a flag, a number, text, a list or a table.
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 enum ExplainValue {

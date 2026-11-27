@@ -35,7 +35,7 @@ Lint prose and source comments. Bare paths run this command.
 | `--diff-working-tree` | Scope findings to staged, unstaged and untracked changes. |
 | `--fix` | Apply safe replacements. |
 | `--verbose` | Show categories with no findings. |
-| `--explain-config` | Print each resolved setting with its source, then exit. |
+| `--explain-config` | Print each resolved setting with its source, then exit. Takes --format text or json. |
 | `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |

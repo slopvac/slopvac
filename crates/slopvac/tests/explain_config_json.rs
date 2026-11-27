@@ -1,7 +1,11 @@
 //! `slopvac lint --explain-config --format json` prints the resolved settings of each input as
 //! one JSON document (`schemas/v3/explain-config.schema.json`, `docs/contract/config.md`
 //! section 1.4.1).
-#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::fs;
 use std::path::Path;
