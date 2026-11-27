@@ -10,10 +10,10 @@ mod requests;
 pub(crate) mod schema;
 pub(crate) mod text;
 
+pub use schema::ProtocolMessage;
 use schema::{
     FeatureNameSchema, ProtocolVersion, UniqueItems, bare_entry, bare_fields, network_note,
 };
-pub use schema::ProtocolMessage;
 
 pub(crate) use requests::{
     CancelParams, CompleteParams, ExtractParams, FixParams, HostCapabilities, HostInfo, HostLimits,

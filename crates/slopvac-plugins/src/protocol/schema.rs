@@ -857,7 +857,9 @@ pub(crate) struct TypeRef {
 impl TypeRef {
     /// A reference to the definition of `T`.
     pub(crate) const fn of<T: JsonSchema>() -> Self {
-        Self { define: define::<T> }
+        Self {
+            define: define::<T>,
+        }
     }
 }
 
