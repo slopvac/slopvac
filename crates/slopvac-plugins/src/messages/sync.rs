@@ -916,7 +916,8 @@ pub(crate) fn cache_unreadable(id: &PackId, path: &Path, cause: &CacheCause) -> 
     .to_string()
 }
 
-/// `cache-tampered`.id: &PackId, path: &Path) -> String {
+/// `cache-tampered`.
+pub(crate) fn cache_tampered(id: &PackId, path: &Path) -> String {
     SyncMessage::CacheTampered {
         id: s(id),
         path: esc(&path.to_string_lossy()),
