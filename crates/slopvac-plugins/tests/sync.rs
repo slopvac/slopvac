@@ -2409,7 +2409,9 @@ mod cache_reads {
 
         let result = c.verified(Limits::default());
 
-        guard.restore().expect("the permissions of the trees directory are restored");
+        guard
+            .restore()
+            .expect("the permissions of the trees directory are restored");
 
         if !blocked {
             return; // the test runs with rights that ignore modes
@@ -2576,7 +2578,9 @@ mod cache_reads {
 
         let result = c.env.store().inspect(&c.lock.packs()[0].digest);
 
-        guard.restore().expect("the permissions of the trees directory are restored");
+        guard
+            .restore()
+            .expect("the permissions of the trees directory are restored");
 
         if !blocked {
             return; // the test runs with rights that ignore modes
@@ -2724,9 +2728,15 @@ mod cache_reads {
         let lock = lock_text(&[entry]);
         let revs = env.revocations(NOW);
         let pol = KeyPolicy::default();
-        Syncer::new(&env.store(), Network::Offline, &pol, env.project.path(), &revs)
-            .sync(&lock)
-            .unwrap();
+        Syncer::new(
+            &env.store(),
+            Network::Offline,
+            &pol,
+            env.project.path(),
+            &revs,
+        )
+        .sync(&lock)
+        .unwrap();
         (lock, archive)
     }
 
@@ -2815,7 +2825,10 @@ mod cache_reads {
 
         let a = a.unwrap();
         b.unwrap();
-        assert!(a.packs[0].repaired, "sync B erased the repair of sync A: {a:?}");
+        assert!(
+            a.packs[0].repaired,
+            "sync B erased the repair of sync A: {a:?}"
+        );
     }
 
     #[test]
