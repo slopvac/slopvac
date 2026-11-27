@@ -374,6 +374,12 @@ _ROUTING_FAULTS = {
         ' = {"layer": "override", "file": "slopvac.toml", "line": 9, "column": 1}',
         "routing: 1 document(s) have the wrong README override",
     ),
+    "unexpected-style": (
+        'document["inputs"][0]["settings"].append({"key": "styles", "value": ["ste"],'
+        ' "source": {"layer": "project", "file": "slopvac.toml", "line": 3, "column": 1},'
+        ' "replaced": []})',
+        "routing: 1 document(s) do not resolve to the repository styles",
+    ),
     "no-rules": (
         'document["inputs"][0]["rules"]["total"] = 0',
         "routing: 1 document(s) have no rule that runs",
@@ -439,3 +445,27 @@ def test_a_routing_timeout_fails_with_fixed_text(tmp_path) -> None:
     case = {"routing-sleep": True, "env": {"AUDIT_LINTER_TIMEOUT": "1"}}
     done = run_audit(tmp_path, case)
     assert_output_contract(done, tmp_path, "routing: the linter timed out after 1 s", payload_free=True)
+
+
+_STYLED_CONFIG = 'schema_version = 3\nstyles = ["ste"]\nexclude = [\n  "CHANGELOG.md",\n]\n'
+_STYLES_SETTING = (
+    'for record in document["inputs"]: record["settings"].append({"key": "styles",'
+    ' "value": ["ste"], "source": {"layer": "project", "file": "slopvac.toml", "line": 2,'
+    ' "column": 1}, "replaced": []})'
+)
+
+
+def test_the_styles_of_the_repository_config_are_the_expected_styles(tmp_path) -> None:
+    case = {"files": {"slopvac.toml": _STYLED_CONFIG}, "routing": _STYLES_SETTING}
+    done = run_audit(tmp_path, case)
+    assert_output_contract(done, tmp_path)
+
+
+def test_a_document_that_resolves_without_the_configured_styles_fails(tmp_path) -> None:
+    done = run_audit(tmp_path, {"files": {"slopvac.toml": _STYLED_CONFIG}})
+    assert_output_contract(
+        done,
+        tmp_path,
+        "routing: 3 document(s) do not resolve to the repository styles",
+        payload_free=True,
+    )
