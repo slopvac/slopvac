@@ -1909,3 +1909,240 @@ fn a_cached_manifest_swapped_after_its_digest_check_does_not_change_what_is_veri
     // The observer ran: the file holds the replacement, so the test would fail if it never did.
     assert_eq!(fs::read(&manifest).unwrap(), b"{}");
 }
+/// Reads of the cache by a loader (`Store::verified_tree`) and by sync.
+#[cfg(unix)]
+mod cache_reads {
+    use std::collections::HashSet;
+    use std::fs::OpenOptions;
+    use std::os::unix::fs::PermissionsExt;
+
+    use slopvac_plugins::extract::Limits;
+    use slopvac_plugins::oci::MAX_MANIFEST_BYTES;
+    use slopvac_plugins::sync::{CacheCause, VerifiedTree, MEDIA_PACK_LAYER};
+
+    use super::*;
+
+    /// A store that an online sync filled: the manifest and the layer sit in `blobs/`.
+    struct Cached {
+        env: Env,
+        lock: Lockfile,
+        published: Published,
+        policy: KeyPolicy,
+        _server: Server,
+        manifest: PathBuf,
+        layer: PathBuf,
+    }
+
+    fn cached() -> Cached {
+        let key = Key::primary();
+        let published = publish(&key, "acme", FILES);
+        let server = registry(&[&published]);
+        let env = Env::new();
+        let policy = policy("acme", &[&key]);
+        let lock = oci_lock(&server.registry(), &published);
+        run(&env, Network::Online(&client()), &policy, &lock).unwrap();
+        let blobs = env.data.path().join("slopvac/blobs");
+        let parsed: Manifest = serde_json::from_slice(&published.manifest).unwrap();
+        let layer = parsed
+            .layers
+            .iter()
+            .find(|l| l.media_type == MEDIA_PACK_LAYER)
+            .unwrap();
+        Cached {
+            manifest: blobs.join(published.digest.trim_start_matches("sha256:")),
+            layer: blobs.join(layer.digest.hex()),
+            env,
+            lock,
+            published,
+            policy,
+            _server: server,
+        }
+    }
+
+    impl Cached {
+        fn blob(&self, manifest: bool) -> &Path {
+            if manifest {
+                &self.manifest
+            } else {
+                &self.layer
+            }
+        }
+
+        fn verified(&self, limits: Limits) -> Result<Option<VerifiedTree>, SyncError> {
+            self.env
+                .store()
+                .verified_tree(&self.lock.packs()[0], &HashSet::new(), limits)
+        }
+    }
+
+    /// Replace the bytes of a cached blob, whatever its mode.
+    fn swap(path: &Path, bytes: &[u8]) {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn an_oversize_cached_archive_is_too_large_and_is_left_in_place() {
+        let c = cached();
+        let limits = Limits {
+            compressed_bytes: 1 << 20,
+            ..Limits::default()
+        };
+        // Sparse, so it costs no disk: four times the limit, and not a gzip stream.
+        fs::set_permissions(&c.layer, fs::Permissions::from_mode(0o644)).unwrap();
+        let file = OpenOptions::new().write(true).open(&c.layer).unwrap();
+        file.set_len(4 << 20).unwrap();
+
+        let err = c.verified(limits).unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                SyncError::CacheUnreadable {
+                    cause: CacheCause::TooLarge { cap },
+                    ..
+                } if *cap == 1 << 20
+            ),
+            "{err:?}"
+        );
+        assert!(c.layer.exists(), "a read-only lookup deleted the blob");
+    }
+
+    #[test]
+    fn an_oversize_cached_manifest_is_too_large_and_is_left_in_place() {
+        let c = cached();
+        fs::set_permissions(&c.manifest, fs::Permissions::from_mode(0o644)).unwrap();
+        let file = OpenOptions::new().write(true).open(&c.manifest).unwrap();
+        file.set_len(MAX_MANIFEST_BYTES as u64 + 1).unwrap();
+
+        let err = c.verified(Limits::default()).unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                SyncError::CacheUnreadable {
+                    cause: CacheCause::TooLarge { cap },
+                    ..
+                } if *cap == MAX_MANIFEST_BYTES as u64
+            ),
+            "{err:?}"
+        );
+        assert!(c.manifest.exists(), "a read-only lookup deleted the blob");
+    }
+
+    #[rstest]
+    #[case::manifest(true)]
+    #[case::layer(false)]
+    fn a_swapped_cached_blob_is_a_mismatch_that_a_read_only_lookup_leaves_in_place(
+        #[case] manifest: bool,
+    ) {
+        let c = cached();
+        swap(c.blob(manifest), b"{}");
+
+        let err = c.verified(Limits::default()).unwrap_err();
+
+        assert!(matches!(err, SyncError::DigestMismatch { .. }), "{err:?}");
+        assert_eq!(fs::read(c.blob(manifest)).unwrap(), b"{}");
+    }
+
+    #[test]
+    fn offline_sync_removes_a_swapped_cached_manifest_and_reports_it_missing() {
+        let c = cached();
+        swap(&c.manifest, b"{}");
+
+        let err = run(&c.env, Network::Offline, &c.policy, &c.lock).unwrap_err();
+
+        assert_eq!(err.code(), "offline-plugin-missing", "{err:?}");
+        assert!(!c.manifest.exists(), "sync leaves the swapped blob");
+    }
+
+    #[test]
+    fn online_sync_replaces_a_swapped_cached_manifest_with_the_fetched_one() {
+        let c = cached();
+        swap(&c.manifest, b"{}");
+
+        run(&c.env, Network::Online(&client()), &c.policy, &c.lock).unwrap();
+
+        assert_eq!(fs::read(&c.manifest).unwrap(), c.published.manifest);
+    }
+
+    #[test]
+    fn status_leaves_a_tampered_tree_in_place() {
+        let c = cached();
+        let tree = c.env.trees().pop().unwrap();
+        tamper_edit(&tree);
+
+        let states = status(&c.env.store(), c.env.project.path(), &c.lock).unwrap();
+
+        assert!(
+            matches!(states[0].state, PackState::Tampered(_)),
+            "{states:?}"
+        );
+        assert_eq!(fs::read(tree.join("rules/a.yml")).unwrap(), b"rule: evil\n");
+    }
+
+    #[rstest]
+    #[case::manifest(true)]
+    #[case::layer(false)]
+    fn a_blob_the_cache_does_not_hold_is_absent(#[case] manifest: bool) {
+        let c = cached();
+        fs::remove_file(c.blob(manifest)).unwrap();
+
+        let found = c.verified(Limits::default()).unwrap();
+
+        assert!(found.is_none(), "{found:?}");
+    }
+
+    fn make_directory(path: &Path) -> bool {
+        fs::remove_file(path).unwrap();
+        fs::create_dir(path).unwrap();
+        true
+    }
+
+    fn make_link(path: &Path) -> bool {
+        let real = path.with_extension("real");
+        fs::rename(path, &real).unwrap();
+        std::os::unix::fs::symlink(&real, path).unwrap();
+        true
+    }
+
+    /// A blob that mode 000 hides. False when the process ignores modes (root).
+    fn make_unreadable(path: &Path) -> bool {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o000)).unwrap();
+        fs::File::open(path).is_err()
+    }
+
+    #[rstest]
+    #[case::manifest_directory(true, make_directory, CacheCause::NotRegular)]
+    #[case::layer_directory(false, make_directory, CacheCause::NotRegular)]
+    #[case::manifest_link(true, make_link, CacheCause::NotRegular)]
+    #[case::layer_link(false, make_link, CacheCause::NotRegular)]
+    #[case::manifest_unreadable(
+        true,
+        make_unreadable,
+        CacheCause::Io(std::io::ErrorKind::PermissionDenied)
+    )]
+    #[case::layer_unreadable(
+        false,
+        make_unreadable,
+        CacheCause::Io(std::io::ErrorKind::PermissionDenied)
+    )]
+    fn a_blob_that_exists_but_cannot_be_read_is_an_error_and_not_absence(
+        #[case] manifest: bool,
+        #[case] corrupt: fn(&Path) -> bool,
+        #[case] expected: CacheCause,
+    ) {
+        let c = cached();
+        if !corrupt(c.blob(manifest)) {
+            return;
+        }
+
+        let err = c.verified(Limits::default()).unwrap_err();
+
+        assert!(
+            matches!(&err, SyncError::CacheUnreadable { cause, .. } if *cause == expected),
+            "{err:?}"
+        );
+        assert_eq!(err.code(), "plugin-store-unreadable");
+    }
+}

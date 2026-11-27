@@ -349,6 +349,60 @@ fn a_tampered_pack_tree_fails_the_load_with_a_typed_error() {
     assert_eq!(err.code(), Some("plugin-tampered"));
 }
 
+/// The one cached archive that `install` left in the store.
+fn only_blob(w: &World) -> PathBuf {
+    let mut blobs = fs::read_dir(w.tmp.path().join("store/blobs")).unwrap();
+    let blob = blobs.next().unwrap().unwrap().path();
+    assert!(blobs.next().is_none(), "more than one cached archive");
+    blob
+}
+
+#[test]
+fn a_link_planted_in_an_installed_tree_is_a_store_failure_and_not_tampering() {
+    let mut w = World::new();
+    let tree = w.install(&Spec::new("acme"));
+    std::os::unix::fs::symlink("slopvac-plugin.toml", tree.join("link")).unwrap();
+
+    let err = w.load(&["acme"]).unwrap_err();
+
+    assert!(matches!(err, SyncedError::StoreUnreadable { .. }), "{err}");
+    assert_eq!(err.code(), Some("plugin-store-unreadable"));
+}
+
+#[test]
+fn a_swapped_cached_archive_is_tampering_and_a_load_leaves_it_in_place() {
+    let mut w = World::new();
+    w.install(&Spec::new("acme"));
+    let blob = only_blob(&w);
+    fs::write(&blob, b"swapped").unwrap();
+
+    let err = w.load(&["acme"]).unwrap_err();
+
+    assert!(matches!(err, SyncedError::Tampered { .. }), "{err}");
+    assert_eq!(err.code(), Some("plugin-tampered"));
+    assert_eq!(
+        fs::read(&blob).unwrap(),
+        b"swapped",
+        "a load deleted the blob"
+    );
+}
+
+#[test]
+fn an_unreadable_cached_archive_is_a_store_failure_and_not_a_missing_plugin() {
+    let mut w = World::new();
+    w.install(&Spec::new("acme"));
+    let blob = only_blob(&w);
+    fs::set_permissions(&blob, std::os::unix::fs::PermissionsExt::from_mode(0o000)).unwrap();
+    if fs::File::open(&blob).is_ok() {
+        return; // the test runs with rights that ignore modes
+    }
+
+    let err = w.load(&["acme"]).unwrap_err();
+
+    assert!(matches!(err, SyncedError::StoreUnreadable { .. }), "{err}");
+    assert_eq!(err.code(), Some("plugin-store-unreadable"));
+}
+
 #[test]
 fn a_tampered_dependency_stops_the_load_of_the_pack_that_requires_it() {
     let mut w = World::new();
