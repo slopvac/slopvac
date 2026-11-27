@@ -251,3 +251,20 @@ fn the_latest_release_help_gives_the_upgrade_advice_the_binary_gives() {
         }
     }
 }
+
+#[test]
+fn the_environment_help_asks_for_paths_to_be_redacted_before_posting() {
+    for category in categories() {
+        let help = category
+            .fields
+            .iter()
+            .find(|f| f.id == "environment")
+            .and_then(|f| f.description)
+            .unwrap_or_default();
+        assert!(
+            help.contains("Redact relative paths and external file names"),
+            "{}: the help on `environment` does not ask for redaction: {help}",
+            category.key
+        );
+    }
+}
