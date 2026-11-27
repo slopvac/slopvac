@@ -1532,7 +1532,8 @@ impl<'a, R: Read> Capture<'a, R> {
         let need = self.kept.len() + data.len();
         if need > self.kept.capacity() {
             let target = need.max(self.kept.capacity().saturating_mul(2).min(self.limit));
-            reserve_exact(&mut self.kept, target - self.kept.len())?;
+            let extra = target - self.kept.len();
+            reserve_exact(&mut self.kept, extra)?;
         }
         self.kept.extend_from_slice(data);
         Ok(())
