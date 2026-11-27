@@ -60,12 +60,14 @@ impl Span {
     }
 }
 
-/// The pattern that the `path` of a document and of a recipe file must match: relative, with no
-/// drive letter, no backslash and no `..` segment. The checks of [`check_relative_path`] are
-/// stricter, and the host applies them to every path. The pattern uses `[^\n]` for a character
-/// that `.` would match, because the schema pattern subset has no `.`.
+/// The pattern that the schema publishes for the `path` of a document and of a recipe file:
+/// relative, with no drive letter, no backslash and no `..` segment. The text is the published
+/// string, byte for byte, so a reader of the schema sees no change. It uses `.`, which the schema
+/// pattern subset forbids, so `patterns.rs` lists it as pending. The checks of
+/// [`check_relative_path`] are stricter, and the host applies them to every path. The host does not
+/// compile this pattern.
 pub(crate) const RELATIVE_PATH_PATTERN: &str =
-    r"^(?!/)(?![A-Za-z]:)(?![^\n]*\\)(?!([^\n]*/)?\.\.(/|(?![\s\S])))[^\n]+(?![\s\S])";
+    r"^(?!/)(?![A-Za-z]:)(?!.*\\)(?!(.*/)?\.\.(/|(?![\s\S]))).+(?![\s\S])";
 
 /// One document sent to a hook.
 ///

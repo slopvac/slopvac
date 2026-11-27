@@ -41,7 +41,7 @@
           "type": "string"
         },
         "path": {
-          "pattern": "^(?!/)(?![A-Za-z]:)(?![^\\n]*\\\\)(?!([^\\n]*/)?\\.\\.(/|(?![\\s\\S])))[^\\n]+(?![\\s\\S])",
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S]))).+(?![\\s\\S])",
           "type": "string"
         }
       },
@@ -974,7 +974,7 @@
     },
     "FeatureName": {
       "description": "Optional capability name. The v1 registry holds one name, document-path. A name with the prefix x- is a private extension and a reader ignores it unless it understands it.",
-      "pattern": "^([a-z][a-z0-9-]*|x-[a-z0-9-]+)(?![\\s\\S])",
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])|^x-[a-z0-9-]+(?![\\s\\S])",
       "type": "string"
     },
     "FixEdit": {
@@ -1341,7 +1341,7 @@
           "type": "string"
         },
         "path": {
-          "pattern": "^(?!/)(?![A-Za-z]:)(?![^\\n]*\\\\)(?!([^\\n]*/)?\\.\\.(/|(?![\\s\\S])))[^\\n]+(?![\\s\\S])",
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S]))).+(?![\\s\\S])",
           "type": "string"
         },
         "text": {
@@ -1406,7 +1406,7 @@
           "type": "string"
         },
         "path": {
-          "pattern": "^(?!/)(?![A-Za-z]:)(?![^\\n]*\\\\)(?!([^\\n]*/)?\\.\\.(/|(?![\\s\\S])))[^\\n]+(?![\\s\\S])",
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S]))).+(?![\\s\\S])",
           "type": "string"
         }
       },

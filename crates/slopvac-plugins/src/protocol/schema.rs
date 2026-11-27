@@ -31,8 +31,10 @@ const BASE64: &str = r"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]
 /// A container part or locator: 1 to 1024 characters with no control or bidirectional-control
 /// character.
 const PART: &str = r"^[^\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]{1,1024}(?![\s\S])";
-/// A feature name: a slug, or a private extension with the prefix `x-`.
-const FEATURE_NAME: &str = r"^([a-z][a-z0-9-]*|x-[a-z0-9-]+)(?![\s\S])";
+/// A feature name: a slug, or a private extension with the prefix `x-`. The text is the
+/// published string, byte for byte. Its two alternatives are not in the pattern subset, so
+/// `patterns.rs` lists it as pending.
+const FEATURE_NAME: &str = r"^[a-z][a-z0-9-]*(?![\s\S])|^x-[a-z0-9-]+(?![\s\S])";
 /// The largest integer a JSON number carries without loss.
 const MAX_SAFE: u64 = crate::host::MAX_REQUEST_ID;
 
