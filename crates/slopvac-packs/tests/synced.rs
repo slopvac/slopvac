@@ -342,14 +342,33 @@ fn a_tampered_pack_tree_fails_the_load_with_a_typed_error() {
     let mut w = World::new();
     let tree = w.install(&Spec::new("acme"));
     tamper(&tree);
-    let before = fs::read(tree.join("slopvac-plugin.toml")).unwrap();
+    let before = tree_contents(&tree);
 
     let err = w.load(&["acme"]).unwrap_err();
 
     assert!(matches!(err, SyncedError::Tampered { .. }), "{err}");
     assert_eq!(err.code(), Some("plugin-tampered"));
-    // A load removes nothing: the changed file is still there, byte for byte.
-    assert_eq!(fs::read(tree.join("slopvac-plugin.toml")).unwrap(), before);
+    // A load removes nothing: every entry of the tree is still there, byte for byte.
+    assert_eq!(tree_contents(&tree), before, "a load changed the tree");
+}
+
+/// Every entry under `dir` by relative path: a file with its bytes, a directory with `None`.
+fn tree_contents(dir: &Path) -> std::collections::BTreeMap<PathBuf, Option<Vec<u8>>> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(current) = pending.pop() {
+        for entry in fs::read_dir(&current).unwrap() {
+            let path = entry.unwrap().path();
+            let rel = path.strip_prefix(dir).unwrap().to_path_buf();
+            if fs::symlink_metadata(&path).unwrap().is_dir() {
+                out.insert(rel, None);
+                pending.push(path);
+            } else {
+                out.insert(rel, Some(fs::read(&path).unwrap()));
+            }
+        }
+    }
+    out
 }
 
 /// The one cached archive that `install` left in the store.
