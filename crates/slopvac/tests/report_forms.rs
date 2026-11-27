@@ -157,6 +157,10 @@ fn every_option_a_form_names_is_a_visible_option_of_the_binary(#[case] key: &str
     // `build` adds the generated `--help` and `--version`.
     root.build();
     for span in description_spans(key) {
+        // Only the binary's own options: another program, such as `pip`, has its own.
+        if !(span.starts_with("--") || span.starts_with("slopvac ")) {
+            continue;
+        }
         for token in span.split_whitespace() {
             let Some(flag) = token.strip_prefix("--") else {
                 continue;
