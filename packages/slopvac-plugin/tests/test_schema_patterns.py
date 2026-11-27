@@ -49,7 +49,7 @@ def scratch_schemas(tmp_path, pattern):
 
 def test_a_pattern_without_the_end_lookahead_is_refused_when_loaded(tmp_path):
     directory = scratch_schemas(tmp_path, "^[a-z]+$")
-    with pytest.raises(SchemaError) as caught:
+    with pytest.raises(SchemaError, match="does not end with") as caught:
         load_pattern(COMMON, "/$defs/Name/pattern", directory=directory)
     assert COMMON in str(caught.value)
     assert "/$defs/Name/pattern" in str(caught.value)
@@ -61,12 +61,26 @@ def test_a_missing_pointer_names_the_file_and_pointer_and_keeps_the_cause(tmp_pa
         load_pattern(COMMON, "/$defs/Gone/pattern", directory=directory)
     assert COMMON in str(caught.value)
     assert "/$defs/Gone/pattern" in str(caught.value)
-    assert isinstance(caught.value.__cause__, KeyError)
+    assert isinstance(caught.value.__cause__, SchemaError)
+    assert isinstance(caught.value.__cause__.__cause__, KeyError)
 
 
-def test_a_schema_that_is_not_json_names_the_file_and_keeps_the_cause(tmp_path):
+def test_a_schema_that_is_not_json_names_the_file_and_pointer_and_keeps_the_cause(
+    tmp_path,
+):
     (tmp_path / PROTOCOL).write_text("{not json")
     with pytest.raises(SchemaError) as caught:
         load_pattern(PROTOCOL, "/$defs/X/pattern", directory=tmp_path)
     assert PROTOCOL in str(caught.value)
-    assert isinstance(caught.value.__cause__, json.JSONDecodeError)
+    assert "/$defs/X/pattern" in str(caught.value)
+    assert isinstance(caught.value.__cause__.__cause__, json.JSONDecodeError)
+
+
+def test_a_missing_schema_file_names_the_file_and_pointer_and_keeps_the_cause(
+    tmp_path,
+):
+    with pytest.raises(SchemaError) as caught:
+        load_pattern(PROTOCOL, "/$defs/X/pattern", directory=tmp_path)
+    assert PROTOCOL in str(caught.value)
+    assert "/$defs/X/pattern" in str(caught.value)
+    assert isinstance(caught.value.__cause__.__cause__, OSError)
