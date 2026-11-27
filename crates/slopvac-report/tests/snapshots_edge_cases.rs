@@ -1,5 +1,5 @@
-//! SARIF, rdjsonl and Code Climate output for the shapes the all-formats snapshot leaves out,
-//! pinned byte for byte: an empty report, a document outside the root, a rule without a help
+//! SARIF, rdjsonl and Code Climate output for the shapes the all-formats snapshot leaves out:
+//! an empty report, a document outside the root, a rule without a help
 //! URI, a fix with several edits, a multi-line message, and spans over several lines or empty.
 #![allow(
     clippy::panic,
@@ -105,31 +105,22 @@ fn render(format: Format, report: &Report) -> String {
         .unwrap_or_else(|e| panic!("{}: {e}", format.name()))
 }
 
-macro_rules! snapshot {
-    ($name:ident, $format:expr, $report:expr) => {
-        #[test]
-        fn $name() {
-            insta::assert_snapshot!(render($format, &$report));
-        }
-    };
+fn empty_report() -> Report {
+    serde_json::from_value(read("empty-run")).unwrap()
 }
 
-snapshot!(edge_sarif, Format::Sarif, edge_report());
-snapshot!(edge_rdjsonl, Format::Rdjsonl, edge_report());
-snapshot!(edge_codeclimate, Format::CodeClimate, edge_report());
+#[rstest::rstest]
+#[case::edge_sarif("edge_sarif", Format::Sarif, edge_report())]
+#[case::edge_rdjsonl("edge_rdjsonl", Format::Rdjsonl, edge_report())]
+#[case::edge_codeclimate("edge_codeclimate", Format::CodeClimate, edge_report())]
+#[case::empty_sarif("empty_sarif", Format::Sarif, empty_report())]
+#[case::empty_codeclimate("empty_codeclimate", Format::CodeClimate, empty_report())]
+fn pins_the_output(#[case] name: &str, #[case] format: Format, #[case] report: Report) {
+    insta::assert_snapshot!(name, render(format, &report));
+}
 
-snapshot!(
-    empty_sarif,
-    Format::Sarif,
-    serde_json::from_value::<Report>(read("empty-run")).unwrap()
-);
-snapshot!(
-    empty_rdjsonl,
-    Format::Rdjsonl,
-    serde_json::from_value::<Report>(read("empty-run")).unwrap()
-);
-snapshot!(
-    empty_codeclimate,
-    Format::CodeClimate,
-    serde_json::from_value::<Report>(read("empty-run")).unwrap()
-);
+// A snapshot trims surrounding whitespace, so it cannot tell no output from a blank line.
+#[test]
+fn an_empty_report_renders_no_rdjsonl_bytes() {
+    assert_eq!(render(Format::Rdjsonl, &empty_report()), "");
+}
