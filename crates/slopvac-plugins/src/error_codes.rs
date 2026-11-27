@@ -467,13 +467,57 @@ mod tests {
         block_in(DOC, name).unwrap_or_default()
     }
 
+    /// A document whose section 10 is valid in every other way, so only the block count is
+    /// in question.
+    fn in_section_10(body: &str) -> String {
+        format!("# P\n\n## 10. Error codes\n{body}## 11. Security\n")
+    }
+
     #[rstest]
-    #[case::missing("")]
+    #[case::missing("", "`x` needs exactly one block, found 0")]
     #[case::twice(
-        "<!-- generated:x begin -->\na\n<!-- generated:x end -->\n<!-- generated:x begin -->\nb\n<!-- generated:x end -->"
+        "<!-- generated:x begin -->\na\n<!-- generated:x end -->\n<!-- generated:x begin -->\nb\n<!-- generated:x end -->\n",
+        "`x` needs exactly one block, found 2"
     )]
-    fn a_missing_or_repeated_block_is_refused(#[case] doc: &str) {
-        assert!(block_in(doc, "x").is_err());
+    fn a_missing_or_repeated_block_is_refused_by_its_count(
+        #[case] body: &str,
+        #[case] error: &str,
+    ) {
+        assert_eq!(block_in(&in_section_10(body), "x"), Err(error.to_owned()));
+    }
+
+    #[test]
+    fn one_block_in_a_valid_section_is_accepted() {
+        let doc = in_section_10("<!-- generated:x begin -->\na\n<!-- generated:x end -->\n");
+        assert_eq!(block_in(&doc, "x"), Ok("a\n".to_owned()));
+    }
+
+    #[rstest]
+    #[case::indented_once(" ## 11. Next")]
+    #[case::indented_three("   ## 11. Next")]
+    #[case::level_one("# Appendix")]
+    fn a_heading_that_ends_section_10_hides_the_rows_after_it(#[case] heading: &str) {
+        let doc = format!(
+            "# P\n\n## 10. Error codes\n{GOOD_BLOCKS}{heading}\n| -32020 | `later` | Another table. |\n"
+        );
+        assert!(!refused(&doc), "{doc}");
+    }
+
+    #[test]
+    fn a_four_space_indent_is_code_and_does_not_end_section_10() {
+        let doc = format!(
+            "# P\n\n## 10. Error codes\n{GOOD_BLOCKS}    ## 11. Next\n| -32020 | `still` | In section 10. |\n"
+        );
+        assert!(refused(&doc), "{doc}");
+    }
+
+    #[rstest]
+    #[case::old("## 10. Error codes (old)")]
+    #[case::suffix("## 10. Error codes and more")]
+    #[case::other_level("### 10. Error codes")]
+    fn a_heading_that_only_keeps_the_prefix_is_not_section_10(#[case] heading: &str) {
+        let doc = format!("# P\n\n{heading}\n{GOOD_BLOCKS}## 11. Security\n");
+        assert!(refused(&doc), "{doc}");
     }
 
     /// Table rows in section 10 outside the generated blocks, or the scan error. Rows in
