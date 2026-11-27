@@ -1,0 +1,3 @@
+Content-Length: 355
+
+{"id":1,"jsonrpc":"2.0","method":"initialize","params":{"capabilities":{"features":["document-path"],"hooks":["tagger","extractor","reporter","fixer","scorer","provider","recipe"]},"hostInfo":{"name":"slopvac-test","version":"9.9.9"},"limits":{"maxBatchDocuments":64,"maxMessageBytes":16777216},"minProtocolVersion":1,"offline":false,"protocolVersion":1}}

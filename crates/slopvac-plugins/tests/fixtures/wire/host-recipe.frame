@@ -1,0 +1,3 @@
+Content-Length: 132
+
+{"id":2,"jsonrpc":"2.0","method":"recipe/plan","params":{"harness":"claude","options":{"force":true,"marker":"hi"},"recipe":"main"}}

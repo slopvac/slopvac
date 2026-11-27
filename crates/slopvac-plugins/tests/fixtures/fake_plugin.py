@@ -17,6 +17,11 @@ import time
 mode = sys.argv[1] if len(sys.argv) > 1 else "ok"
 overrides = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
 pidfile = sys.argv[3] if len(sys.argv) > 3 else None
+# MODE "wire" or "wire+MODE2" also appends the raw bytes of every frame received to
+# PIDFILE.wire, header included, and then behaves as "ok" or as MODE2.
+wire = mode == "wire" or mode.startswith("wire+")
+if wire:
+    mode = "ok" if mode == "wire" else mode[len("wire+") :]
 inp = sys.stdin.buffer
 out = sys.stdout.buffer
 
@@ -45,10 +50,12 @@ def sized_frame(obj, size):
 
 def read_msg():
     length = None
+    raw = b""
     while True:
         line = inp.readline()
         if not line:
             return None
+        raw += line
         line = line.rstrip(b"\r\n")
         if not line:
             break
@@ -56,6 +63,9 @@ def read_msg():
         if name.lower() == b"content-length":
             length = int(value)
     body = inp.read(length)
+    if wire and pidfile:
+        with open(pidfile + ".wire", "ab") as f:
+            f.write(raw + body)
     return json.loads(body)
 
 

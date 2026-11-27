@@ -1,0 +1,3 @@
+Content-Length: 437
+
+{"id":2,"jsonrpc":"2.0","method":"scorer/score","params":{"documents":[{"findings":[{"message":"m","rule":"core:x","severity":"warning","span":{"end":2,"start":0}},{"message":"m","rule":"core:x","severity":"warning","span":{"end":4,"start":3}}],"id":"d0","media_type":"text/markdown","text":"abcdef"},{"findings":[{"message":"m","rule":"core:x","severity":"warning","span":{"end":2,"start":1}}],"id":"d1","text":"ghi"}],"scorer":"main"}}
