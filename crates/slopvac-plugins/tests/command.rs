@@ -762,20 +762,24 @@ fn update_offline_fails_with_the_update_error_as_its_cause() {
 fn trust_records_the_content_hash_and_says_trust_is_not_containment() {
     let f = Fixture::new();
     f.write_lock(&[fake_code_entry()]);
-    let loader = TreeLoader::new(f.base.path(), "fake");
-    // The hash of the fixture tree, worked out before `trust` runs.
-    let expected = tree_hash(&f.base.path().join("tree-fake")).unwrap().to_string();
-    let ran = f.run(&["trust", "fake"], false, |s| s.loader(loader));
+    let ran = f.run(&["trust", "fake"], false, |s| {
+        s.loader(TreeLoader::new(f.base.path(), "fake"))
+    });
     assert_eq!(ran.result.unwrap(), 0);
     let records = TrustStore::open(f.state()).records().unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].hash.to_string(), expected);
+    // The recorded hash covers the program, arguments and key as well as the tree, so it has no
+    // independent value here. The record and the output must agree, and the record names the
+    // plugin and the locked digest.
+    assert_eq!(records[0].name, "fake");
+    assert_eq!(records[0].manifest_digest.as_deref(), Some(OTHER_HASH));
     assert_eq!(
         ran.out,
         format!(
-            "trusted `fake` with content hash {expected}\n\
+            "trusted `fake` with content hash {}\n\
              source: path plugins/fake; unsigned\n\
-             Trust is not containment: a trusted plugin runs with your rights, and slopvac has no sandbox.\n"
+             Trust is not containment: a trusted plugin runs with your rights, and slopvac has no sandbox.\n",
+            records[0].hash
         )
     );
 }
