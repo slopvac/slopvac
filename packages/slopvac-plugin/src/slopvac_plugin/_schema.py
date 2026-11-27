@@ -1,8 +1,10 @@
 """Read the SDK's name and path patterns from the vendored JSON schemas.
 
 The wheel carries ``schemas/plugin-protocol.schema.json`` and
-``schemas/common.schema.json``. A source checkout has no such directory, so the
-loader falls back to the repository's ``schemas/v3``.
+``schemas/common.schema.json`` inside the package. Only a module that runs from
+the SDK's own source tree (``packages/slopvac-plugin/src/slopvac_plugin``) may fall
+back to the repository's ``schemas/v3``. An installed package without its vendored
+copy is a broken install, and the import fails.
 """
 
 from __future__ import annotations
@@ -21,43 +23,73 @@ COMMON = "common.schema.json"
 END = r"(?![\s\S])"
 
 
+class SchemaError(RuntimeError):
+    """A schema file or pattern the SDK needs is missing or unusable."""
+
+
+def _source_tree_schemas() -> Path | None:
+    """``schemas/v3`` of this repository, when the module runs from its source tree."""
+    package = Path(__file__).resolve().parent
+    # <repo>/packages/slopvac-plugin/src/slopvac_plugin
+    if package.parent.name != "src" or package.parents[1].name != "slopvac-plugin":
+        return None
+    if package.parents[2].name != "packages":
+        return None
+    candidate = package.parents[3] / "schemas" / "v3"
+    return candidate if (candidate / PROTOCOL).is_file() else None
+
+
 def schema_dir() -> Path:
-    """The wheel's copy of the schemas, else the repository's ``schemas/v3``."""
+    """The wheel's copy of the schemas, else the repository's, in a source tree."""
     vendored = Path(str(resources.files("slopvac_plugin") / "schemas"))
     if (vendored / PROTOCOL).is_file():
         return vendored
-    for parent in Path(__file__).resolve().parents:
-        if (parent / "schemas" / "v3" / PROTOCOL).is_file():
-            return parent / "schemas" / "v3"
-    raise FileNotFoundError(f"{PROTOCOL} not found")
-
-
-def translate(pattern: str) -> str:
-    """Swap the schema's end-of-string lookahead for ``\\Z``.
-
-    Fails when the pattern does not end with the lookahead, so a schema change to
-    another ending cannot pass unnoticed.
-    """
-    if not pattern.endswith(END):
-        raise ValueError(f"schema pattern does not end with {END}: {pattern!r}")
-    return pattern.replace(END, r"\Z")
+    source = _source_tree_schemas()
+    if source is not None:
+        return source
+    raise SchemaError(
+        f"{PROTOCOL} is missing from the vendored schemas at {vendored}: "
+        "the slopvac-plugin install is broken, reinstall it"
+    )
 
 
 @cache
-def _document(name: str) -> Any:
-    return json.loads((schema_dir() / name).read_text("utf-8"))
+def _document(directory: Path, name: str) -> Any:
+    path = directory / name
+    try:
+        return json.loads(path.read_text("utf-8"))
+    except (OSError, ValueError) as exc:
+        raise SchemaError(f"cannot read schema {name} at {path}: {exc}") from exc
 
 
-def schema_pattern(document: str, pointer: str) -> str:
-    """The raw ``pattern`` string at a JSON pointer such as ``/$defs/X/pattern``."""
-    node = _document(document)
-    for part in pointer.removeprefix("/").split("/"):
-        node = node[part.replace("~1", "/").replace("~0", "~")]
+def _pattern(directory: Path, document: str, pointer: str) -> str:
+    where = f"{document}#{pointer}"
+    node = _document(directory, document)
+    try:
+        for part in pointer.removeprefix("/").split("/"):
+            node = node[part.replace("~1", "/").replace("~0", "~")]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise SchemaError(f"{where}: no such location in the schema") from exc
     if not isinstance(node, str):
-        raise TypeError(f"{document}#{pointer} is not a string")
+        raise SchemaError(f"{where}: is not a string pattern")
     return node
 
 
-def load_pattern(document: str, pointer: str) -> re.Pattern[str]:
-    """Compile the schema pattern at ``pointer`` for use with ``re.match``."""
-    return re.compile(translate(schema_pattern(document, pointer)))
+def load_pattern(
+    document: str, pointer: str, *, directory: Path | None = None
+) -> re.Pattern[str]:
+    """Compile the schema pattern at a JSON pointer for use with ``re.match``.
+
+    The schema's end-of-string lookahead becomes ``\\Z``. A pattern that does not end
+    with the lookahead is refused, so a schema change to another ending cannot pass
+    unnoticed. ``directory`` is for tests; it defaults to ``schema_dir()``.
+    """
+    pattern = _pattern(directory or schema_dir(), document, pointer)
+    if not pattern.endswith(END):
+        raise SchemaError(
+            f"{document}#{pointer}: pattern does not end with {END}: {pattern!r}"
+        )
+    try:
+        return re.compile(pattern.replace(END, r"\Z"))
+    except re.error as exc:
+        raise SchemaError(f"{document}#{pointer}: {exc}") from exc
