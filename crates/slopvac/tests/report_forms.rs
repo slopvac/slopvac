@@ -273,3 +273,20 @@ fn the_environment_help_asks_for_paths_to_be_redacted_before_posting() {
         );
     }
 }
+
+#[test]
+fn the_latest_release_help_names_the_action_pin_change() {
+    for category in categories() {
+        let help = category
+            .fields
+            .iter()
+            .find(|f| f.id == "latest")
+            .and_then(|f| f.description)
+            .unwrap_or_default();
+        assert!(
+            help.contains("GitHub Action: change the version pin in your workflow."),
+            "{}: the help on `latest` gives no advice for the GitHub Action: {help}",
+            category.key
+        );
+    }
+}
