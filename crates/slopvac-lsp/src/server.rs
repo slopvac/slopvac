@@ -20,12 +20,15 @@ use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestI
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams,
     CodeActionProviderCapability, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams,
-    DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    DidSaveTextDocumentParams, Hover, HoverContents, HoverParams, HoverProviderCapability,
-    InitializeParams, MarkupContent, MarkupKind, MessageType, NumberOrString, Position,
-    PositionEncodingKind, PublishDiagnosticsParams, Range, SaveOptions, ServerCapabilities,
-    ServerInfo, ShowMessageParams, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextDocumentSyncOptions, TextDocumentSyncSaveOptions, TextEdit, Uri, WorkspaceEdit,
+    DidChangeWatchedFilesParams, DidChangeWatchedFilesRegistrationOptions,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
+    FileSystemWatcher, GlobPattern, Hover, HoverContents, HoverParams, HoverProviderCapability,
+    InitializeParams, InitializeResult, MarkupContent, MarkupKind, MessageType, NumberOrString,
+    Position, PositionEncodingKind, PublishDiagnosticsParams, Range, Registration,
+    RegistrationParams, SaveOptions, ServerCapabilities, ServerInfo, ShowMessageParams,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
+    TextDocumentSyncSaveOptions, TextEdit, Unregistration, UnregistrationParams, Uri,
+    WorkspaceEdit,
 };
 use slopvac_model::{Notice, PositionEncoding, Severity, SourceIndex};
 
@@ -116,11 +119,16 @@ impl Server {
             .and_then(|w| w.did_change_watched_files.as_ref())
             .and_then(|w| w.dynamic_registration)
             .unwrap_or(false);
-        let capabilities = capabilities(encoding);
-        let init = serde_json::json!({
-            "capabilities": capabilities,
-            "serverInfo": ServerInfo { name: "slopvac".to_owned(), version: None },
-        });
+        let init = serde_json::to_value(InitializeResult {
+            capabilities: capabilities(encoding),
+            server_info: Some(ServerInfo {
+                name: "slopvac".to_owned(),
+                version: None,
+            }),
+        })
+        // The result holds only strings, booleans and numbers, so this does not fail. The
+        // protocol error is the nearest honest answer if it ever does.
+        .map_err(|_| ServerError::Protocol)?;
         connection
             .initialize_finish(id, init)
             .map_err(ServerError::protocol)?;
@@ -382,6 +390,9 @@ impl Shared {
     }
 }
 
+/// The method the config watchers are registered for.
+const WATCH_METHOD: &str = "workspace/didChangeWatchedFiles";
+
 /// The file name of the project config.
 const CONFIG_NAME: &str = "slopvac.toml";
 
@@ -407,30 +418,44 @@ fn sync_watch(shared: &Shared, out: &Sender<Message>) {
     if watch.globs.as_ref() == Some(&globs) {
         return;
     }
+    let watchers = globs
+        .iter()
+        .map(|glob| FileSystemWatcher {
+            glob_pattern: GlobPattern::String(glob.clone()),
+            kind: None,
+        })
+        .collect();
+    // Strings only, so the conversion does not fail. Were it to, the client keeps the
+    // registration it holds, rather than one that watches nothing.
+    let Ok(register_options) =
+        serde_json::to_value(DidChangeWatchedFilesRegistrationOptions { watchers })
+    else {
+        return;
+    };
     if watch.globs.take().is_some() {
         let request = Request::new(
             RequestId::from(format!("slopvac-unwatch-config-{}", watch.registrations)),
             "client/unregisterCapability".to_owned(),
-            serde_json::json!({"unregisterations": [{
-                "id": watch_id(watch.registrations),
-                "method": "workspace/didChangeWatchedFiles",
-            }]}),
+            UnregistrationParams {
+                unregisterations: vec![Unregistration {
+                    id: watch_id(watch.registrations),
+                    method: WATCH_METHOD.to_owned(),
+                }],
+            },
         );
         let _ = out.send(Message::Request(request));
     }
     watch.registrations += 1;
-    let watchers: Vec<_> = globs
-        .iter()
-        .map(|glob| serde_json::json!({"globPattern": glob}))
-        .collect();
     let request = Request::new(
         RequestId::from(watch_id(watch.registrations)),
         "client/registerCapability".to_owned(),
-        serde_json::json!({"registrations": [{
-            "id": watch_id(watch.registrations),
-            "method": "workspace/didChangeWatchedFiles",
-            "registerOptions": {"watchers": watchers},
-        }]}),
+        RegistrationParams {
+            registrations: vec![Registration {
+                id: watch_id(watch.registrations),
+                method: WATCH_METHOD.to_owned(),
+                register_options: Some(register_options),
+            }],
+        },
     );
     let _ = out.send(Message::Request(request));
     watch.globs = Some(globs);

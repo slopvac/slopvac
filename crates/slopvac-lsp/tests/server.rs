@@ -257,6 +257,33 @@ fn initialize_answers_the_negotiated_position_encoding() {
     }
 }
 
+#[rstest::rstest]
+#[case::default_encoding(None, "utf-16")]
+#[case::offered_utf8(Some(&["utf-8", "utf-16"][..]), "utf-8")]
+fn initialize_answers_the_whole_result_the_protocol_defines(
+    #[case] offered: Option<&[&str]>,
+    #[case] encoding: &str,
+) {
+    // Worked out from the protocol: full sync is kind 1, and hover and code actions are
+    // plain booleans. `serverInfo` has no `version`, so the key is absent, not null.
+    let expected = json!({
+        "capabilities": {
+            "positionEncoding": encoding,
+            "textDocumentSync": {
+                "openClose": true,
+                "change": 1,
+                "save": {"includeText": false},
+            },
+            "hoverProvider": true,
+            "codeActionProvider": true,
+        },
+        "serverInfo": {"name": "slopvac"},
+    });
+    let client = Client::engine(offered);
+    assert_eq!(client.initialize, expected);
+    client.finish().unwrap();
+}
+
 #[test]
 fn diagnostic_columns_use_the_negotiated_unit_after_an_astral_character() {
     // U+1F600 is 4 UTF-8 bytes, 2 UTF-16 code units and 1 code point. `utilize` follows
@@ -1627,6 +1654,75 @@ fn linting_a_buffer_that_finds_a_nested_config_registers_its_files() {
         )))
         .unwrap();
     expect_new_registration(&conn, &first, "/work/sub/base.toml");
+    end_session(&conn, handle);
+}
+
+#[test]
+fn the_watcher_registration_message_is_the_whole_register_request() {
+    let (linter, _) = Reloadable::new(Vec::new());
+    let (conn, handle) = watching_session(linter);
+    let register = next_request(&conn);
+    assert_eq!(
+        register.id,
+        RequestId::from("slopvac-watch-config-1".to_owned())
+    );
+    assert_eq!(register.method, "client/registerCapability");
+    assert_eq!(
+        register.params,
+        json!({"registrations": [{
+            "id": "slopvac-watch-config-1",
+            "method": "workspace/didChangeWatchedFiles",
+            "registerOptions": {"watchers": [
+                {"globPattern": "**/slopvac.toml"},
+                {"globPattern": "/work/slopvac.toml"},
+                {"globPattern": "/shared/base.toml"},
+            ]},
+        }]})
+    );
+    end_session(&conn, handle);
+}
+
+#[test]
+fn replacing_the_watch_list_sends_the_whole_unregister_then_register_request() {
+    let (conn, handle) = watching_session(growing(Some("/shared/new-base.toml"), None));
+    let _first = next_request(&conn);
+    conn.sender
+        .send(Message::Notification(Notification::new(
+            "textDocument/didSave".to_owned(),
+            json!({"textDocument": {"uri": CONFIG_URI}}),
+        )))
+        .unwrap();
+    let unregister = next_request(&conn);
+    assert_eq!(
+        unregister.id,
+        RequestId::from("slopvac-unwatch-config-1".to_owned())
+    );
+    assert_eq!(unregister.method, "client/unregisterCapability");
+    // `unregisterations` is the spelling the protocol itself uses.
+    assert_eq!(
+        unregister.params,
+        json!({"unregisterations": [{
+            "id": "slopvac-watch-config-1",
+            "method": "workspace/didChangeWatchedFiles",
+        }]})
+    );
+    let register = next_request(&conn);
+    assert_eq!(
+        register.id,
+        RequestId::from("slopvac-watch-config-2".to_owned())
+    );
+    assert_eq!(
+        register.params,
+        json!({"registrations": [{
+            "id": "slopvac-watch-config-2",
+            "method": "workspace/didChangeWatchedFiles",
+            "registerOptions": {"watchers": [
+                {"globPattern": "**/slopvac.toml"},
+                {"globPattern": "/work/slopvac.toml"},
+                {"globPattern": "/shared/new-base.toml"},
+            ]},
+        }]})
+    );
     end_session(&conn, handle);
 }
 
