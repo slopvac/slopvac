@@ -51,7 +51,10 @@ def parse_version(raw: object) -> Version:
         raise Invalid("a version entry is not an object")
     version_id = raw.get("id")
     created = raw.get("created_at")
-    tags = raw.get("tags") or []
+    metadata = raw.get("metadata")
+    container = metadata.get("container") if isinstance(metadata, dict) else None
+    tags = container.get("tags") if isinstance(container, dict) else None
+    tags = tags or []
     if not isinstance(version_id, int) or isinstance(version_id, bool):
         raise Invalid("a version entry has no integer id")
     if not isinstance(created, str):
@@ -97,18 +100,31 @@ def gh(args: Sequence[str]) -> str:
     return done.stdout
 
 
+def pages(text: str) -> list[object]:
+    """The JSON values `gh api --paginate` printed, one per page, in order."""
+    decoder = json.JSONDecoder()
+    values: list[object] = []
+    index = 0
+    while True:
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index >= len(text):
+            return values
+        try:
+            value, index = decoder.raw_decode(text, index)
+        except json.JSONDecodeError as err:
+            raise Invalid("gh api returned text that is not JSON") from err
+        values.append(value)
+
+
 def list_versions(base: str) -> list[Version]:
     """All active versions of the package, over every page."""
-    query = ".[] | {id, created_at, tags: (.metadata.container.tags // [])}"
-    out = gh(["--paginate", f"{base}/versions?per_page=100", "--jq", query])
-    versions = []
-    for line in out.splitlines():
-        if not line.strip():
-            continue
-        try:
-            versions.append(parse_version(json.loads(line)))
-        except json.JSONDecodeError as err:
-            raise Invalid("gh api returned a line that is not JSON") from err
+    out = gh(["--paginate", f"{base}/versions?per_page=100"])
+    versions: list[Version] = []
+    for page in pages(out):
+        if not isinstance(page, list):
+            raise Invalid("a page of versions is not a list")
+        versions.extend(parse_version(entry) for entry in page)
     return versions
 
 
@@ -122,6 +138,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="never delete a version with a tag that starts with this, e.g. ci-<run id>-",
     )
     parser.add_argument("--dry-run", action="store_true")
+    # Only the tests pass this, so their fixtures never depend on the wall clock.
+    parser.add_argument("--now", type=datetime.fromisoformat, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
     if args.package != PACKAGE:
@@ -140,7 +158,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Invalid as err:
         print(f"error: {err}", file=sys.stderr)
         return 2
-    stale = select_stale(versions, datetime.now(UTC), args.days, args.keep_prefix)
+    stale = select_stale(versions, args.now or datetime.now(UTC), args.days, args.keep_prefix)
     print(f"{len(versions)} versions, {len(stale)} older than {args.days} days")
 
     failed = 0

@@ -23,7 +23,8 @@ import oci_live_cleanup as cleanup  # noqa: E402
 
 NOW = datetime(2026, 11, 27, 12, 0, tzinfo=UTC)
 
-# Serves $GH_LIST for a read and records every call; `-X DELETE` fails for $GH_FAIL_ID.
+# Serves $GH_LIST, the raw pages `gh api --paginate` prints, for a read and records every
+# call; `-X DELETE` fails for $GH_FAIL_ID.
 GH_STUB = """#!/usr/bin/env python3
 import os, sys
 from pathlib import Path
@@ -42,9 +43,21 @@ def version(version_id: int, age_days: float, *tags: str) -> cleanup.Version:
     return cleanup.Version(version_id, NOW - timedelta(days=age_days), tags)
 
 
-def line(version_id: int, age_days: float, *tags: str) -> str:
+def raw(version_id, age_days, *tags, **overrides):
+    """One version object as the Packages API returns it, aged from the fixed clock."""
     created = (NOW - timedelta(days=age_days)).isoformat().replace("+00:00", "Z")
-    return json.dumps({"id": version_id, "created_at": created, "tags": list(tags)})
+    entry = {
+        "id": version_id,
+        "created_at": created,
+        "metadata": {"package_type": "container", "container": {"tags": list(tags)}},
+    }
+    entry.update(overrides)
+    return entry
+
+
+def pages(*page_lists):
+    """What `gh api --paginate` prints: one JSON array per page, back to back."""
+    return "\n".join(json.dumps(page) for page in page_lists) + "\n"
 
 
 def test_only_versions_older_than_the_cutoff_are_selected():
@@ -61,23 +74,6 @@ def test_a_version_with_a_keep_prefix_tag_survives_even_when_old():
 
 def test_an_untagged_old_version_is_selected():
     assert [v.id for v in cleanup.select_stale([version(5, 40)], NOW, 14, "ci-9-")] == [5]
-
-
-@pytest.mark.parametrize(
-    "raw",
-    [
-        pytest.param("x", id="not-an-object"),
-        pytest.param({"created_at": "2026-01-01T00:00:00Z"}, id="no-id"),
-        pytest.param({"id": True, "created_at": "2026-01-01T00:00:00Z"}, id="bool-id"),
-        pytest.param({"id": 1}, id="no-time"),
-        pytest.param({"id": 1, "created_at": "yesterday"}, id="bad-time"),
-        pytest.param({"id": 1, "created_at": "2026-01-01T00:00:00"}, id="naive-time"),
-        pytest.param({"id": 1, "created_at": "2026-01-01T00:00:00Z", "tags": "a"}, id="bad-tags"),
-    ],
-)
-def test_a_malformed_version_entry_is_refused(raw):
-    with pytest.raises(cleanup.Invalid):
-        cleanup.parse_version(raw)
 
 
 @pytest.fixture
@@ -98,7 +94,7 @@ def gh_env(tmp_path):
 
 def run(env, *args):
     return subprocess.run(
-        [sys.executable, "-I", str(SCRIPT), *args],
+        [sys.executable, "-I", str(SCRIPT), "--now", NOW.isoformat(), *args],
         env=env,
         capture_output=True,
         text=True,
@@ -116,15 +112,31 @@ def deletes(calls: Path) -> list[str]:
 
 def test_the_command_deletes_the_stale_versions_and_keeps_the_rest(gh_env):
     env, calls = gh_env
-    env["GH_LIST"] = "\n".join([line(1, 30), line(2, 1), line(3, 30, "ci-9-1-a")]) + "\n"
+    env["GH_LIST"] = pages([raw(1, 30), raw(2, 1), raw(3, 30, "ci-9-1-a")])
     done = run(env, "--keep-prefix", "ci-9-")
     assert done.returncode == 0, done.stderr
     assert deletes(calls) == ["1"]
 
 
+def test_a_version_one_day_old_is_kept_whatever_the_wall_clock_says(gh_env):
+    env, calls = gh_env
+    env["GH_LIST"] = pages([raw(1, 1)])
+    done = run(env, "--keep-prefix", "ci-9-")
+    assert done.returncode == 0, done.stderr
+    assert deletes(calls) == []
+
+
+def test_every_page_of_the_listing_is_read(gh_env):
+    env, calls = gh_env
+    env["GH_LIST"] = pages([raw(1, 30)], [raw(2, 30)], [])
+    done = run(env, "--keep-prefix", "ci-9-")
+    assert done.returncode == 0, done.stderr
+    assert deletes(calls) == ["1", "2"]
+
+
 def test_a_dry_run_deletes_nothing(gh_env):
     env, calls = gh_env
-    env["GH_LIST"] = line(1, 30) + "\n"
+    env["GH_LIST"] = pages([raw(1, 30)])
     done = run(env, "--keep-prefix", "ci-9-", "--dry-run")
     assert done.returncode == 0, done.stderr
     assert "would delete version 1" in done.stdout
@@ -133,7 +145,7 @@ def test_a_dry_run_deletes_nothing(gh_env):
 
 def test_a_failed_delete_is_reported_after_the_others_are_tried(gh_env):
     env, calls = gh_env
-    env["GH_LIST"] = "\n".join([line(1, 30), line(2, 30)]) + "\n"
+    env["GH_LIST"] = pages([raw(1, 30), raw(2, 30)])
     env["GH_FAIL_ID"] = "1"
     done = run(env, "--keep-prefix", "ci-9-")
     assert done.returncode == 1
@@ -148,9 +160,74 @@ def test_a_failed_listing_is_incomplete_and_deletes_nothing(gh_env):
     assert deletes(calls) == []
 
 
-def test_a_listing_with_a_malformed_entry_is_incomplete_and_deletes_nothing(gh_env):
+def without(entry, *path):
+    """A copy of `entry` with the key at `path` removed."""
+    copy = json.loads(json.dumps(entry))
+    node = copy
+    for key in path[:-1]:
+        node = node[key]
+    del node[path[-1]]
+    return copy
+
+
+# Each shape is a version that is old and unprotected on its face. A reader that read the
+# missing or broken tags as "no tags" would delete it, though a protected tag may hide there.
+MALFORMED = [
+    pytest.param(without(raw(7, 30), "metadata"), id="no-metadata"),
+    pytest.param(raw(7, 30, metadata=None), id="null-metadata"),
+    pytest.param(raw(7, 30, metadata="x"), id="metadata-not-an-object"),
+    pytest.param(without(raw(7, 30), "metadata", "container"), id="no-container"),
+    pytest.param(
+        raw(7, 30, metadata={"container": None}), id="null-container"
+    ),
+    pytest.param(
+        raw(7, 30, metadata={"container": []}), id="container-not-an-object"
+    ),
+    pytest.param(
+        without(raw(7, 30), "metadata", "container", "tags"), id="no-tags"
+    ),
+    pytest.param(
+        raw(7, 30, metadata={"container": {"tags": None}}), id="null-tags"
+    ),
+    pytest.param(
+        raw(7, 30, metadata={"container": {"tags": "ci-9-1-a"}}), id="tags-not-a-list"
+    ),
+    pytest.param(
+        raw(7, 30, metadata={"container": {"tags": ["ok", 5]}}), id="tag-not-a-string"
+    ),
+    pytest.param(without(raw(7, 30), "created_at"), id="no-created-at"),
+    pytest.param(without(raw(7, 30), "id"), id="no-id"),
+    pytest.param(raw(True, 30), id="boolean-id"),
+    pytest.param(raw(7, 30, created_at="yesterday"), id="unreadable-created-at"),
+    pytest.param(raw(7, 30, created_at="2026-01-01T00:00:00"), id="created-at-without-zone"),
+    pytest.param("not-an-object", id="entry-not-an-object"),
+]
+
+
+@pytest.mark.parametrize("entry", MALFORMED)
+def test_a_malformed_version_fails_the_run_closed_and_deletes_nothing(gh_env, entry):
     env, calls = gh_env
-    env["GH_LIST"] = line(1, 30) + '\n{"id": 2}\n'
+    # A valid stale version sits in the same listing, so a delete would show.
+    env["GH_LIST"] = pages([raw(1, 30), entry])
+    done = run(env, "--keep-prefix", "ci-9-")
+    assert done.returncode == 2
+    assert deletes(calls) == []
+    assert done.stderr.startswith("error: ")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("", id="empty-output"),
+        pytest.param("not json\n", id="not-json"),
+        pytest.param('{"id": 1}\n', id="page-is-an-object"),
+        pytest.param(pages([raw(1, 30)]) + "[", id="truncated-page"),
+        pytest.param(pages([raw(1, 30)], "x"), id="second-page-is-a-string"),
+    ],
+)
+def test_a_malformed_listing_fails_the_run_closed_and_deletes_nothing(gh_env, text):
+    env, calls = gh_env
+    env["GH_LIST"] = text
     done = run(env, "--keep-prefix", "ci-9-")
     assert done.returncode == 2
     assert deletes(calls) == []
@@ -162,6 +239,7 @@ def test_a_listing_with_a_malformed_entry_is_incomplete_and_deletes_nothing(gh_e
         pytest.param(["--package", "slopvac-revocations", "--keep-prefix", "ci-9-"], id="other-package"),
         pytest.param(["--days", "0", "--keep-prefix", "ci-9-"], id="zero-days"),
         pytest.param(["--keep-prefix", "../x"], id="bad-prefix"),
+        pytest.param(["--now", "2026-11-27T12:00:00", "--keep-prefix", "ci-9-"], id="naive-clock"),
     ],
 )
 def test_invalid_arguments_stop_the_run_before_any_request(gh_env, args):
