@@ -897,17 +897,22 @@ pub(crate) fn layout(id: &PackId, why: &str) -> String {
     })
 }
 
-/// The text of an unreadable cached file: the plugin, the path as given and the cause. The
-/// caller redacts the path before it shows the text.
-pub(crate) fn cache_unreadable(id: &PackId, path: &Path, cause: &CacheCause) -> String {
-    let cause = match cause {
+/// The text of the cause of an unreadable cached file.
+pub(crate) fn cache_cause(cause: &CacheCause) -> String {
+    match cause {
         CacheCause::Io { kind, .. } => SyncText::CacheIo {
             kind: kind.to_string(),
         }
         .to_string(),
         CacheCause::NotRegular => SyncPhrase::CacheNotRegular.as_static().to_owned(),
         CacheCause::TooLarge { cap } => SyncText::CacheTooLarge { cap: *cap }.to_string(),
-    };
+    }
+}
+
+/// The text of an unreadable cached file: the plugin, the path as given and the cause. The
+/// caller redacts the path before it shows the text.
+pub(crate) fn cache_unreadable(id: &PackId, path: &Path, cause: &CacheCause) -> String {
+    let cause = cache_cause(cause);
     SyncText::CacheUnreadable {
         id: s(id),
         path: esc(&path.to_string_lossy()),

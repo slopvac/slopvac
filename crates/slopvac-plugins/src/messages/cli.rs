@@ -188,6 +188,15 @@ pub(crate) enum CliText {
         version: String,
         change: String,
     },
+    /// Sync removed a cached file of the plugin that was not what it must be and fetched it
+    /// again.
+    #[code("plugins-sync-repaired")]
+    #[text("{id}: a cached file was not what it should be; it was removed and fetched again")]
+    SyncRepaired { id: String },
+    /// A code plugin whose cached files cannot be read, as the loader refuses it.
+    #[code("plugins-load-store-unreadable")]
+    #[text("cannot read the cached files of plugin `{id}`")]
+    LoadStoreUnreadable { id: String },
     /// Sync extracted the plugin for the first time.
     #[code("plugins-change-installed")]
     #[text("installed")]

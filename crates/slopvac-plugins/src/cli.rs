@@ -23,7 +23,7 @@ use crate::pyenv::{EnvStore, PythonRuntime};
 use crate::revoke::{RevocationError, RevocationNotice, Revocations};
 use crate::sign::KeyPolicy;
 use crate::sync::{
-    Change, Network, PackState, PackStatus, PythonBuild, PythonState, Store, Syncer, status,
+    Change, SyncError, Network, PackState, PackStatus, PythonBuild, PythonState, Store, Syncer, status,
     status_with_python, update_notices,
 };
 use crate::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
@@ -92,58 +92,48 @@ pub trait PluginLoader {
     fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError>;
 }
 
-/// Why a plugin could not be loaded: one redacted sentence, and the stable code of the refusal
-/// when the loader can name one. `plugins trust` reports the code and withholds the sentence
-/// of a refusal that has none.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoadError {
-    code: Option<&'static str>,
-    text: String,
+/// Why a plugin could not be loaded. The set is closed and each text comes from the catalog, so
+/// no refusal carries a path or document text. A loader keeps its own detail in its log and
+/// returns [`LoadError::Refused`], whose detail is withheld.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum LoadError {
+    /// The cached files of the plugin cannot be read. The code is `plugin-store-unreadable`.
+    #[error("{}", render(&CliText::LoadStoreUnreadable { id: id.clone() }))]
+    StoreUnreadable {
+        /// The plugin id.
+        id: String,
+    },
+    /// Any other refusal. Its detail can name a path, so it is not kept.
+    #[error("{}", withheld(TRUST_INPUTS))]
+    Refused,
 }
 
 impl LoadError {
-    /// A refusal with no code of its own.
+    /// The cached files of plugin `id` cannot be read.
     #[must_use]
-    pub fn new(text: impl Into<String>) -> Self {
-        Self {
-            code: None,
-            text: text.into(),
+    pub fn store_unreadable(id: &PackId) -> Self {
+        Self::StoreUnreadable {
+            id: id.as_str().to_owned(),
         }
     }
 
-    /// The same refusal, with the stable code it reports.
-    #[must_use]
-    pub fn with_code(mut self, code: &'static str) -> Self {
-        self.code = Some(code);
-        self
-    }
-
-    /// The stable code of the refusal, when it has one.
+    /// The stable code of the refusal, when it has one of its own.
     #[must_use]
     pub fn code(&self) -> Option<&'static str> {
-        self.code
-    }
-
-    /// The sentence, with no document text and no path outside the project.
-    #[must_use]
-    pub fn text(&self) -> &str {
-        &self.text
+        match self {
+            Self::StoreUnreadable { .. } => Some("plugin-store-unreadable"),
+            Self::Refused => None,
+        }
     }
 }
 
+/// A refusal given as text: the text is dropped, because it can name a path.
 impl From<String> for LoadError {
-    fn from(text: String) -> Self {
-        Self::new(text)
+    fn from(_: String) -> Self {
+        Self::Refused
     }
 }
-
-impl std::fmt::Display for LoadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.text)
-    }
-}
-
-impl std::error::Error for LoadError {}
 
 /// Everything the commands need from outside the library: directories, the network, keys,
 /// revocations and the inputs that only the resolved config knows. The binary builds it once.
@@ -675,6 +665,14 @@ fn run_sync(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
                 change: render(&change),
             },
         )?;
+        if p.repaired {
+            say(
+                out,
+                &CliText::SyncRepaired {
+                    id: line(p.id.as_str()),
+                },
+            )?;
+        }
     }
     notices(out, &report.notices)?;
     Ok(0)
@@ -797,9 +795,9 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         return Err(RunError::Revoked { id: line(id) });
     }
     let (vp, spec) = loader.load(pack).map_err(|e| match e.code() {
-        // A refusal that carries a code is reported under it, with its own redacted sentence.
+        // A refusal that carries a code is reported under it, with its catalog sentence.
         Some(code) => RunError::Failed {
-            source: Reported::new(code, e.text().to_owned()),
+            source: Reported::new(code, e.to_string()),
         },
         None => refused(withheld(TRUST_INPUTS)),
     })?;
@@ -814,8 +812,14 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         runner.revocations,
     )
     .verify_cached_signature(pack)
-    .map_err(|e| RunError::Failed {
-        source: cause::sync(&runner.dirs.project_root, &e),
+    .map_err(|e| {
+        let reported = cause::sync(&runner.dirs.project_root, &e);
+        match e {
+            // A cached file that is not what its name says is an input that `trust` cannot use:
+            // the command reports it under its own code, as for a tree that differs.
+            SyncError::DigestMismatch { .. } => refused(reported.to_string()),
+            _ => RunError::Failed { source: reported },
+        }
     })?;
     let (gate, spec) = runner.prepared(&vp, spec, TRUST_INPUTS).map_err(refused)?;
     let (_, state) = gate.state(&vp, &spec).map_err(|e| store_failed(&e))?;

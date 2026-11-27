@@ -151,16 +151,14 @@ impl PluginLoader for InstalledPlugins<'_> {
     fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
         self.try_load(locked).map_err(|refusal| {
             tracing::debug!(code = refusal.code(), plugin = %locked.id, "plugin loader refused");
-            let error = LoadError::new(refusal.to_string());
-            // A cache that cannot be read is reported under its own code, with the sentence the
-            // catalog gives, which names the plugin and no path.
-            if matches!(
-                refusal,
-                LoadRefusal::Synced(SyncedError::StoreUnreadable { .. })
-            ) {
-                return error.with_code(refusal.code());
+            // A cache that cannot be read is reported under its own code. Every other refusal
+            // is logged above and reaches the command as an opaque refusal.
+            match refusal {
+                LoadRefusal::Synced(SyncedError::StoreUnreadable { .. }) => {
+                    LoadError::store_unreadable(&locked.id)
+                }
+                _ => LoadError::from(refusal.to_string()),
             }
-            error
         })
     }
 }

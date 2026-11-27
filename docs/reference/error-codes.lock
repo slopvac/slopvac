@@ -1009,6 +1009,7 @@ plugins-launch-usage text
 plugins-line text
 plugins-list-core text
 plugins-list-not-locked text
+plugins-load-store-unreadable text
 plugins-lock-api-integer text
 plugins-lock-api-range text
 plugins-lock-build-metadata text
@@ -1408,6 +1409,7 @@ plugins-sync-path-reading text
 plugins-sync-path-too-large text
 plugins-sync-plugin-cause text
 plugins-sync-record-install text
+plugins-sync-repaired text
 plugins-sync-revoked-artifact text
 plugins-sync-revoked-key text
 plugins-sync-scratch-dir text

@@ -35,18 +35,7 @@ pub enum CacheCause {
 
 impl std::fmt::Display for CacheCause {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io {
-                kind,
-                os_code: Some(code),
-            } => write!(f, "{kind} (os error {code})"),
-            Self::Io {
-                kind,
-                os_code: None,
-            } => write!(f, "{kind}"),
-            Self::NotRegular => f.write_str("not a regular file"),
-            Self::TooLarge { cap } => write!(f, "over {cap} bytes"),
-        }
+        f.write_str(&messages::cache_cause(self))
     }
 }
 

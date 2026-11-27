@@ -13,6 +13,7 @@ use crate::extract::{
 };
 use crate::lock::{Digest as LockDigest, PackId};
 use crate::messages::sync as messages;
+use crate::messages::transport::TransportText;
 use crate::oci::Digest;
 
 /// A tree that a hashing pass accepted: its hash, and the manifest at its root as that same pass
@@ -263,6 +264,46 @@ impl Store {
         Ok(())
     }
 
+    /// Read the archive `path`, which must hash to `digest`, in one pass. The bytes returned are the
+    /// bytes that were hashed. The read stops at `cap` plus one byte.
+    ///
+    /// # Errors
+    /// [`SyncError::CacheUnreadable`] when the file cannot be read, is not a regular file or is
+    /// over `cap`; [`SyncError::DigestMismatch`] when the bytes are not `digest`.
+    pub(super) fn read_archive(
+        &self,
+        id: &PackId,
+        digest: &Digest,
+        cap: u64,
+    ) -> Result<Vec<u8>, SyncError> {
+        let path = self.blob_path(digest);
+        let unreadable = |cause| Self::unreadable_at(id, &path, cause);
+        let file = open_regular(&path).map_err(|e| unreadable(cause_of(&e)))?;
+        let mut bytes = Vec::new();
+        file.take(cap.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .map_err(|e| unreadable(CacheCause::io(&e)))?;
+        if bytes.len() as u64 > cap {
+            return Err(unreadable(CacheCause::TooLarge { cap }));
+        }
+        let actual = Digest::of(&bytes);
+        if actual != *digest {
+            return Err(SyncError::DigestMismatch {
+                id: id.clone(),
+                expected: digest.to_string(),
+                actual: actual.to_string(),
+            });
+        }
+        Ok(bytes)
+    }
+
+    /// Forget the repairs recorded so far. Each sync starts from none.
+    pub(super) fn clear_repaired(&self) {
+        if let Ok(mut repaired) = self.repaired.lock() {
+            repaired.clear();
+        }
+    }
+
     /// Whether sync repaired a cached file of `id` since the last call, and clear the record.
     pub(super) fn take_repaired(&self, id: &PackId) -> bool {
         self.repaired
@@ -392,8 +433,19 @@ impl Store {
             return Ok((TreeState::Absent, None));
         };
         let dir = self.tree_dir(&hash);
-        if fs::symlink_metadata(&dir).is_err() {
-            return Ok((TreeState::Absent, None));
+        match fs::symlink_metadata(&dir) {
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((TreeState::Absent, None)),
+            // Only a tree that is not there is absent: a tree that cannot be inspected is an error.
+            Err(source) => {
+                return Err(ExtractError::Io {
+                    what: TransportText::ExtractInspecting {
+                        path: dir.display().to_string(),
+                    }
+                    .to_string(),
+                    source,
+                });
+            }
         }
         let verified = verify_tree_capturing(&dir, &hash);
         #[cfg(feature = "test-support")]

@@ -1274,27 +1274,23 @@ fn loader_text_is_never_echoed_into_the_failure() {
         "cannot load `fake` to record trust: plugins-trust-inputs-failed: details are withheld because they can name paths outside the project"
     );
 }
-/// A loader whose refusal has a stable code and a sentence with no path.
+/// A loader whose refusal has a stable code.
 struct UnreadableCacheLoader;
 
 impl PluginLoader for UnreadableCacheLoader {
     fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
-        Err(
-            LoadError::new("cannot read the cached files of plugin `fake`")
-                .with_code("plugin-store-unreadable"),
-        )
+        Err(LoadError::StoreUnreadable {
+            id: "fake".to_owned(),
+        })
     }
 }
 
-/// A loader whose refusal carries a code and a sentence that names an absolute path.
-struct LeakyLoader;
+/// A loader that refuses with a text that names an absolute path.
+struct PathNamingLoader;
 
-impl PluginLoader for LeakyLoader {
+impl PluginLoader for PathNamingLoader {
     fn load(&self, _: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
-        Err(
-            LoadError::new("cannot read /home/someone/secret-dir/blob")
-                .with_code("plugin-store-unreadable"),
-        )
+        Err("cannot read /home/someone/secret-dir/blob".to_owned().into())
     }
 }
 
@@ -1303,7 +1299,7 @@ fn trust_shows_no_absolute_path_from_a_loader_refusal_in_its_text_or_chain() {
     let f = Fixture::new();
     f.write_lock(&[fake_code_entry()]);
     let err = f
-        .run(&["trust", "fake"], false, |s| s.loader(LeakyLoader))
+        .run(&["trust", "fake"], false, |s| s.loader(PathNamingLoader))
         .result
         .unwrap_err();
     let shown = format!("{}\n{err:?}", names_in_chain(&err));
