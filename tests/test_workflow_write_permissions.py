@@ -26,7 +26,11 @@ OIDC = {"id-token"}
 # Approved departures: scope -> the (workflow file, job) pairs that hold it today.
 # Add a pair only together with a row in docs/engineering.md.
 DEPARTURES: dict[str, set[tuple[str, str]]] = {
-    "packages": {("revocations.yml", "push")},
+    "packages": {
+        ("revocations.yml", "push"),
+        ("oci-live.yml", "live"),
+        ("oci-live.yml", "cleanup"),
+    },
     "security-events": {
         ("security.yml", "codeql"),
         ("security.yml", "osv"),

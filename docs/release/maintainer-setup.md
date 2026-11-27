@@ -146,6 +146,22 @@ The `revocations` environment is separate from `release` on purpose. This schedu
 
 Rerun the workflow, without `first_publication`, whenever the list has lapsed. A rerun issues a newer list, which replaces the old one. The CLI rejects a list with an older `issued` time than the one it cached.
 
+## The OCI client test package
+
+The `OCI client live test` workflow (`oci-live.yml`) checks the OCI client against a real registry. It pushes scratch artifacts to `ghcr.io/slopvac/oci-client-ci`, pulls them back by tag and by digest, reads the referrers through the tag-schema fallback that GHCR needs, lists the tags and pulls once without credentials. The package holds test artifacts only. It serves no user, and nothing trusts it.
+
+- **Who pushes:** only this workflow, from a weekly run (Monday) and from pushes to `main`. A pull request, a fork or a tag never pushes. The workflow has no `pull_request` trigger and each job checks for `main`.
+- **Tags:** each run pushes under `ci-<run id>-<attempt>-<name>`, plus the `sha256-<hex>` tag that the referrers fallback reads. Nothing uses `latest`, so runs never share a tag.
+- **Token:** the `live` and `cleanup` jobs use the workflow's `GITHUB_TOKEN` with `packages: write`, because GHCR does not accept App installation tokens. The departure is recorded in [engineering standards](../engineering.md#approved-departures).
+- **Cleanup:** the weekly run deletes every version older than 14 days, through the Packages REST API and `scripts/ci/oci_live_cleanup.py`. It skips any version tagged by its own run. Deleting a version from a workflow is a public preview at GitHub, and it needs the repository to hold the admin role on the package. A package that this workflow published gives the repository that role.
+- **Visibility:** the first push creates the package as private. Only an organisation owner can make it public, and the anonymous pull test needs that.
+
+### First run of the live test
+
+1. Run the `OCI client live test` workflow by hand on `main` (`workflow_dispatch`) with `first_publication` set to true. The run skips only the anonymous pull and says so in its log.
+2. After the first run, open the new `oci-client-ci` package under the `slopvac` organisation's packages and set its visibility to public. Check under "Manage Actions access" that `slopvac/slopvac` has the admin role.
+3. Run the workflow again without `first_publication`. Every scheduled run and every run on `main` fails when the anonymous pull fails.
+
 ### Recovery and key rotation
 
 The candidate list is always signed with the current key, `keys/slopvac-release.pub`. The published list must verify before a run replaces it. It may verify with the current key or with a key kept in `keys/` as `slopvac-release-<KEYID>.pub` (the previous or next key of a rotation, see [Rotate the key](#rotate-the-key)). Delete that file to stop trusting the key. Clients verify only against the key compiled into the binary, so a list from another key cannot be used and the next run replaces it.

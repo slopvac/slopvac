@@ -1,0 +1,107 @@
+name: OCI client live test
+
+# Runs the OCI client against a live GHCR package (bead slopvac-8l4.9.17): a push of a
+# scratch artifact, a pull by tag and by digest, the tag-schema referrers fallback, the
+# tag listing and an anonymous pull. The package is ghcr.io/slopvac/oci-client-ci. It is
+# public, holds test artifacts only and serves no user. Only this workflow pushes to it,
+# from a weekly run and from pushes to main. Never add a pull_request trigger: a pull
+# request must not push to the registry.
+#
+# Two jobs. `live` pushes and pulls. `cleanup` deletes versions older than 14 days and
+# runs on the weekly schedule only. Each holds `packages: write` and no other secret.
+
+on:
+  schedule:
+    - cron: "37 5 * * 1"
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      first_publication:
+        description: >-
+          For the very first run, while the package is still private: skip the
+          anonymous pull and say so in the log. Every other test still runs. Leave it
+          off once an organisation owner has made the package public.
+        type: boolean
+        default: false
+permissions: {}
+
+# One run per ref at a time. A run that is pushing is never cancelled.
+concurrency:
+  group: oci-live-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  live:
+    name: Pull and push on GHCR
+    if: ${{ github.repository == 'slopvac/slopvac' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # rust-toolchain.toml pins the toolchain; the helper recovers from a partial install.
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: oci-live
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: nextest@0.9.152
+
+      # The build runs without the token, so no build script or proc macro sees it.
+      - name: Build the live tests
+        run: cargo nextest run -p slopvac-plugins --test ghcr_live --run-ignored only --locked --no-run
+
+      # The tests read GITHUB_TOKEN through the client's own credential chain. Each test
+      # fails when the token or a run id is missing, so none passes by skipping.
+      - name: Run the live tests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FIRST_PUBLICATION: ${{ inputs.first_publication }}
+        run: |
+          args=()
+          if [[ "$FIRST_PUBLICATION" == true ]]; then
+            msg="first_publication is set: the anonymous pull test is skipped."
+            echo "::warning::${msg} Make the package public, then run again without it."
+            args+=(-E 'not test(/^anonymous_pull/)')
+          fi
+          cargo nextest run -p slopvac-plugins --test ghcr_live --run-ignored only --locked --no-fail-fast "${args[@]}"
+
+  cleanup:
+    name: Delete old package versions
+    needs: live
+    # Weekly only. The job still runs when `live` failed, so a broken week does not let
+    # the package grow. It never deletes a version this run pushed.
+    if: >-
+      ${{ !cancelled() && github.event_name == 'schedule'
+      && github.repository == 'slopvac/slopvac' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Delete versions older than 14 days
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+        run: python3 -I scripts/ci/oci_live_cleanup.py --days 14 --keep-prefix "ci-${RUN_ID}-"
