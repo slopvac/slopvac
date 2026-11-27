@@ -1234,9 +1234,7 @@ fn hash_stream(
     let mut buf = vec![0u8; HASH_CHUNK];
     let mut len = 0u64;
     loop {
-        let n = src
-            .read(&mut buf)
-            .map_err(|e| read_failure(what, e))?;
+        let n = src.read(&mut buf).map_err(|e| read_failure(what, e))?;
         if n == 0 {
             break;
         }
@@ -1411,7 +1409,7 @@ fn reserve_exact(kept: &mut Vec<u8>, additional: usize) -> io::Result<()> {
 /// its cause as [`ExtractError::Io`], whose source chain ends in the allocator's error. Any
 /// other failed read is a malformed entry, as it was.
 fn read_failure(what: &str, e: io::Error) -> ExtractError {
-    if e.get_ref().is_some_and(|inner| inner.is::<CaptureAlloc>()) {
+    if matches!(e.get_ref(), Some(inner) if inner.is::<CaptureAlloc>()) {
         return ExtractError::Io {
             what: TransportText::ExtractReadingFile {
                 path: what.to_owned(),
@@ -2467,7 +2465,7 @@ mod single_read_tests {
         let err = reserve_exact(&mut Vec::new(), usize::MAX).unwrap_err();
 
         assert!(
-            err.get_ref().is_some_and(|inner| inner.is::<CaptureAlloc>()),
+            matches!(err.get_ref(), Some(inner) if inner.is::<CaptureAlloc>()),
             "{err:?}"
         );
         assert!(std::error::Error::source(&err).is_some(), "{err:?}");
