@@ -33,7 +33,7 @@ use slopvac_plugins::revoke::{
     RevocationNotice, Revocations, Revoked,
 };
 use slopvac_plugins::sign::{
-    MEDIA_MINISIG, PublicKey, RotationProof, SignError, plugins_key, verify_rotation,
+    MEDIA_MINISIG, PublicKey, RegistryHost, RotationProof, SignError, plugins_key, verify_rotation,
 };
 use slopvac_plugins::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
 use slopvac_plugins::{PluginError, PluginSpec, SpawnGate};
@@ -59,6 +59,8 @@ const NEW_KEY_ID: &str = "A7628DAD436BB320";
 const ISSUED: &str = "2026-10-30T00:00:00Z";
 const EXPIRES: &str = "2026-11-29T00:00:00Z";
 const FETCHED: &str = "2026-11-01T00:00:00Z";
+/// The registry the pins of these tests belong to.
+const REGISTRY: &str = "registry.example";
 
 fn key(file: &str) -> PublicKey {
     PublicKey::from_base64(file.lines().nth(1).unwrap()).unwrap()
@@ -922,7 +924,7 @@ fn a_rotation_must_be_newer_than_the_pins_not_before() {
 }
 
 fn pinned_ids(store: &TrustStore) -> Vec<String> {
-    store.pinned_map().unwrap()["acme"]
+    store.pinned_map().unwrap()[&(RegistryHost::parse(REGISTRY).unwrap(), "acme".to_owned())]
         .iter()
         .map(PublicKey::key_id)
         .collect()
@@ -933,11 +935,12 @@ fn rotation_replaces_the_pin_and_sets_its_not_before() {
     let state = support::scratch();
     let store = TrustStore::open(state.path());
     store
-        .pin_key("acme", OLD_PUB.lines().nth(1).unwrap(), FETCHED)
+        .pin_key(REGISTRY, "acme", OLD_PUB.lines().nth(1).unwrap(), FETCHED)
         .unwrap();
     let new = key(NEW_PUB);
     let pin = store
         .rotate_key(
+            REGISTRY,
             "acme",
             &proof(ROTATION_OLD_SIG, ROTATION_NEW_SIG, &new),
             &RevocationList::default(),
@@ -950,6 +953,7 @@ fn rotation_replaces_the_pin_and_sets_its_not_before() {
 
     // The same statement again no longer names the pinned key as the old one.
     let again = store.rotate_key(
+        REGISTRY,
         "acme",
         &proof(ROTATION_OLD_SIG, ROTATION_NEW_SIG, &new),
         &RevocationList::default(),
@@ -971,6 +975,7 @@ fn rotation_needs_an_existing_pin() {
     let new = key(NEW_PUB);
     let err = store
         .rotate_key(
+            REGISTRY,
             "acme",
             &proof(ROTATION_OLD_SIG, ROTATION_NEW_SIG, &new),
             &RevocationList::default(),
@@ -988,11 +993,12 @@ fn k5_a_revoked_old_key_cannot_rotate_to_a_new_one() {
     let state = support::scratch();
     let store = TrustStore::open(state.path());
     store
-        .pin_key("acme", OLD_PUB.lines().nth(1).unwrap(), FETCHED)
+        .pin_key(REGISTRY, "acme", OLD_PUB.lines().nth(1).unwrap(), FETCHED)
         .unwrap();
     let new = key(NEW_PUB);
     let err = store
         .rotate_key(
+            REGISTRY,
             "acme",
             &proof(ROTATION_OLD_SIG, ROTATION_NEW_SIG, &new),
             &list,
@@ -1036,7 +1042,7 @@ fn rotate_with(
         new_key: &new_key,
     };
     store
-        .rotate_key("acme", &p, revoked, "2026-12-31T00:00:00Z")
+        .rotate_key(REGISTRY, "acme", &p, revoked, "2026-12-31T00:00:00Z")
         .map(drop)
 }
 
@@ -1049,7 +1055,7 @@ fn pinned_store(key: &Root) -> (support::Scratch, TrustStore) {
     let state = support::scratch();
     let store = TrustStore::open(state.path());
     store
-        .pin_key("acme", &key.public().to_base64(), FETCHED)
+        .pin_key(REGISTRY, "acme", &key.public().to_base64(), FETCHED)
         .unwrap();
     (state, store)
 }

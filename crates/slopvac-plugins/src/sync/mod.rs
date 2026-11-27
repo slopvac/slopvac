@@ -583,6 +583,7 @@ impl<'a> Syncer<'a> {
         let expect = Expectation {
             id: id.as_str(),
             namespace,
+            registry: &reference.registry,
             version: &version,
             artifact_type: ARTIFACT_TYPE_PACK,
             floor: Some((&version, lock_signature.not_before.as_str())),

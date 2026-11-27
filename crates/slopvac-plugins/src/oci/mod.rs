@@ -27,6 +27,7 @@ pub use auth::{
 };
 pub use client::{Client, Fetched};
 pub(crate) use process::Contained;
+pub(crate) use reference::valid_registry;
 pub(crate) use reference::valid_tag;
 pub use reference::{Reference, Target};
 pub use types::{

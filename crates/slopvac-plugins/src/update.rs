@@ -657,6 +657,7 @@ fn resolve(
     let expect = Expectation {
         id: id.as_str(),
         namespace,
+        registry: &repository.registry,
         version: &tag,
         artifact_type: ARTIFACT_TYPE_PACK,
         floor: pack

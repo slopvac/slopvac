@@ -54,7 +54,8 @@ use crate::protocol::PluginDeclaration;
 use crate::pyenv::{EnvStore, ManagedEnv, PYTHON_FLAGS, PyEnvError, PythonRuntime};
 use crate::revoke::{RevocationError, RevocationList, Revocations};
 use crate::sign::{
-    PublicKey, RotationProof, SignError, canonical_json, is_reserved_namespace, verify_rotation,
+    PublicKey, RegistryHost, RotationProof, SignError, canonical_json, is_reserved_namespace,
+    verify_rotation,
 };
 
 mod key;
@@ -96,6 +97,9 @@ pub enum TrustError {
         /// Fingerprint of the key that holds it.
         existing: String,
     },
+    /// A registry host is not a host with an optional port, or a stored one is not normalised.
+    #[error(transparent)]
+    Registry(SignError),
     /// The namespace is reserved or first-party, so no key can be pinned for it.
     #[error("{}", messages::namespace_reserved(.namespace))]
     ReservedNamespace {
@@ -330,6 +334,9 @@ pub struct TrustRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KeyPin {
+    /// Registry host the key is pinned for, normalised as [`RegistryHost`] does.
+    /// The pin signs nothing on another registry.
+    pub registry: String,
     /// Namespace the key signs.
     pub namespace: String,
     /// SHA-256 fingerprint shown to the user.
@@ -542,13 +549,23 @@ impl TrustStore {
         })
     }
 
-    /// Pin a publisher key for a namespace. The first pin binds the namespace to
-    /// the key; a different key needs a rotation statement ([`Self::rotate_key`]).
+    /// Pin a publisher key for a namespace on one registry. The first pin binds
+    /// the pair (`registry`, `namespace`) to the key; a different key needs a
+    /// rotation statement ([`Self::rotate_key`]). The pin signs nothing on another
+    /// registry. `registry` is normalised with [`RegistryHost::parse`], and the
+    /// returned pin holds the normalised form.
     ///
     /// # Errors
-    /// [`TrustError::NamespaceBound`] when the namespace has another key,
-    /// [`TrustError::ReservedNamespace`] for `slopvac` and `core`.
-    pub fn pin_key(&self, namespace: &str, key_b64: &str, now: &str) -> Result<KeyPin, TrustError> {
+    /// [`TrustError::NamespaceBound`] when the pair has another key,
+    /// [`TrustError::ReservedNamespace`] for `slopvac` and `core` on any registry,
+    /// [`TrustError::Registry`] for a registry that is not a host.
+    pub fn pin_key(
+        &self,
+        registry: &str,
+        namespace: &str,
+        key_b64: &str,
+        now: &str,
+    ) -> Result<KeyPin, TrustError> {
         if is_reserved_namespace(namespace) {
             return Err(TrustError::ReservedNamespace {
                 namespace: namespace.to_owned(),
@@ -558,7 +575,11 @@ impl TrustStore {
             path: self.path(),
             why: e.to_string(),
         })?;
+        let registry = RegistryHost::parse(registry)
+            .map_err(TrustError::Registry)?
+            .to_string();
         let pin = KeyPin {
+            registry: registry.clone(),
             namespace: namespace.to_owned(),
             fingerprint: key.fingerprint(),
             key: key_b64.trim().to_owned(),
@@ -567,7 +588,11 @@ impl TrustStore {
         };
         self.update(|f| {
             f.schema_version = 1;
-            if let Some(existing) = f.pins.iter().find(|p| p.namespace == namespace) {
+            if let Some(existing) = f
+                .pins
+                .iter()
+                .find(|p| p.registry == registry && p.namespace == namespace)
+            {
                 if existing.fingerprint == pin.fingerprint {
                     return Ok(existing.clone());
                 }
@@ -581,7 +606,8 @@ impl TrustStore {
         })
     }
 
-    /// Replace the key pinned for `namespace` with the new key of a rotation.
+    /// Replace the key pinned for `namespace` on `registry` with the new key of a
+    /// rotation. A pin on another registry stays as it is.
     ///
     /// This is the pinning command's confirmation step: the caller has shown
     /// `proof.new_key`'s fingerprint first. Under the store lock it verifies the
@@ -591,19 +617,26 @@ impl TrustStore {
     /// key (K5). The new pin records the rotation's `notBefore`.
     ///
     /// # Errors
-    /// [`TrustError::NotPinned`] for a namespace with no pin,
+    /// [`TrustError::NotPinned`] for a pair with no pin,
+    /// [`TrustError::Registry`] for a registry that is not a host,
     /// [`TrustError::Rotation`] for a proof that fails verification,
     /// [`TrustError::Revoked`] for a revoked key, plus store failures.
     pub fn rotate_key(
         &self,
+        registry: &str,
         namespace: &str,
         proof: &RotationProof<'_>,
         revoked: &RevocationList,
         now: &str,
     ) -> Result<KeyPin, TrustError> {
         let path = self.path();
+        let registry = RegistryHost::parse(registry).map_err(TrustError::Registry)?;
         self.update(|f| {
-            let Some(slot) = f.pins.iter_mut().find(|p| p.namespace == namespace) else {
+            let Some(slot) = f
+                .pins
+                .iter_mut()
+                .find(|p| p.registry == registry.as_str() && p.namespace == namespace)
+            else {
                 return Err(TrustError::NotPinned(namespace.to_owned()));
             };
             let pinned = PublicKey::from_base64(&slot.key).map_err(|e| TrustError::Corrupt {
@@ -618,6 +651,7 @@ impl TrustStore {
                 }
             }
             *slot = KeyPin {
+                registry: registry.to_string(),
                 namespace: namespace.to_owned(),
                 fingerprint: proof.new_key.fingerprint(),
                 key: proof.new_key.to_base64(),
@@ -628,13 +662,17 @@ impl TrustStore {
         })
     }
 
-    /// Every pinned key by namespace, ready for [`crate::sign::KeyPolicy::pinned`].
+    /// Every pinned key by registry host and namespace, ready for
+    /// [`crate::sign::KeyPolicy::pinned`].
     ///
     /// # Errors
     /// [`TrustError::Corrupt`] for a damaged store or key,
+    /// [`TrustError::Registry`] for a stored registry that is not in normal form,
     /// [`TrustError::ReservedNamespace`] for a pin in a reserved namespace.
-    pub fn pinned_map(&self) -> Result<BTreeMap<String, Vec<PublicKey>>, TrustError> {
-        let mut map: BTreeMap<String, Vec<PublicKey>> = BTreeMap::new();
+    pub fn pinned_map(
+        &self,
+    ) -> Result<BTreeMap<(RegistryHost, String), Vec<PublicKey>>, TrustError> {
+        let mut map: BTreeMap<(RegistryHost, String), Vec<PublicKey>> = BTreeMap::new();
         for p in self.read()?.pins {
             if is_reserved_namespace(&p.namespace) {
                 return Err(TrustError::ReservedNamespace {
@@ -645,7 +683,11 @@ impl TrustStore {
                 path: self.path(),
                 why: e.to_string(),
             })?;
-            map.entry(p.namespace).or_default().push(key);
+            let registry = RegistryHost::parse(&p.registry).map_err(TrustError::Registry)?;
+            if registry.as_str() != p.registry {
+                return Err(TrustError::Registry(SignError::InvalidRegistry));
+            }
+            map.entry((registry, p.namespace)).or_default().push(key);
         }
         Ok(map)
     }
