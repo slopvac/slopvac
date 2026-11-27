@@ -169,3 +169,51 @@ fn every_option_a_form_names_is_a_visible_option_of_the_binary(#[case] key: &str
         }
     }
 }
+
+const CATEGORY_KEYS: [&str; 7] = [
+    "bug",
+    "false-positive",
+    "missed-slop",
+    "mis-tagged",
+    "wrong-fix",
+    "new-rule",
+    "rule-improvement",
+];
+
+#[test]
+fn the_code_comments_invocation_a_form_documents_runs_and_reports() {
+    use snapbox::cmd::{Command, cargo_bin};
+
+    let mut invocations: Vec<String> = CATEGORY_KEYS
+        .iter()
+        .flat_map(|key| description_spans(key))
+        .filter(|span| span.contains("--mode code-comments"))
+        .collect();
+    invocations.sort();
+    invocations.dedup();
+    assert!(
+        !invocations.is_empty(),
+        "no form documents a code-comments invocation"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    for span in invocations {
+        let tokens: Vec<&str> = span.split_whitespace().collect();
+        let out = Command::new(cargo_bin!("slopvac"))
+            .args(&tokens[1..])
+            .env_remove("SLOPVAC_OFFLINE")
+            .env("NO_COLOR", "1")
+            .env("SLOPVAC_NO_UPDATE_CHECK", "1")
+            .current_dir(dir.path())
+            .stdin("# Parse the input.\nvalue = 1\n")
+            .output()
+            .unwrap();
+        assert!(
+            matches!(out.status.code(), Some(0 | 1)),
+            "`{span}` exited {:?}: {}",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(report["schema_version"], 3, "`{span}`");
+    }
+}
