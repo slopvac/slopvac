@@ -370,6 +370,10 @@ pub(crate) enum TransportText {
         path: String,
         detail: String,
     },
+    /// The buffer for a file the caller keeps in memory could not be allocated.
+    #[code("plugins-extract-capture-alloc")]
+    #[text("the buffer for a file held in memory could not be allocated")]
+    ExtractCaptureAlloc,
     /// A file the caller keeps in memory is over the caller's limit.
     #[code("plugins-extract-capture-limit")]
     #[text("`{path}` is over the {cap} byte limit for a file held in memory")]
@@ -1404,6 +1408,10 @@ mod tests {
                     detail: s("y"),
                 },
                 "`x`: y",
+            ),
+            (
+                T::ExtractCaptureAlloc,
+                "the buffer for a file held in memory could not be allocated",
             ),
             (
                 T::ExtractCaptureLimit {

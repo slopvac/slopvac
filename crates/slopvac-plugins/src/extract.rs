@@ -1402,7 +1402,7 @@ struct CaptureAlloc(std::collections::TryReserveError);
 
 impl std::fmt::Display for CaptureAlloc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("the capture buffer could not be allocated")
+        f.write_str(&TransportText::ExtractCaptureAlloc.to_string())
     }
 }
 
