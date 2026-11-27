@@ -62,6 +62,34 @@ pub const ARTIFACTS: &[Artifact] = &[
         build: frontmatter,
     },
     Artifact {
+        file: "terms.schema.json",
+        title: "slopvac v3 terms file",
+        description: Some(
+            "A list of project terms: product names, acronyms and other words that rules must \
+             not flag or must spell a fixed way. The project file is .slopvac/terms.toml, and \
+             plugins ship more. Semantics are specified in docs/contract/plugins.md.",
+        ),
+        imports: &["common.schema.json"],
+        inline: &[],
+        keep: &[],
+        build: terms,
+    },
+    Artifact {
+        file: "blocklist.schema.json",
+        title: "slopvac v3 word blocklist",
+        description: Some(
+            "A list of words a project refuses, each with a part of speech and a reason. The \
+             opt-in vocabulary check reads it; it is off unless `terms.blocklists` or \
+             `[vocabulary] path` names a file. The file may be TOML, JSON or YAML (`.toml`, \
+             `.json`, `.yml` or `.yaml`); the file suffix picks the format. Semantics are \
+             specified in docs/contract/plugins.md.",
+        ),
+        imports: &["common.schema.json"],
+        inline: &[],
+        keep: &[],
+        build: blocklist,
+    },
+    Artifact {
         file: "rule.schema.json",
         title: "slopvac v3 rule",
         description: Some(
@@ -384,6 +412,17 @@ fn config() -> Value {
 /// config schema, which `slopvac-schemas` links.
 fn frontmatter() -> Value {
     slopvac_config::frontmatter_schema()
+}
+
+/// The terms file, which the reader accepts as input. The types are schema-only
+/// (`slopvac_terms::terms_schema`), and the reader validates the file itself.
+fn terms() -> Value {
+    slopvac_terms::terms_schema()
+}
+
+/// The word blocklist, which the reader accepts as input, in the same way.
+fn blocklist() -> Value {
+    slopvac_terms::blocklist_schema()
 }
 
 fn rule() -> Value {

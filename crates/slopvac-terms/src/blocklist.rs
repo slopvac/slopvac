@@ -35,6 +35,49 @@ pub enum Pos {
     Article,
 }
 
+/// Every spelling of a part of speech that a blocklist accepts, in the order the schema lists
+/// them: the lowercase short and long forms, then the spaCy tags. The match is case-sensitive
+/// and does not trim. [`Pos::parse`] reads this table and the schema's `enum` is written from
+/// it, so the two cannot differ.
+pub(crate) const POS_FORMS: [(&str, Pos); 25] = [
+    ("n", Pos::Noun),
+    ("noun", Pos::Noun),
+    ("v", Pos::Verb),
+    ("verb", Pos::Verb),
+    ("adj", Pos::Adjective),
+    ("adjective", Pos::Adjective),
+    ("adv", Pos::Adverb),
+    ("adverb", Pos::Adverb),
+    ("prep", Pos::Preposition),
+    ("preposition", Pos::Preposition),
+    ("conj", Pos::Conjunction),
+    ("conjunction", Pos::Conjunction),
+    ("pron", Pos::Pronoun),
+    ("pronoun", Pos::Pronoun),
+    ("art", Pos::Article),
+    ("article", Pos::Article),
+    ("NOUN", Pos::Noun),
+    ("VERB", Pos::Verb),
+    ("ADJ", Pos::Adjective),
+    ("ADV", Pos::Adverb),
+    ("ADP", Pos::Preposition),
+    ("CCONJ", Pos::Conjunction),
+    ("SCONJ", Pos::Conjunction),
+    ("PRON", Pos::Pronoun),
+    ("DET", Pos::Article),
+];
+
+/// The spellings of [`POS_FORMS`], for the schema's `enum`.
+pub(crate) fn pos_names() -> Vec<&'static str> {
+    POS_FORMS.iter().map(|(form, _)| *form).collect()
+}
+
+/// The pattern of a word and of a reason: at least one character that is not white space. The
+/// schema publishes it, and the reader refuses a word or a reason that is blank after
+/// trimming; a property test holds the two to one verdict, including the code points where
+/// the engines read white space differently.
+pub(crate) const NON_BLANK_PATTERN: &str = r"\S";
+
 impl Pos {
     /// Parse a part of speech exactly as the blocklist schema lists it.
     ///
@@ -42,17 +85,10 @@ impl Pos {
     /// long forms, and the uppercase spaCy tags.
     #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
-        Some(match raw {
-            "n" | "noun" | "NOUN" => Self::Noun,
-            "v" | "verb" | "VERB" => Self::Verb,
-            "adj" | "adjective" | "ADJ" => Self::Adjective,
-            "adv" | "adverb" | "ADV" => Self::Adverb,
-            "prep" | "preposition" | "ADP" => Self::Preposition,
-            "conj" | "conjunction" | "CCONJ" | "SCONJ" => Self::Conjunction,
-            "pron" | "pronoun" | "PRON" => Self::Pronoun,
-            "art" | "article" | "DET" => Self::Article,
-            _ => return None,
-        })
+        POS_FORMS
+            .iter()
+            .find(|(form, _)| *form == raw)
+            .map(|(_, pos)| *pos)
     }
 }
 
@@ -103,7 +139,7 @@ struct RawEntry {
 }
 
 /// The only `schema_version` of a blocklist file this crate reads.
-pub const BLOCKLIST_SCHEMA_VERSION: u32 = 3;
+pub const BLOCKLIST_SCHEMA_VERSION: u32 = slopvac_model::SchemaVersion::VALUE as u32;
 
 /// Require `schema_version = 3`. A 2.x blocklist has none.
 fn check_version(path: &str, declared: Option<&serde_json::Value>) -> Result<(), TermsError> {

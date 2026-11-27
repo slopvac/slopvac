@@ -41,7 +41,7 @@ impl TermEntry {
             number: None,
             problem,
         };
-        if self.term.trim().is_empty() {
+        if self.term.chars().count() < MIN_TEXT_LEN || self.term.trim().is_empty() {
             return Err(err(
                 EntryProblem::MissingWord,
                 TermsText::TermEmpty.to_string(),
@@ -68,7 +68,7 @@ impl TermEntry {
         }
         let mut variants = BTreeSet::new();
         for v in &self.variants {
-            if v.is_empty() {
+            if v.chars().count() < MIN_TEXT_LEN {
                 return Err(err(
                     EntryProblem::BadVariant,
                     TermsText::EmptyVariant {
@@ -102,7 +102,25 @@ pub struct TermsFile {
 }
 
 /// The only `schema_version` of a terms file this crate reads.
-pub const TERMS_SCHEMA_VERSION: u32 = 3;
+pub const TERMS_SCHEMA_VERSION: u32 = slopvac_model::SchemaVersion::VALUE as u32;
+
+/// The pattern a `kind` must match: a kebab-case label. The terms schema publishes it from here,
+/// and `is_kebab_label` checks it; a property test holds the two to one verdict.
+pub(crate) const KIND_PATTERN: &str = slopvac_model::SLUG;
+
+/// The fewest characters of a term and of a variant, counted before any trimming. The schema
+/// states it as `minLength`, and the reader refuses a shorter one. A term must also have a
+/// character that is not white space, which the schema cannot say.
+pub(crate) const MIN_TEXT_LEN: usize = 1;
+
+/// Whether a casing mode is on when the file does not say. The schema publishes it as the
+/// `default` of both modes.
+pub(crate) const DEFAULT_CASING: bool = false;
+
+/// [`DEFAULT_CASING`] as the function that serde's `default` attribute takes.
+pub(crate) fn default_casing() -> bool {
+    DEFAULT_CASING
+}
 
 #[derive(Deserialize)]
 struct RawFile {
@@ -119,9 +137,9 @@ struct RawTerm {
     variants: Vec<String>,
     #[serde(default)]
     kind: Option<String>,
-    #[serde(default)]
+    #[serde(default = "default_casing")]
     ignore_case: bool,
-    #[serde(default)]
+    #[serde(default = "default_casing")]
     case_sensitive: bool,
     #[serde(flatten)]
     extra: BTreeMap<String, toml::Value>,
@@ -193,7 +211,7 @@ impl TermsFile {
                 ignore_case: t.ignore_case,
                 case_sensitive: t.case_sensitive,
             };
-            if entry.term.trim().is_empty() {
+            if entry.term.chars().count() < MIN_TEXT_LEN || entry.term.trim().is_empty() {
                 return Err(entry_err(
                     EntryProblem::MissingWord,
                     i + 1,
