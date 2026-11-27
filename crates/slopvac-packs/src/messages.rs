@@ -47,9 +47,9 @@ pub(crate) enum PackMessage {
         #[count]
         cap: u64,
     },
-    /// The store could not be read for a plugin.
+    /// A cached file of a plugin could not be read, by a load, `plugins trust` or `plugins sync`.
     #[code("plugin-store-unreadable")]
-    #[message("cannot read the installed tree of plugin `{id}`")]
+    #[message("cannot read the cached files of plugin `{id}`")]
     StoreUnreadable { id: String },
     /// A plugin targets an extension API that this build does not implement.
     #[code("plugin-api-unsupported")]

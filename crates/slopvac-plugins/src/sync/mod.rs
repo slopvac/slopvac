@@ -67,7 +67,7 @@ use semver::{Version, VersionReq};
 
 use cache::Accepted;
 pub use cache::{Store, StoreLock, TreeState};
-pub use error::SyncError;
+pub use error::{CacheCause, SyncError};
 pub use verified::VerifiedTree;
 
 use crate::extract::{

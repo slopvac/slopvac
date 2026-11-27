@@ -11,6 +11,23 @@ use crate::pyenv::PyEnvError;
 use crate::revoke::RevocationError;
 use crate::sign::SignError;
 
+/// Why a cached file of a plugin could not be read. The cache holds the file, so none of these is
+/// a missing file; a missing file is absence, and sync fetches it again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CacheCause {
+    /// The operating system refused the open or the read. Only the kind is kept: the error can
+    /// carry a path.
+    Io(std::io::ErrorKind),
+    /// The path is a link, a directory or another file that is not a regular file.
+    NotRegular,
+    /// The file is larger than a cache file may be.
+    TooLarge {
+        /// The limit in bytes.
+        cap: u64,
+    },
+}
+
 /// Why a sync, status or check failed. Every variant makes the command exit 2
 /// (policies.md, section 3.5): the run could not establish that the installed
 /// packs are the locked packs.
@@ -122,6 +139,17 @@ pub enum SyncError {
         /// The tree.
         path: PathBuf,
     },
+    /// A cached file of a plugin exists but cannot be read. The code is
+    /// `plugin-store-unreadable`, as for a load that cannot read the cached files.
+    #[error("{}", messages::cache_unreadable(id, path, cause))]
+    CacheUnreadable {
+        /// Pack id.
+        id: PackId,
+        /// The file.
+        path: PathBuf,
+        /// Why it cannot be read.
+        cause: CacheCause,
+    },
     /// Safe extraction refused the archive, or a file operation failed.
     #[error("{}", messages::plugin_cause(id, source))]
     Extract {
@@ -175,6 +203,7 @@ impl SyncError {
             Self::OfflinePackMissing { .. } => "offline-plugin-missing",
             Self::LockMismatch(_) => "lock-mismatch",
             Self::CacheTampered { .. } => "cache-tampered",
+            Self::CacheUnreadable { .. } => "plugin-store-unreadable",
             Self::DigestMismatch { .. } => "digest-mismatch",
             // A credential helper refused while fetching a signature blob is a
             // login problem, not a bad signature.

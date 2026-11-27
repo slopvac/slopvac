@@ -14,6 +14,7 @@ use slopvac_messages::{Catalog, Entry};
 use slopvac_sanitize::line as esc;
 
 use crate::lock::{LockDiff, PackId};
+use crate::sync::CacheCause;
 
 /// The published error codes of sync, the lock and update.
 #[derive(Debug, Clone, PartialEq, Eq, Catalog)]
@@ -101,6 +102,27 @@ pub(crate) enum SyncText {
     #[code("plugins-sync-config-drift")]
     #[text("the lock does not match the configured plugins:\n{diff}")]
     ConfigDrift { diff: String },
+    /// A cached file of a plugin exists but cannot be read. The failure carries the code
+    /// `plugin-store-unreadable`.
+    #[code("plugins-sync-cache-unreadable")]
+    #[text("plugin `{id}`: cannot read the cached file {path}: {cause}")]
+    CacheUnreadable {
+        id: String,
+        #[display_path]
+        path: String,
+        cause: String,
+    },
+    /// The cause of an unreadable cached file: the operating system refused the read.
+    #[code("plugins-sync-cache-io")]
+    #[text("{kind}")]
+    CacheIo { kind: String },
+    /// The cause of an unreadable cached file: it is larger than a cache file may be.
+    #[code("plugins-sync-cache-too-large")]
+    #[text("over the {cap} byte limit")]
+    CacheTooLarge {
+        #[count]
+        cap: u64,
+    },
     /// The lock entry cannot be resolved as written.
     #[code("plugins-sync-source")]
     #[text("plugin `{id}`: {why}")]
@@ -577,6 +599,10 @@ pub(crate) enum SyncText {
 /// refusals. Each reads as a `&'static str`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Catalog)]
 pub(crate) enum SyncPhrase {
+    /// The cause of an unreadable cached file: it is not a regular file.
+    #[code("plugins-sync-cache-not-regular")]
+    #[text("not a regular file")]
+    CacheNotRegular,
     /// What was missing: the plugin archive.
     #[code("plugins-sync-what-archive")]
     #[text("plugin archive")]
@@ -871,8 +897,26 @@ pub(crate) fn layout(id: &PackId, why: &str) -> String {
     })
 }
 
-/// `cache-tampered`.
-pub(crate) fn cache_tampered(id: &PackId, path: &Path) -> String {
+/// The text of an unreadable cached file: the plugin, the path as given and the cause. The
+/// caller redacts the path before it shows the text.
+pub(crate) fn cache_unreadable(id: &PackId, path: &Path, cause: &CacheCause) -> String {
+    let cause = match cause {
+        CacheCause::Io(kind) => SyncText::CacheIo {
+            kind: kind.to_string(),
+        }
+        .to_string(),
+        CacheCause::NotRegular => SyncPhrase::CacheNotRegular.as_static().to_owned(),
+        CacheCause::TooLarge { cap } => SyncText::CacheTooLarge { cap: *cap }.to_string(),
+    };
+    SyncText::CacheUnreadable {
+        id: s(id),
+        path: esc(&path.to_string_lossy()),
+        cause: esc(&cause),
+    }
+    .to_string()
+}
+
+/// `cache-tampered`.id: &PackId, path: &Path) -> String {
     SyncMessage::CacheTampered {
         id: s(id),
         path: esc(&path.to_string_lossy()),
@@ -1660,6 +1704,16 @@ mod tests {
             (SyncText::RevokedKey { key_id: s("AB") }, "publisher key AB"),
             (SyncText::Opening { path: s("/b/x") }, "opening /b/x"),
             (
+                SyncText::CacheUnreadable {
+                    id: s("a"),
+                    path: s("/b/x"),
+                    cause: s("c"),
+                },
+                "plugin `a`: cannot read the cached file /b/x: c",
+            ),
+            (SyncText::CacheIo { kind: s("k") }, "k"),
+            (SyncText::CacheTooLarge { cap: 7 }, "over the 7 byte limit"),
+            (
                 SyncText::ManifestParse { reason: s("r") },
                 "the manifest does not parse: r",
             ),
@@ -2043,6 +2097,7 @@ mod tests {
     fn every_phrase_keeps_its_text_and_is_registered() {
         let table: Vec<(SyncPhrase, &str)> = vec![
             (SyncPhrase::WhatArchive, "plugin archive"),
+            (SyncPhrase::CacheNotRegular, "not a regular file"),
             (SyncPhrase::WhatGitTree, "git tree"),
             (SyncPhrase::WhatRelease, "release archive"),
             (SyncPhrase::WhatManifest, "manifest"),

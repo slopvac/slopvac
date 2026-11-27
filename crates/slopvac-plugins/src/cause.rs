@@ -12,7 +12,7 @@ use slopvac_messages::{Catalog, Entry, render};
 
 use crate::lock::LockDiff;
 use crate::messages::cli::Reported;
-use crate::messages::sync::{cache_tampered, config_drift, update_busy};
+use crate::messages::sync::{cache_tampered, cache_unreadable, config_drift, update_busy};
 use crate::revoke::RevocationError;
 use crate::sync::SyncError;
 use crate::trust::TrustError;
@@ -89,6 +89,9 @@ pub(crate) fn sync(root: &Path, e: &SyncError) -> Reported {
     let text = match e {
         SyncError::Revocation(inner) => return revocation(inner),
         SyncError::CacheTampered { id, path } => cache_tampered(id, Path::new(&under(path, root))),
+        SyncError::CacheUnreadable { id, path, cause } => {
+            cache_unreadable(id, Path::new(&under(path, root)), cause)
+        }
         SyncError::OfflinePackMissing { .. }
         | SyncError::Unsigned { .. }
         | SyncError::DigestMismatch { .. }
