@@ -68,7 +68,8 @@ pub fn x_extensions(schema: &mut Schema) {
 }
 
 /// An optional member is absent or a real value, never `null`: drop the `null` alternative
-/// schemars adds for an `Option`, and the `null` default it adds for `#[serde(default)]`.
+/// schemars adds for an `Option`, the `null` it adds to the `enum` of an optional closed set
+/// of strings, and the `null` default it adds for `#[serde(default)]`.
 pub fn absent_not_null(schema: &mut Schema) {
     if schema.get("default") == Some(&Value::Null) {
         schema.remove("default");
@@ -80,6 +81,10 @@ pub fn absent_not_null(schema: &mut Schema) {
             schema.insert("type".into(), only);
         }
     }
+    if let Some(Value::Array(values)) = schema.get_mut("enum") {
+        values.retain(|value| !value.is_null());
+    }
+    strip_string_type(schema);
     let null = Value::String("null".into());
     if let Some(Value::Array(any)) = schema.get_mut("anyOf")
         && any.iter().any(|alt| alt.get("type") == Some(&null))
@@ -165,6 +170,11 @@ pub(crate) fn plain_enums(schema: &mut Schema) {
         schema.remove("oneOf");
         schema.insert("enum".into(), Value::Array(values));
     }
+    strip_string_type(schema);
+}
+
+/// Drop `"type": "string"` beside an `enum` of strings or a string `const`: the values say it.
+fn strip_string_type(schema: &mut Schema) {
     let all_strings = schema
         .get("enum")
         .and_then(Value::as_array)

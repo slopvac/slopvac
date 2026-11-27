@@ -15,6 +15,7 @@ serde_json = { workspace = true }
 similar = { workspace = true }
 slopvac = { workspace = true }
 slopvac-agents = { workspace = true }
+slopvac-config = { workspace = true }
 slopvac-context = { workspace = true }
 slopvac-model = { workspace = true }
 slopvac-packs = { workspace = true }

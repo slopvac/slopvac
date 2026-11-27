@@ -9,7 +9,7 @@ use std::ops::Range;
 use crate::diag::{Code, Diagnostic, closest};
 use crate::messages::{ConfigPhrase, ConfigText};
 use crate::tree::{Entry, Node, Value};
-use slopvac_model::{RESERVED_ID, is_reserved_namespace};
+use slopvac_model::{RESERVED_ID, RESERVED_NAMESPACES, is_reserved_namespace};
 
 /// The shape a value must have.
 #[derive(Debug, Clone)]
@@ -208,6 +208,26 @@ fn is_index_name(s: &str) -> bool {
     is_pack_id(s) && !is_reserved_namespace(s)
 }
 
+/// The JSON Schema pattern that [`is_ref`] implements.
+pub(crate) const REF_PATTERN: &str = r"^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\s\S])";
+
+/// The JSON Schema pattern that [`is_rule_key`] implements.
+pub(crate) const RULE_KEY_PATTERN: &str =
+    r"^([a-z][a-z0-9-]*:)?[A-Za-z0-9][A-Za-z0-9._-]*(?![\s\S])";
+
+/// The JSON Schema pattern that [`is_index_name`] implements: a slug that is not a reserved
+/// namespace.
+pub(crate) fn index_name_pattern() -> String {
+    format!(
+        r"^(?!({})(?![\s\S]))[a-z][a-z0-9-]*(?![\s\S])",
+        RESERVED_NAMESPACES.join("|")
+    )
+}
+
+/// The JSON Schema pattern for the scheme, host and user-info checks of [`index_source_fault`].
+/// It keeps `\s`, which the schema engines read a little wider than `char::is_whitespace`.
+pub(crate) const INDEX_SOURCE_PATTERN: &str = r"^(oci|https)://[^\s/?#@]+([/?#]\S*)?(?![\s\S])";
+
 fn index_name() -> Shape {
     Shape::Pattern {
         name: ConfigPhrase::NounIndexName.as_static(),
@@ -216,7 +236,7 @@ fn index_name() -> Shape {
 }
 
 /// The longest `source` of an extra index, in characters.
-const INDEX_SOURCE_MAX: usize = 2048;
+pub(crate) const INDEX_SOURCE_MAX: usize = 2048;
 
 /// Why an extra-index source is refused, or `None` for an `oci://` or `https://` source with a
 /// host and no user-info, as in the schema's `IndexExtraSource`. An `@` after the host is
@@ -280,10 +300,26 @@ fn reference() -> Shape {
     }
 }
 
-const LEVELS: &[&str] = &["error", "warning", "suggestion", "off"];
-const PROFILES: &[&str] = &["strict", "normal", "relaxed"];
-const LOCALES: &[&str] = &["en-US", "en-GB", "und"];
-const SETTINGS_KEYS: &[&str] = &[
+/// The levels a rule or category reports at.
+pub(crate) const LEVELS: &[&str] = &["error", "warning", "suggestion", "off"];
+/// The built-in strictness tiers.
+pub(crate) const PROFILES: &[&str] = &["strict", "normal", "relaxed"];
+/// The spelling targets.
+pub(crate) const LOCALES: &[&str] = &["en-US", "en-GB", "und"];
+/// The input surfaces.
+pub(crate) const MODES: &[&str] = &["prose", "code-comments"];
+/// The detail levels of the rendered `prime` topics.
+pub(crate) const GUIDANCE_LEVELS: &[&str] = &["brief", "standard", "full"];
+/// The values of `guidance.write`.
+pub(crate) const GUIDANCE_WRITE: &[&str] = &["auto", "off"];
+/// The values of `guidance.review`.
+pub(crate) const GUIDANCE_REVIEW: &[&str] = &["auto", "ask", "off"];
+/// The values of `guidance.review_depth`.
+pub(crate) const GUIDANCE_DEPTHS: &[&str] = &["self", "subagent", "adversary"];
+/// The values of `guidance.report`.
+pub(crate) const GUIDANCE_REPORT: &[&str] = &["ask", "off"];
+/// The fields of a front-matter block, and the values `[frontmatter] allow` takes.
+pub(crate) const SETTINGS_KEYS: &[&str] = &[
     "genre",
     "profile",
     "locale",
@@ -292,6 +328,40 @@ const SETTINGS_KEYS: &[&str] = &[
     "rules",
     "terms",
 ];
+/// The fields a document may set when its project config says nothing.
+pub(crate) const DEFAULT_ALLOW: &[&str] = &["genre", "locale", "terms"];
+/// Bounds of `profile.severity_shift`, in steps.
+pub(crate) const SHIFT_MIN: i64 = -2;
+/// Bounds of `profile.severity_shift`, in steps.
+pub(crate) const SHIFT_MAX: i64 = 2;
+/// Bounds of `thresholds.min_score`.
+pub(crate) const SCORE_MAX: u32 = 100;
+/// The least value of a count, a weight or a density budget.
+pub(crate) const MINIMUM: u32 = 0;
+/// The fewest entries in a `files` list.
+pub(crate) const MIN_FILES: usize = 1;
+/// The category budget that clears a budget a lower layer set.
+pub(crate) const BUDGET_NONE: &str = "none";
+/// The default of `mode`.
+pub(crate) const DEFAULT_MODE: &str = "prose";
+/// The default of `guidance.level`.
+pub(crate) const DEFAULT_GUIDANCE_LEVEL: &str = "standard";
+/// The default of `guidance.write`.
+pub(crate) const DEFAULT_GUIDANCE_WRITE: &str = "auto";
+/// The default of `guidance.review`.
+pub(crate) const DEFAULT_GUIDANCE_REVIEW: &str = "auto";
+/// The default of `guidance.review_depth`.
+pub(crate) const DEFAULT_GUIDANCE_DEPTH: &str = "subagent";
+/// The default of `guidance.report`.
+pub(crate) const DEFAULT_GUIDANCE_REPORT: &str = "ask";
+/// The default of `frontmatter.enabled`.
+pub(crate) const DEFAULT_FRONTMATTER_ENABLED: bool = true;
+/// The default of `network.offline`.
+pub(crate) const DEFAULT_OFFLINE: bool = false;
+/// The default of `network.update_check`.
+pub(crate) const DEFAULT_UPDATE_CHECK: bool = true;
+/// The default of `index.default`.
+pub(crate) const DEFAULT_INDEX_DEFAULT: bool = true;
 
 fn level() -> Shape {
     choice(LEVELS)
@@ -313,8 +383,8 @@ fn profile() -> Shape {
                 (
                     "severity_shift",
                     Shape::Int {
-                        min: Some(-2),
-                        max: Some(2),
+                        min: Some(SHIFT_MIN),
+                        max: Some(SHIFT_MAX),
                     },
                 ),
             ],
@@ -325,14 +395,14 @@ fn profile() -> Shape {
 
 fn non_negative() -> Shape {
     Shape::Num {
-        min: Some(0.0),
+        min: Some(f64::from(MINIMUM)),
         max: None,
     }
 }
 
 fn thresholds() -> Shape {
     let count = Shape::Int {
-        min: Some(0),
+        min: Some(i64::from(MINIMUM)),
         max: None,
     };
     table(
@@ -343,8 +413,8 @@ fn thresholds() -> Shape {
             (
                 "min_score",
                 Shape::Num {
-                    min: Some(0.0),
-                    max: Some(100.0),
+                    min: Some(f64::from(MINIMUM)),
+                    max: Some(f64::from(SCORE_MAX)),
                 },
             ),
             ("max_unicode_dashes", count),
@@ -401,7 +471,7 @@ fn settings_fields() -> Vec<(&'static str, Shape)> {
 fn files() -> Shape {
     Shape::List {
         item: Box::new(Shape::NonEmptyStr),
-        min_items: 1,
+        min_items: MIN_FILES,
         unique: false,
         unique_key: None,
     }
@@ -429,7 +499,7 @@ pub fn config_shape() -> Shape {
     table(
         vec![
             ("schema_version", Shape::Version),
-            ("mode", choice(&["prose", "code-comments"])),
+            ("mode", choice(MODES)),
             ("extends", strings()),
             ("styles", list(reference())),
             ("exclude", strings()),
@@ -473,11 +543,11 @@ pub fn config_shape() -> Shape {
                 "guidance",
                 table(
                     vec![
-                        ("level", choice(&["brief", "standard", "full"])),
-                        ("write", choice(&["auto", "off"])),
-                        ("review", choice(&["auto", "ask", "off"])),
-                        ("review_depth", choice(&["self", "subagent", "adversary"])),
-                        ("report", choice(&["ask", "off"])),
+                        ("level", choice(GUIDANCE_LEVELS)),
+                        ("write", choice(GUIDANCE_WRITE)),
+                        ("review", choice(GUIDANCE_REVIEW)),
+                        ("review_depth", choice(GUIDANCE_DEPTHS)),
+                        ("report", choice(GUIDANCE_REPORT)),
                     ],
                     &[],
                 ),
@@ -723,7 +793,7 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
         }
         Shape::Int { min, max } => check_int(ctx, node, *min, *max, path),
         Shape::Budget => match &node.value {
-            Value::Str(s) if s == "none" => {}
+            Value::Str(s) if s == BUDGET_NONE => {}
             Value::Str(s) => ctx.value_error(
                 node,
                 path,
@@ -731,7 +801,7 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
                 ConfigPhrase::LabelNotAccepted.text(),
                 Some(ConfigPhrase::HelpBudget.text()),
             ),
-            _ => check_num(ctx, node, Some(0.0), None, path),
+            _ => check_num(ctx, node, Some(f64::from(MINIMUM)), None, path),
         },
         Shape::Num { min, max } => check_num(ctx, node, *min, *max, path),
         Shape::Choice { values, table_help } => check_choice(ctx, node, values, *table_help, path),
@@ -1196,3 +1266,6 @@ pub fn validate_directive(node: &Node, text: &str) -> Vec<Diagnostic> {
     );
     ctx.out
 }
+
+#[cfg(test)]
+mod patterns;

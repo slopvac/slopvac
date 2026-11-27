@@ -177,7 +177,7 @@ impl Policy {
     pub fn core() -> Self {
         Self {
             enabled: true,
-            allow: ["genre", "locale", "terms"]
+            allow: crate::schema::DEFAULT_ALLOW
                 .iter()
                 .map(|s| (*s).to_owned())
                 .collect(),
@@ -210,16 +210,6 @@ pub struct Read {
     /// Everything wrong with the block, in document order.
     pub diagnostics: Vec<Diagnostic>,
 }
-
-const SETTING_FIELDS: &[&str] = &[
-    "genre",
-    "profile",
-    "locale",
-    "thresholds",
-    "categories",
-    "rules",
-    "terms",
-];
 
 /// Read the `slopvac:` block of `doc`. `file` is the path shown in provenance.
 ///
@@ -307,7 +297,7 @@ pub(crate) fn denied(block: &Node, policy: &Policy, root: &str) -> Vec<Diagnosti
     };
     entries
         .iter()
-        .filter(|e| SETTING_FIELDS.contains(&e.key.as_str()))
+        .filter(|e| crate::schema::SETTINGS_KEYS.contains(&e.key.as_str()))
         .filter(|e| !policy.allow.contains(&e.key))
         .map(|e| Diagnostic {
             code: Code::FrontmatterFieldDenied,

@@ -11,6 +11,11 @@ use slopvac_model::{ConfigLayer, ConfigSource, Severity};
 use crate::load::{BlockKind, LoadedConfig};
 use crate::messages::ConfigText;
 use crate::presets::Presets;
+use crate::schema::{
+    BUDGET_NONE, DEFAULT_ALLOW, DEFAULT_FRONTMATTER_ENABLED, DEFAULT_GUIDANCE_DEPTH,
+    DEFAULT_GUIDANCE_LEVEL, DEFAULT_GUIDANCE_REPORT, DEFAULT_GUIDANCE_REVIEW,
+    DEFAULT_GUIDANCE_WRITE, DEFAULT_MODE, DEFAULT_OFFLINE, DEFAULT_UPDATE_CHECK,
+};
 use crate::source::{Setting, display_path, layer_name};
 
 /// Built-in defaults: the lowest layer.
@@ -18,7 +23,7 @@ use crate::source::{Setting, display_path, layer_name};
 pub fn core_defaults() -> Vec<Setting> {
     let core = |path: &[&str], value: Json| Setting::bare(ConfigLayer::Core, path, value);
     vec![
-        core(&["mode"], json!("prose")),
+        core(&["mode"], json!(DEFAULT_MODE)),
         core(
             &["exclude"],
             json!([
@@ -32,18 +37,18 @@ pub fn core_defaults() -> Vec<Setting> {
             ]),
         ),
         core(&["profile", "name"], json!("normal")),
-        core(&["frontmatter", "enabled"], json!(true)),
         core(
-            &["frontmatter", "allow"],
-            json!(["genre", "locale", "terms"]),
+            &["frontmatter", "enabled"],
+            json!(DEFAULT_FRONTMATTER_ENABLED),
         ),
-        core(&["guidance", "level"], json!("standard")),
-        core(&["guidance", "write"], json!("auto")),
-        core(&["guidance", "review"], json!("auto")),
-        core(&["guidance", "review_depth"], json!("subagent")),
-        core(&["guidance", "report"], json!("ask")),
-        core(&["network", "offline"], json!(false)),
-        core(&["network", "update_check"], json!(true)),
+        core(&["frontmatter", "allow"], json!(DEFAULT_ALLOW)),
+        core(&["guidance", "level"], json!(DEFAULT_GUIDANCE_LEVEL)),
+        core(&["guidance", "write"], json!(DEFAULT_GUIDANCE_WRITE)),
+        core(&["guidance", "review"], json!(DEFAULT_GUIDANCE_REVIEW)),
+        core(&["guidance", "review_depth"], json!(DEFAULT_GUIDANCE_DEPTH)),
+        core(&["guidance", "report"], json!(DEFAULT_GUIDANCE_REPORT)),
+        core(&["network", "offline"], json!(DEFAULT_OFFLINE)),
+        core(&["network", "update_check"], json!(DEFAULT_UPDATE_CHECK)),
     ]
 }
 
@@ -148,7 +153,7 @@ impl Resolved {
         let clears_budget = matches!(
             setting.path.as_slice(),
             [c, _, f] if c == "categories" && f == "max_per_100_words"
-        ) && setting.value == json!("none");
+        ) && setting.value == json!(BUDGET_NONE);
         let value = if clears_budget {
             Json::Null
         } else {
