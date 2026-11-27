@@ -29,7 +29,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, select};
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::Value;
 
 use crate::budget::RunBudget;
 use crate::error::{PluginError, StartError};
@@ -39,8 +40,10 @@ use crate::launch::Launcher;
 use crate::messages::host::{self as messages, HostPhrase, HostText};
 use crate::process::{Group, Leader, TableSource, Teardown};
 use crate::protocol::{
-    FEATURE_DOCUMENT_PATH, HookDecl, HookKind, InitializeResult, MIN_PROTOCOL_VERSION, NameVersion,
-    PROTOCOL_VERSION, PluginDeclaration,
+    CancelParams, FEATURE_DOCUMENT_PATH, HookDecl, HookKind, HostCapabilities, HostInfo,
+    HostLimits, InitializeParams, InitializeResult, InitializedParams, MIN_PROTOCOL_VERSION,
+    NameVersion, Notification, PROTOCOL_VERSION, PluginDeclaration, Request, RequestId, encode,
+    method,
 };
 use crate::strict;
 
@@ -764,15 +767,8 @@ impl Conn {
         lock(&self.shared.dead).clone()
     }
 
-    fn send_frame(&self, body: &Value, deadline: Instant) -> Result<(), PluginError> {
-        let bytes = serde_json::to_vec(body).map_err(|e| {
-            PluginError::Usage(
-                HostText::EncodeMessage {
-                    error: e.to_string(),
-                }
-                .to_string(),
-            )
-        })?;
+    fn send_frame<T: Serialize>(&self, msg: &T, deadline: Instant) -> Result<(), PluginError> {
+        let bytes = encode(msg)?;
         let max = self.shared.max_body.load(Ordering::SeqCst);
         if bytes.len() > max {
             return Err(PluginError::MessageTooLarge(
@@ -806,16 +802,13 @@ impl Conn {
         }
     }
 
-    fn notify(
+    fn notify<P: Serialize>(
         &self,
         method: &str,
-        params: Option<Value>,
+        params: Option<&P>,
         timeout: Duration,
     ) -> Result<(), PluginError> {
-        let mut msg = json!({"jsonrpc": "2.0", "method": method});
-        if let Some(p) = params {
-            msg["params"] = p;
-        }
+        let msg = Notification::new(method, params);
         self.send_frame(&msg, Instant::now() + timeout)
     }
 
@@ -823,14 +816,18 @@ impl Conn {
     ///
     /// With `escalate`, a missed deadline cancels the request and then kills the
     /// plugin when it stays silent. Without it, the caller just gives up.
-    fn request(
+    fn request<P: Serialize>(
         &self,
         method: &str,
-        params: Option<Value>,
+        params: Option<&P>,
         timeout: Duration,
         escalate: bool,
     ) -> Reply {
-        let id = match self.ids.next_id() {
+        let id = match self
+            .ids
+            .next_id()
+            .and_then(|n| RequestId::new(n).ok_or(PluginError::RequestIdExhausted))
+        {
             Ok(id) => id,
             Err(e) => return Err(self.shared.fail(e)),
         };
@@ -843,19 +840,16 @@ impl Conn {
                 return Err(e);
             }
             pending.insert(
-                id,
+                id.get(),
                 Pending {
                     reply: reply_tx,
                     cancel: cancel_tx,
                 },
             );
         }
-        let mut msg = json!({"jsonrpc": "2.0", "id": id, "method": method});
-        if let Some(p) = params {
-            msg["params"] = p;
-        }
+        let msg = Request::new(id, method, params);
         if let Err(e) = self.send_frame(&msg, deadline) {
-            lock(&self.shared.pending).remove(&id);
+            lock(&self.shared.pending).remove(&id.get());
             return Err(e);
         }
         match wait_for(&reply_rx, &cancel_rx, deadline) {
@@ -867,7 +861,7 @@ impl Conn {
             Wake::Cancel => self.cancel_and_wait(id, &reply_rx, false, method),
             Wake::Deadline if escalate => self.cancel_and_wait(id, &reply_rx, true, method),
             Wake::Deadline => {
-                lock(&self.shared.pending).remove(&id);
+                lock(&self.shared.pending).remove(&id.get());
                 Err(self.timeout(
                     &HostText::MethodNoReply {
                         method: method.to_owned(),
@@ -881,18 +875,18 @@ impl Conn {
     /// Send `$/cancelRequest`, then give the plugin the grace period to answer.
     fn cancel_and_wait(
         &self,
-        id: u64,
+        id: RequestId,
         rx: &Receiver<Stamped>,
         deadline_passed: bool,
         method: &str,
     ) -> Reply {
         let _ = self.notify(
-            "$/cancelRequest",
-            Some(json!({"id": id})),
+            method::CANCEL_REQUEST,
+            Some(&CancelParams { id }),
             self.cancel_grace,
         );
         let Ok((_, answer)) = rx.recv_timeout(self.cancel_grace) else {
-            lock(&self.shared.pending).remove(&id);
+            lock(&self.shared.pending).remove(&id.get());
             let err = self.timeout(
                 &HostText::MethodIgnoredCancel {
                     method: method.to_owned(),
@@ -1133,21 +1127,29 @@ impl Plugin {
 
     /// Run `initialize` and `initialized` over a fresh connection.
     fn handshake(mut conn: Conn, spec: &PluginSpec, cfg: &HostConfig) -> Result<Self, PluginError> {
-        let params = json!({
-            "protocolVersion": PROTOCOL_VERSION,
-            "minProtocolVersion": MIN_PROTOCOL_VERSION,
-            "hostInfo": {"name": cfg.host_name, "version": cfg.host_version},
-            "capabilities": {
-                "hooks": cfg.hook_kinds.iter().map(|k| k.as_str()).collect::<Vec<_>>(),
-                "features": cfg.features,
+        let params = InitializeParams {
+            capabilities: HostCapabilities {
+                features: &cfg.features,
+                hooks: cfg.hook_kinds.iter().map(|k| k.as_str()).collect(),
             },
-            "offline": cfg.offline,
-            "limits": {
-                "maxMessageBytes": cfg.max_message_bytes,
-                "maxBatchDocuments": cfg.max_batch_documents,
+            host_info: HostInfo {
+                name: &cfg.host_name,
+                version: &cfg.host_version,
             },
-        });
-        let result = match conn.request("initialize", Some(params), cfg.timeouts.initialize, true) {
+            limits: HostLimits {
+                max_batch_documents: cfg.max_batch_documents,
+                max_message_bytes: cfg.max_message_bytes,
+            },
+            min_protocol_version: MIN_PROTOCOL_VERSION,
+            offline: cfg.offline,
+            protocol_version: PROTOCOL_VERSION,
+        };
+        let result = match conn.request(
+            method::INITIALIZE,
+            Some(&params),
+            cfg.timeouts.initialize,
+            true,
+        ) {
             Ok(v) => v,
             Err(PluginError::Rpc(e)) if e.code_name() == "protocol-version-unsupported" => {
                 return Err(PluginError::ProtocolVersionUnsupported {
@@ -1180,7 +1182,11 @@ impl Plugin {
             }
             let _ = ready.send(());
         }
-        conn.notify("initialized", Some(json!({})), cfg.timeouts.initialize)?;
+        conn.notify(
+            method::INITIALIZED,
+            Some(&InitializedParams {}),
+            cfg.timeouts.initialize,
+        )?;
         let (inflight_tx, inflight_rx) = bounded(negotiated.max_in_flight);
         Ok(Self {
             conn,
@@ -1219,7 +1225,24 @@ impl Plugin {
     ///
     /// # Errors
     /// Any [`PluginError`]. A timeout or protocol failure kills the plugin.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "the public signature takes the value, as it always did"
+    )]
     pub fn call(&self, kind: HookKind, id: &str, params: Value) -> Result<Value, PluginError> {
+        self.call_with(kind, id, &params)
+    }
+
+    /// [`call`](Self::call) with typed parameters.
+    ///
+    /// # Errors
+    /// Any [`PluginError`]. A timeout or protocol failure kills the plugin.
+    pub(crate) fn call_with<P: Serialize>(
+        &self,
+        kind: HookKind,
+        id: &str,
+        params: &P,
+    ) -> Result<Value, PluginError> {
         if !self.offers(kind, id) {
             return Err(PluginError::Usage(
                 HostText::HookNotOffered {
@@ -1281,13 +1304,15 @@ impl Plugin {
         if self.conn.dead().is_none() {
             acknowledged = self
                 .conn
-                .request("shutdown", None, self.timeouts.shutdown, false)
+                .request::<()>(method::SHUTDOWN, None, self.timeouts.shutdown, false)
                 .is_ok_and(|v| v.is_null());
             if acknowledged {
                 // Before `exit`, so the waiter sees it when the leader leaves.
                 shared.group.acknowledge();
             }
-            let _ = self.conn.notify("exit", None, self.timeouts.exit);
+            let _ = self
+                .conn
+                .notify::<()>(method::EXIT, None, self.timeouts.exit);
         }
         // Closing the pipe ends the writer after it flushes `exit`.
         lock(&shared.frames).take();
@@ -1594,6 +1619,8 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]

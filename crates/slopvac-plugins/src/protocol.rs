@@ -5,12 +5,34 @@
 
 use serde::{Deserialize, Serialize};
 
+mod requests;
+
+pub(crate) use requests::{
+    CancelParams, CompleteParams, ExtractParams, FixParams, HostCapabilities, HostInfo, HostLimits,
+    InitializeParams, InitializedParams, Notification, RecipeParams, RenderParams, Request,
+    RequestId, ScoreParams, TagParams, encode, request_len,
+};
+
 /// Highest protocol version the host speaks.
 pub const PROTOCOL_VERSION: u32 = 1;
 /// Lowest protocol version the host speaks.
 pub const MIN_PROTOCOL_VERSION: u32 = 1;
 /// The one registered v1 feature.
 pub const FEATURE_DOCUMENT_PATH: &str = "document-path";
+
+/// The lifecycle method names the host sends. Hook methods come from [`HookKind::method`].
+pub(crate) mod method {
+    /// The first request.
+    pub(crate) const INITIALIZE: &str = "initialize";
+    /// The notification that ends the handshake.
+    pub(crate) const INITIALIZED: &str = "initialized";
+    /// The request that starts the shutdown.
+    pub(crate) const SHUTDOWN: &str = "shutdown";
+    /// The notification that tells the plugin to leave.
+    pub(crate) const EXIT: &str = "exit";
+    /// The notification that withdraws a request.
+    pub(crate) const CANCEL_REQUEST: &str = "$/cancelRequest";
+}
 
 /// A hook kind the host knows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

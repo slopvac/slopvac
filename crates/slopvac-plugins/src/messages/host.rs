@@ -260,12 +260,18 @@ pub(crate) enum HostText {
         #[count]
         limit: u32,
     },
-    /// A message could not be encoded.
+    /// A message could not be encoded. Only the kind and the position of the failure show.
     #[code("plugins-host-encode-message")]
-    #[text("cannot encode message: {error}")]
+    #[text("cannot encode message: {category} error at line {line}, column {column}")]
     EncodeMessage {
-        /// The encoder error.
-        error: String,
+        /// The failure category.
+        category: String,
+        /// One-based line, or 0 without a position.
+        #[count]
+        line: usize,
+        /// One-based column, or 0 without a position.
+        #[count]
+        column: usize,
     },
     /// A message is larger than the negotiated limit.
     #[code("plugins-host-bytes-exceed")]
@@ -1084,6 +1090,16 @@ pub(crate) fn message_too_large(detail: &str) -> String {
     .to_string()
 }
 
+/// The detail of an encode failure: its category and position, never the encoder's own text.
+pub(crate) fn encode_cause(category: &str, line: usize, column: usize) -> String {
+    HostText::EncodeMessage {
+        category: category.to_owned(),
+        line,
+        column,
+    }
+    .to_string()
+}
+
 pub(crate) fn plugin_usage(detail: &str) -> String {
     HostMessage::PluginUsage {
         detail: esc(detail),
@@ -1386,8 +1402,12 @@ mod tests {
                 "more than 8 unsolicited messages",
             ),
             (
-                HostText::EncodeMessage { error: s("e") },
-                "cannot encode message: e",
+                HostText::EncodeMessage {
+                    category: s("Data"),
+                    line: 2,
+                    column: 3,
+                },
+                "cannot encode message: Data error at line 2, column 3",
             ),
             (
                 HostText::BytesExceed { bytes: 9, max: 8 },

@@ -62,6 +62,7 @@ ureq.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
+jsonschema.workspace = true
 minisign.workspace = true
 rstest.workspace = true
 rustls.workspace = true

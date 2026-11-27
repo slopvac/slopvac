@@ -6,6 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -18,12 +19,14 @@ pub const MAX_EDITS_PER_DOCUMENT: usize = 1000;
 pub const MAX_INSERTED_BYTES: usize = 1 << 20;
 
 /// A half-open byte range into a document's text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Fields sit in alphabetical order, the order of the wire bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Span {
-    /// First byte.
-    pub start: u64,
     /// One past the last byte.
     pub end: u64,
+    /// First byte.
+    pub start: u64,
 }
 
 /// Whether `offset` is a valid position in `text` (positions.md, "Valid
@@ -56,41 +59,48 @@ impl Span {
 }
 
 /// One document sent to a hook.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+///
+/// Fields sit in alphabetical order, the order of the wire bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct Document {
     /// Id unique inside the request.
     pub id: String,
-    /// UTF-8 text.
-    pub text: String,
     /// Media type, when known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media_type: Option<String>,
     /// Relative path. Sent only when `document-path` is granted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// UTF-8 text.
+    pub text: String,
 }
 
 /// A finding sent to a fixer or scorer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Fields sit in alphabetical order, the order of the wire bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Finding {
+    /// Message text.
+    pub message: String,
     /// Qualified rule id.
     pub rule: String,
     /// `error`, `warning` or `suggestion`.
     pub severity: String,
     /// Where the finding sits.
     pub span: Span,
-    /// Message text.
-    pub message: String,
 }
 
 /// A document with the findings a fixer or scorer sees.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+///
+/// `findings` is declared first so that, with the flattened document, the keys keep
+/// alphabetical order, the order of the wire bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct FindingsDocument {
+    /// The selected findings.
+    pub findings: Vec<Finding>,
     /// The document.
     #[serde(flatten)]
     pub document: Document,
-    /// The selected findings.
-    pub findings: Vec<Finding>,
 }
 
 /// A context tag from a tagger.
@@ -179,15 +189,17 @@ pub struct Completion {
 }
 
 /// An item sent to a provider.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+///
+/// Fields sit in alphabetical order, the order of the wire bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct CompleteItem {
     /// Id unique inside the request.
     pub id: String,
-    /// Text to review.
-    pub text: String,
     /// Extra instruction.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instruction: Option<String>,
+    /// Text to review.
+    pub text: String,
 }
 
 fn invalid(msg: impl Into<String>) -> PluginError {
@@ -722,7 +734,7 @@ mod tests {
         Finding {
             rule: "core:x".into(),
             severity: "warning".into(),
-            span: Span { start, end },
+            span: Span { end, start },
             message: "m".into(),
         }
     }
