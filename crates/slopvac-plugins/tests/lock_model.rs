@@ -640,6 +640,10 @@ fn an_oci_source_with_the_same_repository_matches(#[case] locked: &str, #[case] 
 #[case::archive_with_a_query("https://example.com/x.tar.gz", "https://example.com/x.tar.gz?v=2")]
 #[case::path_other_directory("plugins/x", "plugins/y")]
 #[case::path_against_oci("plugins/x", "oci://ghcr.io/acme/x")]
+#[case::lock_with_an_empty_tag_and_a_digest(
+    "oci://ghcr.io/acme/x:@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "oci://ghcr.io/acme/x"
+)]
 fn a_source_that_names_another_source_is_drift(#[case] locked: &str, #[case] config: &str) {
     assert_eq!(source_drift(locked, config, ""), ["x"]);
 }
@@ -699,6 +703,8 @@ fn a_path_that_resolves_elsewhere_is_drift(#[case] config: &str, #[case] base: &
 #[case::oci_empty_tag("oci://ghcr.io/acme/x:")]
 #[case::oci_bad_tag("oci://ghcr.io/acme/x:-1")]
 #[case::oci_bad_digest("oci://ghcr.io/acme/x@sha256:short")]
+#[case::oci_empty_tag_and_a_digest("oci://ghcr.io/acme/x:@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")]
+#[case::oci_bad_tag_and_a_digest("oci://ghcr.io/acme/x:-1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")]
 #[case::oci_uppercase_repository("oci://ghcr.io/Acme/x")]
 fn a_source_the_lock_would_refuse_is_invalid(#[case] text: &str) {
     let result = parse_source(text, "");
@@ -778,24 +784,34 @@ fn source_drift_never_repeats_the_configured_source() {
     }
 }
 
-/// The debug form of a configured source keeps the scheme, host, port and path, and drops the
-/// query and the fragment, which can carry a token.
+/// The debug form of a configured source names its kind and, for a URL or an OCI reference,
+/// the host and port. It leaves out the path, the repository, the query and the fragment, any
+/// of which can carry a credential.
 #[rstest::rstest]
 #[case::archive(
-    "https://example.com:8443/x.tar.gz?token=hunter2-secret#frag-hunter2-secret",
-    "https://example.com:8443/x.tar.gz"
+    "https://example.com:8443/hunter2-secret/x.tar.gz?token=hunter2-secret#frag-hunter2-secret",
+    &["archive", "example.com:8443"]
 )]
 #[case::archive_with_an_at_sign_in_the_query(
     "https://example.com/x.tar.gz?u=reader@hunter2-secret",
-    "https://example.com/x.tar.gz"
+    &["archive", "example.com"]
 )]
-fn the_debug_form_of_a_configured_source_drops_query_and_fragment(
+#[case::git(
+    "git+https://example.com/hunter2-secret/x@0123456789abcdef0123456789abcdef01234567",
+    &["git", "example.com"]
+)]
+#[case::oci("oci://reg.example:5000/hunter2-secret/x:1.0.0", &["oci", "reg.example:5000"])]
+#[case::path("plugins/hunter2-secret", &["path"])]
+fn the_debug_form_of_a_configured_source_names_only_kind_and_host(
     #[case] text: &str,
-    #[case] kept: &str,
+    #[case] kept: &[&str],
 ) {
     let pack = configured("x", text, "", None);
     for shown in [format!("{:?}", pack.source), format!("{pack:?}")] {
         assert!(!shown.contains("hunter2-secret"), "{shown}");
-        assert!(shown.contains(kept), "{shown}");
+        assert!(!shown.contains("x.tar.gz"), "{shown}");
+        for part in kept {
+            assert!(shown.contains(part), "{part} missing from {shown}");
+        }
     }
 }

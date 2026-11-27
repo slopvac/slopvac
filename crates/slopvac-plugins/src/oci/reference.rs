@@ -191,6 +191,14 @@ mod tests {
     }
 
     #[test]
+    fn a_digest_does_not_excuse_a_malformed_tag() {
+        for tag in ["", "-x", "a b"] {
+            let text = format!("ghcr.io/a/b:{tag}@{D}");
+            assert!(Reference::parse(&text).is_err(), "{text}");
+        }
+    }
+
+    #[test]
     fn digest_wins_over_tag() {
         let r = Reference::parse(&format!("ghcr.io/a/b:1@{D}")).unwrap();
         assert!(matches!(r.target, Target::Digest(_)));

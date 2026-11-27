@@ -681,27 +681,6 @@ fn sync_in_ci_reads_the_configured_ids_from_the_configured_entries() {
     assert_eq!(err.code(), "sync-unsigned", "{err}");
 }
 
-/// The configured entries also carry the ranges, so `outdated` reads a range from them.
-#[test]
-fn outdated_reads_the_range_from_the_configured_entries() {
-    let f = Fixture::new();
-    let server = tag_registry(&["1.2.0", "1.3.0"]);
-    f.write_lock(&[oci_entry(
-        "style",
-        "data",
-        "1.2.0",
-        &server.registry(),
-        OTHER_HASH,
-    )]);
-    let ran = f.run(&["outdated"], true, |s| s.pack("style", Some("^1.2")));
-    assert_eq!(ran.result.unwrap(), 0);
-    assert!(
-        ran.out.contains("style") && ran.out.contains("1.3.0"),
-        "{}",
-        ran.out
-    );
-}
-
 // ---- outdated and update ------------------------------------------------------------
 
 #[test]

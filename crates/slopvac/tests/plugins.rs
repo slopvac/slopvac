@@ -614,6 +614,7 @@ fn an_invalid_source_in_the_config_fails_every_plugins_command(
 #[rstest::rstest]
 #[case::host_only("oci://registry.invalid")]
 #[case::empty_tag("oci://registry.invalid/acme/style:")]
+#[case::empty_tag_and_a_digest("oci://registry.invalid/acme/style:@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")]
 fn a_malformed_oci_source_in_the_config_is_invalid(#[case] source: &str) {
     let sandbox = Sandbox::new();
     sandbox.write_lock(SIGNED_UNCACHED);
