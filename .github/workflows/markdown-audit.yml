@@ -84,6 +84,9 @@ jobs:
               document_set_problems,
               gate_problems,
               path_problems,
+              routing_counts,
+              routing_problems,
+              routing_shape_problems,
           )
 
           root = Path.cwd()
@@ -227,6 +230,27 @@ jobs:
           )
           if bad:
               stop("\n".join(bad))
+          # Routing: the repository config must resolve for every authored document. The run
+          # passes no `--config`, so discovery is under test too. Failures print fixed text.
+          routing = command(
+              "routing", [binary, "lint", "--explain-config", "--format", "json", *authored_files]
+          )
+          if routing.returncode != 0:
+              stop(f"routing: the linter exited {routing.returncode}")
+          try:
+              routing_document = json.loads(routing.stdout)
+          except ValueError:
+              stop("routing: the linter wrote no JSON document")
+          bad = routing_shape_problems(routing_document)
+          if bad:
+              stop("\n".join(bad))
+          routing_paths = [relative("routing", i, d) for i, d in enumerate(routing_document["inputs"])]
+          bad = document_set_problems(
+              "routing", routing_paths, {canonical[p] for p in authored_files}
+          ) or routing_problems(routing_document["inputs"], routing_paths)
+          if bad:
+              stop("\n".join(bad))
+          print("ROUTING", escape(json.dumps(routing_counts(routing_document))), flush=True)
           excluded = sorted(expected_paths - set(configured))
           missing = sorted(expected_paths - set(scanned))
           unexpected = sorted(set(scanned) - expected_paths)

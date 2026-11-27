@@ -109,7 +109,7 @@ pub struct ExplainOutcome {
     /// One block per input, each headed by its redacted path.
     pub text: String,
     /// The records of the inputs that resolved, for `--format json`.
-    pub inputs: Vec<crate::explain_config::Input>,
+    pub inputs: Vec<crate::explain_config::ExplainInput>,
     /// Inputs that could not be read, or a failure that stopped the run.
     pub incomplete: Vec<CliError>,
     /// What `lint` would report when the run could not start, as when a config cannot be
@@ -445,7 +445,7 @@ impl Linter for EngineLinter {
                 lint_settings::config_sources(&config_files(config)),
                 &Overrides::default(),
             ) {
-                Ok((settings, origins)) => inputs.push(crate::explain_config::Input::new(
+                Ok((settings, origins)) => inputs.push(crate::explain_config::ExplainInput::new(
                     &item.shown,
                     &root,
                     &settings,

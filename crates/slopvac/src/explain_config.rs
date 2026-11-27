@@ -29,13 +29,13 @@ pub struct Document {
     slopvac_version: NonEmptyString,
     /// The inputs that resolved, in argument order. An input that could not be read is left
     /// out, and the run exits 2.
-    inputs: Vec<Input>,
+    inputs: Vec<ExplainInput>,
 }
 
 impl Document {
     /// A document for `inputs`.
     #[must_use]
-    pub fn new(inputs: Vec<Input>) -> Self {
+    pub fn new(inputs: Vec<ExplainInput>) -> Self {
         Self {
             schema_version: SchemaVersion,
             slopvac_version: NonEmptyString::new(env!("CARGO_PKG_VERSION"))
@@ -58,7 +58,7 @@ impl Document {
 /// The resolved config of one input.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(transform = x_extensions)]
-pub struct Input {
+pub struct ExplainInput {
     /// The input as a report names it: relative to the working directory, `<external>/<file
     /// name>` outside it, `<stdin>` for standard input.
     path: ShownPath,
@@ -73,19 +73,19 @@ pub struct Input {
     profile: String,
     /// The genre the config sets. The genre that detection picks reads the document, so it is
     /// not resolved here.
-    genre: Genre,
+    genre: ExplainGenre,
     /// Each resolved setting, in key order.
-    settings: Vec<Setting>,
+    settings: Vec<ExplainSetting>,
     /// How many rules there are, and how many a layer gave a level.
-    rules: RuleCounts,
+    rules: ExplainRuleCounts,
     /// The rules whose level a layer set, sorted by id.
-    configured_rules: Vec<ConfiguredRule>,
+    configured_rules: Vec<ExplainConfiguredRule>,
     /// Whether front matter took part in resolution. False until it does. When it does, the
     /// document gains key names and their source locations, never values.
     front_matter_resolved: bool,
 }
 
-impl Input {
+impl ExplainInput {
     /// The record of the input shown as `path`.
     ///
     /// `explained` holds the settings with their values already redacted, `settings` and
@@ -100,13 +100,13 @@ impl Input {
         origins: &[RuleOrigin],
         catalog: &Catalog,
     ) -> Self {
-        let mut counts = LevelCounts::default();
-        let mut configured: Vec<ConfiguredRule> = origins
+        let mut counts = ExplainLevelCounts::default();
+        let mut configured: Vec<ExplainConfiguredRule> = origins
             .iter()
             .map(|origin| {
                 let level = ConfiguredLevel::of(origin.level);
                 counts.add(level);
-                ConfiguredRule {
+                ExplainConfiguredRule {
                     id: origin.id.clone(),
                     level,
                     source: origin.source.clone(),
@@ -119,12 +119,12 @@ impl Input {
             config_root: ShownPath(config_root.to_owned()),
             config_sources: settings.config_sources.clone(),
             profile: settings.profile.as_str().to_owned(),
-            genre: Genre {
+            genre: ExplainGenre {
                 id: settings.genre.id.as_str().to_owned(),
                 source: settings.genre.source,
             },
-            settings: explained.iter().map(Setting::of).collect(),
-            rules: RuleCounts {
+            settings: explained.iter().map(ExplainSetting::of).collect(),
+            rules: ExplainRuleCounts {
                 total: catalog.rules().count(),
                 configured: counts,
             },
@@ -157,7 +157,7 @@ impl JsonSchema for ShownPath {
 /// The genre the config sets.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(transform = x_extensions)]
-struct Genre {
+struct ExplainGenre {
     /// The genre id.
     #[schemars(length(min = 1))]
     id: String,
@@ -168,30 +168,30 @@ struct Genre {
 /// One resolved setting.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(transform = x_extensions)]
-struct Setting {
+struct ExplainSetting {
     /// The key path, such as `thresholds.min_score`.
     #[schemars(length(min = 1))]
     key: String,
     /// The final value, as configured. A URL has no user-info, query or fragment.
-    value: ConfigValue,
+    value: ExplainValue,
     /// The layer and location that set the final value.
     source: ConfigSource,
     /// The values the final value replaced, highest layer first.
-    replaced: Vec<Replaced>,
+    replaced: Vec<ExplainReplaced>,
 }
 
-impl Setting {
+impl ExplainSetting {
     fn of(entry: &Explained) -> Self {
         Self {
             key: entry.path.clone(),
-            value: ConfigValue::of(&entry.value),
+            value: ExplainValue::of(&entry.value),
             source: entry.source.clone(),
             replaced: entry
                 .overridden
                 .iter()
                 .rev()
-                .map(|c| Replaced {
-                    value: ConfigValue::of(&c.value),
+                .map(|c| ExplainReplaced {
+                    value: ExplainValue::of(&c.value),
                     source: c.source.clone(),
                 })
                 .collect(),
@@ -202,9 +202,9 @@ impl Setting {
 /// A value a setting replaced.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(transform = x_extensions)]
-struct Replaced {
+struct ExplainReplaced {
     /// The replaced value, as configured.
-    value: ConfigValue,
+    value: ExplainValue,
     /// The layer and location that set it.
     source: ConfigSource,
 }
@@ -212,7 +212,7 @@ struct Replaced {
 /// A setting value as configured: any JSON value.
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
-enum ConfigValue {
+enum ExplainValue {
     /// No value.
     Null(()),
     /// A flag.
@@ -222,12 +222,12 @@ enum ConfigValue {
     /// Text.
     Text(String),
     /// A list.
-    List(Vec<ConfigValue>),
+    List(Vec<ExplainValue>),
     /// A table.
-    Table(BTreeMap<String, ConfigValue>),
+    Table(BTreeMap<String, ExplainValue>),
 }
 
-impl ConfigValue {
+impl ExplainValue {
     fn of(value: &serde_json::Value) -> Self {
         match value {
             serde_json::Value::Null => Self::Null(()),
@@ -245,18 +245,18 @@ impl ConfigValue {
 /// How many rules there are, and how many of them a layer gave a level.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(transform = x_extensions)]
-struct RuleCounts {
+struct ExplainRuleCounts {
     /// Every rule in the catalogue. A rule no layer named keeps the level of its definition
     /// and its genre.
     total: usize,
     /// The rules a layer gave a level, by that level.
-    configured: LevelCounts,
+    configured: ExplainLevelCounts,
 }
 
 /// Rules by configured level.
 #[derive(Debug, Default, Serialize, JsonSchema)]
 #[schemars(transform = x_extensions)]
-struct LevelCounts {
+struct ExplainLevelCounts {
     /// Rules set to `error`.
     error: usize,
     /// Rules set to `warning`.
@@ -267,7 +267,7 @@ struct LevelCounts {
     off: usize,
 }
 
-impl LevelCounts {
+impl ExplainLevelCounts {
     fn add(&mut self, level: ConfiguredLevel) {
         match level {
             ConfiguredLevel::Error => self.error += 1,
@@ -281,7 +281,7 @@ impl LevelCounts {
 /// A rule whose level a layer set.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(transform = x_extensions)]
-struct ConfiguredRule {
+struct ExplainConfiguredRule {
     /// The qualified id: `core:<category>.<rule>` or `<plugin>:<category>.<rule>`.
     id: RuleId,
     /// The level lint applies.
