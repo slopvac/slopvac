@@ -199,13 +199,14 @@ fn stderr(out: &std::process::Output) -> String {
 }
 
 fn plan(out: &std::process::Output) -> Value {
-    serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
-        panic!(
-            "a JSON plan on stdout: {e}\nstdout: {}\nstderr: {}",
-            String::from_utf8_lossy(&out.stdout),
-            stderr(out)
-        )
-    })
+    let parsed = serde_json::from_slice::<Value>(&out.stdout);
+    assert!(
+        parsed.is_ok(),
+        "a JSON plan on stdout: {parsed:?}\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        stderr(out)
+    );
+    parsed.unwrap()
 }
 
 fn assert_refused(out: &std::process::Output, code: &str) {
@@ -421,12 +422,11 @@ fn each_gate_alone_keeps_the_provider_from_starting(
 
     let out = world.review(flags);
 
-    match refusal {
-        Some(code) => assert_refused(&out, code),
-        None => {
-            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-            assert!(plan(&out).get("report").is_none());
-        }
+    if let Some(code) = refusal {
+        assert_refused(&out, code);
+    } else {
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(plan(&out).get("report").is_none());
     }
     assert_eq!(world.spawns(), 0, "the plugin started");
     assert_lifting_the_gate_starts_it_once(&world, flags, &lift);
@@ -491,9 +491,10 @@ fn the_reviewer_model_flag_wins_over_the_config(
     assert_eq!(plan(&out)["reviewer_model"], sent);
 }
 
-/// The fixed host instruction for each kind of sent item.
-fn instruction(role: &str, with_original: bool) -> &'static str {
-    match (role, with_original) {
+/// The fixed host instruction for each kind of sent item, or `None` for a role the payload
+/// never holds.
+fn instruction(role: &str, with_original: bool) -> Option<&'static str> {
+    Some(match (role, with_original) {
         ("changed", true) => {
             "A sentence the revision changed. The next item holds the sentence before the change."
         }
@@ -502,8 +503,8 @@ fn instruction(role: &str, with_original: bool) -> &'static str {
         ("dropped", _) => "A sentence of the original that the revision dropped.",
         ("original_document", _) => "The original document: the baseline of the review.",
         ("revised_document", _) => "The revised document.",
-        other => panic!("no instruction for {other:?}"),
-    }
+        _ => return None,
+    })
 }
 
 const ORIGINAL_CONTEXT: &str =
@@ -537,7 +538,7 @@ fn the_provider_receives_the_payload_that_a_dry_run_prints(
         expected.push(json!({
             "id": n.to_string(),
             "text": item["text"],
-            "instruction": instruction(role, original.is_some()),
+            "instruction": instruction(role, original.is_some()).expect("a payload role"),
         }));
         if let Some(original) = original {
             expected.push(json!({
