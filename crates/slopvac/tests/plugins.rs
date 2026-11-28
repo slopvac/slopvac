@@ -182,6 +182,108 @@ fn a_version_1_store_with_a_pin_is_a_damaged_store_that_stops_the_command(#[case
     assert_eq!(fs::read_to_string(trust_file(&sandbox)).unwrap(), before);
 }
 
+/// A version 2 pin of a fresh key on `registry`, as `plugins pin` writes it.
+fn pin_json(registry: &str, key: &str) -> String {
+    format!(
+        "{{\"registry\":\"{registry}\",\"namespace\":\"acme\",\"fingerprint\":\"LEAKME-SECRET-123\",\"key\":\"{key}\",\"pinned_at\":\"2026-11-01T00:00:00Z\"}}"
+    )
+}
+
+fn fresh_key() -> String {
+    minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk
+        .to_base64()
+}
+
+/// A damaged store of each kind. The damaged field holds `LEAKME-SECRET-123` where the kind has
+/// a field of its own.
+fn damaged_store(kind: &str) -> String {
+    let store = |records: &str, pins: &str| {
+        format!("{{\"schema_version\":2,\"records\":[{records}],\"pins\":[{pins}]}}")
+    };
+    match kind {
+        "over_cap" => format!("{}{}", store("", ""), " ".repeat(8 << 20)),
+        "pin_duplicate" => store(
+            "",
+            &format!(
+                "{},{}",
+                pin_json("ghcr.io", &fresh_key()),
+                pin_json("ghcr.io:443", &fresh_key())
+            ),
+        ),
+        "unknown_field" => {
+            "{\"schema_version\":2,\"records\":[],\"pins\":[],\"LEAKME-SECRET-123\":1}".to_owned()
+        }
+        "pin_key" => store("", &pin_json("ghcr.io", "LEAKME-SECRET-123")),
+        "record_hash" => store(
+            "{\"hash\":\"sha256:LEAKME-SECRET-123\",\"name\":\"fmt\",\"version\":null,\"source\":\"test\",\
+             \"key_fingerprint\":null,\"declaration\":{\"network\":false,\"hooks\":[],\
+             \"required_features\":[],\"optional_features\":[]},\"recorded_at\":\"2026-11-01T00:00:00Z\"}",
+            "",
+        ),
+        other => panic!("no damaged store of kind {other}"),
+    }
+}
+
+/// Each kind of damage that is not a parse failure is named with its fixed catalog phrase, and
+/// no part of the file reaches the output. The file is kept as it is. A schema version this
+/// build does not read and a pin with no registry host are covered by the two tests above.
+#[rstest::rstest]
+#[case::over_cap("over_cap", &["status"], "larger than 8 MiB")]
+#[case::pin_duplicate(
+    "pin_duplicate",
+    &["status"],
+    "two key pins name the same registry host and namespace"
+)]
+#[case::unknown_field("unknown_field", &["status"], "it does not hold a valid trust store")]
+#[case::pin_key(
+    "pin_key",
+    &["status"],
+    "a key pin holds a key that is not a minisign public key"
+)]
+#[case::record_hash(
+    "record_hash",
+    &["untrust", "fmt"],
+    "a trust record holds a hash that is not a content hash"
+)]
+fn a_damaged_store_is_named_with_its_fixed_phrase_and_quotes_nothing(
+    #[case] kind: &str,
+    #[case] command: &[&str],
+    #[case] phrase: &str,
+) {
+    let sandbox = Sandbox::new();
+    let before = damaged_store(kind);
+    let file = trust_file(&sandbox);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, &before).unwrap();
+
+    let out = sandbox
+        .slopvac()
+        .args(["--offline", "plugins"])
+        .args(command)
+        .assert()
+        .code(2);
+
+    let (stdout, stderr) = (
+        String::from_utf8(out.get_output().stdout.clone()).unwrap(),
+        String::from_utf8(out.get_output().stderr.clone()).unwrap(),
+    );
+    assert_eq!(
+        stderr,
+        format!(
+            "error[plugins-store-failed]: the trust store <external>/trust.json is damaged: {phrase}\n"
+        )
+    );
+    for part in ["LEAKME", "SECRET", "-123"] {
+        assert!(
+            !stdout.contains(part) && !stderr.contains(part),
+            "{stdout}{stderr}"
+        );
+    }
+    assert_eq!(fs::read_to_string(&file).unwrap(), before);
+}
+
 /// `pin` and `rotate` refuse a reserved namespace before the trust store is read, so a damaged
 /// store does not hide the refusal.
 #[rstest::rstest]
