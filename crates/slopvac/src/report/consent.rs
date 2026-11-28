@@ -11,9 +11,9 @@ use std::fs::{DirBuilder, File, OpenOptions};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+use cap_std::fs::Dir;
 use clap::{ArgMatches, Command};
 use serde::{Deserialize, Serialize};
-use cap_std::fs::Dir;
 use slopvac_fs::{InputKind, ReadOptions, WriteOptions};
 use slopvac_messages::Catalog;
 
@@ -180,7 +180,9 @@ fn in_ci(env: &dyn Env) -> bool {
 /// The caller runs this before it reads any project file, so the refusal never depends on one.
 #[must_use]
 pub fn ci_refusal(root: &ArgMatches, env: &dyn Env) -> Option<CliError> {
-    let consent = root.subcommand_matches("report")?.subcommand_matches("consent")?;
+    let consent = root
+        .subcommand_matches("report")?
+        .subcommand_matches("consent")?;
     (matches!(consent.subcommand_name(), Some("on" | "off")) && in_ci(env))
         .then(|| ReportError::CiRefused.into())
 }
@@ -347,8 +349,8 @@ impl Store {
             recorded: now,
             unattended,
         };
-        let mut bytes = serde_json::to_vec(&record)
-            .map_err(unwritable("the record cannot be encoded"))?;
+        let mut bytes =
+            serde_json::to_vec(&record).map_err(unwritable("the record cannot be encoded"))?;
         bytes.push(b'\n');
         if u64::try_from(bytes.len()).map_or(true, |n| n > MAX_RECORD_BYTES) {
             return Err(StateProblem::WouldExceed);

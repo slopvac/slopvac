@@ -331,7 +331,11 @@ fn the_ci_refusal_comes_before_the_project_policy_is_read() {
     let state = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     // Over the 1 MiB cap on the policy read, so the policy read fails.
-    fs::write(project.path().join("slopvac.toml"), vec![b'#'; 1024 * 1024 + 1]).unwrap();
+    fs::write(
+        project.path().join("slopvac.toml"),
+        vec![b'#'; 1024 * 1024 + 1],
+    )
+    .unwrap();
     let out = slopvac(state.path())
         .env("CI", "true")
         .current_dir(project.path())
