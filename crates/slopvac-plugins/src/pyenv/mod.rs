@@ -463,6 +463,17 @@ struct EnvRecord {
     entries: Vec<Entry>,
 }
 
+/// The project root as interpreter diagnostics see it.
+#[derive(Debug, Clone)]
+enum ProjectRoot {
+    /// The root with its links resolved.
+    Resolved(PathBuf),
+    /// The root did not resolve. The store keeps no OS error, because its text can name a path
+    /// outside the project (policies section 1.7), so an interpreter path shows only as
+    /// `<external>/<file name>`.
+    Unresolved,
+}
+
 /// A built environment and its record.
 #[derive(Debug, Clone)]
 pub struct ManagedEnv {
@@ -472,8 +483,8 @@ pub struct ManagedEnv {
     project: PathBuf,
     /// The project root with its links resolved, which the store took once when it opened.
     /// Interpreter diagnostics compare against it, because recorded interpreter paths are
-    /// canonical. `None` when the root did not resolve: those paths then show as external.
-    canonical_project: Option<PathBuf>,
+    /// canonical.
+    canonical_project: ProjectRoot,
 }
 
 /// The interpreter inside an environment root, as uv lays it out.
@@ -577,12 +588,14 @@ impl ManagedEnv {
     }
 
     /// A canonical path as the project shows it. The recorded interpreter paths are canonical,
-    /// so this compares them with the canonical project root that the store resolved once. A
-    /// root that did not resolve shows every such path as `<external>/<file name>`.
+    /// so this compares them with the canonical project root that the store resolved once.
     fn shown(&self, canonical: &Path) -> String {
-        // The `.` root accepts only relative paths, and a canonical path is absolute.
-        let root = self.canonical_project.as_deref().unwrap_or(Path::new("."));
-        slopvac_fs::display_under_root(canonical, root)
+        match &self.canonical_project {
+            ProjectRoot::Resolved(root) => slopvac_fs::display_under_root(canonical, root),
+            // The `.` root accepts only relative paths, and a canonical path is absolute, so
+            // this renders `<external>/<file name>`.
+            ProjectRoot::Unresolved => slopvac_fs::display_under_root(canonical, Path::new(".")),
+        }
     }
 
     fn check_interpreter(&self, full: bool) -> Result<(), PyEnvError> {
@@ -637,7 +650,7 @@ pub struct EnvSummary {
 pub struct EnvStore {
     root: PathBuf,
     project: PathBuf,
-    canonical_project: Option<PathBuf>,
+    canonical_project: ProjectRoot,
     fail_record_writes: bool,
     limits: Limits,
 }
@@ -658,9 +671,10 @@ impl EnvStore {
     #[must_use]
     pub fn open(root: impl Into<PathBuf>, project: impl Into<PathBuf>) -> Self {
         let project = project.into();
-        // The failure keeps no OS error, because its text can name a path outside the project
-        // (policies section 1.7). Interpreter paths then show as `<external>/<file name>`.
-        let canonical_project = fs::canonicalize(&project).map_or_else(|_| None, Some);
+        let canonical_project = match fs::canonicalize(&project) {
+            Ok(resolved) => ProjectRoot::Resolved(resolved),
+            Err(_) => ProjectRoot::Unresolved,
+        };
         Self {
             root: root.into(),
             canonical_project,
