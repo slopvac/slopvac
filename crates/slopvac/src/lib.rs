@@ -31,6 +31,7 @@ pub mod offline;
 pub mod output;
 pub mod owners;
 mod plugin_loader;
+mod preflight;
 pub mod redact;
 pub mod report;
 mod review_provider;

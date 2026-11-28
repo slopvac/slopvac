@@ -331,11 +331,17 @@ fn config_message(err: &ConfigError, root: &Path, esc: &dyn Fn(&str) -> String) 
     let mut message = match err {
         ConfigError::Rejected(rejected) => describe_rejected(rejected, root, esc),
         ConfigError::Io { path, .. } | ConfigError::TooLarge { path, .. } => {
-            // The path is the label the caller gave, which may be absolute. The rest of the
+            // The path is the label the caller gave, which may be absolute. Discovery labels
+            // the nearest config with its file name alone, which would show a config above the
+            // root as one inside it, so such a label shows the file it names. The rest of the
             // message is fixed wording, so escaping the whole line escapes the path.
+            let label = Path::new(path.as_str());
+            let file = err
+                .source_file()
+                .filter(|_| label.parent() == Some(Path::new("")));
             esc(&err
                 .to_string()
-                .replace(path.as_str(), &redact::shown_path(Path::new(path), root)))
+                .replace(path.as_str(), &redact::shown_path(file.unwrap_or(label), root)))
         }
     };
     if err.is_legacy() {
@@ -373,6 +379,19 @@ fn budget_data(err: &ConfigError) -> Option<serde_json::Map<String, serde_json::
     data.insert("limit".into(), budget.limit.into());
     data.insert("path".into(), budget.path.as_str().into());
     Some(data)
+}
+
+/// The refusal of a `--config` file that does not exist, with the path as given, relative to
+/// `root` when it is absolute.
+pub(crate) fn config_not_found(given: &Path, root: &Path) -> CliError {
+    let shown = redact::shown_path(given, root);
+    CliError::escaping("config-not-found", &format!("--config {shown}: no such file"))
+}
+
+/// The outcome of a run that could not start because of `error`: no documents, and a notice
+/// that marks the report unsuccessful.
+pub(crate) fn refused(request: &LintRequest, error: &CliError) -> RunOutcome {
+    failed(request, Run::default(), error)
 }
 
 /// Finds the config of each directory once.
@@ -484,12 +503,8 @@ fn prepare(request: &LintRequest, run: &mut Run) -> Result<(Catalog, Vec<Item>),
         explicit: None,
     };
     if let Some(given) = &request.config {
-        let shown = redact::shown_path(given, &request.root);
         if !request.root.join(given).is_file() {
-            return Err(CliError::escaping(
-                "config-not-found",
-                &format!("--config {shown}: no such file"),
-            ));
+            return Err(config_not_found(given, &request.root));
         }
         // A config that cannot be read lints nothing (policies V7).
         let config = configs

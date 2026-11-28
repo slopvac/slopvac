@@ -11,9 +11,9 @@ use crate::color::{self, ColorChoice};
 use crate::engine::{EngineLinter, LintRequest, Linter};
 use crate::env::Env;
 use crate::errors::CliError;
+use crate::preflight::{self, Preflight};
 use crate::{
-    exit, generate, init, inspect, lint_settings, logging, offline, output, owners, redact, report,
-    stdin,
+    exit, generate, init, inspect, lint_settings, logging, offline, output, owners, report, stdin,
 };
 
 /// Settings every command shares, resolved once.
@@ -128,33 +128,24 @@ where
         let _ = writeln!(err_out, "{err}");
         return exit::code(exit::INCOMPLETE);
     }
-    let policy = match slopvac_update::policy::network_policy(&cwd) {
-        Ok(policy) => policy,
-        // `doctor` exists to report this state, so it runs on the default policy and its own
-        // config scan shows the unreadable file (and exits 2 itself).
-        Err(_) if invocation.is_doctor() => slopvac_update::policy::NetworkPolicy::default(),
-        Err(err) => {
-            // policies.md 1.7: a path in an error is relative to the root or `<external>/<name>`.
-            let message = format!(
-                "{}: {}",
-                redact::path_for_log(err.path(), &cwd),
-                err.problem()
-            );
-            let _ = writeln!(
-                err_out,
-                "{}",
-                CliError::new(err.code().unwrap_or("config-unreadable"), message)
-            );
-            return exit::code(exit::INCOMPLETE);
-        }
-    };
-    let config_offline = policy.offline.then_some(true);
+    // One resolution of the configuration for the working directory (config.md, section 2.2).
+    let preflight = Preflight::run(invocation.preflight_mode(), &cwd, invocation.explicit_config());
+    let refusal = preflight.refusal(&cwd);
+    // `lint` reports the failure in its own form, so `--format json` still prints the report.
+    if let Some(err) = &refusal
+        && !invocation.is_lint()
+    {
+        let _ = writeln!(err_out, "{err}");
+        return exit::code(exit::INCOMPLETE);
+    }
+    let network = preflight.network();
+    let config_offline = network.offline.then_some(true);
     let matches = match invocation {
         Invocation::VersionJson { offline_flag } => {
             let rt = update_runtime(
                 env,
                 offline::resolve(offline_flag, env, config_offline),
-                policy.update_check,
+                network.update_check,
             );
             return match write_stdout(
                 out,
@@ -169,7 +160,7 @@ where
             };
         }
         Invocation::Parsed(matches) => matches,
-        // Help and version text wait for the config check, as every other command does.
+        // Help and version text skip the preflight.
         Invocation::Display(text) => {
             return match write_stdout(out, text.as_bytes()) {
                 Ok(code) => exit::code(code),
@@ -188,10 +179,14 @@ where
         "resolved globals"
     );
     let offline = globals.offline;
-    match dispatch(&matches, globals, policy.update_check, env, out, err_out) {
+    let context = Context {
+        preflight: &preflight,
+        refusal,
+    };
+    match dispatch(&matches, globals, context, env, out, err_out) {
         Ok(code) => {
             if let Some((command, _)) = matches.subcommand() {
-                let rt = update_runtime(env, offline, policy.update_check);
+                let rt = update_runtime(env, offline, network.update_check);
                 crate::update_notice::emit(&rt, command, err_out);
             }
             exit::code(code)
@@ -205,23 +200,49 @@ where
 
 /// What the arguments ask for, decided before any config is read.
 enum Invocation {
-    /// `--version --json`, which needs the network policy to report the update state.
+    /// `--version --json`, which needs the network settings to report the update state.
     VersionJson { offline_flag: bool },
     /// Any other invocation, parsed once.
     Parsed(ArgMatches),
-    /// Help or version text from the parser. It prints once the config has been read.
+    /// Help or version text from the parser. It skips the preflight.
     Display(String),
 }
 
 impl Invocation {
-    /// Whether this runs `slopvac doctor`. A parse failure or help request does not.
-    fn is_doctor(&self) -> bool {
-        matches!(self, Self::Parsed(m) if m.subcommand_name() == Some("doctor"))
+    /// How the invocation treats the preflight. `--version --json` stops on a config that does
+    /// not resolve, because its update state depends on `update_check`.
+    fn preflight_mode(&self) -> preflight::Mode {
+        match self {
+            Self::VersionJson { .. } => preflight::Mode::Strict,
+            Self::Display(_) => preflight::Mode::Skip,
+            Self::Parsed(m) => preflight::Mode::of(m),
+        }
+    }
+
+    /// The `--config` value of the command.
+    fn explicit_config(&self) -> Option<PathBuf> {
+        match self {
+            Self::Parsed(m) => preflight::explicit(m),
+            Self::VersionJson { .. } | Self::Display(_) => None,
+        }
+    }
+
+    /// Whether this runs `slopvac lint`, given or inserted as the default command.
+    fn is_lint(&self) -> bool {
+        matches!(self, Self::Parsed(m) if m.subcommand_name() == Some("lint"))
     }
 }
 
+/// What the preflight hands to the command.
+struct Context<'a> {
+    /// The resolution, with its network settings.
+    preflight: &'a Preflight,
+    /// The failure that stops `lint`, which reports it in its own form.
+    refusal: Option<CliError>,
+}
+
 /// Parse the arguments. On a usage error, print it and return the exit code. Help and version
-/// text come back unprinted, so an unreadable config still stops them.
+/// text come back unprinted.
 fn parse_args(
     tree: clap::Command,
     args: Vec<OsString>,
@@ -272,19 +293,19 @@ fn parse_args(
 fn dispatch(
     matches: &ArgMatches,
     globals: Globals,
-    update_check: Option<bool>,
+    context: Context<'_>,
     env: &dyn Env,
     out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     match matches.subcommand() {
         Some(("self", m)) => {
-            let rt = update_runtime(env, globals.offline, update_check);
+            let rt = update_runtime(env, globals.offline, context.preflight.network().update_check);
             let text = slopvac_update::command::run(m, &rt)
                 .map_err(|f| CliError::new(f.code, f.message))?;
             write_stdout(out, text.as_bytes())
         }
-        Some(("lint", m)) => lint(m, out, err_out),
+        Some(("lint", m)) => lint(m, context.refusal.as_ref(), out, err_out),
         Some(("lsp", m)) => lsp(m).map(|exit| match exit {
             slopvac_lsp::Exit::AfterShutdown => exit::PASS,
             // LSP says `exit` without `shutdown` ends the process with status 1.
@@ -341,7 +362,7 @@ fn dispatch(
         Some(("claims", m)) => owners::claims(m, out),
         Some(("man", m)) => man(m, out),
         Some(("plugins", m)) => plugins(m, globals.offline, env, out),
-        Some(("doctor", m)) => doctor(matches, m, env, out),
+        Some(("doctor", m)) => doctor(matches, m, context.preflight, env, out),
         Some(("cli-reference", _)) => write_stdout(
             out,
             generate::markdown_reference(&cli::command()).as_bytes(),
@@ -492,25 +513,28 @@ pub(crate) fn with_plugin_runner<T>(
     f(&runner, &loader)
 }
 
-/// `slopvac doctor`: print the report, and exit 2 when something needs attention.
+/// `slopvac doctor`: print the report, and exit 2 when something needs attention. The config
+/// sources are the files the preflight resolved, ending at a failure.
 fn doctor(
     root: &ArgMatches,
     m: &ArgMatches,
+    preflight: &Preflight,
     env: &dyn Env,
     out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     use crate::doctor::dirs::SharedDirs;
-    use crate::doctor::stubs::LocalConfigSources;
     use crate::doctor::update::InstalledUpdateProbe;
     let cwd = std::env::current_dir().unwrap_or_default();
+    let scan = preflight.outcome().map_or_else(Default::default, |outcome| {
+        crate::doctor::config::scan(&cwd, preflight.explicit(), outcome)
+    });
     let report = crate::doctor::build(&crate::doctor::Inputs {
         env,
         cwd: &cwd,
         offline_flag: root.get_flag("offline"),
-        explicit_config: m.get_one::<PathBuf>("config").map(PathBuf::as_path),
         version: env!("CARGO_PKG_VERSION"),
         update: &InstalledUpdateProbe::new(),
-        config: &LocalConfigSources,
+        config: &scan,
         dirs: &SharedDirs,
         walk_limit: crate::doctor::WALK_LIMIT,
     });
@@ -706,12 +730,42 @@ fn man(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     write_stdout(out, &page)
 }
 
+/// `slopvac lint`. `refusal` is the preflight's failure, which stops the run before any input
+/// resolves, as a config that the engine cannot load does.
 fn lint(
     m: &ArgMatches,
+    refusal: Option<&CliError>,
     out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
+    if let Some(error) = refusal {
+        return lint_refused(m, error, out, err_out);
+    }
     lint_with(m, &mut std::io::stdin().lock(), &EngineLinter, out, err_out)
+}
+
+/// Report a run that could not start, in the form `lint` reports a config it cannot load:
+/// the error on stderr, and with `--format json` the report with no documents
+/// (config.md, section 1.4.1).
+fn lint_refused(
+    m: &ArgMatches,
+    error: &CliError,
+    out: &mut dyn std::io::Write,
+    err_out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
+    let request = LintRequest {
+        root: std::env::current_dir().unwrap_or_default(),
+        ..LintRequest::default()
+    };
+    let outcome = crate::engine::refused(&request, error);
+    for err in &outcome.incomplete {
+        let _ = writeln!(err_out, "{err}");
+    }
+    let json = m.get_one::<String>("format").map(String::as_str) == Some("json");
+    if !m.get_flag("explain-config") || json {
+        output::deliver(m, &outcome, out, err_out)?;
+    }
+    Ok(exit::INCOMPLETE)
 }
 
 fn lint_with(

@@ -1,12 +1,9 @@
 //! The text of each public error, as 3.0 builds published it before the message registry.
 
-use std::path::PathBuf;
-
 use rstest::rstest;
 use slopvac_update::fetch::FetchError;
 use slopvac_update::notice::RegistryError;
 use slopvac_update::pipeline::UpdateError;
-use slopvac_update::policy::PolicyError;
 use slopvac_update::verify::VerifyError;
 
 #[rstest]
@@ -56,29 +53,6 @@ use slopvac_update::verify::VerifyError;
     VerifyError::WrongRelease { expected: "e".into(), signed: "g".into() }.to_string(),
     "the signature is for a different release or file: expected `e`, signed `g`"
 )]
-#[case::not_regular(
-    PolicyError::NotRegular(PathBuf::from("a/slopvac.toml")).to_string(),
-    "a/slopvac.toml: not a regular file"
-)]
-#[case::policy_too_large(
-    PolicyError::TooLarge(PathBuf::from("a/slopvac.toml")).to_string(),
-    "a/slopvac.toml: larger than 1048576 bytes"
-)]
-#[case::unreadable(
-    PolicyError::Unreadable { path: PathBuf::from("a/slopvac.toml"), reason: "denied".into() }
-        .to_string(),
-    "a/slopvac.toml: cannot read: denied"
-)]
 fn error_text_is_unchanged(#[case] actual: String, #[case] expected: &str) {
     assert_eq!(actual, expected);
-}
-
-#[test]
-fn only_the_too_large_policy_error_has_a_code() {
-    let path = PathBuf::from("slopvac.toml");
-    assert_eq!(
-        PolicyError::TooLarge(path.clone()).code(),
-        Some("update-policy-too-large")
-    );
-    assert_eq!(PolicyError::NotRegular(path).code(), None);
 }

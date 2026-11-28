@@ -55,6 +55,7 @@ pub static ALL: &[Registered] = &[
     ("self update", slopvac_update::error_entries),
     ("self update text", slopvac_update::text_entries),
     ("self update phrases", slopvac_update::phrase_entries),
+    ("doctor config", crate::doctor::config::message_entries),
 ];
 
 fn report_entries() -> &'static [Entry] {
@@ -107,6 +108,26 @@ pub static RETIRED: &[Retired] = &[
     Retired {
         code: "plugin-category-id-collision",
         note: "A plugin category may share a bare id with a core category, because the engine keys categories by plugin and id. A shared rule id is still refused with plugin-rule-id-collision.",
+    },
+    Retired {
+        code: "update-policy-too-large",
+        note: "The command preflight reads the config through the config layer. An oversized config reports config-too-large.",
+    },
+    Retired {
+        code: "update-policy-at-path",
+        note: "The command preflight reads the config through the config layer, which words its own read failures under config-io.",
+    },
+    Retired {
+        code: "update-policy-not-regular",
+        note: "The command preflight reads the config through the config layer, which words its own read failures under config-io.",
+    },
+    Retired {
+        code: "update-policy-unreadable",
+        note: "The command preflight reads the config through the config layer, which words its own read failures under config-io.",
+    },
+    Retired {
+        code: "config-unreadable",
+        note: "The command preflight reads the config through the config layer. A config that cannot be read reports config-io.",
     },
 ];
 

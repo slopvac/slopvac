@@ -5,8 +5,6 @@
 //! which callers read as `&'static str` through `as_static`. The binary registers the three
 //! through `error_entries`, `text_entries` and `phrase_entries`.
 
-use std::path::PathBuf;
-
 use slopvac_messages::{Catalog, Entry};
 
 /// The error codes and the notice of `slopvac self update` and the update check.
@@ -59,14 +57,6 @@ pub enum UpdateMessage {
     UpdatePrereleaseRefused {
         /// The failure, as text.
         detail: String,
-    },
-    /// The nearest `slopvac.toml` is larger than the policy read allows. The text follows the path.
-    #[code("update-policy-too-large")]
-    #[message("larger than {cap} bytes")]
-    UpdatePolicyTooLarge {
-        /// The cap, in bytes.
-        #[count]
-        cap: u64,
     },
     /// A newer release exists. The advice names the upgrade command or the releases page.
     #[code("update-available")]
@@ -183,14 +173,6 @@ pub(crate) enum UpdateText {
         "the signature is for a different release or file: expected `{expected}`, signed `{signed}`"
     )]
     VerifyWrongRelease { expected: String, signed: String },
-    /// A policy problem with the file it is about.
-    #[code("update-policy-at-path")]
-    #[text("{path}: {problem}")]
-    PolicyAtPath {
-        #[display_path]
-        path: PathBuf,
-        problem: String,
-    },
     /// The update lock file could not be opened, read, written or locked.
     #[code("update-lock-io")]
     #[text("cannot use the update lock {file}: {detail}")]
@@ -232,10 +214,6 @@ pub(crate) enum UpdateText {
         "Make sure that no slopvac update is running before you remove {name}, then run the update again."
     )]
     HintCheckThenRemove { name: String },
-    /// The policy file could not be read.
-    #[code("update-policy-unreadable")]
-    #[text("cannot read: {reason}")]
-    PolicyUnreadable { reason: String },
 }
 
 /// Fixed phrases: command help, advice, fetch and archive failures. Each reads as a `&'static str`.
@@ -359,10 +337,6 @@ pub(crate) enum UpdatePhrase {
     #[code("update-verify-not-utf8")]
     #[text("signature is not UTF-8")]
     VerifyNotUtf8,
-    /// The policy file is not a regular file.
-    #[code("update-policy-not-regular")]
-    #[text("not a regular file")]
-    PolicyNotRegular,
 }
 
 /// The entries of `UpdateMessage`: one per code, and the update notice.
@@ -450,10 +424,6 @@ mod tests {
             (
                 UpdateMessage::UpdatePrereleaseRefused { detail: s("d") },
                 "d",
-            ),
-            (
-                UpdateMessage::UpdatePolicyTooLarge { cap: 1_048_576 },
-                "larger than 1048576 bytes",
             ),
             (
                 UpdateMessage::UpdateAvailable {
@@ -559,13 +529,6 @@ mod tests {
                 "the signature is for a different release or file: expected `e`, signed `g`",
             ),
             (
-                UpdateText::PolicyAtPath {
-                    path: PathBuf::from("a/slopvac.toml"),
-                    problem: s("p"),
-                },
-                "a/slopvac.toml: p",
-            ),
-            (
                 UpdateText::HintRemoveLock {
                     name: s("slopvac.update.lock"),
                 },
@@ -619,12 +582,6 @@ mod tests {
             (
                 UpdateText::ProbeRead { detail: s("eof") },
                 "cannot read its output: eof",
-            ),
-            (
-                UpdateText::PolicyUnreadable {
-                    reason: s("denied"),
-                },
-                "cannot read: denied",
             ),
         ]
     }
@@ -727,7 +684,6 @@ mod tests {
                 "the signature does not verify",
             ),
             (UpdatePhrase::VerifyNotUtf8, "signature is not UTF-8"),
-            (UpdatePhrase::PolicyNotRegular, "not a regular file"),
         ];
         let registered = phrase_entries();
         for (phrase, expected) in phrases {

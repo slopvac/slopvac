@@ -84,7 +84,7 @@ Every resolved value carries a `ConfigSource` (`common.schema.json#/$defs/Config
 `slopvac lint --explain-config <targets>` prints how the settings of each input resolve, then exits. It lints nothing: no report, no gate and no summary. It prints text by default and JSON with `--format json`.
 
 - It writes to standard output and exits 0. A target that cannot be read is reported on standard error as for a lint run, the exit code is 2, and the input is left out of the output.
-- A config that cannot be loaded stops the run before any input resolves. The exit code is 2 and standard error holds `error[<code>]: <message>` with the code of the failure. In the text form standard output stays empty. With `--format json`, standard output holds what `slopvac lint --format json` prints for the same failure: the lint report (`lint-report`) with no documents and one warning notice that carries the same code. One case differs. Before any command runs, the update policy check reads the nearest `slopvac.toml` at or above the working directory. It stops on a file that cannot be read at all, such as one that is not valid UTF-8, whether the file is in the working directory or above it. The code is `config-unreadable`, or `update-policy-too-large` for a file over its size cap, and the exit code is 2. Standard error holds `error[<code>]: <file>: <reason>`, with the file shown as `slopvac.toml`, a path below the working directory or `<external>/slopvac.toml`. Standard output stays empty in both formats, as for `lint`.
+- A config that cannot be loaded stops the run before any input resolves. The exit code is 2 and standard error holds `error[<code>]: <message>` with the code of the failure. In the text form standard output stays empty. With `--format json`, standard output holds what `slopvac lint --format json` prints for the same failure: the lint report (`lint-report`) with no documents and one warning notice that carries the same code. This covers every config the run reads: the `--config` file, or the nearest `slopvac.toml` of the working directory (section 2.2), and each file either one extends.
 - `--explain-config` with a `--format` other than `text` or `json` fails before any file is read, with the code `explain-config-format-unsupported` and exit 2.
 - `--explain-config` with `--min-score`, `--max-per-100-words`, `--locale`, `--category`, `--disable`, `--out`, `--open` or `--verbose` fails the same way, with the code `explain-config-option-unsupported` and exit 2, in both formats. It does not show the command-line layer yet, and the refusal keeps it from ignoring those options.
 
@@ -136,6 +136,25 @@ Resolution is cached per directory, so a run over many files reads each config o
 - An extended file is a v3 config. It must carry `schema_version = 3`. It may extend others.
 - A cycle is an error that names the chain: `config-extends-cycle`.
 - The nearest config decides `exclude` globs and override globs, wherever the pattern was written.
+
+### 2.2 Command preflight
+
+**3.0 requirement.** Before a command runs, slopvac resolves the configuration once for the working directory: the command's `--config` file when it is given, or else the nearest config of the working directory (rules 1 to 3 and 10 above), with every file it extends. The network settings `[network] offline` and `update_check` come from this resolution, so offline stays sticky across the whole `extends` chain. `lint` still resolves the nearest config of each input (rule 1).
+
+A resolution that fails stops the command with exit 2. Standard error holds `error[<code>]: <message>`, the line that `lint` prints for the same failure, and standard output stays empty. `lint`, with `--explain-config` too, reports the failure as section 1.4.1 says, so `--format json` still prints the lint report.
+
+These invocations skip the preflight:
+
+- help, for any command: `--help`, `-h`, `help`, and `slopvac` with no arguments
+- `--version` and `-V` without `--json`
+- `completions`, `man` and `cli-reference`
+- `init`, `validate` and `migrate`, which create, check or convert a config
+- `lsp`, which resolves the config of each open document and keeps running while a config is broken
+- `report`, so that a user with a broken config can still file a bug. A config fact that the report would include is marked as unavailable.
+
+`doctor` resolves the configuration but does not stop when that fails. It reports each file with a status (doctor.md, section 2.3) and exits 2 when one is not `ok`. While the configuration does not resolve, no update check starts.
+
+Every other command stops on a configuration that does not resolve. This includes `--version --json`, whose update state depends on `update_check`.
 
 ## 3. Front matter
 
