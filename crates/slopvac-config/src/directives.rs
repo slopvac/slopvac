@@ -722,4 +722,23 @@ mod tests {
         let parsed = parse_pairs(doc, payloads[0].clone(), &mut budget);
         assert!(parsed.is_err());
     }
+
+    #[test]
+    fn a_key_of_eight_segments_builds_one_table_per_segment() {
+        // Eight segments are the limit: the key is kept, seven tables deep, under its value.
+        let doc = "<!-- slopvac: a.b.c.d.e.f.g.h=1 -->\n";
+        let mut budget = Budget::for_document(doc);
+        let payloads = locate(doc, "a.md", &mut budget).unwrap_or_default();
+        assert_eq!(payloads.len(), 1);
+        let Ok(mut node) = parse_pairs(doc, payloads[0].clone(), &mut budget) else {
+            panic!("an eight-segment key is within the limit");
+        };
+        let mut keys = Vec::new();
+        while let Value::Table(entries) = node.value {
+            let [entry] = <[Entry; 1]>::try_from(entries).expect("one entry per table");
+            keys.push(entry.key);
+            node = entry.node;
+        }
+        assert_eq!(keys, ["a", "b", "c", "d", "e", "f", "g", "h"]);
+    }
 }
