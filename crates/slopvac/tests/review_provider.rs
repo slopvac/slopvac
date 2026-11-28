@@ -497,32 +497,13 @@ fn the_reviewer_model_flag_wins_over_the_config(
     assert_eq!(plan(&out)["reviewer_model"], sent);
 }
 
-/// The fixed host instruction for each kind of sent item, or `None` for a role the payload
-/// never holds.
-fn instruction(role: &str, with_original: bool) -> Option<&'static str> {
-    Some(match (role, with_original) {
-        ("changed", true) => {
-            "A sentence the revision changed. The next item holds the sentence before the change."
-        }
-        ("changed", false) => "A sentence the revision changed.",
-        ("added", _) => "A sentence the revision added.",
-        ("dropped", _) => "A sentence of the original that the revision dropped.",
-        ("original_document", _) => "The original document: the baseline of the review.",
-        ("revised_document", _) => "The revised document.",
-        _ => return None,
-    })
-}
-
-const ORIGINAL_CONTEXT: &str =
-    "The sentence before the change in the previous item. It is context: reply with empty text.";
-
-/// TM-19: the provider receives exactly the payload that `--dry-run` prints. Each payload
-/// item's text goes in its own item, and the sentence before a change goes in an item of its
-/// own; the instructions are fixed host text.
+/// TM-19: the `task`, `model` and `items` the provider receives equal the `request` in the
+/// `--dry-run` plan of the same project. The test compares the values as they are, with no
+/// rebuilding of either side.
 #[rstest]
 #[case::update(UPDATE, "update")]
 #[case::rewrite(REWRITE, "rewrite")]
-fn the_provider_receives_the_payload_that_a_dry_run_prints(
+fn the_provider_receives_the_request_that_a_dry_run_prints(
     #[case] docs: (&str, &str),
     #[case] task: &str,
 ) {
@@ -530,36 +511,58 @@ fn the_provider_receives_the_payload_that_a_dry_run_prints(
     world.trust();
     let dry = world.review(&["--type", task, "--dry-run"]);
     assert_eq!(dry.status.code(), Some(0), "{}", stderr(&dry));
-    let payload = plan(&dry)["payload"].clone();
+    let dry = plan(&dry);
+    let request = &dry["request"];
+    assert!(request.is_object(), "the dry run prints a request: {dry}");
 
     let live = world.review(&["--type", task]);
 
     assert_eq!(live.status.code(), Some(0), "{}", stderr(&live));
-    assert_eq!(plan(&live)["payload"], payload);
-    let mut expected = Vec::new();
-    for (n, item) in payload["items"].as_array().unwrap().iter().enumerate() {
-        let n = n + 1;
-        let original = item.get("original").and_then(Value::as_str);
-        let role = item["role"].as_str().unwrap();
-        expected.push(json!({
-            "id": n.to_string(),
-            "text": item["text"],
-            "instruction": instruction(role, original.is_some()).expect("a payload role"),
-        }));
-        if let Some(original) = original {
-            expected.push(json!({
-                "id": format!("{n}-original"),
-                "text": original,
-                "instruction": ORIGINAL_CONTEXT,
-            }));
-        }
-    }
-    assert!(!expected.is_empty(), "the case sends something");
     let requests = world.requests();
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0]["task"], task);
-    assert_eq!(requests[0]["provider"], "review");
-    assert_eq!(requests[0]["items"], Value::Array(expected));
+    assert_eq!(requests[0]["task"], request["task"]);
+    assert_eq!(requests[0]["model"], request["model"]);
+    assert_eq!(requests[0]["items"], request["items"]);
+    assert_eq!(plan(&live)["request"], *request);
+}
+
+/// A dry run with no reviewer model still prints the request a call would send, without a
+/// `model`.
+#[test]
+fn a_dry_run_without_a_reviewer_model_prints_the_request_without_one() {
+    let world = World::new(REWRITE, &config("provider = \"provider\"\n"));
+    world.trust();
+
+    let out = world.review(&["--dry-run"]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let plan = plan(&out);
+    assert_eq!(plan["request"]["task"], "rewrite", "{plan}");
+    assert!(plan["request"].get("model").is_none(), "{plan}");
+}
+
+/// A plan that would call no provider holds no `request`: a mechanical review and a payload with
+/// no items. The control, the same project as a `rewrite`, holds one.
+#[rstest]
+#[case::mechanical(MECHANICAL, &["--dry-run"][..])]
+#[case::no_items(UNCHANGED, &["--dry-run", "--type", "update"][..])]
+fn a_plan_that_calls_no_provider_holds_no_request(
+    #[case] docs: (&str, &str),
+    #[case] flags: &[&str],
+) {
+    let world = World::new(docs, &configured());
+
+    let out = world.review(flags);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let printed = plan(&out);
+    assert!(printed.get("request").is_none(), "{printed}");
+    let control = world.review(&["--dry-run", "--type", "rewrite"]);
+    assert_eq!(control.status.code(), Some(0), "{}", stderr(&control));
+    assert!(
+        plan(&control).get("request").is_some(),
+        "control: the rewrite plan holds a request"
+    );
 }
 
 fn notices(plan: &Value) -> Vec<Value> {
