@@ -7,6 +7,11 @@
 //! the plugin through the host and the binary's own launcher mode. The plugin logs each start,
 //! the resource limits it runs under, and every `provider/complete` request, so a test sees
 //! what started and what it was sent. Nothing in the binary is replaced.
+//!
+//! It exists so that more than one end-to-end test can drive one real plugin through the real
+//! binary. Its users are `review_provider.rs` (the review command and its provider gates),
+//! `plugin_start.rs` (the start through the default launcher), and the plugins' own end-to-end
+//! tests, which build on the same world.
 #![allow(
     dead_code,
     unreachable_pub,
