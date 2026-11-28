@@ -247,6 +247,8 @@ mod tests {
             r#"echo '{"name":"other","version":"3.3.0"}'"#,
             // An array in field order would fill the struct, but a document is an object.
             r#"echo '["cargo","slopvac",[],3,{},[1],"3.4.0"]'"#,
+            // Two `version` members leave no single version to trust.
+            r#"echo '{"name":"slopvac","version":"3.0.0","version":"9.9.9"}'"#,
         ] {
             let (_dir, exe) = script(body);
             let err = installed_version(&exe, LONG).unwrap_err();
