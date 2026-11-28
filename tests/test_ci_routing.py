@@ -769,6 +769,7 @@ REQUIRED_SUITES = {
     ("test.yml", "test", "Run every discovered pytest suite"),
     ("test.yml", "rust", "Test"),
     ("test.yml", "rust", "Doctests"),
+    ("test.yml", "rust-static", "No-hand-json checker tests"),
     ("docs-site.yml", "build", "Test the generator"),
 }
 
