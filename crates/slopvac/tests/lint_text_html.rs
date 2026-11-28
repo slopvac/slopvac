@@ -206,22 +206,23 @@ fn a_fix_run_reports_one_notice_only_when_a_fix_was_dropped(
 const MESSAGE: &str = "page.html: fixes are not applied in HTML files";
 
 /// The report of a fix run of [`FIXABLE`] in `format`.
-fn fix_report(format: &str) -> String {
-    let dir = tempfile::tempdir().expect("temp dir");
-    std::fs::write(dir.path().join("page.html"), FIXABLE).expect("write");
+fn fix_report(format: &str) -> std::io::Result<String> {
+    let dir = tempfile::tempdir()?;
+    std::fs::write(dir.path().join("page.html"), FIXABLE)?;
     let cmd = slopvac(dir.path()).args(["lint", "--fix", "--format", format, "page.html"]);
-    run(cmd, 1).0
+    Ok(run(cmd, 1).0)
 }
 
 #[test]
-fn json_carries_the_notice_with_its_code_level_and_path() {
+fn json_carries_the_notice_with_its_code_level_and_path() -> std::io::Result<()> {
     let want = vec![("info".to_owned(), "page.html".to_owned())];
-    assert_eq!(fix_notices(&fix_report("json")), want);
+    assert_eq!(fix_notices(&fix_report("json")?), want);
+    Ok(())
 }
 
 #[test]
-fn sarif_carries_the_notice_code_and_level_with_the_path_in_the_message() {
-    let out = fix_report("sarif");
+fn sarif_carries_the_notice_code_and_level_with_the_path_in_the_message() -> std::io::Result<()> {
+    let out = fix_report("sarif")?;
     let sarif: Value = serde_json::from_str(&out).expect("SARIF");
     let notes = sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"]
         .as_array()
@@ -236,13 +237,15 @@ fn sarif_carries_the_notice_code_and_level_with_the_path_in_the_message() {
         [(&Value::from("note"), &Value::from(MESSAGE))],
         "{out}"
     );
+    Ok(())
 }
 
 #[rstest]
 #[case::markdown("markdown")]
 #[case::html("html")]
-fn a_report_page_carries_the_notice_code_and_message(#[case] format: &str) {
-    let out = fix_report(format);
+fn a_report_page_carries_the_notice_code_and_message(#[case] format: &str) -> std::io::Result<()> {
+    let out = fix_report(format)?;
     assert_eq!(out.matches(NOTICE).count(), 1, "{out}");
     assert_eq!(out.matches(MESSAGE).count(), 1, "{out}");
+    Ok(())
 }
