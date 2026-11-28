@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use thiserror::Error;
 
+use crate::document::Document;
 use crate::messages::{UpdatePhrase, UpdateText};
 
 /// How long the executable has to answer.
@@ -133,17 +134,19 @@ pub(crate) fn installed_version(
     parse(&output)
 }
 
-/// The version in a `--version --json` document, which must name `slopvac`.
+/// The version in a `--version --json` document, which must name `slopvac`. Members and notice
+/// fields that this build does not know are ignored: the executable may be a newer one.
 fn parse(output: &[u8]) -> Result<semver::Version, ProbeError> {
-    let doc: serde_json::Value =
-        serde_json::from_slice(output).map_err(|_| ProbeError::Unparseable)?;
-    if doc.pointer("/name").and_then(serde_json::Value::as_str) != Some("slopvac") {
+    // A derived struct also reads a JSON array in field order, and the document is an object. A
+    // `Value` would keep the last of two equal keys, so check the first byte instead.
+    if output.iter().find(|b| !b.is_ascii_whitespace()) != Some(&b'{') {
         return Err(ProbeError::Unparseable);
     }
-    doc.pointer("/version")
-        .and_then(serde_json::Value::as_str)
-        .and_then(|v| semver::Version::parse(v).ok())
-        .ok_or(ProbeError::Unparseable)
+    let doc: Document = serde_json::from_slice(output).map_err(|_| ProbeError::Unparseable)?;
+    if doc.name != "slopvac" {
+        return Err(ProbeError::Unparseable);
+    }
+    semver::Version::parse(&doc.version).map_err(|_| ProbeError::Unparseable)
 }
 
 #[cfg(all(test, unix))]
@@ -173,6 +176,57 @@ mod tests {
         );
     }
 
+    /// The document that the 3.x writer before the typed document printed: every key, a notice,
+    /// and no `schema_version`. A binary that was installed earlier still prints this.
+    const OLD_WRITER_DOCUMENT: &str = concat!(
+        r#"{"install_method":"installer","name":"slopvac","notices":[{"code":"update-available","#,
+        r#""level":"info","message":"slopvac 3.9.0 is available (you have 3.3.0). Upgrade with "#,
+        r#"`slopvac self update`.","x-current":"3.3.0","x-latest":"3.9.0","#,
+        r#""x-upgrade-command":"slopvac self update"}],"schema_versions":{"config":[3],"#,
+        r#""lint-report":[3]},"slopvac_api":[1],"version":"3.3.0"}"#
+    );
+
+    #[test]
+    fn a_document_from_the_old_writer_is_read() {
+        let (_dir, exe) = script(&format!("echo '{OLD_WRITER_DOCUMENT}'"));
+        assert_eq!(
+            installed_version(&exe, LONG).unwrap(),
+            semver::Version::new(3, 3, 0)
+        );
+    }
+
+    #[test]
+    fn keys_and_notice_fields_of_a_newer_binary_are_ignored() {
+        let (_dir, exe) = script(
+            r#"echo '{"name":"slopvac","version":"3.4.0","install_method":"cargo","future":{"a":[1]},"notices":[{"code":"c","level":"info","message":"m","x-current":"3.4.0","x-latest":"3.5.0","new-field":1}],"schema_versions":{"config":[3,4],"newer":[1]},"slopvac_api":[1,2]}'"#,
+        );
+        assert_eq!(
+            installed_version(&exe, LONG).unwrap(),
+            semver::Version::new(3, 4, 0)
+        );
+    }
+
+    #[test]
+    fn a_document_with_the_current_schema_version_is_read() {
+        let (_dir, exe) = script(
+            r#"echo '{"install_method":"cargo","name":"slopvac","notices":[],"schema_version":3,"schema_versions":{"version":[3]},"slopvac_api":[1],"version":"3.5.0"}'"#,
+        );
+        assert_eq!(
+            installed_version(&exe, LONG).unwrap(),
+            semver::Version::new(3, 5, 0)
+        );
+    }
+
+    #[test]
+    fn a_document_of_another_schema_version_is_refused() {
+        // The caller treats an unknown version as a reason to refuse. A document this build
+        // cannot read says nothing it can trust, like any other artifact of another version.
+        let (_dir, exe) =
+            script(r#"echo '{"name":"slopvac","schema_version":4,"version":"4.0.0"}'"#);
+        let err = installed_version(&exe, LONG).unwrap_err();
+        assert!(matches!(err, ProbeError::Unparseable), "{err}");
+    }
+
     #[test]
     fn the_probe_passes_the_flags_that_print_the_version_document() {
         let (_dir, exe) = script(
@@ -190,6 +244,10 @@ mod tests {
             r#"echo '{"name":"slopvac","version":"v3.3.0"}'"#,
             r#"echo '{"name":"slopvac","version":330}'"#,
             r#"echo '{"name":"other","version":"3.3.0"}'"#,
+            // An array in field order would fill the struct, but a document is an object.
+            r#"echo '["cargo","slopvac",[],3,{},[1],"3.4.0"]'"#,
+            // Two `version` members leave no single version to trust.
+            r#"echo '{"name":"slopvac","version":"3.0.0","version":"9.9.9"}'"#,
         ] {
             let (_dir, exe) = script(body);
             let err = installed_version(&exe, LONG).unwrap_err();

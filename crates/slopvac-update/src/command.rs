@@ -9,6 +9,7 @@ use std::sync::Arc;
 use clap::{ArgMatches, Command};
 use slopvac_messages::Catalog;
 
+use crate::document::Document;
 use crate::fetch::{Fetcher, UreqFetcher};
 use crate::install::{self, InstallMethod};
 use crate::messages::{UpdateMessage, UpdatePhrase, UpdateText, line};
@@ -283,15 +284,5 @@ pub struct Supported {
 #[must_use]
 pub fn version_json(rt: &Runtime, supported: &Supported) -> String {
     let notices: Vec<Notice> = rt.notice(None).into_iter().collect();
-    let doc = serde_json::json!({
-        "name": "slopvac",
-        "version": rt.current,
-        "install_method": rt.method().id(),
-        "schema_versions": supported.schema_versions,
-        "slopvac_api": supported.slopvac_api,
-        "notices": notices,
-    });
-    let mut text = doc.to_string();
-    text.push('\n');
-    text
+    Document::new(&rt.current, rt.method().id(), supported, notices).to_line()
 }

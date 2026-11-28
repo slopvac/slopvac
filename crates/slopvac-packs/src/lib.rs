@@ -38,8 +38,8 @@ pub use synced::load_synced_observed;
 pub use synced::{SyncedError, load_synced, load_synced_within};
 
 pub use manifest::{
-    HookDecl, Manifest, ManifestError, PackKind, PackPath, PluginRuntime, PluginTable, Provides,
-    Requirement,
+    HookDecl, MANIFEST_SCHEMA_VERSION, Manifest, ManifestError, PackKind, PackPath, PluginRuntime,
+    PluginTable, Provides, Requirement,
 };
 pub use name::{NameError, QualifiedName};
 pub use pack_id::{PackIdError, from_lock_id, to_lock_id};

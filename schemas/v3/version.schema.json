@@ -1,0 +1,111 @@
+{
+  "$defs": {
+    "UpdateNotice": {
+      "additionalProperties": false,
+      "description": "A machine-readable fact in the shape of `Notice` in `schemas/v3/lint-report.schema.json`.\n\nThe schema allows only `x-` keys beyond `code`, `level` and `message`. The fields are in alphabetical order of their keys, the order the document has always printed them in.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "code": {
+          "const": "update-available",
+          "description": "Always `update-available`."
+        },
+        "level": {
+          "const": "info",
+          "description": "Always `info`."
+        },
+        "message": {
+          "description": "Human message. Not an interface.",
+          "type": "string"
+        },
+        "x-current": {
+          "description": "The running version.",
+          "type": "string"
+        },
+        "x-latest": {
+          "description": "The newest release.",
+          "type": "string"
+        },
+        "x-migrate-hint": {
+          "description": "Set when the release is a new major version.",
+          "type": "string"
+        },
+        "x-upgrade-command": {
+          "description": "The command that upgrades this install, when the channel is known.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "level",
+        "message",
+        "x-current",
+        "x-latest"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/version.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The document that `slopvac --version --json` prints: the binary version and how it was installed, the `schema_version` numbers the binary reads or writes for each versioned artifact, the `slopvac_api` numbers it supports, and the update notice when a newer release is known. `slopvac self update` reads the same document from the installed executable, and ignores the members it does not know. Unknown keys are errors, and keys that start with `x-` are ignored. Semantics are specified in docs/contract/policies.md, section 3.2.",
+  "patternProperties": {
+    "^x-": true
+  },
+  "properties": {
+    "install_method": {
+      "description": "How this binary was installed, such as `installer`, `homebrew` or `unknown`.",
+      "type": "string"
+    },
+    "name": {
+      "const": "slopvac",
+      "description": "Always `slopvac`."
+    },
+    "notices": {
+      "description": "The update notice, when a newer release is known. Empty otherwise.",
+      "items": {
+        "$ref": "#/$defs/UpdateNotice"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion",
+      "description": "The version of this document. A document written before the member existed reads as 3."
+    },
+    "schema_versions": {
+      "additionalProperties": {
+        "items": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": "array"
+      },
+      "description": "The `schema_version` numbers the binary reads or writes for each versioned artifact. A key is the schema file name without `.schema.json`.",
+      "type": "object"
+    },
+    "slopvac_api": {
+      "description": "The extension API numbers the binary supports.",
+      "items": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "type": "array"
+    },
+    "version": {
+      "$ref": "common.schema.json#/$defs/Semver",
+      "description": "The binary's semantic version."
+    }
+  },
+  "required": [
+    "install_method",
+    "name",
+    "notices",
+    "schema_version",
+    "schema_versions",
+    "slopvac_api",
+    "version"
+  ],
+  "title": "slopvac v3 version",
+  "type": "object"
+}

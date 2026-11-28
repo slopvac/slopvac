@@ -10,6 +10,7 @@ mod support;
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
+use std::path::Path;
 
 fn slopvac() -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
@@ -390,10 +391,19 @@ fn cache_with_newer_release() -> tempfile::TempDir {
     dir
 }
 
+/// Point the inputs that install detection reads at empty directories under `base`: the receipt
+/// directory and the cargo home. Without them a receipt or a cargo layout on the host decides
+/// `install_method` and the upgrade text, and a byte pin then fails on some machines only. The
+/// executable path is the one input left alone: it is the test binary in the target directory.
+fn without_host_install_evidence<'a>(cmd: &'a mut Command, base: &Path) -> &'a mut Command {
+    cmd.env("AXOUPDATER_CONFIG_PATH", base.join("no-receipts"))
+        .env("CARGO_HOME", base.join("no-cargo-home"))
+}
+
 /// The `--offline --version --json` document, parsed.
 fn offline_version_document() -> serde_json::Value {
     let cache = tempfile::tempdir().unwrap();
-    let out = slopvac()
+    let out = without_host_install_evidence(&mut slopvac(), cache.path())
         .env("SLOPVAC_CACHE_DIR", cache.path())
         .args(["--offline", "--version", "--json"])
         .assert()
@@ -412,21 +422,94 @@ fn version_json_lists_supported_versions_from_the_owning_crates() {
         serde_json::json!({
             "blocklist": [slopvac_terms::BLOCKLIST_SCHEMA_VERSION],
             "category": [slopvac_model::SchemaVersion::VALUE],
+            "claims": [slopvac_model::SchemaVersion::VALUE],
             "config": [slopvac_config::version::SUPPORTED],
             "doctor-report": [slopvac_cli::doctor::SCHEMA_VERSION],
+            "explain-config": [slopvac_model::SchemaVersion::VALUE],
             "genre": [slopvac_context::GENRE_SCHEMA_VERSION],
             "lint-report": [slopvac_model::SchemaVersion::VALUE],
+            "plugin-manifest": [slopvac_packs::MANIFEST_SCHEMA_VERSION],
             "plugins-lock": [slopvac_plugins::lock::LOCK_SCHEMA_VERSION],
+            "review-plan": [slopvac_model::SchemaVersion::VALUE],
             "rules-output": [slopvac_model::SchemaVersion::VALUE],
             "style": [slopvac_config::version::SUPPORTED],
             "tagger": [slopvac_context::TAGGER_SCHEMA_VERSION],
             "terms": [slopvac_terms::TERMS_SCHEMA_VERSION],
+            "version": [slopvac_model::SchemaVersion::VALUE],
         })
     );
     assert_eq!(
         doc["slopvac_api"],
         serde_json::json!(slopvac_model::ApiVersion::SUPPORTED)
     );
+}
+
+/// The `schema_version` and `schema_versions` members of this build, in the order they are
+/// printed. Every artifact is at version 3, which `docs/contract/policies.md` section 3.2 and the
+/// schemas under `schemas/v3` state independently of the code. The list holds the artifacts of
+/// section 3.2, and `version`, the document itself.
+const SCHEMA_VERSIONS: &str = concat!(
+    r#""schema_version":3,"schema_versions":{"blocklist":[3],"category":[3],"claims":[3],"#,
+    r#""config":[3],"doctor-report":[3],"explain-config":[3],"genre":[3],"lint-report":[3],"#,
+    r#""plugin-manifest":[3],"plugins-lock":[3],"review-plan":[3],"rules-output":[3],"style":[3],"tagger":[3],"#,
+    r#""terms":[3],"version":[3]}"#
+);
+
+/// The raw bytes of `--version --json` with the notice array and the build version filled in.
+/// An unmanaged test binary has no upgrade command and so no `x-upgrade-command`.
+fn expected_version_bytes(notices: &str) -> String {
+    format!(
+        concat!(
+            r#"{{"install_method":"unknown","name":"slopvac","notices":{notices},{versions},"#,
+            r#""slopvac_api":[1],"version":"{version}"}}"#,
+            "\n"
+        ),
+        notices = notices,
+        versions = SCHEMA_VERSIONS,
+        version = env!("CARGO_PKG_VERSION"),
+    )
+}
+
+fn raw_version_output(cmd: &mut Command, cache: &std::path::Path, args: &[&str]) -> String {
+    let out = without_host_install_evidence(cmd, cache)
+        .env("SLOPVAC_CACHE_DIR", cache)
+        .args(args)
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(out).unwrap()
+}
+
+#[test]
+fn version_json_bytes_offline() {
+    let cache = tempfile::tempdir().unwrap();
+    let raw = raw_version_output(
+        &mut slopvac(),
+        cache.path(),
+        &["--offline", "--version", "--json"],
+    );
+    assert_eq!(raw, expected_version_bytes("[]"));
+}
+
+#[test]
+fn version_json_bytes_online_with_a_cached_newer_release() {
+    let cache = cache_with_newer_release();
+    let raw = raw_version_output(
+        &mut update_enabled(),
+        cache.path(),
+        &["--version", "--json"],
+    );
+    let notice = concat!(
+        r#"[{"code":"update-available","level":"info","message":"slopvac 99.0.0 is available "#,
+        r#"(you have CURRENT). See https://github.com/slopvac/slopvac/releases. This is a new "#,
+        r#"major version. Run `slopvac migrate` to update your configuration.","#,
+        r#""x-current":"CURRENT","x-latest":"99.0.0","x-migrate-hint":"This is a new major "#,
+        r#"version. Run `slopvac migrate` to update your configuration."}]"#
+    )
+    .replace("CURRENT", env!("CARGO_PKG_VERSION"));
+    assert_eq!(raw, expected_version_bytes(&notice));
 }
 
 /// insta: the whole document, with the two values that vary by build and install redacted.

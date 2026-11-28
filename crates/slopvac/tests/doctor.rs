@@ -122,6 +122,11 @@ impl World {
             "XDG_DATA_HOME",
             "XDG_STATE_HOME",
             "LOCALAPPDATA",
+            // Install detection reads these. A receipt or cargo home on the host would change
+            // `install_method`, so the temporary home holds the only receipt directory.
+            "AXOUPDATER_CONFIG_PATH",
+            "XDG_CONFIG_HOME",
+            "CARGO_HOME",
             "CI",
             "NO_UPDATE_NOTIFIER",
             "SLOPVAC_NO_UPDATE_CHECK",

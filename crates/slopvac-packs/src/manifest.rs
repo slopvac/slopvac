@@ -14,6 +14,10 @@ use slopvac_model::{ApiVersion, PackId, absent_not_null, if_then, x_extensions};
 use slopvac_plugins::sign::RESERVED_ID;
 use toml::{Table, Value};
 
+/// The `schema_version` that the manifest reader accepts, and that `slopvac --version --json`
+/// reports for `plugin-manifest`.
+pub const MANIFEST_SCHEMA_VERSION: u32 = 3;
+
 /// Largest manifest the reader accepts, in bytes.
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
 
@@ -608,8 +612,13 @@ fn parse_root(value: &Value, allow_core: bool) -> Result<Manifest> {
         ],
     )?;
     match root.required("schema_version")?.as_integer() {
-        Some(3) => {}
-        _ => return Err(err("/schema_version", "must be 3")),
+        Some(n) if n == i64::from(MANIFEST_SCHEMA_VERSION) => {}
+        _ => {
+            return Err(err(
+                "/schema_version",
+                format!("must be {MANIFEST_SCHEMA_VERSION}"),
+            ));
+        }
     }
     let id = pack_id(root.string("id")?).map_err(|m| err("/id", m))?;
     if id.as_str() == RESERVED_ID && !allow_core {

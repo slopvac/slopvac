@@ -286,6 +286,23 @@ pub const ARTIFACTS: &[Artifact] = &[
         keep: &[],
         build: explain_config,
     },
+    Artifact {
+        file: "version.schema.json",
+        title: "slopvac v3 version",
+        description: Some(
+            "The document that `slopvac --version --json` prints: the binary version and how it \
+             was installed, the `schema_version` numbers the binary reads or writes for each \
+             versioned artifact, the `slopvac_api` numbers it supports, and the update notice \
+             when a newer release is known. `slopvac self update` reads the same document from \
+             the installed executable, and ignores the members it does not know. Unknown keys \
+             are errors, and keys that start with `x-` are ignored. Semantics are specified in \
+             docs/contract/policies.md, section 3.2.",
+        ),
+        imports: &["common.schema.json"],
+        inline: &[],
+        keep: &[],
+        build: version_document,
+    },
 ];
 
 /// The producer contract: what the generated reference file holds.
@@ -342,6 +359,14 @@ fn explain_config() -> Value {
     schema_settings(Contract::Serialize)
         .into_generator()
         .into_root_schema_for::<slopvac_cli::explain_config::Document>()
+        .to_value()
+}
+
+/// The producer contract: what `slopvac --version --json` serializes.
+fn version_document() -> Value {
+    schema_settings(Contract::Serialize)
+        .into_generator()
+        .into_root_schema_for::<slopvac_update::document::Document>()
         .to_value()
 }
 

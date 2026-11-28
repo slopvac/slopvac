@@ -9,7 +9,7 @@ The schemas in schemas/v3 are generated from the Rust types by slopvac-schemas. 
   `common`, `lint-report`, `rule`, `category`, `config`, `frontmatter`,
   `plugin-manifest`, `style`, `genre`, `tagger`, `blocklist`, `terms`, `plugins-lock`,
   `plugin-index`, `doctor-report`, `explain-config`, `rules-output`, `claims`,
-  `review-plan` and `plugin-protocol`.
+  `review-plan`, `plugin-protocol` and `version`.
 - `schemas/v3/conformance/<artifact>/valid/` and `invalid/` hold instances in native
   TOML, YAML or JSON.
 - `invalid/cases.toml` maps each invalid file to a JSON pointer where it must fail.

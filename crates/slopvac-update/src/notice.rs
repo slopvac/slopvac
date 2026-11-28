@@ -9,9 +9,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use schemars::JsonSchema;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use slopvac_messages::Catalog;
+use slopvac_model::{absent_not_null, x_extensions};
 use thiserror::Error;
 
 use crate::fetch::{FetchError, Fetcher};
@@ -33,13 +35,17 @@ pub type VarFn<'a> = &'a dyn Fn(&str) -> Option<String>;
 
 /// A machine-readable fact in the shape of `Notice` in `schemas/v3/lint-report.schema.json`.
 ///
-/// The schema allows only `x-` keys beyond `code`, `level` and `message`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// The schema allows only `x-` keys beyond `code`, `level` and `message`. The fields are in
+/// alphabetical order of their keys, the order the document has always printed them in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(rename = "UpdateNotice", transform = x_extensions)]
 pub struct Notice {
     /// Always `update-available`.
-    pub code: &'static str,
+    #[schemars(extend("const" = "update-available"))]
+    pub code: String,
     /// Always `info`.
-    pub level: &'static str,
+    #[schemars(extend("const" = "info"))]
+    pub level: String,
     /// Human message. Not an interface.
     pub message: String,
     /// The running version.
@@ -48,12 +54,22 @@ pub struct Notice {
     /// The newest release.
     #[serde(rename = "x-latest")]
     pub latest: String,
-    /// The command that upgrades this install, when the channel is known.
-    #[serde(rename = "x-upgrade-command", skip_serializing_if = "Option::is_none")]
-    pub upgrade_command: Option<String>,
     /// Set when the release is a new major version.
-    #[serde(rename = "x-migrate-hint", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "x-migrate-hint",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(transform = absent_not_null)]
     pub migrate_hint: Option<String>,
+    /// The command that upgrades this install, when the channel is known.
+    #[serde(
+        rename = "x-upgrade-command",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(transform = absent_not_null)]
+    pub upgrade_command: Option<String>,
 }
 
 impl Notice {
@@ -95,8 +111,8 @@ pub fn notice_for(current: &str, latest: &str, method: InstallMethod) -> Option<
         advice,
     };
     Some(Notice {
-        code: message.code(),
-        level: "info",
+        code: message.code().to_owned(),
+        level: "info".to_owned(),
         message: message.to_string(),
         current: current.to_owned(),
         latest: latest.to_owned(),

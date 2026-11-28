@@ -1,0 +1,31 @@
+{
+  "install_method": "installer",
+  "name": "slopvac",
+  "notices": [
+    {
+      "code": "update-available",
+      "level": "info",
+      "message": "slopvac 3.5.0 is available (you have 3.4.0). Upgrade with `slopvac self update`.",
+      "x-current": "3.4.0",
+      "x-latest": "3.5.0",
+      "x-upgrade-command": "slopvac self update",
+      "extra": 1
+    }
+  ],
+  "schema_version": 3,
+  "schema_versions": {
+    "config": [
+      3
+    ],
+    "lint-report": [
+      3
+    ],
+    "version": [
+      3
+    ]
+  },
+  "slopvac_api": [
+    1
+  ],
+  "version": "3.4.0"
+}

@@ -1,0 +1,9 @@
+{
+  "install_method": "installer",
+  "name": "slopvac",
+  "notices": [],
+  "schema_version": 3,
+  "schema_versions": {},
+  "slopvac_api": [],
+  "version": "3.4.0"
+}
