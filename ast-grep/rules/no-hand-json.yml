@@ -29,7 +29,6 @@ files:
 # total config-leaf 24
 # total digest-input 6
 # total validator-fragment 2
-# total TEMPORARY(slopvac-8l4.12.88) 11
 # total TEMPORARY(slopvac-8l4.3.85) 3
 ignores:
   - "**/tests/**" # exempt glob
@@ -62,8 +61,6 @@ ignores:
   - crates/slopvac/src/init/template.rs # allow validator-fragment 2
   # TEMPORARY(slopvac-8l4.3.85): the locale category is built as rule-file JSON.
   - crates/slopvac-engine/src/locale.rs # allow TEMPORARY(slopvac-8l4.3.85) 3
-  # TEMPORARY(slopvac-8l4.12.88): the inspect output is built with json!.
-  - crates/slopvac/src/inspect.rs # allow TEMPORARY(slopvac-8l4.12.88) 11
 rule:
   any:
     - all:
