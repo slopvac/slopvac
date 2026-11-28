@@ -13,7 +13,7 @@ fn parse(raw: &[u8]) -> Result<usize, TrustError> {
 
 #[test]
 fn an_empty_versioned_store_parses() {
-    assert_eq!(parse(br#"{"schema_version":1}"#).unwrap(), 0);
+    assert_eq!(parse(br#"{"schema_version":2}"#).unwrap(), 0);
 }
 
 #[test]
@@ -40,16 +40,22 @@ fn bytes_written_by_the_store_parse_back_to_the_same_counts() {
 
 #[test]
 fn extension_keys_are_ignored_and_other_unknown_keys_refused() {
-    assert!(parse(br#"{"schema_version":1,"x-note":true}"#).is_ok());
+    assert!(parse(br#"{"schema_version":2,"x-note":true}"#).is_ok());
     assert!(matches!(
-        parse(br#"{"schema_version":1,"surprise":1}"#),
+        parse(br#"{"schema_version":2,"surprise":1}"#),
         Err(TrustError::Corrupt { .. })
     ));
 }
 
 #[test]
 fn another_schema_version_and_bad_json_are_corrupt() {
-    for raw in [&br#"{"schema_version":3}"#[..], b"{broken", b"", b"[]"] {
+    for raw in [
+        &br#"{"schema_version":1}"#[..],
+        br#"{"schema_version":3}"#,
+        b"{broken",
+        b"",
+        b"[]",
+    ] {
         assert!(
             matches!(parse(raw), Err(TrustError::Corrupt { .. })),
             "{raw:?}"
@@ -59,7 +65,7 @@ fn another_schema_version_and_bad_json_are_corrupt() {
 
 /// Valid store JSON of exactly `len` bytes, padded inside an ignored `x-` key.
 fn store_of_len(len: usize) -> Vec<u8> {
-    let head = br#"{"schema_version":1,"x-pad":""#;
+    let head = br#"{"schema_version":2,"x-pad":""#;
     let tail = br#""}"#;
     let pad = len - head.len() - tail.len();
     let mut raw = head.to_vec();

@@ -1518,7 +1518,6 @@ plugins-trust-spawn-environment-refused text
 plugins-trust-spawn-key-unusable text
 plugins-trust-spawn-program-refused text
 plugins-trust-store-damaged text
-plugins-trust-store-pins-without-host text
 plugins-trust-store-too-large text
 plugins-trusted text
 plugins-trusted-signed text

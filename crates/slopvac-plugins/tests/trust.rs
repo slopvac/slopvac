@@ -807,7 +807,7 @@ fn a_damaged_store_fails_closed() {
         Err(TrustError::Corrupt { .. })
     ));
     assert!(matches!(g.check(&spec), Err(PluginError::Untrusted(_))));
-    let extra = json!({"schema_version": 1, "records": [], "pins": [], "extra": 1});
+    let extra = json!({"schema_version": 2, "records": [], "pins": [], "extra": 1});
     fs::write(s.dir("state/trust.json"), extra.to_string()).unwrap();
     assert!(matches!(
         TrustStore::open(s.dir("state")).records(),
@@ -844,80 +844,25 @@ fn hostless_pin() -> serde_json::Value {
     json!({"namespace": "acme", "fingerprint": fingerprint, "key": key, "pinned_at": NOW})
 }
 
+/// The store never shipped as version 1, so a version 1 file is a damaged store: it is not
+/// read, not migrated and not rewritten.
 #[test]
-fn k23_a_version_1_store_with_a_key_pin_is_refused_with_the_fix_and_kept() {
-    let s = Scratch::new("v1-pins");
+fn a_version_1_store_is_a_damaged_store_and_kept() {
+    let s = Scratch::new("v1");
     let store = TrustStore::open(s.dir("state"));
     fs::create_dir_all(s.dir("state")).unwrap();
     let file = s.dir("state/trust.json");
-    let pin = hostless_pin();
-    let old = json!({"schema_version": 1, "records": [], "pins": [pin]}).to_string();
-    fs::write(&file, &old).unwrap();
-    let errors = [
-        store.records().map(drop).unwrap_err(),
-        store.pinned_map().map(drop).unwrap_err(),
-        store
-            .pin_key(
-                &PinScope::new("ghcr.io", "other"),
-                &PublicKey::from_base64(&new_key()).unwrap(),
-                NOW,
-            )
-            .map(drop)
-            .unwrap_err(),
-    ];
-    for err in errors {
-        let text = err.to_string();
-        assert!(
-            text.contains("<external>/trust.json")
-                && text.contains("--registry")
-                && text.contains("pins"),
-            "{text}"
-        );
-        for stored in [
-            "acme",
-            pin["fingerprint"].as_str().unwrap(),
-            pin["key"].as_str().unwrap(),
-        ] {
-            assert!(!text.contains(stored), "{text}");
-        }
-    }
-    assert_eq!(fs::read_to_string(&file).unwrap(), old);
-}
-
-#[test]
-fn k23b_a_version_1_store_with_records_only_is_read_and_written_as_version_2() {
-    let s = Scratch::new("v1-records");
-    let store = TrustStore::open(s.dir("state"));
-    fs::create_dir_all(s.dir("state")).unwrap();
-    let file = s.dir("state/trust.json");
-    let (a, b) = (Digest::of(b"a").to_string(), Digest::of(b"b").to_string());
-    let records = [
-        serde_json::to_value(record(&a, "a")).unwrap(),
-        serde_json::to_value(record(&b, "b")).unwrap(),
-    ];
+    let a = Digest::of(b"a").to_string();
+    let records = [serde_json::to_value(record(&a, "a")).unwrap()];
     let old = json!({"schema_version": 1, "records": records}).to_string();
     fs::write(&file, &old).unwrap();
-
-    assert_eq!(store.records().unwrap().len(), 2);
-    assert_eq!(
-        fs::read_to_string(&file).unwrap(),
-        old,
-        "a read writes nothing"
-    );
-
-    assert!(store.forget(&Digest::of(b"a")).unwrap());
-    let written: serde_json::Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
-    assert_eq!(written["schema_version"], 2);
-    assert_eq!(written["records"].as_array().unwrap().len(), 1);
-    assert_eq!(written["records"][0]["hash"], b.as_str());
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(
-            fs::metadata(&file).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-    }
+    assert!(matches!(store.records(), Err(TrustError::Corrupt { .. })));
+    assert!(matches!(store.pinned_map(), Err(TrustError::Corrupt { .. })));
+    assert!(matches!(
+        store.forget(&Digest::of(b"a")),
+        Err(TrustError::Corrupt { .. })
+    ));
+    assert_eq!(fs::read_to_string(&file).unwrap(), old);
 }
 
 #[test]
@@ -950,7 +895,7 @@ fn x_keys_are_ignored_at_every_depth_and_other_unknown_keys_still_fail() {
         rec.as_object_mut()
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
-        json!({"schema_version": 1, "x-top": [1], "records": [rec], "pins": []})
+        json!({"schema_version": 2, "x-top": [1], "records": [rec], "pins": []})
     };
     let store = TrustStore::open(s.dir("state"));
     fs::write(&file, doc(json!({})).to_string()).unwrap();
