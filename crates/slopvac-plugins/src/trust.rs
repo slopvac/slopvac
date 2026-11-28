@@ -125,7 +125,7 @@ pub enum TrustError {
     Rotation(SignError),
     /// The rotation statement cannot be a rotation. The cause is a kind only, because the
     /// parser's text can quote the statement.
-    #[error("{}", messages::rotation_statement_refused(.cause))]
+    #[error("{}", messages::rotation_statement_refused(*.cause))]
     RotationStatement {
         /// Why, as a kind with a fixed text.
         #[source]

@@ -908,7 +908,7 @@ pub(crate) fn environment_refused(why: &str) -> String {
 
 /// The refusal of a rotation whose statement failed `cause`: a rollback has its own code.
 /// A rotation refused for a statement that cannot be one, with the cause's fixed text.
-pub(crate) fn rotation_statement_refused(cause: &crate::sign::RotationCause) -> String {
+pub(crate) fn rotation_statement_refused(cause: crate::sign::RotationCause) -> String {
     TrustMessage::RotationInvalid {
         cause: cause.to_string(),
     }

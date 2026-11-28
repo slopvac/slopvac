@@ -1390,7 +1390,10 @@ fn a_key_pinned_with_plugins_pin_verifies_a_signed_sync() {
     assert_eq!(
         snapshot(&trees[0]),
         std::collections::BTreeMap::from([
-            ("pack.toml".to_owned(), Entry::File(b"id = \"style\"\n".to_vec())),
+            (
+                "pack.toml".to_owned(),
+                Entry::File(b"id = \"style\"\n".to_vec())
+            ),
             ("rules".to_owned(), Entry::Dir),
             ("rules/a.yml".to_owned(), Entry::File(b"rule: a\n".to_vec())),
         ])
