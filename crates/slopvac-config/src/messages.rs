@@ -443,6 +443,10 @@ pub(crate) enum ConfigPhrase {
     #[code("config-kind-number")]
     #[text("a number")]
     KindNumber,
+    /// The accepted kind of a level: one of the level names.
+    #[code("config-kind-level-name")]
+    #[text("a level name")]
+    KindLevelName,
     /// The accepted kind of a front-matter root.
     #[code("config-kind-mapping")]
     #[text("a mapping")]

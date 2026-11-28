@@ -189,6 +189,7 @@ config-kind-datetime text
 config-kind-float text
 config-kind-integer text
 config-kind-integer-three text
+config-kind-level-name text
 config-kind-mapping text
 config-kind-null text
 config-kind-number text

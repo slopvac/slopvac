@@ -4,6 +4,8 @@ use std::fmt;
 
 use serde::de::{self, Deserialize, Deserializer, Visitor};
 
+use crate::messages::ConfigPhrase;
+
 /// The level a rule or category reports at. This enum is the one declaration of the level
 /// names. The readers, the style loader and the `RuleLevel` definition in the schemas all take
 /// their spelling from [`Level::as_str`], and [`Level::ALL`] is the ordered list of every level.
@@ -56,7 +58,7 @@ impl<'de> Deserialize<'de> for Level {
             type Value = Level;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("a level name")
+                f.write_str(ConfigPhrase::KindLevelName.as_static())
             }
 
             fn visit_str<E: de::Error>(self, value: &str) -> Result<Level, E> {
