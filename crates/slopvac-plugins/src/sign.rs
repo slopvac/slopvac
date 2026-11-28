@@ -324,6 +324,13 @@ impl KeyPolicy {
             .find(|k| k.key_id() == key_id)
     }
 
+    /// Whether the policy holds a key that may sign for `(registry, namespace)`: a pinned key, or a
+    /// first-party key for a first-party namespace.
+    #[must_use]
+    pub fn holds_keys_for(&self, registry: &str, namespace: &str) -> bool {
+        !self.candidates(registry, namespace).is_empty()
+    }
+
     /// The key that signs for `(registry, namespace)` with `key_id`, or why none does.
     ///
     /// # Errors

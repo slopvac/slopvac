@@ -87,8 +87,8 @@ use crate::oci::{
 use crate::pyenv::{EnvStore, InstallNetwork, Installer, MANIFEST_FILE, PythonRuntime};
 use crate::revoke::{RevocationList, RevocationNotice, Revocations};
 use crate::sign::{
-    Expectation, KeyPolicy, MAX_STATEMENT_BYTES, MEDIA_MINISIG, MEDIA_STATEMENT, signature_layers,
-    verify,
+    Expectation, KeyPolicy, MAX_STATEMENT_BYTES, MEDIA_MINISIG, MEDIA_STATEMENT, SignError,
+    signature_layers, verify,
 };
 
 /// `artifactType` of a pack artifact. Provisional: the contract names the
@@ -138,6 +138,76 @@ pub fn pinned_signer<'p>(
         })
 }
 
+/// The key that signed `pack`, for a load. For an OCI entry whose registry host and namespace
+/// have a key in `policy`, the cached statement and signature that sync stored must verify
+/// against that key, with the checks of [`Syncer::verify_cached_signature`], and the key comes
+/// from the verified bytes. An entry with no key for its pair is checked as [`pinned_signer`]
+/// checks it. `None` for a source that is not OCI, and for an unsigned entry with no key for its
+/// pair.
+///
+/// Every load of a synced plugin calls this before it reads the plugin's tree. It reads the
+/// cache only, and never the network.
+///
+/// # Errors
+/// As [`pinned_signer`], and for a pair with a key: [`SyncError::Unsigned`] when the lock
+/// records no signature, [`SyncError::Sign`] or [`SyncError::SignatureDiffersFromLock`] when the
+/// cached signature is missing or does not verify, or names another key than the lock, and the
+/// cache failures of [`Syncer::verify_cached_signature`].
+pub fn verified_signer<'p>(
+    pack: &LockedPack,
+    store: &Store,
+    policy: &'p KeyPolicy,
+) -> Result<Option<&'p crate::sign::PublicKey>, SyncError> {
+    let SourceKind::Oci(text) = pack.source.kind() else {
+        return Ok(None);
+    };
+    let reference =
+        Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).map_err(|source| {
+            SyncError::Fetch {
+                id: pack.id.clone(),
+                source,
+            }
+        })?;
+    let namespace = reference.repository.split('/').next().unwrap_or_default();
+    if !policy.holds_keys_for(&reference.registry, namespace) {
+        return pinned_signer(pack, policy);
+    }
+    if pack.signature.is_none() {
+        return Err(SyncError::Unsigned {
+            id: pack.id.clone(),
+        });
+    }
+    // The key id the lock names must be pinned for the pair, before any cached file is read.
+    pinned_signer(pack, policy)?;
+    let gate = Gate {
+        store,
+        network: Network::Offline,
+        policy,
+    };
+    let sign = |source| SyncError::Sign {
+        id: pack.id.clone(),
+        source,
+    };
+    let key_id = match gate.verify_cached_signature(pack) {
+        Ok(key_id) => key_id,
+        // The pair has a key, so a signer that it does not hold was replaced.
+        Err(SyncError::Sign {
+            source: SignError::KeyNotPinned { key_id, namespace },
+            ..
+        }) => return Err(sign(SignError::KeyReplaced { key_id, namespace })),
+        // A cached statement or signature file that is absent is a missing signature. A
+        // missing manifest stays what it is: sync installed nothing.
+        Err(SyncError::OfflinePackMissing { what, .. })
+            if what == SyncPhrase::WhatStatement.as_static()
+                || what == SyncPhrase::WhatSignature.as_static() =>
+        {
+            return Err(sign(SignError::MissingSignature));
+        }
+        Err(e) => return Err(e),
+    };
+    Ok(key_id.and_then(|key_id| policy.signing_key(&reference.registry, namespace, &key_id)))
+}
+
 /// The one layer of a pack manifest that holds the pack, or the sentence that says why it has
 /// none. The signature layers do not count.
 fn payload_layer<'m>(
@@ -158,6 +228,258 @@ fn payload_layer<'m>(
         return Err(SyncPhrase::LayerTooLarge.as_static());
     }
     Ok(layer)
+}
+
+/// The cached files of an OCI entry and the signature gate over them, which sync and every load
+/// share. It needs only the store, the key policy and the network.
+#[derive(Clone, Copy)]
+struct Gate<'a> {
+    store: &'a Store,
+    network: Network<'a>,
+    policy: &'a KeyPolicy,
+}
+
+impl<'a> Gate<'a> {
+    fn client(&self, pack: &LockedPack, what: &str) -> Result<&'a Client, SyncError> {
+        match self.network {
+            Network::Online(client) => Ok(client),
+            Network::Offline => Err(SyncError::OfflinePackMissing {
+                id: pack.id.clone(),
+                digest: pack.digest.to_string(),
+                what: what.to_owned(),
+            }),
+        }
+    }
+
+    /// The reference, the manifest and the namespace of an OCI entry: the manifest comes by the
+    /// locked digest, from the cache when it holds it. An unsigned entry costs no request.
+    fn oci_manifest(
+        &self,
+        pack: &LockedPack,
+        text: &str,
+        may_fetch: bool,
+    ) -> Result<(Reference, Manifest, String), SyncError> {
+        let id = &pack.id;
+        let layout = |why: &str| SyncError::Layout {
+            id: id.clone(),
+            why: why.to_owned(),
+        };
+        let fetch = |source| SyncError::Fetch {
+            id: id.clone(),
+            source,
+        };
+        // Checked first so an unsigned entry costs no request.
+        if pack.signature.is_none() {
+            return Err(SyncError::Unsigned { id: id.clone() });
+        }
+        let locked = Syncer::locked_digest(pack)?;
+        let parsed =
+            Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).map_err(fetch)?;
+        if let Target::Digest(named) = &parsed.target
+            && *named != locked
+        {
+            return Err(SyncError::DigestMismatch {
+                id: id.clone(),
+                expected: locked.to_string(),
+                actual: named.to_string(),
+            });
+        }
+        let reference = parsed.with_target(Target::Digest(locked.clone()));
+        let namespace = reference
+            .repository
+            .split('/')
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+
+        let body = self.manifest_bytes(pack, &reference, &locked, may_fetch)?;
+        let manifest: Manifest =
+            serde_json::from_slice(&body).map_err(|e| layout(&messages::manifest_parse(&e)))?;
+        if manifest
+            .media_type
+            .as_deref()
+            .is_some_and(|m| m != MEDIA_MANIFEST)
+        {
+            return Err(layout(SyncPhrase::ManifestNotImage.as_static()));
+        }
+
+        Ok((reference, manifest, namespace))
+    }
+
+    /// [`Syncer::verify_cached_signature`].
+    fn verify_cached_signature(&self, pack: &LockedPack) -> Result<Option<String>, SyncError> {
+        let SourceKind::Oci(text) = pack.source.kind() else {
+            return Ok(None);
+        };
+        let (reference, manifest, namespace) = self.oci_manifest(pack, text, false)?;
+        self.verify_signature(pack, &reference, &manifest, &namespace, false)
+            .map(Some)
+    }
+
+    /// The signature gate: the statement is signed by a policy key, names this
+    /// artifact and is the one the lock records. Returns the signing key id.
+    fn verify_signature(
+        &self,
+        pack: &LockedPack,
+        reference: &Reference,
+        manifest: &Manifest,
+        namespace: &str,
+        fetch: bool,
+    ) -> Result<String, SyncError> {
+        let id = &pack.id;
+        let layout = |why: &str| SyncError::Layout {
+            id: id.clone(),
+            why: why.to_owned(),
+        };
+        let lock_signature = pack
+            .signature
+            .as_ref()
+            .ok_or_else(|| SyncError::Unsigned { id: id.clone() })?;
+        let (statement, minisig) =
+            signature_layers(manifest).map_err(|source| SyncError::Sign {
+                id: id.clone(),
+                source,
+            })?;
+        let statement_bytes = self.small_blob(
+            pack,
+            reference,
+            statement,
+            MAX_STATEMENT_BYTES as u64,
+            SyncPhrase::WhatStatement.as_static(),
+            fetch,
+        )?;
+        let minisig_bytes = self.small_blob(
+            pack,
+            reference,
+            minisig,
+            MAX_MINISIG_BYTES,
+            SyncPhrase::WhatSignature.as_static(),
+            fetch,
+        )?;
+        let minisig_text = String::from_utf8(minisig_bytes)
+            .map_err(|_| layout(SyncPhrase::SignatureNotText.as_static()))?;
+        let version = pack.version.to_string();
+        let expect = Expectation {
+            id: id.as_str(),
+            registry: &reference.registry,
+            namespace,
+            version: &version,
+            artifact_type: ARTIFACT_TYPE_PACK,
+            floor: Some((&version, lock_signature.not_before.as_str())),
+            allow_downgrade: false,
+        };
+        let verified = verify(
+            manifest,
+            &statement_bytes,
+            &minisig_text,
+            self.policy,
+            &expect,
+        )
+        .map_err(|source| SyncError::Sign {
+            id: id.clone(),
+            source,
+        })?;
+        let differs = |why: String| SyncError::SignatureDiffersFromLock {
+            id: id.clone(),
+            why,
+        };
+        if verified.key().key_id() != lock_signature.key_id.as_str() {
+            return Err(differs(messages::signed_key(
+                &verified.key().key_id(),
+                &lock_signature.key_id,
+            )));
+        }
+        if verified.statement().not_before != lock_signature.not_before.as_str() {
+            return Err(differs(messages::signed_not_before(
+                &verified.statement().not_before,
+                &lock_signature.not_before,
+            )));
+        }
+
+        Ok(verified.key().key_id())
+    }
+
+    /// The cached bytes of a small blob, or `None` when it is absent or, under `repair`, was
+    /// removed because it was wrong. Only sync repairs (`repair`): a blob that is over `max` or
+    /// not what its name says is removed, so the caller fetches it again, and the repair is
+    /// recorded. Inspection (`repair` false) deletes nothing: a wrong digest is
+    /// [`SyncError::DigestMismatch`], and any other failure is [`SyncError::CacheUnreadable`].
+    fn cached_small(
+        &self,
+        pack: &LockedPack,
+        digest: &Digest,
+        max: u64,
+        repair: bool,
+    ) -> Result<Option<Vec<u8>>, SyncError> {
+        match self.store.read_cached(digest, max) {
+            Ok(Cached::Bytes(bytes)) => Ok(Some(bytes)),
+            Ok(Cached::Absent) => Ok(None),
+            Ok(Cached::Mismatch(_)) if repair => {
+                self.store.evict_blob(&pack.id, digest).map(|()| None)
+            }
+            Ok(Cached::Mismatch(actual)) => Err(SyncError::DigestMismatch {
+                id: pack.id.clone(),
+                expected: digest.to_string(),
+                actual: actual.to_string(),
+            }),
+            // Slopvac never writes a cached file over its cap, so an oversize file is as wrong
+            // as one with the wrong digest.
+            Err(CacheCause::TooLarge { .. }) if repair => {
+                self.store.evict_blob(&pack.id, digest).map(|()| None)
+            }
+            Err(cause) => Err(self.store.unreadable(&pack.id, digest, cause)),
+        }
+    }
+
+    fn manifest_bytes(
+        &self,
+        pack: &LockedPack,
+        reference: &Reference,
+        locked: &Digest,
+        fetch: bool,
+    ) -> Result<Vec<u8>, SyncError> {
+        if let Some(bytes) = self.cached_small(pack, locked, MAX_MANIFEST_BYTES as u64, fetch)? {
+            return Ok(bytes);
+        }
+        if !fetch {
+            return Err(Syncer::missing(pack, SyncPhrase::WhatManifest.as_static()));
+        }
+        let client = self.client(pack, SyncPhrase::WhatManifest.as_static())?;
+        let fetched = client
+            .fetch_manifest(reference)
+            .map_err(|source| SyncError::Fetch {
+                id: pack.id.clone(),
+                source,
+            })?;
+        self.store.put_blob(locked, &fetched.body)?;
+        Ok(fetched.body)
+    }
+
+    fn small_blob(
+        &self,
+        pack: &LockedPack,
+        reference: &Reference,
+        desc: &Descriptor,
+        max: u64,
+        what: &str,
+        fetch: bool,
+    ) -> Result<Vec<u8>, SyncError> {
+        if let Some(bytes) = self.cached_small(pack, &desc.digest, max, fetch)? {
+            return Ok(bytes);
+        }
+        if !fetch {
+            return Err(Syncer::missing(pack, what));
+        }
+        let client = self.client(pack, what)?;
+        let bytes = client
+            .fetch_blob_bytes(reference, desc, max)
+            .map_err(|source| SyncError::Fetch {
+                id: pack.id.clone(),
+                source,
+            })?;
+        self.store.put_blob(&desc.digest, &bytes)?;
+        Ok(bytes)
+    }
 }
 
 /// Whether sync may use the network.
@@ -544,13 +866,15 @@ impl<'a> Syncer<'a> {
     }
 
     fn client(&self, pack: &LockedPack, what: &str) -> Result<&'a Client, SyncError> {
-        match self.network {
-            Network::Online(client) => Ok(client),
-            Network::Offline => Err(SyncError::OfflinePackMissing {
-                id: pack.id.clone(),
-                digest: pack.digest.to_string(),
-                what: what.to_owned(),
-            }),
+        self.gate().client(pack, what)
+    }
+
+    /// The cache reads and the signature gate of this syncer.
+    fn gate(&self) -> Gate<'a> {
+        Gate {
+            store: self.store,
+            network: self.network,
+            policy: self.policy,
         }
     }
 
@@ -559,61 +883,6 @@ impl<'a> Syncer<'a> {
             id: pack.id.clone(),
             why,
         })
-    }
-
-    /// The reference, the manifest and the namespace of an OCI entry: the manifest comes by the
-    /// locked digest, from the cache when it holds it. An unsigned entry costs no request.
-    fn oci_manifest(
-        &self,
-        pack: &LockedPack,
-        text: &str,
-        may_fetch: bool,
-    ) -> Result<(Reference, Manifest, String), SyncError> {
-        let id = &pack.id;
-        let layout = |why: &str| SyncError::Layout {
-            id: id.clone(),
-            why: why.to_owned(),
-        };
-        let fetch = |source| SyncError::Fetch {
-            id: id.clone(),
-            source,
-        };
-        // Checked first so an unsigned entry costs no request.
-        if pack.signature.is_none() {
-            return Err(SyncError::Unsigned { id: id.clone() });
-        }
-        let locked = Self::locked_digest(pack)?;
-        let parsed =
-            Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).map_err(fetch)?;
-        if let Target::Digest(named) = &parsed.target
-            && *named != locked
-        {
-            return Err(SyncError::DigestMismatch {
-                id: id.clone(),
-                expected: locked.to_string(),
-                actual: named.to_string(),
-            });
-        }
-        let reference = parsed.with_target(Target::Digest(locked.clone()));
-        let namespace = reference
-            .repository
-            .split('/')
-            .next()
-            .unwrap_or_default()
-            .to_owned();
-
-        let body = self.manifest_bytes(pack, &reference, &locked, may_fetch)?;
-        let manifest: Manifest =
-            serde_json::from_slice(&body).map_err(|e| layout(&messages::manifest_parse(&e)))?;
-        if manifest
-            .media_type
-            .as_deref()
-            .is_some_and(|m| m != MEDIA_MANIFEST)
-        {
-            return Err(layout(SyncPhrase::ManifestNotImage.as_static()));
-        }
-
-        Ok((reference, manifest, namespace))
     }
 
     /// Check the signature of a cached OCI entry again. The cache is not trusted (threat model
@@ -632,12 +901,7 @@ impl<'a> Syncer<'a> {
     /// and [`SyncError::Sign`] or [`SyncError::SignatureDiffersFromLock`] when the signature
     /// does not verify.
     pub fn verify_cached_signature(&self, pack: &LockedPack) -> Result<Option<String>, SyncError> {
-        let SourceKind::Oci(text) = pack.source.kind() else {
-            return Ok(None);
-        };
-        let (reference, manifest, namespace) = self.oci_manifest(pack, text, false)?;
-        self.verify_signature(pack, &reference, &manifest, &namespace, false)
-            .map(Some)
+        self.gate().verify_cached_signature(pack)
     }
 
     /// The failure for content that only the network could supply.
@@ -664,9 +928,11 @@ impl<'a> Syncer<'a> {
             id: id.clone(),
             source,
         };
-        let (reference, manifest, namespace) = self.oci_manifest(pack, text, true)?;
+        let (reference, manifest, namespace) = self.gate().oci_manifest(pack, text, true)?;
 
-        let key_id = self.verify_signature(pack, &reference, &manifest, &namespace, true)?;
+        let key_id = self
+            .gate()
+            .verify_signature(pack, &reference, &manifest, &namespace, true)?;
         if revoked.revokes_key(&key_id) {
             return Err(SyncError::Revoked {
                 id: id.clone(),
@@ -689,171 +955,6 @@ impl<'a> Syncer<'a> {
             &layer.digest,
             layer.size,
         )?))
-    }
-
-    /// The signature gate: the statement is signed by a policy key, names this
-    /// artifact and is the one the lock records. Returns the signing key id.
-    fn verify_signature(
-        &self,
-        pack: &LockedPack,
-        reference: &Reference,
-        manifest: &Manifest,
-        namespace: &str,
-        fetch: bool,
-    ) -> Result<String, SyncError> {
-        let id = &pack.id;
-        let layout = |why: &str| SyncError::Layout {
-            id: id.clone(),
-            why: why.to_owned(),
-        };
-        let lock_signature = pack
-            .signature
-            .as_ref()
-            .ok_or_else(|| SyncError::Unsigned { id: id.clone() })?;
-        let (statement, minisig) =
-            signature_layers(manifest).map_err(|source| SyncError::Sign {
-                id: id.clone(),
-                source,
-            })?;
-        let statement_bytes = self.small_blob(
-            pack,
-            reference,
-            statement,
-            MAX_STATEMENT_BYTES as u64,
-            SyncPhrase::WhatStatement.as_static(),
-            fetch,
-        )?;
-        let minisig_bytes = self.small_blob(
-            pack,
-            reference,
-            minisig,
-            MAX_MINISIG_BYTES,
-            SyncPhrase::WhatSignature.as_static(),
-            fetch,
-        )?;
-        let minisig_text = String::from_utf8(minisig_bytes)
-            .map_err(|_| layout(SyncPhrase::SignatureNotText.as_static()))?;
-        let version = pack.version.to_string();
-        let expect = Expectation {
-            id: id.as_str(),
-            registry: &reference.registry,
-            namespace,
-            version: &version,
-            artifact_type: ARTIFACT_TYPE_PACK,
-            floor: Some((&version, lock_signature.not_before.as_str())),
-            allow_downgrade: false,
-        };
-        let verified = verify(
-            manifest,
-            &statement_bytes,
-            &minisig_text,
-            self.policy,
-            &expect,
-        )
-        .map_err(|source| SyncError::Sign {
-            id: id.clone(),
-            source,
-        })?;
-        let differs = |why: String| SyncError::SignatureDiffersFromLock {
-            id: id.clone(),
-            why,
-        };
-        if verified.key().key_id() != lock_signature.key_id.as_str() {
-            return Err(differs(messages::signed_key(
-                &verified.key().key_id(),
-                &lock_signature.key_id,
-            )));
-        }
-        if verified.statement().not_before != lock_signature.not_before.as_str() {
-            return Err(differs(messages::signed_not_before(
-                &verified.statement().not_before,
-                &lock_signature.not_before,
-            )));
-        }
-
-        Ok(verified.key().key_id())
-    }
-
-    /// The cached bytes of a small blob, or `None` when it is absent or, under `repair`, was
-    /// removed because it was wrong. Only sync repairs (`repair`): a blob that is over `max` or
-    /// not what its name says is removed, so the caller fetches it again, and the repair is
-    /// recorded. Inspection (`repair` false) deletes nothing: a wrong digest is
-    /// [`SyncError::DigestMismatch`], and any other failure is [`SyncError::CacheUnreadable`].
-    fn cached_small(
-        &self,
-        pack: &LockedPack,
-        digest: &Digest,
-        max: u64,
-        repair: bool,
-    ) -> Result<Option<Vec<u8>>, SyncError> {
-        match self.store.read_cached(digest, max) {
-            Ok(Cached::Bytes(bytes)) => Ok(Some(bytes)),
-            Ok(Cached::Absent) => Ok(None),
-            Ok(Cached::Mismatch(_)) if repair => {
-                self.store.evict_blob(&pack.id, digest).map(|()| None)
-            }
-            Ok(Cached::Mismatch(actual)) => Err(SyncError::DigestMismatch {
-                id: pack.id.clone(),
-                expected: digest.to_string(),
-                actual: actual.to_string(),
-            }),
-            // Slopvac never writes a cached file over its cap, so an oversize file is as wrong
-            // as one with the wrong digest.
-            Err(CacheCause::TooLarge { .. }) if repair => {
-                self.store.evict_blob(&pack.id, digest).map(|()| None)
-            }
-            Err(cause) => Err(self.store.unreadable(&pack.id, digest, cause)),
-        }
-    }
-
-    fn manifest_bytes(
-        &self,
-        pack: &LockedPack,
-        reference: &Reference,
-        locked: &Digest,
-        fetch: bool,
-    ) -> Result<Vec<u8>, SyncError> {
-        if let Some(bytes) = self.cached_small(pack, locked, MAX_MANIFEST_BYTES as u64, fetch)? {
-            return Ok(bytes);
-        }
-        if !fetch {
-            return Err(Self::missing(pack, SyncPhrase::WhatManifest.as_static()));
-        }
-        let client = self.client(pack, SyncPhrase::WhatManifest.as_static())?;
-        let fetched = client
-            .fetch_manifest(reference)
-            .map_err(|source| SyncError::Fetch {
-                id: pack.id.clone(),
-                source,
-            })?;
-        self.store.put_blob(locked, &fetched.body)?;
-        Ok(fetched.body)
-    }
-
-    fn small_blob(
-        &self,
-        pack: &LockedPack,
-        reference: &Reference,
-        desc: &Descriptor,
-        max: u64,
-        what: &str,
-        fetch: bool,
-    ) -> Result<Vec<u8>, SyncError> {
-        if let Some(bytes) = self.cached_small(pack, &desc.digest, max, fetch)? {
-            return Ok(bytes);
-        }
-        if !fetch {
-            return Err(Self::missing(pack, what));
-        }
-        let client = self.client(pack, what)?;
-        let bytes = client
-            .fetch_blob_bytes(reference, desc, max)
-            .map_err(|source| SyncError::Fetch {
-                id: pack.id.clone(),
-                source,
-            })?;
-        self.store.put_blob(&desc.digest, &bytes)?;
-        Ok(bytes)
     }
 
     fn locked_tree_hash(pack: &LockedPack) -> Result<TreeHash, SyncError> {

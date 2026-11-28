@@ -340,11 +340,26 @@ fn load_inner(
         }
         // The pin of the signing key decides whether the entry loads. The check runs before the
         // load reads a file.
-        match slopvac_plugins::sync::pinned_signer(&locked, policy) {
+        match slopvac_plugins::sync::verified_signer(&locked, store, policy) {
             Ok(_) => {}
-            // Sync parses the source before it fetches anything, so it installed nothing.
-            Err(SyncError::Fetch { .. }) => return Err(SyncedError::NotInstalled { id }),
-            Err(e) => return Err(SyncedError::Signature(Box::new(e))),
+            // Sync parses the source before it fetches anything, so it installed nothing. A
+            // cached manifest that is absent is the same: sync installed nothing.
+            Err(SyncError::Fetch { .. } | SyncError::OfflinePackMissing { .. }) => {
+                return Err(SyncedError::NotInstalled { id });
+            }
+            Err(
+                e @ (SyncError::Unsigned { .. }
+                | SyncError::Sign { .. }
+                | SyncError::SignatureDiffersFromLock { .. }),
+            ) => return Err(SyncedError::Signature(Box::new(e))),
+            // A cached file that hashes to something other than its name.
+            Err(SyncError::DigestMismatch { .. }) => return Err(SyncedError::Tampered { id }),
+            Err(source) => {
+                return Err(SyncedError::StoreUnreadable {
+                    id,
+                    source: Box::new(source),
+                });
+            }
         }
         // The hash comes from the lock and the cached archive, never from a store record, and
         // the tree must hash to it before any file is read (threat model E8).

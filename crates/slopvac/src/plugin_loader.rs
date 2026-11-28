@@ -19,7 +19,7 @@ use slopvac_plugins::host::PluginSpec;
 use slopvac_plugins::lock::{LockedPack, SourceKind};
 use slopvac_plugins::oci::OciError;
 use slopvac_plugins::sign::{KeyPolicy, PublicKey};
-use slopvac_plugins::sync::{Store, SyncError, pinned_signer};
+use slopvac_plugins::sync::{Store, SyncError, verified_signer};
 use slopvac_plugins::trust::VerifiedPlugin;
 use slopvac_plugins::{LoadError, PluginLoader};
 
@@ -125,13 +125,29 @@ impl<'a> InstalledPlugins<'a> {
     /// A signed entry whose source does not parse is refused as not installed: sync parses the
     /// same source before it fetches or verifies anything, so it installed no tree for it.
     fn fingerprint(&self, locked: &LockedPack) -> Result<Option<String>, LoadRefusal> {
-        match pinned_signer(locked, self.policy) {
+        let id = locked.id.to_string();
+        match verified_signer(locked, &self.store, self.policy) {
             Ok(key) => Ok(key.map(PublicKey::fingerprint)),
             Err(SyncError::Fetch { source, .. }) => Err(LoadRefusal::SourceUnparsed {
-                id: locked.id.to_string(),
+                id,
                 cause: SourceCause::of(&source),
             }),
-            Err(e) => Err(SyncedError::Signature(Box::new(e)).into()),
+            // A cached manifest that is absent: sync installed nothing.
+            Err(SyncError::OfflinePackMissing { .. }) => {
+                Err(SyncedError::NotInstalled { id }.into())
+            }
+            Err(
+                e @ (SyncError::Unsigned { .. }
+                | SyncError::Sign { .. }
+                | SyncError::SignatureDiffersFromLock { .. }),
+            ) => Err(SyncedError::Signature(Box::new(e)).into()),
+            // A cached file that hashes to something other than its name.
+            Err(SyncError::DigestMismatch { .. }) => Err(SyncedError::Tampered { id }.into()),
+            Err(source) => Err(SyncedError::StoreUnreadable {
+                id,
+                source: Box::new(source),
+            }
+            .into()),
         }
     }
 
@@ -432,11 +448,12 @@ mod tests {
     #[test]
     fn the_recorded_fingerprint_is_the_key_pinned_on_the_plugins_own_registry() {
         let mut world = World::new();
-        let pk = minisign::KeyPair::generate_unencrypted_keypair()
-            .unwrap()
-            .pk;
-        let on_ghcr = PublicKey::from_base64(&pk.to_base64()).unwrap();
-        let on_example = PublicKey::from_base64(&twin_of(&pk)).unwrap();
+        // The key that signs the plugin is pinned on its own registry. Its twin, with the same
+        // key id and other key bytes, is pinned on another registry, which sorts first.
+        let signer = super::signed_fixture::Key::primary();
+        let pk = minisign::PublicKey::from_base64(&signer.public().to_base64()).unwrap();
+        let on_ghcr = PublicKey::from_base64(&twin_of(&pk)).unwrap();
+        let on_example = signer.public();
         assert_eq!(on_ghcr.key_id(), on_example.key_id());
         assert_ne!(on_ghcr.fingerprint(), on_example.fingerprint());
         world.policy.pinned = std::collections::BTreeMap::from([
@@ -446,36 +463,9 @@ mod tests {
                 vec![on_example.clone()],
             ),
         ]);
-
-        // What sync leaves in the store for an OCI plugin: the manifest that the lock pins,
-        // its one pack layer, and the tree that sync unpacks from that layer.
-        let archive = plugin_archive(PLUGIN_TOML);
-        let layer = Digest::of(&archive);
-        let manifest = format!(
-            "{{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\
-             \"config\":{{\"mediaType\":\"application/vnd.oci.empty.v1+json\",\"digest\":\"{}\",\"size\":2}},\
-             \"layers\":[{{\"mediaType\":\"application/vnd.slopvac.pack.layer.v1.tar+gzip\",\"digest\":\"{layer}\",\"size\":{}}}]}}",
-            Digest::of(b"{}"),
-            archive.len()
-        );
-        let manifest_digest = Digest::of(manifest.as_bytes());
-        let blobs = world.store().join("blobs");
-        fs::create_dir_all(&blobs).unwrap();
-        fs::write(blobs.join(layer.hex()), &archive).unwrap();
-        fs::write(blobs.join(manifest_digest.hex()), &manifest).unwrap();
-        let tree = extract(&archive, &world.dir.path().join("hash")).hash;
-        world.install_as(&archive, &tree);
-        fs::write(
-            world.lock_path(),
-            format!(
-                "schema_version = 3\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
-                 slopvac_api = 1\nsource = \"oci://registry.example/acme/fmt:1.0.0\"\n\
-                 digest = \"{manifest_digest}\"\n[plugins.signature]\nkey_id = \"{}\"\n\
-                 not_before = \"2026-11-01T00:00:00Z\"\n",
-                on_example.key_id()
-            ),
-        )
-        .unwrap();
+        // What sync leaves in the store for an OCI plugin: the manifest that the lock pins, its
+        // pack layer and signature files, and the tree that sync unpacks from that layer.
+        cache_published_fmt(&world, &signer, &signature_table(&on_example.key_id()));
 
         let (plugin, _) = world.loader().try_load(&world.fmt()).unwrap();
 
