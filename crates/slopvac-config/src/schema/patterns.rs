@@ -131,3 +131,50 @@ fn the_reader_and_the_rust_schema_take_the_same_side_where_engines_disagree(
         );
     }
 }
+
+/// The `RelPath` pattern as the published style schema states it.
+static REL_PATH: LazyLock<Validator> = LazyLock::new(|| {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/style.schema.json");
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let def = schema.pointer("/$defs/RelPath").unwrap();
+    validator(def)
+});
+
+/// Paths near the edges of the relative-path rule: separators, drive letters, `..` segments,
+/// and the code points where engines read white space or `.` differently. Line feed is left
+/// out because the pattern's `.` stops at it, and `rel_path_with_a_line_feed` records that.
+fn rel_path() -> impl Strategy<Value = String> {
+    prop_oneof![
+        "[a-zA-Z0-9./\\\\: \u{85}\u{feff}-]{0,8}",
+        "(\\.\\./|a/\\.\\.|[A-Za-z]:|/|\\\\)[a-z./]{0,4}",
+        any::<String>().prop_filter("a line feed ends `.` in the pattern", |s| !s.contains('\n')),
+    ]
+}
+
+proptest! {
+    #[test]
+    fn the_relative_path_check_and_pattern_agree(s in rel_path()) {
+        prop_assert_eq!(is_rel_path(&s), valid(&REL_PATH, &s));
+    }
+}
+
+/// Where the published pattern and the reader differ or agree on the code points that engines
+/// read differently. The pattern's `.` stops at a line feed, so a backslash after one escapes
+/// the pattern's `(?!.*\\)`, and the reader refuses it. The pattern stays as published. U+0085
+/// and U+FEFF are plain characters to both.
+#[rstest]
+#[case::line_feed_before_a_backslash("a\n\\b", false, true)]
+#[case::next_line_before_a_backslash("a\u{85}\\b", false, false)]
+#[case::next_line_alone("\u{85}", true, true)]
+#[case::byte_order_mark_inside("a\u{feff}b", true, true)]
+#[case::byte_order_mark_before_dots("\u{feff}..", true, true)]
+fn rel_path_cases_where_engines_read_characters_differently(
+    #[case] path: &str,
+    #[case] reader: bool,
+    #[case] pattern: bool,
+) {
+    assert_eq!(is_rel_path(path), reader, "reader");
+    assert_eq!(valid(&REL_PATH, path), pattern, "pattern");
+}
