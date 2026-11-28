@@ -1340,11 +1340,10 @@ mod conformance {
         assert_eq!(trust_records(&sandbox), 0);
     }
 
-    /// `plugins update` leaves the trust store as it found it, with a code plugin installed.
-    ///
-    /// Conformance: N8
+    /// An offline `plugins update` stops before it reads the lock and leaves the trust store as it
+    /// found it. The N8 test that runs a real update is in `slopvac-plugins`, in `command.rs`.
     #[test]
-    fn update_never_records_trust_for_a_code_plugin() {
+    fn an_offline_update_records_no_trust_for_a_code_plugin() {
         let sandbox = Sandbox::new();
         lock_code_plugin(&sandbox);
         sandbox
