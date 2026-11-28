@@ -171,7 +171,7 @@ impl<'a> InstalledPlugins<'a> {
         locked: &LockedPack,
     ) -> Result<(VerifiedPlugin, PluginSpec), LoadRefusal> {
         let name = locked.id.to_string();
-        // The pin decides before any file of the tree is read.
+        // The pin check runs before the load reads a file of the tree.
         let fingerprint = self.fingerprint(locked)?;
         let (root, expected) = self.synced_tree(locked)?;
         // One pass hashes the tree and keeps the manifest bytes it read. The hash is checked
@@ -511,9 +511,9 @@ mod tests {
         .unwrap();
     }
 
-    /// A signed code plugin loads only while its key is pinned for its registry and namespace.
-    /// With no key for the pair the next step is to pin one; with another key pinned, as after
-    /// a rotation, it is to update.
+    /// A signed code plugin loads only while the policy pins its key for its registry and
+    /// namespace. With no key for the pair, the next step is to pin one. With another key for
+    /// the pair, as after a rotation, the next step is to update.
     #[rstest]
     #[case::unpinned(
         false,

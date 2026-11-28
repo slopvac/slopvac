@@ -69,8 +69,8 @@ pub enum SignError {
         /// Namespace of the artifact id.
         namespace: String,
     },
-    /// The key id of a lock entry is not pinned for its registry host and namespace, and another
-    /// key is, as after a rotation.
+    /// The policy pins another key for the registry host and namespace of a lock entry, as
+    /// after a rotation, and not the entry's key id.
     #[error("{}", messages::key_replaced(.key_id, .namespace))]
     KeyReplaced {
         /// Key id the lock entry records.

@@ -908,9 +908,10 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         })
     };
     let load = loader.load(pack);
-    // The loader refuses a key that the policy does not pin for the entry's pair, and the
-    // command withholds the loader's text. The cached signature then reports as it did before
-    // the load checked the pin, and the key refusal reports as sync reports it.
+    // A load fails for a signing key with no pin for the entry's pair, and the command
+    // withholds the text of a load failure. The cached signature check then reports the
+    // failure as it did before the load checked the pin. A key refusal reports as sync
+    // reports it.
     if load.is_err()
         && let Err(e @ SyncError::Sign { .. }) = pinned_signer(pack, runner.policy)
     {

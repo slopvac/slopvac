@@ -2077,8 +2077,9 @@ fn a_signed_data_plugin_loads_while_its_key_is_pinned_for_its_registry_and_names
     assert_eq!(loaded, ["rulepack"]);
 }
 
-/// A signed entry loads only while its key is pinned for its pair. With no key for the pair the
-/// next step is to pin one; with another key pinned, as after a rotation, it is to update.
+/// A signed entry loads only while the policy pins its key for its pair. With no key for the
+/// pair, the next step is to pin one. With another key for the pair, as after a rotation, the
+/// next step is to update.
 #[rstest]
 #[case::unpinned(
     &[],

@@ -206,8 +206,8 @@ enum Damage {
     RecordHash,
 }
 
-/// A damaged store of each kind. The damaged field holds `LEAKME-SECRET-123` where the kind has
-/// a field of its own.
+/// A damaged store of each kind. Where the kind has a field of its own, that field holds the
+/// secret-looking marker that the test looks for in the output.
 fn damaged_store(kind: Damage) -> String {
     let store = |records: &str, pins: &str| {
         format!("{{\"schema_version\":2,\"records\":[{records}],\"pins\":[{pins}]}}")
@@ -235,9 +235,10 @@ fn damaged_store(kind: Damage) -> String {
     }
 }
 
-/// Each kind of damage that is not a parse failure is named with its fixed catalog phrase, and
-/// no part of the file reaches the output. The file is kept as it is. A schema version this
-/// build does not read and a pin with no registry host are covered by the two tests above.
+/// The command names each kind of damage other than a parse failure with its fixed catalog
+/// phrase, and no part of the file reaches the output. The command leaves the file as it is.
+/// The two tests above cover a schema version that this build does not read and a pin with no
+/// registry host.
 #[rstest::rstest]
 #[case::over_cap(Damage::OverCap, &["status"], "larger than 8 MiB")]
 #[case::pin_duplicate(

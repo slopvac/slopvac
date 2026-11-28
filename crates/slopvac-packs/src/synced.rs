@@ -91,8 +91,8 @@ pub enum SyncedError {
         /// The field that differs: `id`, `version` or `kind`.
         field: &'static str,
     },
-    /// The lock entry is signed by a key that the policy does not pin for its registry host and
-    /// namespace now. The text names the next step: pin a key, or update after a rotation.
+    /// The policy holds no pin for the key that signed the lock entry, on the entry's registry
+    /// host and namespace. The text names the next step: pin a key, or update after a rotation.
     #[error("{0}")]
     Signature(#[source] Box<SyncError>),
     /// Plugins require each other in a loop.
@@ -255,12 +255,12 @@ fn check_requirements(pack: &LoadedPack, loaded: &[LoadedPack]) -> Result<(), Sy
 /// The result is in dependency order. The built-in core is not part of it: put it first with
 /// [`Packs::with_synced`].
 ///
-/// A signed entry loads only while `policy` pins the key that signed it for the registry host
-/// and namespace of its source. Each plugin is checked before any of its files is read.
+/// A signed entry loads only while `policy` pins its signing key for the registry host and
+/// namespace of its source. The load checks each plugin before it reads a file of the plugin.
 ///
 /// # Errors
 /// [`SyncedError`]: a plugin the lock does not pin ([`SyncedError::NotLocked`]), a signing key
-/// that `policy` does not pin for the entry ([`SyncedError::Signature`]), a tree that is
+/// with no pin in `policy` for the entry ([`SyncedError::Signature`]), a tree that is
 /// absent or differs from its digest, an unsupported extension API, a manifest that disagrees
 /// with the lock, an unmet requirement, a `requires` cycle, or a file that does not load.
 pub fn load_synced(
@@ -338,7 +338,8 @@ fn load_inner(
                 api: locked.slopvac_api,
             });
         }
-        // The pin decides, not the verification at sync time, and before any file is read.
+        // The pin of the signing key decides whether the entry loads. The check runs before the
+        // load reads a file.
         match slopvac_plugins::sync::pinned_signer(&locked, policy) {
             Ok(_) => {}
             // Sync parses the source before it fetches anything, so it installed nothing.

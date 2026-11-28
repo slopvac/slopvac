@@ -551,7 +551,7 @@ pub(crate) enum SignText {
         "key {key_id} is not pinned for namespace `{namespace}`; pin it with `slopvac plugins pin {namespace} <fingerprint> --key <file>`"
     )]
     KeyNotPinned { key_id: String, namespace: String },
-    /// The key id of a lock entry is not pinned for its pair, and another key is.
+    /// The policy pins another key for the pair of a lock entry, and not the entry's key id.
     #[code("plugins-sign-key-replaced")]
     #[text(
         "key {key_id} is not pinned for namespace `{namespace}`, which pins another key; run `slopvac plugins update` for a release that key signs"
