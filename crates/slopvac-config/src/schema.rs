@@ -588,6 +588,12 @@ pub fn config_shape() -> Shape {
     )
 }
 
+/// The pattern of a path relative to the file that names it, as the style schema publishes it:
+/// no leading slash or backslash, no drive letter, no backslash and no `..` segment. A property
+/// test in `schema/patterns.rs` holds `is_rel_path` and this pattern to one verdict.
+pub(crate) const REL_PATH_PATTERN: &str =
+    r"^(?![/\\])(?![A-Za-z]:)(?!.*\\)(?!(.*/)?\.\.(/|(?![\s\S])))";
+
 fn is_rel_path(s: &str) -> bool {
     let drive = s.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
         && s.as_bytes().get(1) == Some(&b':');

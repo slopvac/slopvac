@@ -49,4 +49,18 @@ pub use schema::{validate_config, validate_frontmatter, validate_style};
 pub use slopvac_model::{ConfigLayer, ConfigSource, Severity};
 pub use source::{Setting, bare_source, layer_name, located_source};
 pub use unknown_rule::{UnknownRule, unknown_rules};
-pub use wire::{config_schema, frontmatter_schema};
+pub use wire::{config_schema, frontmatter_schema, style_schema};
+
+/// The levels a rule or category reports at: `error`, `warning`, `suggestion` and `off`. This
+/// is the one list for the config and style readers and for the `RuleLevel` definition in
+/// `config.schema.json`. `slopvac-styles` holds its `Level` enum equal to it by a test.
+pub const RULE_LEVELS: &[&str] = schema::LEVELS;
+
+/// The category density budget that clears a budget a lower layer set. This is the one source
+/// for the config and style readers and for the budget definition in the schemas.
+pub const BUDGET_NONE: &str = schema::BUDGET_NONE;
+
+/// The least value of a density budget. It also bounds a count and a weight. The bound is
+/// inclusive: the value itself is accepted. This is the one source for the config and style
+/// readers and for the `minimum` keyword of the schemas.
+pub const BUDGET_MINIMUM: u32 = schema::MINIMUM;

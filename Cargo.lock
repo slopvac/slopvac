@@ -2866,6 +2866,7 @@ dependencies = [
  "slopvac-plugins",
  "slopvac-rules",
  "slopvac-sanitize",
+ "slopvac-styles",
  "slopvac-terms",
  "snapbox",
  "tempfile",
