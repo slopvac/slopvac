@@ -1340,7 +1340,11 @@ fn fix_group(
             Ok(FileFix::Done(result)) => {
                 // The fix read the file again, so its text is the one to report even when
                 // nothing was written.
+                let result = *result;
                 item.text = result.report.text;
+                // Notices of the fix run, such as a fix that a standalone HTML file does not
+                // get: shown, never a failure.
+                run.notices.extend(result.notices);
                 keep.push(true);
             }
             Ok(FileFix::Refused(refusal)) => {
