@@ -1227,7 +1227,11 @@ fn k12_a_key_file_that_cannot_be_used_is_refused_without_quoting_it(
         "{err:?}"
     );
     let source = std::error::Error::source(&err).expect("the refusal keeps its cause");
-    assert_eq!(source.downcast_ref::<FileCause>(), Some(&cause), "{source:?}");
+    assert_eq!(
+        source.downcast_ref::<FileCause>(),
+        Some(&cause),
+        "{source:?}"
+    );
     let mut shown = vec![format!("{err:?}")];
     let mut next: Option<&dyn std::error::Error> = Some(&err);
     while let Some(e) = next {
