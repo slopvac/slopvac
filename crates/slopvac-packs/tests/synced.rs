@@ -1879,6 +1879,44 @@ fn a_malformed_manifest_over_the_run_byte_allowance_is_a_run_byte_refusal(
         "{e:?}"
     );
 }
+
+#[test]
+fn a_malformed_manifest_keeps_its_charge_so_the_next_plugin_crosses_the_run_byte_allowance() {
+    use slopvac_packs::{EmbeddedSource, ManifestError};
+    let malformed = "schema_version = 3\nid = \"acme\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\nextra = 1\n\n[provides]\n";
+    let valid = "schema_version = 3\nid = \"next\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n\n[provides]\n";
+    // Each manifest fits alone. Both together cross the allowance by one byte.
+    let limit = (malformed.len() + valid.len() - 1) as u64;
+    let mut budget = Budget::new(small(|l| l.run_bytes = limit));
+
+    let first = LoadedPack::load_within(
+        &EmbeddedSource::new(malformed, &[]),
+        Source::Pack,
+        &mut budget,
+    );
+    let second =
+        LoadedPack::load_within(&EmbeddedSource::new(valid, &[]), Source::Pack, &mut budget);
+
+    assert!(
+        matches!(
+            &first,
+            Err(PackError::Manifest(ManifestError::Invalid { pointer, message }))
+                if pointer.is_empty() && message == "unknown key"
+        ),
+        "{first:?}"
+    );
+    assert!(
+        matches!(
+            second,
+            Err(PackError::Budget {
+                budget: PackBudget::RunBytes,
+                limit: l,
+                plugin: None
+            }) if l == limit
+        ),
+        "{second:?}"
+    );
+}
 /// A `.tar.gz` of one file.
 fn targz_of(name: &str, bytes: &[u8]) -> Vec<u8> {
     use std::io::Write as _;
