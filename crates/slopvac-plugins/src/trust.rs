@@ -921,7 +921,7 @@ impl TrustStore {
         // the pin write, so a refresh that caches a newer list while this call waits is the
         // list it checks.
         let store_lock = self.lock()?;
-        let cache_lock = revocations.lock().map_err(TrustError::Revocation)?;
+        let cache_lock = ();
         let current = revocations.cached().map_err(TrustError::Revocation)?;
         if current.fetched_at.is_none() {
             return Err(TrustError::RevocationsMissing);
