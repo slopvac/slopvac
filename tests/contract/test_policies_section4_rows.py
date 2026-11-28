@@ -265,8 +265,8 @@ def test_a_test_limited_to_another_os_does_not_count(tmp_path: Path, cfg: str) -
 
 
 def test_a_table_with_no_rows_is_a_problem(tmp_path: Path) -> None:
-    assert _one_test("    #[test]\n", table=[], tmp=tmp_path).any()
+    assert check(_tree(tmp_path, [], "")).any()
 
 
 def test_a_table_with_no_gated_rows_is_a_problem(tmp_path: Path) -> None:
-    assert _one_test("    #[test]\n", table=["R1"], tmp=tmp_path).any()
+    assert check(_tree(tmp_path, ["R1"], "")).any()

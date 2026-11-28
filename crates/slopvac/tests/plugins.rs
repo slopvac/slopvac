@@ -265,8 +265,6 @@ mod conformance {
 
     /// Sticky offline: the extended file turns it on, the project turns it off, and the run opens no
     /// connection at all, the revocation fetch included.
-    ///
-    /// Conformance: N3
     #[test]
     fn sticky_offline_opens_no_connection_when_a_later_layer_says_false() {
         let sandbox = Sandbox::new();
@@ -291,6 +289,30 @@ mod conformance {
                 "error[offline-plugin-missing]: ",
             ));
         assert_eq!(tally.requests(), 0, "an offline run opened a connection");
+    }
+
+    /// `SLOPVAC_OFFLINE=1` in the environment with `[network] offline = false` in the config stays
+    /// offline: the sync stops at the missing cache entry and never reaches the registry.
+    ///
+    /// Conformance: N3
+    #[test]
+    fn the_environment_stays_offline_when_the_config_says_false() {
+        let sandbox = Sandbox::new();
+        sandbox.write_lock(SIGNED_UNCACHED);
+        fs::write(
+            sandbox.project().join("slopvac.toml"),
+            "schema_version = 3\n[network]\noffline = false\n",
+        )
+        .unwrap();
+        sandbox
+            .slopvac()
+            .env("SLOPVAC_OFFLINE", "1")
+            .args(["plugins", "sync"])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::starts_with(
+                "error[offline-plugin-missing]: ",
+            ));
     }
 
     /// The control for the test above: an online run does reach the tally, so a count of zero
