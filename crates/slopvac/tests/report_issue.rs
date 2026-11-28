@@ -1250,25 +1250,33 @@ fn a_non_utf8_environment_variable_does_not_crash_or_print() {
     );
 }
 
-fn slopvac() -> Command {
-    let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
+/// Host variables that would change a binary run: a token, offline mode, logging or forced color.
+const REMOVED_VARS: [&str; 6] = [
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "SLOPVAC_OFFLINE",
+    "SLOPVAC_LOG",
+    "FORCE_COLOR",
+    "CLICOLOR_FORCE",
+];
+
+/// The environment every binary test runs with. Each caller sets its own `PATH`.
+fn isolate(cmd: &mut std::process::Command) {
     // Tests stay off the network: the update notice may refresh its cache after lint, doctor and prime.
-    cmd.env("SLOPVAC_NO_UPDATE_CHECK", "1");
-    let empty = std::env::temp_dir().join("slopvac-report-no-gh-on-path");
-    std::fs::create_dir_all(&empty).unwrap();
-    for var in [
-        "GH_TOKEN",
-        "GITHUB_TOKEN",
-        "SLOPVAC_OFFLINE",
-        "SLOPVAC_LOG",
-        "FORCE_COLOR",
-        "CLICOLOR_FORCE",
-    ] {
+    cmd.env("SLOPVAC_NO_UPDATE_CHECK", "1").env("NO_COLOR", "1");
+    for var in REMOVED_VARS {
         cmd.env_remove(var);
     }
+}
+
+fn slopvac() -> Command {
+    let mut cmd = std::process::Command::new(assert_cmd::cargo::cargo_bin("slopvac"));
+    isolate(&mut cmd);
+    let empty = std::env::temp_dir().join("slopvac-report-no-gh-on-path");
+    std::fs::create_dir_all(&empty).unwrap();
     // No `gh` on the path.
-    cmd.env("PATH", &empty).env("NO_COLOR", "1");
-    cmd
+    cmd.env("PATH", &empty);
+    Command::from_std(cmd)
 }
 
 #[test]
@@ -1948,12 +1956,15 @@ fn counting_opener(dir: &Path) -> PathBuf {
     log
 }
 
-/// The URLs the opener double was started with, one per start.
+/// The URLs the opener double was started with, one per start. A missing log means no start;
+/// any other read error fails the test, so it cannot pass as zero starts.
 #[cfg(unix)]
 fn opened(log: &Path) -> Vec<String> {
-    std::fs::read_to_string(log)
-        .map(|text| text.lines().map(str::to_owned).collect())
-        .unwrap_or_default()
+    match std::fs::read_to_string(log) {
+        Ok(text) => text.lines().map(str::to_owned).collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => panic!("cannot read the opener log: {:?}", e.kind()),
+    }
 }
 
 /// `report --open` in `work`, with the doubles of `bin_dir` on `PATH`. The binary runs under
@@ -1970,18 +1981,8 @@ fn report_open(work: &Path, bin_dir: &Path) -> std::process::Output {
         .arg("report")
         .args(bug(&["--open"]))
         .current_dir(work)
-        .env("PATH", bin_dir)
-        .env("SLOPVAC_NO_UPDATE_CHECK", "1");
-    for var in [
-        "GH_TOKEN",
-        "GITHUB_TOKEN",
-        "SLOPVAC_OFFLINE",
-        "SLOPVAC_LOG",
-        "FORCE_COLOR",
-        "CLICOLOR_FORCE",
-    ] {
-        cmd.env_remove(var);
-    }
+        .env("PATH", bin_dir);
+    isolate(&mut cmd);
     cmd.output().unwrap()
 }
 
