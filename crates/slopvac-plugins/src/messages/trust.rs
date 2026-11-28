@@ -17,6 +17,14 @@ fn esc(value: &str) -> String {
 /// The stable codes of the trust and revocation errors, one constant for each published code.
 pub(crate) mod codes {
     pub(crate) const NAMESPACE_RESERVED: &str = "namespace-reserved";
+    pub(crate) const KEY_INVALID: &str = "key-invalid";
+    pub(crate) const KEY_FINGERPRINT_MISMATCH: &str = "key-fingerprint-mismatch";
+    pub(crate) const NAMESPACE_BOUND: &str = "namespace-bound";
+    pub(crate) const NAMESPACE_NOT_PINNED: &str = "namespace-not-pinned";
+    pub(crate) const ROTATION_INVALID: &str = "rotation-invalid";
+    pub(crate) const ROTATION_ROLLBACK: &str = "rotation-rollback";
+    pub(crate) const ROTATION_KEY_REVOKED: &str = "rotation-key-revoked";
+    pub(crate) const ROTATION_REVOCATIONS_MISSING: &str = "rotation-revocations-missing";
     pub(crate) const LIST_INVALID: &str = "revocation-list-invalid";
     pub(crate) const LIST_UNAVAILABLE: &str = "revocation-list-unavailable";
     pub(crate) const LIST_EXPIRED: &str = "revocation-list-expired";
@@ -35,6 +43,61 @@ pub(crate) enum TrustMessage {
     #[code("namespace-reserved")]
     #[message("namespace `{namespace}` is reserved; no key can be pinned for it")]
     NamespaceReserved { namespace: String },
+    /// The file that `plugins pin --key` names cannot be read, holds more than 4 KiB, or holds
+    /// no minisign public key.
+    #[code("key-invalid")]
+    #[message("the key file {file} cannot be used: {why}")]
+    KeyInvalid {
+        #[display_path]
+        file: String,
+        why: String,
+    },
+    /// The key does not have the fingerprint that the command names: the `--key` file for
+    /// `plugins pin`, or the statement's `newKey` for `plugins rotate`. The message shows both
+    /// fingerprints.
+    #[code("key-fingerprint-mismatch")]
+    #[message(
+        "the key has fingerprint {actual}, not the fingerprint {expected} that the command names"
+    )]
+    KeyFingerprintMismatch { expected: String, actual: String },
+    /// The registry host and namespace already have another pinned key. Only `plugins rotate`
+    /// replaces it.
+    #[code("namespace-bound")]
+    #[message(
+        "namespace `{namespace}` on {registry} is already bound to key {existing}; only `slopvac plugins rotate` replaces it"
+    )]
+    NamespaceBound {
+        registry: String,
+        namespace: String,
+        existing: String,
+    },
+    /// `plugins rotate` named a registry host and namespace that have no pinned key.
+    #[code("namespace-not-pinned")]
+    #[message("namespace `{namespace}` on {registry} has no pinned key to rotate; pin one first")]
+    NamespaceNotPinned { registry: String, namespace: String },
+    /// The rotation statement or a signature file cannot be read or is over 4 KiB, the
+    /// statement is not the canonical rotation format, it names another namespace, its
+    /// `oldKeyId` is not the pinned key, its `newKeyId` is not the id of `newKey`, or a
+    /// signature does not verify.
+    #[code("rotation-invalid")]
+    #[message("rotation refused: {cause}")]
+    RotationInvalid { cause: String },
+    /// The rotation's `notBefore` is not later than the `notBefore` of the rotation that set
+    /// the pin.
+    #[code("rotation-rollback")]
+    #[message("rotation refused: {cause}")]
+    RotationRollback { cause: String },
+    /// The cached revocation list names the old key id or the new key id of the rotation.
+    #[code("rotation-key-revoked")]
+    #[message("rotation refused: the revocation list names key {key_id}")]
+    RotationKeyRevoked { key_id: String },
+    /// No revocation list was ever fetched on this machine, so slopvac cannot rule out a
+    /// revoked key. An online `plugins sync` fetches it.
+    #[code("rotation-revocations-missing")]
+    #[message(
+        "rotation refused: no revocation list has been fetched, so a revoked key cannot be ruled out; run `slopvac plugins sync` online"
+    )]
+    RotationRevocationsMissing,
     /// The revocation list, its signature or its artifact cannot be used. The detail is the
     /// sentence of the failure.
     #[code("revocation-list-invalid")]
@@ -95,6 +158,15 @@ pub(crate) enum TrustText {
         path: String,
         why: String,
     },
+    /// The store is a version 1 store that holds key pins, which name no registry host.
+    #[code("plugins-trust-store-pins-without-host")]
+    #[text(
+        "the trust store holds key pins without a registry host. Remove the `pins` list from {file}, then pin each key again with `slopvac plugins pin <namespace> <fingerprint> --key <file> --registry <host>`"
+    )]
+    PinsWithoutHost {
+        #[display_path]
+        file: String,
+    },
     /// A file system operation failed.
     #[code("plugins-trust-io")]
     #[text("{what}: {cause}")]
@@ -105,12 +177,6 @@ pub(crate) enum TrustText {
         "`{token}` in SLOPVAC_TRUST is not a sha256 content hash; it names hashes only, never a name or a tag"
     )]
     NotAHash { token: String },
-    /// A namespace already has a different pinned key.
-    #[code("plugins-trust-namespace-bound")]
-    #[text(
-        "namespace `{namespace}` is already bound to key {existing}; a new key needs a rotation statement signed by the old key"
-    )]
-    NamespaceBound { namespace: String, existing: String },
     /// The program cannot be tied to the verified tree or the allowlist.
     #[code("plugins-trust-program-refused")]
     #[text("program refused: {why}")]
@@ -119,22 +185,13 @@ pub(crate) enum TrustText {
     #[code("plugins-trust-environment-refused")]
     #[text("environment refused: {why}")]
     EnvironmentRefused { why: String },
-    /// A rotation statement failed verification.
-    #[code("plugins-trust-rotation-refused")]
-    #[text("rotation refused: {cause}")]
-    RotationRefused { cause: String },
-    /// A rotation names a namespace that has no pinned key.
-    #[code("plugins-trust-not-pinned")]
-    #[text("namespace `{namespace}` has no pinned key to rotate; pin one first")]
-    NotPinned { namespace: String },
-    /// The revocation list names a key the operation needs.
-    #[code("plugins-trust-revoked")]
-    #[text("{what} is on the revocation list")]
-    Revoked { what: String },
-    /// A publisher key, named for the revocation list.
-    #[code("plugins-trust-revoked-key")]
-    #[text("key {id}")]
-    RevokedKey { id: String },
+    /// A rotation file that cannot be read or is over 4 KiB.
+    #[code("plugins-trust-rotation-file")]
+    #[text("{file} cannot be read or holds more than 4 KiB")]
+    RotationFile {
+        #[display_path]
+        file: String,
+    },
     /// A write would push the store past the size the reader accepts.
     #[code("plugins-trust-store-too-large")]
     #[text("the trust store would reach {bytes} bytes; the reader accepts at most 8 MiB")]
@@ -342,6 +399,18 @@ pub(crate) enum TrustPhrase {
     #[code("plugins-trust-phrase-store-schema")]
     #[text("unsupported schema_version")]
     StoreSchema,
+    /// A key file that cannot be opened or read.
+    #[code("plugins-trust-phrase-key-file-unreadable")]
+    #[text("the file cannot be read")]
+    KeyFileUnreadable,
+    /// A key file past its cap.
+    #[code("plugins-trust-phrase-key-file-over-cap")]
+    #[text("it holds more than 4 KiB")]
+    KeyFileOverCap,
+    /// A key file with no minisign public key in it.
+    #[code("plugins-trust-phrase-key-file-no-key")]
+    #[text("it holds no minisign public key")]
+    KeyFileNoKey,
     /// The operation of opening the store lock.
     #[code("plugins-trust-phrase-open-lock")]
     #[text("opening the trust lock")]
@@ -784,6 +853,10 @@ pub(crate) fn store_damaged(path: &Path, why: &str) -> String {
     .to_string()
 }
 
+pub(crate) fn pins_without_host(file: &str) -> String {
+    TrustText::PinsWithoutHost { file: esc(file) }.to_string()
+}
+
 pub(crate) fn trust_io(what: &str, cause: &str) -> String {
     TrustText::Io {
         what: esc(what),
@@ -796,10 +869,27 @@ pub(crate) fn not_a_hash(token: &str) -> String {
     TrustText::NotAHash { token: esc(token) }.to_string()
 }
 
-pub(crate) fn namespace_bound(namespace: &str, existing: &str) -> String {
-    TrustText::NamespaceBound {
+pub(crate) fn namespace_bound(registry: &str, namespace: &str, existing: &str) -> String {
+    TrustMessage::NamespaceBound {
+        registry: esc(registry),
         namespace: esc(namespace),
         existing: esc(existing),
+    }
+    .to_string()
+}
+
+pub(crate) fn key_invalid(file: &str, why: &str) -> String {
+    TrustMessage::KeyInvalid {
+        file: esc(file),
+        why: esc(why),
+    }
+    .to_string()
+}
+
+pub(crate) fn fingerprint_mismatch(expected: &str, actual: &str) -> String {
+    TrustMessage::KeyFingerprintMismatch {
+        expected: esc(expected),
+        actual: esc(actual),
     }
     .to_string()
 }
@@ -812,29 +902,40 @@ pub(crate) fn environment_refused(why: &str) -> String {
     TrustText::EnvironmentRefused { why: esc(why) }.to_string()
 }
 
-pub(crate) fn rotation_refused(cause: &str) -> String {
-    TrustText::RotationRefused {
-        cause: cause.to_owned(),
+/// The refusal of a rotation whose statement failed `cause`: a rollback has its own code.
+pub(crate) fn rotation_refused(cause: &crate::sign::SignError) -> String {
+    let text = cause.to_string();
+    match cause {
+        crate::sign::SignError::Rollback(_) => TrustMessage::RotationRollback { cause: text },
+        _ => TrustMessage::RotationInvalid { cause: text },
     }
     .to_string()
 }
 
-pub(crate) fn not_pinned(namespace: &str) -> String {
-    TrustText::NotPinned {
-        namespace: namespace.to_owned(),
+pub(crate) fn rotation_file(file: &str) -> String {
+    TrustMessage::RotationInvalid {
+        cause: TrustText::RotationFile { file: esc(file) }.to_string(),
     }
     .to_string()
 }
 
-pub(crate) fn revoked(what: &str) -> String {
-    TrustText::Revoked {
-        what: what.to_owned(),
+pub(crate) fn not_pinned(registry: &str, namespace: &str) -> String {
+    TrustMessage::NamespaceNotPinned {
+        registry: esc(registry),
+        namespace: esc(namespace),
     }
     .to_string()
 }
 
-pub(crate) fn revoked_key(id: &str) -> String {
-    TrustText::RevokedKey { id: id.to_owned() }.to_string()
+pub(crate) fn rotation_key_revoked(key_id: &str) -> String {
+    TrustMessage::RotationKeyRevoked {
+        key_id: esc(key_id),
+    }
+    .to_string()
+}
+
+pub(crate) fn rotation_revocations_missing() -> String {
+    TrustMessage::RotationRevocationsMissing.to_string()
 }
 
 pub(crate) fn store_too_large(bytes: usize) -> String {
@@ -1331,6 +1432,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one table pins every published code and its text; splitting it would only move rows"
+    )]
     fn every_published_code_keeps_its_text_and_is_registered() {
         let messages: Vec<(TrustMessage, &str, &str)> = vec![
             (
@@ -1339,6 +1444,59 @@ mod tests {
                 },
                 "namespace-reserved",
                 "namespace `core` is reserved; no key can be pinned for it",
+            ),
+            (
+                TrustMessage::KeyInvalid {
+                    file: s("keys/acme.pub"),
+                    why: s("W"),
+                },
+                "key-invalid",
+                "the key file keys/acme.pub cannot be used: W",
+            ),
+            (
+                TrustMessage::KeyFingerprintMismatch {
+                    expected: s("E"),
+                    actual: s("A"),
+                },
+                "key-fingerprint-mismatch",
+                "the key has fingerprint A, not the fingerprint E that the command names",
+            ),
+            (
+                TrustMessage::NamespaceBound {
+                    registry: s("ghcr.io"),
+                    namespace: s("acme"),
+                    existing: s("F"),
+                },
+                "namespace-bound",
+                "namespace `acme` on ghcr.io is already bound to key F; only `slopvac plugins rotate` replaces it",
+            ),
+            (
+                TrustMessage::NamespaceNotPinned {
+                    registry: s("ghcr.io"),
+                    namespace: s("acme"),
+                },
+                "namespace-not-pinned",
+                "namespace `acme` on ghcr.io has no pinned key to rotate; pin one first",
+            ),
+            (
+                TrustMessage::RotationInvalid { cause: s("C") },
+                "rotation-invalid",
+                "rotation refused: C",
+            ),
+            (
+                TrustMessage::RotationRollback { cause: s("C") },
+                "rotation-rollback",
+                "rotation refused: C",
+            ),
+            (
+                TrustMessage::RotationKeyRevoked { key_id: s("K") },
+                "rotation-key-revoked",
+                "rotation refused: the revocation list names key K",
+            ),
+            (
+                TrustMessage::RotationRevocationsMissing,
+                "rotation-revocations-missing",
+                "rotation refused: no revocation list has been fetched, so a revoked key cannot be ruled out; run `slopvac plugins sync` online",
             ),
             (
                 TrustMessage::ListInvalid { detail: s("d") },
@@ -1402,6 +1560,14 @@ mod tests {
         }
         let constants = [
             codes::NAMESPACE_RESERVED,
+            codes::KEY_INVALID,
+            codes::KEY_FINGERPRINT_MISMATCH,
+            codes::NAMESPACE_BOUND,
+            codes::NAMESPACE_NOT_PINNED,
+            codes::ROTATION_INVALID,
+            codes::ROTATION_ROLLBACK,
+            codes::ROTATION_KEY_REVOKED,
+            codes::ROTATION_REVOCATIONS_MISSING,
             codes::LIST_INVALID,
             codes::LIST_UNAVAILABLE,
             codes::LIST_EXPIRED,
@@ -1433,6 +1599,12 @@ mod tests {
                 "the trust store /s/trust.json is damaged: bad",
             ),
             (
+                TrustText::PinsWithoutHost {
+                    file: s("<external>/trust.json"),
+                },
+                "the trust store holds key pins without a registry host. Remove the `pins` list from <external>/trust.json, then pin each key again with `slopvac plugins pin <namespace> <fingerprint> --key <file> --registry <host>`",
+            ),
+            (
                 TrustText::Io {
                     what: s("writing"),
                     cause: s("denied"),
@@ -1444,13 +1616,6 @@ mod tests {
                 "`abc` in SLOPVAC_TRUST is not a sha256 content hash; it names hashes only, never a name or a tag",
             ),
             (
-                TrustText::NamespaceBound {
-                    namespace: s("acme"),
-                    existing: s("ff"),
-                },
-                "namespace `acme` is already bound to key ff; a new key needs a rotation statement signed by the old key",
-            ),
-            (
                 TrustText::ProgramRefused { why: s("w") },
                 "program refused: w",
             ),
@@ -1459,20 +1624,11 @@ mod tests {
                 "environment refused: w",
             ),
             (
-                TrustText::RotationRefused { cause: s("c") },
-                "rotation refused: c",
-            ),
-            (
-                TrustText::NotPinned {
-                    namespace: s("acme"),
+                TrustText::RotationFile {
+                    file: s("rot.json"),
                 },
-                "namespace `acme` has no pinned key to rotate; pin one first",
+                "rot.json cannot be read or holds more than 4 KiB",
             ),
-            (
-                TrustText::Revoked { what: s("key A") },
-                "key A is on the revocation list",
-            ),
-            (TrustText::RevokedKey { id: s("A") }, "key A"),
             (
                 TrustText::StoreTooLarge { bytes: 9_000_000 },
                 "the trust store would reach 9000000 bytes; the reader accepts at most 8 MiB",
@@ -1639,6 +1795,9 @@ mod tests {
         let phrases = [
             (TrustPhrase::StoreOverCap, "larger than 8 MiB"),
             (TrustPhrase::StoreSchema, "unsupported schema_version"),
+            (TrustPhrase::KeyFileUnreadable, "the file cannot be read"),
+            (TrustPhrase::KeyFileOverCap, "it holds more than 4 KiB"),
+            (TrustPhrase::KeyFileNoKey, "it holds no minisign public key"),
             (TrustPhrase::OpenLock, "opening the trust lock"),
             (TrustPhrase::LockStore, "locking the trust store"),
             (TrustPhrase::TempStore, "creating a temporary store file"),

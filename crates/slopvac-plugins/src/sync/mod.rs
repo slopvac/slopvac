@@ -698,6 +698,7 @@ impl<'a> Syncer<'a> {
         let version = pack.version.to_string();
         let expect = Expectation {
             id: id.as_str(),
+            registry: &reference.registry,
             namespace,
             version: &version,
             artifact_type: ARTIFACT_TYPE_PACK,

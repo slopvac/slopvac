@@ -43,6 +43,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use slopvac_fs::display_under_root;
 use thiserror::Error;
 
 use crate::error::PluginError;
@@ -52,9 +53,10 @@ use crate::messages::trust::{self as messages, TrustPhrase, codes};
 use crate::oci::Digest;
 use crate::protocol::PluginDeclaration;
 use crate::pyenv::{EnvStore, ManagedEnv, PYTHON_FLAGS, PyEnvError, PythonRuntime};
-use crate::revoke::{RevocationError, RevocationList, Revocations};
+use crate::revoke::{RevocationError, RevocationList, RevocationNotice, Revocations};
 use crate::sign::{
-    PublicKey, RotationProof, SignError, canonical_json, is_reserved_namespace, verify_rotation,
+    PinScope, PublicKey, RotationProof, SignError, canonical_json, is_reserved_namespace,
+    verify_rotation,
 };
 
 mod key;
@@ -64,6 +66,8 @@ pub use key::TrustKey;
 const FILE_NAME: &str = "trust.json";
 const LOCK_NAME: &str = "trust.lock";
 const MAX_STORE_BYTES: u64 = 8 << 20;
+/// The version this build writes. Version 2 added the registry host of each key pin.
+const SCHEMA_VERSION: u32 = 2;
 
 /// Errors from the trust store and its inputs.
 #[derive(Debug, Error)]
@@ -75,6 +79,13 @@ pub enum TrustError {
         path: PathBuf,
         /// What is wrong.
         why: String,
+    },
+    /// The store is a version 1 store that holds key pins. Those pins name no registry host,
+    /// so they are refused, never read as a pin on every host. The text names the fix.
+    #[error("{}", messages::pins_without_host(.file))]
+    PinsWithoutHost {
+        /// The store file as policies section 1.7 shows a path outside the project.
+        file: String,
     },
     /// A file system operation failed.
     #[error("{}", messages::trust_io(.what, &.source.to_string()))]
@@ -88,9 +99,11 @@ pub enum TrustError {
     /// `SLOPVAC_TRUST` named something other than a content hash.
     #[error("{}", messages::not_a_hash(.0))]
     NotAHash(String),
-    /// A namespace already has a different pinned key.
-    #[error("{}", messages::namespace_bound(.namespace, .existing))]
+    /// The pair of registry host and namespace already has a different pinned key.
+    #[error("{}", messages::namespace_bound(.registry, .namespace, .existing))]
     NamespaceBound {
+        /// The registry host.
+        registry: String,
         /// The namespace.
         namespace: String,
         /// Fingerprint of the key that holds it.
@@ -114,17 +127,48 @@ pub enum TrustError {
     /// The managed Python environment failed its full check.
     #[error(transparent)]
     PythonEnv(#[from] PyEnvError),
-    /// A rotation statement failed verification.
-    #[error("{}", messages::rotation_refused(&.0.to_string()))]
+    /// A rotation statement failed verification. A `notBefore` that is not later than the
+    /// pin's is a rollback; any other failure makes the rotation invalid.
+    #[error("{}", messages::rotation_refused(.0))]
     Rotation(SignError),
-    /// A rotation names a namespace that has no pinned key to rotate from.
-    #[error("{}", messages::not_pinned(.0))]
-    NotPinned(String),
+    /// A rotation file cannot be read or is over its cap.
+    #[error("{}", messages::rotation_file(.file))]
+    RotationFile {
+        /// The file, shown under the project root or as `<external>/<file name>`.
+        file: String,
+    },
+    /// A rotation names a pair of registry host and namespace that has no pinned key.
+    #[error("{}", messages::not_pinned(.registry, .namespace))]
+    NotPinned {
+        /// The registry host.
+        registry: String,
+        /// The namespace.
+        namespace: String,
+    },
+    /// The key file that `plugins pin --key` names cannot be used.
+    #[error("{}", messages::key_invalid(.file, .why))]
+    KeyInvalid {
+        /// The file, shown under the project root or as `<external>/<file name>`.
+        file: String,
+        /// Why, as a fixed phrase that quotes nothing from the file.
+        why: String,
+    },
+    /// The key does not have the fingerprint that the command names.
+    #[error("{}", messages::fingerprint_mismatch(.expected, .actual))]
+    FingerprintMismatch {
+        /// The fingerprint the command names.
+        expected: String,
+        /// The fingerprint of the key.
+        actual: String,
+    },
+    /// No revocation list was ever fetched, so a rotation cannot rule out a revoked key.
+    #[error("{}", messages::rotation_revocations_missing())]
+    RevocationsMissing,
     /// The revocation cache could not be read or verified. Spawns are refused.
     #[error(transparent)]
     Revocation(RevocationError),
-    /// The revocation list names a key the operation needs.
-    #[error("{}", messages::revoked(.0))]
+    /// The revocation list names a key id of the rotation.
+    #[error("{}", messages::rotation_key_revoked(.0))]
     Revoked(String),
     /// A write would push the store past the size the reader accepts.
     #[error("{}", messages::store_too_large(*.bytes))]
@@ -157,6 +201,14 @@ impl TrustError {
     pub fn code(&self) -> Option<&'static str> {
         match self {
             Self::ReservedNamespace { .. } => Some(codes::NAMESPACE_RESERVED),
+            Self::KeyInvalid { .. } => Some(codes::KEY_INVALID),
+            Self::FingerprintMismatch { .. } => Some(codes::KEY_FINGERPRINT_MISMATCH),
+            Self::NamespaceBound { .. } => Some(codes::NAMESPACE_BOUND),
+            Self::NotPinned { .. } => Some(codes::NAMESPACE_NOT_PINNED),
+            Self::Rotation(SignError::Rollback(_)) => Some(codes::ROTATION_ROLLBACK),
+            Self::Rotation(_) | Self::RotationFile { .. } => Some(codes::ROTATION_INVALID),
+            Self::Revoked(_) => Some(codes::ROTATION_KEY_REVOKED),
+            Self::RevocationsMissing => Some(codes::ROTATION_REVOCATIONS_MISSING),
             _ => None,
         }
     }
@@ -330,6 +382,9 @@ pub struct TrustRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KeyPin {
+    /// Registry host the pin applies to, in ASCII lowercase. Required: a pin without a host
+    /// does not parse, so the store is reported as damaged and never read as wider trust.
+    pub registry: String,
     /// Namespace the key signs.
     pub namespace: String,
     /// SHA-256 fingerprint shown to the user.
@@ -342,6 +397,14 @@ pub struct KeyPin {
     /// rotation must be newer. A first pin has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub not_before: Option<String>,
+}
+
+impl KeyPin {
+    /// The pair of registry host and namespace this pin binds.
+    #[must_use]
+    pub fn scope(&self) -> PinScope {
+        PinScope::new(&self.registry, &self.namespace)
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -377,11 +440,95 @@ fn parse_store_file(raw: &[u8], path: &Path) -> Result<StoreFile, TrustError> {
     let mut value: serde_json::Value =
         serde_json::from_slice(raw).map_err(|e| corrupt(e.to_string()))?;
     strip_extension_keys(&mut value);
-    let parsed: StoreFile = serde_json::from_value(value).map_err(|e| corrupt(e.to_string()))?;
-    if parsed.schema_version != 1 {
-        return Err(corrupt(TrustPhrase::StoreSchema.as_static().into()));
+    // A version 1 pin names no registry host. Refuse it before the pins are parsed, so the
+    // error names the fix and prints nothing from the file.
+    let holds_pins = value
+        .get("pins")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|pins| !pins.is_empty());
+    if value.get("schema_version") == Some(&serde_json::Value::from(1)) && holds_pins {
+        return Err(TrustError::PinsWithoutHost {
+            file: display_under_root(path, Path::new("")),
+        });
+    }
+    let mut parsed: StoreFile =
+        serde_json::from_value(value).map_err(|e| corrupt(e.to_string()))?;
+    match parsed.schema_version {
+        // A version 1 store without pins is read as it is and written as version 2 at its
+        // next change.
+        1 => parsed.schema_version = SCHEMA_VERSION,
+        SCHEMA_VERSION => {}
+        _ => return Err(corrupt(TrustPhrase::StoreSchema.as_static().into())),
     }
     Ok(parsed)
+}
+
+/// Largest key file that `plugins pin --key` reads.
+pub const MAX_KEY_FILE_BYTES: u64 = 4 * 1024;
+
+/// Largest rotation statement or signature file that `plugins rotate` reads.
+pub const MAX_ROTATION_FILE_BYTES: u64 = 4 * 1024;
+
+/// One file that `plugins rotate` reads: where it is, and how messages name it (under the
+/// project root, or as `<external>/<file name>`).
+#[derive(Debug, Clone, Copy)]
+pub struct NamedFile<'a> {
+    /// The path to read.
+    pub path: &'a Path,
+    /// The path as messages show it.
+    pub shown: &'a str,
+}
+
+/// The three files of a rotation: the statement and its two signatures.
+#[derive(Debug, Clone, Copy)]
+pub struct RotationFiles<'a> {
+    /// The canonical rotation statement.
+    pub statement: NamedFile<'a>,
+    /// The `.minisig` text by the pinned key.
+    pub old_signature: NamedFile<'a>,
+    /// The `.minisig` text by the new key.
+    pub new_signature: NamedFile<'a>,
+}
+
+/// A rotation that replaced a pin.
+#[derive(Debug, Clone)]
+pub struct Rotated {
+    /// The new pin.
+    pub pin: KeyPin,
+    /// The fingerprint of the key it replaced.
+    pub old_fingerprint: String,
+    /// Revocation notices to print, such as a stale cached list. They do not block.
+    pub notices: Vec<RevocationNotice>,
+}
+
+fn read_rotation_file(file: NamedFile<'_>) -> Result<String, TrustError> {
+    slopvac_fs::read_text_capped(file.path, MAX_ROTATION_FILE_BYTES).map_err(|_| {
+        TrustError::RotationFile {
+            file: file.shown.to_owned(),
+        }
+    })
+}
+
+fn reject_reserved(scope: &PinScope) -> Result<(), TrustError> {
+    if is_reserved_namespace(scope.namespace()) {
+        return Err(TrustError::ReservedNamespace {
+            namespace: scope.namespace().to_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// `key` must have the fingerprint that the command names, compared byte for byte.
+fn check_fingerprint(expected: &str, key: &PublicKey) -> Result<(), TrustError> {
+    let actual = key.fingerprint();
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(TrustError::FingerprintMismatch {
+            expected: expected.to_owned(),
+            actual,
+        })
+    }
 }
 
 /// Largest trust store file the reader accepts.
@@ -397,13 +544,15 @@ pub struct TrustSnapshot {
 }
 
 /// Parse the bytes of a trust store file with the rules the store itself applies: at most
-/// [`MAX_STORE_FILE_BYTES`], unknown keys refused, `x-` keys ignored, `schema_version` 1.
+/// [`MAX_STORE_FILE_BYTES`], unknown keys refused, `x-` keys ignored, `schema_version` 2, or 1
+/// without key pins.
 ///
 /// The caller supplies the bytes, so it can read them without blocking and under its own size
 /// cap. `path` only names the file in the error.
 ///
 /// # Errors
-/// [`TrustError::Corrupt`] for bytes the store would refuse.
+/// [`TrustError::Corrupt`] for bytes the store would refuse, and
+/// [`TrustError::PinsWithoutHost`] for a version 1 store that holds key pins.
 pub fn parse_store(raw: &[u8], path: &Path) -> Result<TrustSnapshot, TrustError> {
     let file = parse_store_file(raw, path)?;
     Ok(TrustSnapshot {
@@ -435,7 +584,7 @@ impl TrustStore {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 return Ok(StoreFile {
-                    schema_version: 1,
+                    schema_version: SCHEMA_VERSION,
                     ..StoreFile::default()
                 });
             }
@@ -475,11 +624,20 @@ impl TrustStore {
     ) -> Result<T, TrustError> {
         let lock = self.lock()?;
         let mut file = self.read()?;
+        let before = serde_json::to_vec_pretty(&file).map_err(|e| TrustError::Corrupt {
+            path: self.path(),
+            why: e.to_string(),
+        })?;
         let out = f(&mut file)?;
         let bytes = serde_json::to_vec_pretty(&file).map_err(|e| TrustError::Corrupt {
             path: self.path(),
             why: e.to_string(),
         })?;
+        if bytes == before && self.path().exists() {
+            // Nothing changed: the file is not rewritten, so a version 1 file keeps its form.
+            drop(lock);
+            return Ok(out);
+        }
         if bytes.len() as u64 > MAX_STORE_BYTES {
             return Err(TrustError::TooLarge { bytes: bytes.len() });
         }
@@ -523,7 +681,7 @@ impl TrustStore {
     /// Lock, read or write failures.
     pub fn record(&self, rec: TrustRecord) -> Result<(), TrustError> {
         self.update(|f| {
-            f.schema_version = 1;
+            f.schema_version = SCHEMA_VERSION;
             f.records.retain(|r| r.hash != rec.hash);
             f.records.push(rec);
             Ok(())
@@ -542,36 +700,41 @@ impl TrustStore {
         })
     }
 
-    /// Pin a publisher key for a namespace. The first pin binds the namespace to
-    /// the key; a different key needs a rotation statement ([`Self::rotate_key`]).
+    /// Pin a publisher key for one pair of registry host and namespace. The first pin binds
+    /// the pair to the key; a different key needs a rotation statement
+    /// ([`Self::rotate_key`]). A pin on one host never binds the namespace on another.
     ///
     /// # Errors
-    /// [`TrustError::NamespaceBound`] when the namespace has another key,
+    /// [`TrustError::NamespaceBound`] when the pair has another key,
     /// [`TrustError::ReservedNamespace`] for `slopvac` and `core`.
-    pub fn pin_key(&self, namespace: &str, key_b64: &str, now: &str) -> Result<KeyPin, TrustError> {
+    pub fn pin_key(
+        &self,
+        scope: &PinScope,
+        key: &PublicKey,
+        now: &str,
+    ) -> Result<KeyPin, TrustError> {
+        let namespace = scope.namespace();
         if is_reserved_namespace(namespace) {
             return Err(TrustError::ReservedNamespace {
                 namespace: namespace.to_owned(),
             });
         }
-        let key = PublicKey::from_base64(key_b64).map_err(|e| TrustError::Corrupt {
-            path: self.path(),
-            why: e.to_string(),
-        })?;
         let pin = KeyPin {
+            registry: scope.registry().to_owned(),
             namespace: namespace.to_owned(),
             fingerprint: key.fingerprint(),
-            key: key_b64.trim().to_owned(),
+            key: key.to_base64(),
             pinned_at: now.to_owned(),
             not_before: None,
         };
         self.update(|f| {
-            f.schema_version = 1;
-            if let Some(existing) = f.pins.iter().find(|p| p.namespace == namespace) {
+            f.schema_version = SCHEMA_VERSION;
+            if let Some(existing) = f.pins.iter().find(|p| p.scope() == *scope) {
                 if existing.fingerprint == pin.fingerprint {
                     return Ok(existing.clone());
                 }
                 return Err(TrustError::NamespaceBound {
+                    registry: scope.registry().to_owned(),
                     namespace: namespace.to_owned(),
                     existing: existing.fingerprint.clone(),
                 });
@@ -581,7 +744,91 @@ impl TrustStore {
         })
     }
 
-    /// Replace the key pinned for `namespace` with the new key of a rotation.
+    /// Pin the key in `file` for the pair `scope`, after checking that it has `fingerprint`.
+    ///
+    /// The steps run in this order, and the first failure stops the call: a reserved
+    /// namespace is refused before the file is read; the file is read under
+    /// [`MAX_KEY_FILE_BYTES`] and must hold a minisign public key (a `minisign.pub` file or
+    /// its base64 line alone); its fingerprint must equal `fingerprint`; then the pin is
+    /// written as [`Self::pin_key`] writes it. `shown` names the file in errors, under the
+    /// project root or as `<external>/<file name>`, and no error quotes the file.
+    ///
+    /// # Errors
+    /// [`TrustError::ReservedNamespace`], [`TrustError::KeyInvalid`],
+    /// [`TrustError::FingerprintMismatch`], [`TrustError::NamespaceBound`], plus store failures.
+    pub fn pin_key_file(
+        &self,
+        scope: &PinScope,
+        fingerprint: &str,
+        file: &Path,
+        shown: &str,
+        now: &str,
+    ) -> Result<KeyPin, TrustError> {
+        reject_reserved(scope)?;
+        let invalid = |why: TrustPhrase| TrustError::KeyInvalid {
+            file: shown.to_owned(),
+            why: why.as_static().to_owned(),
+        };
+        let text = slopvac_fs::read_text_capped(file, MAX_KEY_FILE_BYTES).map_err(|e| match e {
+            slopvac_fs::Error::CapExceeded { .. } => invalid(TrustPhrase::KeyFileOverCap),
+            slopvac_fs::Error::NotUtf8 { .. } => invalid(TrustPhrase::KeyFileNoKey),
+            _ => invalid(TrustPhrase::KeyFileUnreadable),
+        })?;
+        let key =
+            PublicKey::from_pub_file(&text).map_err(|_| invalid(TrustPhrase::KeyFileNoKey))?;
+        check_fingerprint(fingerprint, &key)?;
+        self.pin_key(scope, &key, now)
+    }
+
+    /// Rotate the pin of the pair `scope` from the three files of a rotation, after checking
+    /// that the new key has `fingerprint`. Nothing is fetched.
+    ///
+    /// The steps run in this order, and the first failure stops the call: a reserved
+    /// namespace is refused before any file is read; each file is read under
+    /// [`MAX_ROTATION_FILE_BYTES`], and the statement's `newKey` must parse; its fingerprint
+    /// must equal `fingerprint`; the cached revocation list is read, and a machine that never
+    /// fetched one is refused; then [`Self::rotate_key`] checks the pin, the proof and the
+    /// revocation list, and replaces the pin.
+    ///
+    /// # Errors
+    /// [`TrustError::ReservedNamespace`], [`TrustError::RotationFile`],
+    /// [`TrustError::Rotation`], [`TrustError::FingerprintMismatch`],
+    /// [`TrustError::Revocation`] for a damaged cache, [`TrustError::RevocationsMissing`], and
+    /// the errors of [`Self::rotate_key`].
+    pub fn rotate_key_files(
+        &self,
+        scope: &PinScope,
+        fingerprint: &str,
+        files: &RotationFiles<'_>,
+        revocations: &Revocations,
+        now: &str,
+    ) -> Result<Rotated, TrustError> {
+        reject_reserved(scope)?;
+        let statement = read_rotation_file(files.statement)?;
+        let old_signature = read_rotation_file(files.old_signature)?;
+        let new_signature = read_rotation_file(files.new_signature)?;
+        let new_key =
+            crate::sign::rotation_new_key(statement.as_bytes()).map_err(TrustError::Rotation)?;
+        check_fingerprint(fingerprint, &new_key)?;
+        let current = revocations.cached().map_err(TrustError::Revocation)?;
+        if current.fetched_at.is_none() {
+            return Err(TrustError::RevocationsMissing);
+        }
+        let proof = RotationProof {
+            statement: statement.as_bytes(),
+            old_signature: &old_signature,
+            new_signature: &new_signature,
+            new_key: &new_key,
+        };
+        let (old, pin) = self.rotate(scope, &proof, &current.list, now)?;
+        Ok(Rotated {
+            pin,
+            old_fingerprint: old.fingerprint,
+            notices: current.notices,
+        })
+    }
+
+    /// Replace the key pinned for the pair `scope` with the new key of a rotation.
     ///
     /// This is the pinning command's confirmation step: the caller has shown
     /// `proof.new_key`'s fingerprint first. Under the store lock it verifies the
@@ -591,20 +838,37 @@ impl TrustStore {
     /// key (K5). The new pin records the rotation's `notBefore`.
     ///
     /// # Errors
-    /// [`TrustError::NotPinned`] for a namespace with no pin,
+    /// [`TrustError::ReservedNamespace`] for `slopvac` and `core`, before the store is read,
+    /// [`TrustError::NotPinned`] for a pair with no pin,
     /// [`TrustError::Rotation`] for a proof that fails verification,
     /// [`TrustError::Revoked`] for a revoked key, plus store failures.
     pub fn rotate_key(
         &self,
-        namespace: &str,
+        scope: &PinScope,
         proof: &RotationProof<'_>,
         revoked: &RevocationList,
         now: &str,
     ) -> Result<KeyPin, TrustError> {
+        self.rotate(scope, proof, revoked, now).map(|(_, new)| new)
+    }
+
+    /// The rotation itself: the pin before and the pin after.
+    fn rotate(
+        &self,
+        scope: &PinScope,
+        proof: &RotationProof<'_>,
+        revoked: &RevocationList,
+        now: &str,
+    ) -> Result<(KeyPin, KeyPin), TrustError> {
+        reject_reserved(scope)?;
+        let namespace = scope.namespace();
         let path = self.path();
         self.update(|f| {
-            let Some(slot) = f.pins.iter_mut().find(|p| p.namespace == namespace) else {
-                return Err(TrustError::NotPinned(namespace.to_owned()));
+            let Some(slot) = f.pins.iter_mut().find(|p| p.scope() == *scope) else {
+                return Err(TrustError::NotPinned {
+                    registry: scope.registry().to_owned(),
+                    namespace: namespace.to_owned(),
+                });
             };
             let pinned = PublicKey::from_base64(&slot.key).map_err(|e| TrustError::Corrupt {
                 path: path.clone(),
@@ -614,27 +878,30 @@ impl TrustStore {
                 .map_err(TrustError::Rotation)?;
             for id in [&st.old_key_id, &st.new_key_id] {
                 if revoked.revokes_key(id) {
-                    return Err(TrustError::Revoked(messages::revoked_key(id)));
+                    return Err(TrustError::Revoked(id.clone()));
                 }
             }
-            *slot = KeyPin {
+            let new = KeyPin {
+                registry: scope.registry().to_owned(),
                 namespace: namespace.to_owned(),
                 fingerprint: proof.new_key.fingerprint(),
                 key: proof.new_key.to_base64(),
                 pinned_at: now.to_owned(),
                 not_before: Some(st.not_before),
             };
-            Ok(slot.clone())
+            let old = std::mem::replace(slot, new.clone());
+            Ok((old, new))
         })
     }
 
-    /// Every pinned key by namespace, ready for [`crate::sign::KeyPolicy::pinned`].
+    /// Every pinned key by pair of registry host and namespace, ready for
+    /// [`crate::sign::KeyPolicy::pinned`].
     ///
     /// # Errors
     /// [`TrustError::Corrupt`] for a damaged store or key,
     /// [`TrustError::ReservedNamespace`] for a pin in a reserved namespace.
-    pub fn pinned_map(&self) -> Result<BTreeMap<String, Vec<PublicKey>>, TrustError> {
-        let mut map: BTreeMap<String, Vec<PublicKey>> = BTreeMap::new();
+    pub fn pinned_map(&self) -> Result<BTreeMap<PinScope, Vec<PublicKey>>, TrustError> {
+        let mut map: BTreeMap<PinScope, Vec<PublicKey>> = BTreeMap::new();
         for p in self.read()?.pins {
             if is_reserved_namespace(&p.namespace) {
                 return Err(TrustError::ReservedNamespace {
@@ -645,7 +912,7 @@ impl TrustStore {
                 path: self.path(),
                 why: e.to_string(),
             })?;
-            map.entry(p.namespace).or_default().push(key);
+            map.entry(p.scope()).or_default().push(key);
         }
         Ok(map)
     }

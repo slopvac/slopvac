@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use slopvac_plugins::sign::{PinScope, PublicKey};
 use slopvac_plugins::trust::{MAX_STORE_FILE_BYTES, TrustError, TrustStore, parse_store};
 
 const PATH: &str = "trust.json";
@@ -23,7 +24,13 @@ fn bytes_written_by_the_store_parse_back_to_the_same_counts() {
         .unwrap()
         .pk
         .to_base64();
-    store.pin_key("acme", &key, "2026-11-15T00:00:00Z").unwrap();
+    store
+        .pin_key(
+            &PinScope::new("ghcr.io", "acme"),
+            &PublicKey::from_base64(&key).unwrap(),
+            "2026-11-15T00:00:00Z",
+        )
+        .unwrap();
     let raw = std::fs::read(dir.path().join("trust.json")).unwrap();
     let snapshot = parse_store(&raw, Path::new(PATH)).unwrap();
     assert_eq!(snapshot.pins.len(), 1);
@@ -42,7 +49,7 @@ fn extension_keys_are_ignored_and_other_unknown_keys_refused() {
 
 #[test]
 fn another_schema_version_and_bad_json_are_corrupt() {
-    for raw in [&br#"{"schema_version":2}"#[..], b"{broken", b"", b"[]"] {
+    for raw in [&br#"{"schema_version":3}"#[..], b"{broken", b"", b"[]"] {
         assert!(
             matches!(parse(raw), Err(TrustError::Corrupt { .. })),
             "{raw:?}"

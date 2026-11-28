@@ -30,7 +30,7 @@ use slopvac_plugins::lock::{
 use slopvac_plugins::oci::{Anonymous, Client};
 use slopvac_plugins::pyenv::EnvStore;
 use slopvac_plugins::revoke::Revocations;
-use slopvac_plugins::sign::KeyPolicy;
+use slopvac_plugins::sign::{KeyPolicy, PinScope};
 use slopvac_plugins::sync::{Network, PythonBuild};
 use slopvac_plugins::trust::{DeclSummary, TrustGate, TrustRecord, TrustStore, VerifiedPlugin};
 use slopvac_plugins::{
@@ -383,13 +383,15 @@ fn the_help_names_every_subcommand_with_its_text() {
 }
 
 #[test]
-fn pin_takes_a_namespace_a_fingerprint_and_an_optional_registry() {
+fn pin_takes_a_namespace_a_fingerprint_a_key_file_and_an_optional_registry() {
     let m = command()
         .try_get_matches_from([
             "plugins",
             "pin",
             "acme",
             &"a".repeat(64),
+            "--key",
+            "acme.pub",
             "--registry",
             "r.io",
         ])
@@ -398,12 +400,191 @@ fn pin_takes_a_namespace_a_fingerprint_and_an_optional_registry() {
     assert_eq!(name, "pin");
     assert_eq!(pin.get_one::<String>("namespace").unwrap(), "acme");
     assert_eq!(pin.get_one::<String>("registry").unwrap(), "r.io");
+    assert_eq!(
+        pin.get_one::<PathBuf>("key").unwrap(),
+        &PathBuf::from("acme.pub")
+    );
+}
+
+// ---- `plugins pin` and `plugins rotate` ----
+
+const ROTATION: &[u8] = include_bytes!("fixtures/revoke/rotation.json");
+const ROTATION_OLD_SIG: &str = include_str!("fixtures/revoke/rotation.old.minisig");
+const ROTATION_NEW_SIG: &str = include_str!("fixtures/revoke/rotation.new.minisig");
+const OLD_PUB: &str = include_str!("fixtures/revoke/old.pub");
+const NEW_PUB: &str = include_str!("fixtures/revoke/new.pub");
+
+fn pub_key(file: &str) -> slopvac_plugins::sign::PublicKey {
+    slopvac_plugins::sign::PublicKey::from_pub_file(file).unwrap()
+}
+
+impl Fixture {
+    /// Write `file` (a `minisign.pub` text) as `name` in the fixture and return its path.
+    fn key_file(&self, name: &str, file: &str) -> String {
+        let path = self.base.path().join(name);
+        fs::write(&path, file).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    fn pinned(&self) -> Vec<(String, String, String)> {
+        let mut pins: Vec<_> = slopvac_plugins::trust::TrustStore::open(self.state())
+            .pinned_map()
+            .unwrap()
+            .into_iter()
+            .flat_map(|(scope, keys)| {
+                keys.into_iter().map(move |k| {
+                    (
+                        scope.registry().to_owned(),
+                        scope.namespace().to_owned(),
+                        k.fingerprint(),
+                    )
+                })
+            })
+            .collect();
+        pins.sort();
+        pins
+    }
+}
+
+#[test]
+fn k10_pin_pins_the_key_file_on_ghcr_io_by_default() {
+    let f = Fixture::new();
+    let key = f.key_file("old.pub", OLD_PUB);
+    let fp = pub_key(OLD_PUB).fingerprint();
+    let ran = f.run(&["pin", "acme", &fp, "--key", &key], false, |s| s);
+    assert_eq!(ran.result.unwrap(), 0);
+    assert_eq!(
+        ran.out,
+        format!("pinned key {fp} for namespace `acme` on ghcr.io\n")
+    );
+    assert_eq!(f.pinned(), [("ghcr.io".to_owned(), "acme".to_owned(), fp)]);
+}
+
+#[test]
+fn k14_pin_with_a_registry_binds_the_namespace_on_that_host_only() {
+    let f = Fixture::new();
+    let (old, new) = (
+        f.key_file("old.pub", OLD_PUB),
+        f.key_file("new.pub", NEW_PUB),
+    );
+    let (old_fp, new_fp) = (
+        pub_key(OLD_PUB).fingerprint(),
+        pub_key(NEW_PUB).fingerprint(),
+    );
+    let first = f.run(&["pin", "acme", &old_fp, "--key", &old], false, |s| s);
+    assert_eq!(first.result.unwrap(), 0);
+    let other_host = f.run(
+        &[
+            "pin",
+            "acme",
+            &new_fp,
+            "--key",
+            &new,
+            "--registry",
+            "registry.example",
+        ],
+        false,
+        |s| s,
+    );
+    assert_eq!(other_host.result.unwrap(), 0);
+    let bound = f.run(&["pin", "acme", &new_fp, "--key", &new], false, |s| s);
+    let err = bound.result.unwrap_err();
+    assert_eq!((err.code(), err.exit_code()), ("namespace-bound", 2));
+    assert_eq!(
+        f.pinned(),
+        [
+            ("ghcr.io".to_owned(), "acme".to_owned(), old_fp),
+            ("registry.example".to_owned(), "acme".to_owned(), new_fp),
+        ]
+    );
+}
+
+#[rstest::rstest]
+#[case::uppercase_fingerprint(&["pin", "acme", &"A".repeat(64), "--key", "k.pub"])]
+#[case::short_fingerprint(&["pin", "acme", &"a".repeat(63), "--key", "k.pub"])]
+#[case::no_key(&["pin", "acme", &"a".repeat(64)])]
+#[case::capital_namespace(&["pin", "Acme", &"a".repeat(64), "--key", "k.pub"])]
+#[case::bad_registry(&["pin", "acme", &"a".repeat(64), "--key", "k.pub", "--registry", "a b"])]
+#[case::rotate_without_a_signature(&["rotate", "acme", &"a".repeat(64), "--statement", "s", "--old-signature", "o"])]
+fn k15_a_malformed_pin_or_rotate_is_a_usage_error(#[case] args: &[&str]) {
+    let words = std::iter::once("plugins").chain(args.iter().copied());
+    let err = command().try_get_matches_from(words).unwrap_err();
+    assert_eq!(err.exit_code(), 2, "{err}");
+}
+
+#[rstest::rstest]
+#[case::pin_core(&["pin", "core", &"a".repeat(64), "--key", "missing.pub"])]
+#[case::pin_slopvac(&["pin", "slopvac", &"a".repeat(64), "--key", "missing.pub"])]
+#[case::rotate_core(&["rotate", "core", &"a".repeat(64), "--statement", "m", "--old-signature", "m", "--new-signature", "m"])]
+#[case::rotate_slopvac(&["rotate", "slopvac", &"a".repeat(64), "--statement", "m", "--old-signature", "m", "--new-signature", "m"])]
+fn k13_pin_and_rotate_refuse_the_reserved_namespaces(#[case] args: &[&str]) {
+    let f = Fixture::uncached();
+    let err = f.run(args, false, |s| s).result.unwrap_err();
+    assert_eq!((err.code(), err.exit_code()), ("namespace-reserved", 2));
+    assert_eq!(f.pinned(), Vec::<(String, String, String)>::new());
+}
+
+impl Fixture {
+    /// Pin the fixture's old key for `acme` on ghcr.io and write the rotation files. Returns
+    /// the `rotate` arguments.
+    fn rotation(&self) -> Vec<String> {
+        let key = self.key_file("old.pub", OLD_PUB);
+        let fp = pub_key(OLD_PUB).fingerprint();
+        let ran = self.run(&["pin", "acme", &fp, "--key", &key], false, |s| s);
+        assert_eq!(ran.result.unwrap(), 0);
+        let dir = self.base.path();
+        fs::write(dir.join("rotation.json"), ROTATION).unwrap();
+        fs::write(dir.join("old.minisig"), ROTATION_OLD_SIG).unwrap();
+        fs::write(dir.join("new.minisig"), ROTATION_NEW_SIG).unwrap();
+        let path = |n: &str| dir.join(n).to_string_lossy().into_owned();
+        vec![
+            "rotate".into(),
+            "acme".into(),
+            pub_key(NEW_PUB).fingerprint(),
+            "--statement".into(),
+            path("rotation.json"),
+            "--old-signature".into(),
+            path("old.minisig"),
+            "--new-signature".into(),
+            path("new.minisig"),
+        ]
+    }
+}
+
+#[test]
+fn k16_rotate_replaces_the_pin_and_names_both_fingerprints() {
+    let f = Fixture::new();
+    let args = f.rotation();
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    let ran = f.run(&words, false, |s| s);
+    assert_eq!(ran.result.unwrap(), 0);
+    let (old, new) = (
+        pub_key(OLD_PUB).fingerprint(),
+        pub_key(NEW_PUB).fingerprint(),
+    );
+    assert_eq!(
+        ran.out,
+        format!("rotated the key for namespace `acme` on ghcr.io from {old} to {new}\n")
+    );
+    assert_eq!(f.pinned(), [("ghcr.io".to_owned(), "acme".to_owned(), new)]);
+}
+
+#[test]
+fn k20_rotate_on_a_machine_that_never_fetched_a_revocation_list_is_refused() {
+    let f = Fixture::uncached();
+    let args = f.rotation();
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    let err = f.run(&words, false, |s| s).result.unwrap_err();
+    assert_eq!(
+        (err.code(), err.exit_code()),
+        ("rotation-revocations-missing", 2)
+    );
+    let old = pub_key(OLD_PUB).fingerprint();
+    assert_eq!(f.pinned(), [("ghcr.io".to_owned(), "acme".to_owned(), old)]);
 }
 
 #[rstest::rstest]
 #[case::search(&["search", "style"], "search")]
-#[case::pin(&["pin", "acme", "00"], "pin")]
-#[case::rotate(&["rotate", "acme"], "rotate")]
 #[case::new(&["new", "style"], "new")]
 #[case::validate(&["validate"], "validate")]
 #[case::run_tests(&["test"], "test")]
@@ -1880,7 +2061,10 @@ mod native_archive {
             a.key_id
         );
         let policy = KeyPolicy {
-            pinned: BTreeMap::from([("acme".to_owned(), vec![a.public.clone()])]),
+            pinned: BTreeMap::from([(
+                PinScope::new(&server.registry(), "acme"),
+                vec![a.public.clone()],
+            )]),
             ..KeyPolicy::default()
         };
         (entry, policy)
@@ -1964,7 +2148,10 @@ mod native_archive {
             a.key_id
         )]);
         let policy = KeyPolicy {
-            pinned: BTreeMap::from([("acme".to_owned(), vec![a.public.clone()])]),
+            pinned: BTreeMap::from([(
+                PinScope::new(&server.registry(), "acme"),
+                vec![a.public.clone()],
+            )]),
             ..KeyPolicy::default()
         };
         let executables = BTreeMap::from([(

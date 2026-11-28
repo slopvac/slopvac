@@ -104,6 +104,26 @@ pub static RETIRED: &[Retired] = &[
         code: "plugin-category-id-collision",
         note: "A plugin category may share a bare id with a core category, because the engine keys categories by plugin and id. A shared rule id is still refused with plugin-rule-id-collision.",
     },
+    Retired {
+        code: "plugins-trust-namespace-bound",
+        note: "Replaced by the error code namespace-bound, which names the registry host.",
+    },
+    Retired {
+        code: "plugins-trust-not-pinned",
+        note: "Replaced by the error code namespace-not-pinned, which names the registry host.",
+    },
+    Retired {
+        code: "plugins-trust-rotation-refused",
+        note: "Replaced by the error codes rotation-invalid and rotation-rollback.",
+    },
+    Retired {
+        code: "plugins-trust-revoked",
+        note: "Replaced by the error code rotation-key-revoked.",
+    },
+    Retired {
+        code: "plugins-trust-revoked-key",
+        note: "Replaced by the error code rotation-key-revoked.",
+    },
 ];
 
 /// The entries of [`ALL`], paired with their catalog names.

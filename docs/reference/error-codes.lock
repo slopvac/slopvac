@@ -404,6 +404,8 @@ fix-unsupported-platform error
 internal-error error
 invalid-params error
 invalid-request error
+key-fingerprint-mismatch error
+key-invalid error
 launcher-not-installed error
 lint-fix-reason-acl-check text
 lint-fix-reason-io text
@@ -663,6 +665,8 @@ models-none-for-type text
 models-pending text
 models-prime-header text
 models-prime-other-types text
+namespace-bound error
+namespace-not-pinned error
 namespace-reserved error
 not-initialized error
 offline error
@@ -747,6 +751,9 @@ plugins-apply-temporary-name text
 plugins-apply-too-large text
 plugins-apply-tool-config text
 plugins-apply-windows text
+plugins-arg-bad-fingerprint text
+plugins-arg-bad-namespace text
+plugins-arg-bad-registry text
 plugins-budget-exceeded text
 plugins-budget-stderr-bytes text
 plugins-budget-stdout-bytes text
@@ -848,11 +855,16 @@ plugins-help-arg-fingerprint text
 plugins-help-arg-id text
 plugins-help-arg-ids text
 plugins-help-arg-index text
+plugins-help-arg-key text
 plugins-help-arg-name text
 plugins-help-arg-namespace text
+plugins-help-arg-new-fingerprint text
+plugins-help-arg-new-signature text
+plugins-help-arg-old-signature text
 plugins-help-arg-path text
 plugins-help-arg-query text
 plugins-help-arg-registry text
+plugins-help-arg-statement text
 plugins-help-build text
 plugins-help-list text
 plugins-help-new text
@@ -1148,6 +1160,7 @@ plugins-part-trust-unknown text
 plugins-part-trusted text
 plugins-part-trusted-env text
 plugins-part-untrusted text
+plugins-pinned text
 plugins-process-wait-failed text
 plugins-pyenv-added-after-build text
 plugins-pyenv-bad-package-name text
@@ -1309,6 +1322,7 @@ plugins-revoke-phrase-window text
 plugins-revoke-phrase-write-cache text
 plugins-revoke-root-key-unusable text
 plugins-revoke-too-large text
+plugins-rotated text
 plugins-sign-invalid-key text
 plugins-sign-invalid-statement text
 plugins-sign-key-not-pinned text
@@ -1460,6 +1474,9 @@ plugins-trust-not-pinned text
 plugins-trust-opening text
 plugins-trust-phrase-draw-key text
 plugins-trust-phrase-install-key text
+plugins-trust-phrase-key-file-no-key text
+plugins-trust-phrase-key-file-over-cap text
+plugins-trust-phrase-key-file-unreadable text
 plugins-trust-phrase-key-mismatch text
 plugins-trust-phrase-key-not-hex text
 plugins-trust-phrase-key-not-regular text
@@ -1495,11 +1512,13 @@ plugins-trust-reading text
 plugins-trust-revoked text
 plugins-trust-revoked-key text
 plugins-trust-revoked-plugin error
+plugins-trust-rotation-file text
 plugins-trust-rotation-refused text
 plugins-trust-spawn-environment-refused text
 plugins-trust-spawn-key-unusable text
 plugins-trust-spawn-program-refused text
 plugins-trust-store-damaged text
+plugins-trust-store-pins-without-host text
 plugins-trust-store-too-large text
 plugins-trusted text
 plugins-trusted-signed text
@@ -1640,6 +1659,10 @@ revocation-list-missing notice
 revocation-list-rollback error
 revocation-list-stale notice
 revocation-list-unavailable error
+rotation-invalid error
+rotation-key-revoked error
+rotation-revocations-missing error
+rotation-rollback error
 rst-converter-missing notice
 rst-line-precise notice
 rst-prose-unplaced notice

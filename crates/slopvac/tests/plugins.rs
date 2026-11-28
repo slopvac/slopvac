@@ -112,6 +112,49 @@ fn sync_exits_0_when_the_lock_is_in_place() {
         .stdout(predicate::str::starts_with("style 1.0.0: in place\n"));
 }
 
+/// The trust store file of the sandbox: the state directory under `XDG_STATE_HOME`.
+fn trust_file(sandbox: &Sandbox) -> std::path::PathBuf {
+    sandbox.dir.path().join("home/state/slopvac/trust.json")
+}
+
+/// A version 1 trust store whose one key pin names no registry host.
+fn write_hostless_pin(sandbox: &Sandbox) -> String {
+    let key = minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk
+        .to_base64();
+    let fingerprint = slopvac_plugins::sign::PublicKey::from_base64(&key)
+        .unwrap()
+        .fingerprint();
+    let text = format!(
+        "{{\"schema_version\":1,\"records\":[],\"pins\":[{{\"namespace\":\"acme\",\"fingerprint\":\"{fingerprint}\",\"key\":\"{key}\",\"pinned_at\":\"2026-11-01T00:00:00Z\"}}]}}"
+    );
+    let file = trust_file(sandbox);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, &text).unwrap();
+    text
+}
+
+/// Every `plugins` command builds its key policy from the trust store's pins, so a store whose
+/// pins cannot be read stops the command, and is never read as a store without pins.
+#[rstest::rstest]
+#[case::status(&["--offline", "plugins", "status"])]
+#[case::sync(&["--offline", "plugins", "sync"])]
+fn k23_a_version_1_store_with_a_key_pin_stops_the_command_and_names_the_fix(#[case] args: &[&str]) {
+    let sandbox = Sandbox::new();
+    let before = write_hostless_pin(&sandbox);
+    let out = sandbox.slopvac().args(args).assert().code(2);
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert!(
+        stderr.starts_with(
+            "error[plugins-store-failed]: the trust store holds key pins without a registry host. Remove the `pins` list from <external>/trust.json"
+        ),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("acme"), "{stderr}");
+    assert_eq!(fs::read_to_string(trust_file(&sandbox)).unwrap(), before);
+}
+
 /// The plugin store is the per-user data directory (doctor.md, "Directories"), never the cache.
 #[test]
 fn sync_writes_the_plugin_store_to_the_data_directory_and_not_the_cache() {
@@ -753,8 +796,6 @@ fn a_valid_launcher_invocation_relays_the_exit_status_of_the_program() {
 
 #[rstest::rstest]
 #[case::search(&["search", "style"])]
-#[case::pin(&["pin", "acme", "abc"])]
-#[case::rotate(&["rotate", "acme"])]
 #[case::new(&["new", "style"])]
 #[case::publish(&["publish"])]
 fn a_command_not_wired_yet_reports_its_code_and_exits_2(#[case] args: &[&str]) {

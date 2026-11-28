@@ -22,12 +22,14 @@ use crate::messages::cli::{CliText, Redacted, Reported, RunError};
 use crate::oci::Digest;
 use crate::pyenv::{EnvStore, PythonRuntime};
 use crate::revoke::{RevocationError, RevocationNotice, Revocations};
-use crate::sign::KeyPolicy;
+use crate::sign::{DEFAULT_REGISTRY, KeyPolicy, PinScope};
 use crate::sync::{
     Change, Network, PackState, PackStatus, PythonBuild, PythonState, Store, SyncError, Syncer,
     status, status_with_python, update_notices,
 };
-use crate::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
+use crate::trust::{
+    NamedFile, RotationFiles, TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin,
+};
 use crate::update::{LISTING_BUDGET_BYTES, Outcome, Updater, list_candidates};
 
 /// Parse the id of the plugin entry at `position` (counted from 1) in the config.
@@ -312,7 +314,51 @@ fn registry() -> Arg {
     Arg::new("registry")
         .long("registry")
         .value_name("HOST")
+        .default_value(DEFAULT_REGISTRY)
+        .value_parser(|v: &str| {
+            if crate::oci::valid_registry(v) {
+                Ok(v.to_owned())
+            } else {
+                Err(render(&CliText::BadRegistry))
+            }
+        })
         .help(render(&CliText::ArgRegistry))
+}
+
+/// A namespace: a lowercase letter, then up to 63 lowercase letters, digits or hyphens.
+fn namespace_arg() -> Arg {
+    arg("namespace", &CliText::ArgNamespace).value_parser(|v: &str| {
+        let mut chars = v.chars();
+        let ok = v.len() <= 64
+            && chars.next().is_some_and(|c| c.is_ascii_lowercase())
+            && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if ok {
+            Ok(v.to_owned())
+        } else {
+            Err(render(&CliText::BadNamespace))
+        }
+    })
+}
+
+/// A key fingerprint: 64 lowercase hex digits (threat-model.md, section 5.2).
+fn fingerprint_arg(help: &CliText) -> Arg {
+    arg("fingerprint", help).value_parser(|v: &str| {
+        if v.len() == 64 && v.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+            Ok(v.to_owned())
+        } else {
+            Err(render(&CliText::BadFingerprint))
+        }
+    })
+}
+
+/// A required `--<id> <FILE>` option.
+fn file_option(id: &'static str, help: &CliText) -> Arg {
+    Arg::new(id)
+        .long(id)
+        .value_name("FILE")
+        .required(true)
+        .value_parser(clap::value_parser!(PathBuf))
+        .help(render(help))
 }
 
 fn path_arg() -> Arg {
@@ -353,13 +399,18 @@ pub fn command() -> Command {
         .subcommand(sub("untrust", &CliText::HelpUntrust).arg(arg("id", &CliText::ArgId)))
         .subcommand(
             sub("pin", &CliText::HelpPin)
-                .arg(arg("namespace", &CliText::ArgNamespace))
-                .arg(arg("fingerprint", &CliText::ArgFingerprint))
+                .arg(namespace_arg())
+                .arg(fingerprint_arg(&CliText::ArgFingerprint))
+                .arg(file_option("key", &CliText::ArgKey))
                 .arg(registry()),
         )
         .subcommand(
             sub("rotate", &CliText::HelpRotate)
-                .arg(arg("namespace", &CliText::ArgNamespace))
+                .arg(namespace_arg())
+                .arg(fingerprint_arg(&CliText::ArgNewFingerprint))
+                .arg(file_option("statement", &CliText::ArgStatement))
+                .arg(file_option("old-signature", &CliText::ArgOldSignature))
+                .arg(file_option("new-signature", &CliText::ArgNewSignature))
                 .arg(registry()),
         )
         .subcommand(sub("new", &CliText::HelpNew).arg(arg("name", &CliText::ArgName)))
@@ -380,6 +431,14 @@ impl RunError {
             source: Redacted::new(detail.clone()),
             detail,
         }
+    }
+
+    /// A trust store failure while the group is set up, such as reading the pinned keys for
+    /// the key policy. It reports the code of the failure, or `plugins-store-failed`, with
+    /// every path shown as the commands of the group show it.
+    #[must_use]
+    pub fn trust_store(e: &TrustError) -> Self {
+        store_failed(e)
     }
 
     /// The code that the failure reports: the code of its cause when it has one. It is the
@@ -422,9 +481,9 @@ pub fn run(matches: &ArgMatches, runner: &Runner<'_>, out: &mut dyn Write) -> Re
         }
         Some(("trust", m)) => run_trust(runner, &id_of(m), out),
         Some(("untrust", m)) => run_untrust(runner, &id_of(m), out),
+        Some(("pin", m)) => run_pin(runner, m, out),
+        Some(("rotate", m)) => run_rotate(runner, m, out),
         // STUB(slopvac-8l4.9.62): `search` needs the index fetch, verify, cache and merge.
-        // STUB(slopvac-8l4.9.61): `pin` and `rotate` need per-registry pins, and the library
-        // pins a key, not a fingerprint.
         // STUB(slopvac-8l4.9.63): the authoring commands.
         Some((name, _)) => Err(RunError::NotWired {
             command: render(&CliText::CommandPath {
@@ -885,6 +944,90 @@ fn provenance(project_root: &Path, pack: &LockedPack) -> (String, String) {
         SourceKind::Path(rel) => display_under_root(&project_root.join(rel), project_root),
     };
     (kind.name().to_owned(), line(&source))
+}
+
+/// The pair of registry host and namespace, and the fingerprint, that `pin` or `rotate` names.
+/// The argument parser has checked each one.
+fn pin_args(m: &ArgMatches) -> (PinScope, String) {
+    let text = |id: &str| m.get_one::<String>(id).cloned().unwrap_or_default();
+    (
+        PinScope::new(&text("registry"), &text("namespace")),
+        text("fingerprint"),
+    )
+}
+
+fn path_of<'m>(m: &'m ArgMatches, id: &str) -> &'m Path {
+    m.get_one::<PathBuf>(id)
+        .map_or(Path::new(""), PathBuf::as_path)
+}
+
+/// `plugins pin`: pin the key in `--key` for one registry host and namespace. Reads local
+/// files only.
+fn run_pin(runner: &Runner<'_>, m: &ArgMatches, out: &mut dyn Write) -> Result<u8, RunError> {
+    let (scope, fingerprint) = pin_args(m);
+    let key = path_of(m, "key");
+    let shown = display_under_root(key, &runner.dirs.project_root);
+    let pin = runner
+        .trust_store()
+        .pin_key_file(&scope, &fingerprint, key, &shown, &runner.now)
+        .map_err(|e| store_failed(&e))?;
+    say(
+        out,
+        &CliText::Pinned {
+            fingerprint: pin.fingerprint,
+            namespace: line(scope.namespace()),
+            registry: line(scope.registry()),
+        },
+    )?;
+    Ok(0)
+}
+
+/// `plugins rotate`: replace a pin with the new key of a rotation statement that the pinned
+/// key and the new key both sign. Reads local files and the cached revocation list only.
+fn run_rotate(runner: &Runner<'_>, m: &ArgMatches, out: &mut dyn Write) -> Result<u8, RunError> {
+    let (scope, fingerprint) = pin_args(m);
+    let root = &runner.dirs.project_root;
+    let (statement, old_signature, new_signature) = (
+        path_of(m, "statement"),
+        path_of(m, "old-signature"),
+        path_of(m, "new-signature"),
+    );
+    let shown = [statement, old_signature, new_signature].map(|p| display_under_root(p, root));
+    let files = RotationFiles {
+        statement: NamedFile {
+            path: statement,
+            shown: &shown[0],
+        },
+        old_signature: NamedFile {
+            path: old_signature,
+            shown: &shown[1],
+        },
+        new_signature: NamedFile {
+            path: new_signature,
+            shown: &shown[2],
+        },
+    };
+    let rotated = runner
+        .trust_store()
+        .rotate_key_files(
+            &scope,
+            &fingerprint,
+            &files,
+            runner.revocations,
+            &runner.now,
+        )
+        .map_err(|e| store_failed(&e))?;
+    notices(out, &rotated.notices)?;
+    say(
+        out,
+        &CliText::Rotated {
+            namespace: line(scope.namespace()),
+            registry: line(scope.registry()),
+            old: rotated.old_fingerprint,
+            new: rotated.pin.fingerprint,
+        },
+    )?;
+    Ok(0)
 }
 
 fn run_untrust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, RunError> {

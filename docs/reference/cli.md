@@ -495,6 +495,7 @@ Pin a publisher key for one namespace on one registry host.
 | --- | --- |
 | `<NAMESPACE>` | The publisher namespace. |
 | `<FINGERPRINT>` | The key fingerprint: 64 lowercase hex digits. |
+| `--key` | The publisher's minisign.pub file, or a file with only its base64 line. At most 4 KiB. |
 | `--registry` | The registry host. Default: ghcr.io. |
 | `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
 | `--color` | Colour output. NO_COLOR is honoured. |
@@ -507,6 +508,10 @@ Accept a key rotation for a pinned namespace and replace the pin.
 | Argument | Description |
 | --- | --- |
 | `<NAMESPACE>` | The publisher namespace. |
+| `<FINGERPRINT>` | The fingerprint of the new key: 64 lowercase hex digits. |
+| `--statement` | The rotation statement file. At most 4 KiB. |
+| `--old-signature` | The signature of the statement by the pinned key. At most 4 KiB. |
+| `--new-signature` | The signature of the statement by the new key. At most 4 KiB. |
 | `--registry` | The registry host. Default: ghcr.io. |
 | `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
 | `--color` | Colour output. NO_COLOR is honoured. |

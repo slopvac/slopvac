@@ -35,7 +35,8 @@ pub struct Reference {
     pub target: Target,
 }
 
-fn valid_registry(s: &str) -> bool {
+/// Whether `s` is a registry host with an optional port, as a reference names it.
+pub(crate) fn valid_registry(s: &str) -> bool {
     let (host, port) = match s.rsplit_once(':') {
         Some((h, p)) => (h, Some(p)),
         None => (s, None),

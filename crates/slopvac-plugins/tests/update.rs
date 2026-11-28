@@ -23,8 +23,8 @@ use slopvac_plugins::lock::{Lockfile, PackId, SourceKind, Version, VersionReq, p
 use slopvac_plugins::oci::{Anonymous, Client, Descriptor, Digest, MEDIA_MANIFEST, Manifest};
 use slopvac_plugins::revoke::Revocations;
 use slopvac_plugins::sign::{
-    ANNOTATION_ID, ANNOTATION_VERSION, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, PublicKey,
-    SignError, Statement,
+    ANNOTATION_ID, ANNOTATION_VERSION, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, PinScope,
+    PublicKey, SignError, Statement,
 };
 use slopvac_plugins::sync::{
     ARTIFACT_TYPE_PACK, Change, MEDIA_PACK_LAYER, Network, Store, SyncError, Syncer,
@@ -193,9 +193,12 @@ fn client() -> Client {
     Client::with_loopback_http_for_tests(Box::new(Anonymous))
 }
 
-fn policy(keys: &[&Key]) -> KeyPolicy {
+fn policy(registry: &str, keys: &[&Key]) -> KeyPolicy {
     KeyPolicy {
-        pinned: BTreeMap::from([("acme".to_owned(), keys.iter().map(|k| k.public()).collect())]),
+        pinned: BTreeMap::from([(
+            PinScope::new(registry, "acme"),
+            keys.iter().map(|k| k.public()).collect(),
+        )]),
         ..KeyPolicy::default()
     }
 }
@@ -328,7 +331,7 @@ fn an_in_range_update_writes_the_newest_version_to_the_lock() {
     let report = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&reg, &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -373,7 +376,7 @@ fn a_newer_version_outside_the_range_is_reported_and_not_taken() {
     let report = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -399,7 +402,7 @@ fn only_a_newer_version_outside_the_range_leaves_the_lock_alone() {
     let report = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -426,7 +429,7 @@ fn a_prerelease_is_not_taken_unless_the_range_names_it() {
     let plain = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.3")]),
             &[],
         )
@@ -441,7 +444,7 @@ fn a_prerelease_is_not_taken_unless_the_range_names_it() {
     let named = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", ">=1.3.0, <=1.4.0-rc.1")]),
             &[],
         )
@@ -463,7 +466,7 @@ fn a_key_that_is_not_pinned_is_refused_and_the_lock_stays() {
     let report = env
         .update(
             Network::Online(&c),
-            &policy(&[&pinned]),
+            &policy(&server.registry(), &[&pinned]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -501,7 +504,7 @@ fn a_revoked_artifact_is_refused() {
     let report = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -535,7 +538,7 @@ fn a_revoked_signing_key_is_refused() {
     let report = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -566,7 +569,7 @@ fn a_statement_older_than_the_locks_floor_is_refused() {
     let report = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -597,7 +600,7 @@ fn offline_update_is_refused_with_exit_2_and_touches_nothing() {
     let err = env
         .update(
             Network::Offline,
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -622,7 +625,7 @@ fn a_second_update_changes_nothing() {
     let env = Env::new();
     env.write_lock(&[entry("style", &server.registry(), &v120, true)]);
     let c = client();
-    let pol = policy(&[&key]);
+    let pol = policy(&server.registry(), &[&key]);
     let wanted = ranges(&[("style", "^1.2")]);
 
     let first = env.update(Network::Online(&c), &pol, &wanted, &[]).unwrap();
@@ -659,7 +662,7 @@ fn a_named_pack_updates_alone() {
     let report = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&reg, &[&key]),
             &ranges(&[("style", "^1.2"), ("other", "^1.0")]),
             &[pack_id("style")],
         )
@@ -700,7 +703,7 @@ fn a_refused_pack_does_not_block_the_others() {
     let report = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&reg, &[&key]),
             &ranges(&[("style", "^1.2"), ("other", "^1.0")]),
             &[],
         )
@@ -730,7 +733,7 @@ fn a_plugin_not_in_the_lock_reports_update_plugin_unknown() {
     let err = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[pack_id("ghost")],
         )
@@ -751,7 +754,7 @@ fn an_invalid_lock_still_reports_update_failed() {
     let err = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy("127.0.0.1:9", &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -773,7 +776,7 @@ fn a_pack_not_in_the_lock_is_an_error() {
     let err = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[pack_id("ghost")],
         )
@@ -796,7 +799,7 @@ fn an_unsigned_entry_is_signed_by_update_once_the_key_is_pinned() {
 
     env.update(
         Network::Online(&c),
-        &policy(&[&key]),
+        &policy(&server.registry(), &[&key]),
         &ranges(&[("style", "^1.2")]),
         &[],
     )
@@ -821,7 +824,12 @@ fn a_pack_without_a_range_is_left_alone() {
     let c = client();
 
     let report = env
-        .update(Network::Online(&c), &policy(&[&key]), &BTreeMap::new(), &[])
+        .update(
+            Network::Online(&c),
+            &policy(&server.registry(), &[&key]),
+            &BTreeMap::new(),
+            &[],
+        )
         .unwrap();
 
     assert!(matches!(report.packs[0].outcome, Outcome::Unchanged));
@@ -856,7 +864,7 @@ fn a_symlinked_lock_directory_is_refused_and_the_target_lock_is_untouched() {
     let err = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -885,7 +893,7 @@ fn a_symlinked_lock_file_is_refused_and_its_target_is_untouched() {
     let err = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -906,7 +914,7 @@ fn a_lock_that_links_to_an_endless_device_is_refused_without_reading_it() {
     let err = env
         .update(
             Network::Online(&c),
-            &policy(&[]),
+            &KeyPolicy::default(),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -926,7 +934,7 @@ fn a_lock_over_the_size_limit_is_refused_and_left_alone() {
     let err = env
         .update(
             Network::Online(&c),
-            &policy(&[]),
+            &KeyPolicy::default(),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -969,7 +977,7 @@ fn an_update_gives_up_when_another_holds_the_guard() {
     holder.lock().unwrap();
     let c = client();
     let revocations = env.revocations();
-    let pol = policy(&[&key]);
+    let pol = policy(&server.registry(), &[&key]);
 
     let err = Updater::new(Network::Online(&c), &pol, &revocations)
         .with_guard_timeout(Duration::from_millis(200))
@@ -1013,7 +1021,7 @@ fn a_second_update_cannot_run_while_the_first_is_resolving() {
         entry("other", &reg, &other[0], true),
     ]);
     let c = client();
-    let pol = policy(&[&key]);
+    let pol = policy(&reg, &[&key]);
 
     std::thread::scope(|scope| {
         let first = scope.spawn(|| {
@@ -1085,7 +1093,7 @@ fn a_second_update_waits_for_the_first_and_both_changes_survive() {
         entry("other", &reg, &other[0], true),
     ]);
     let c = client();
-    let pol = policy(&[&key]);
+    let pol = policy(&reg, &[&key]);
     let (waiting_tx, waiting_rx) = mpsc::channel::<()>();
     let waiting_tx = Mutex::new(waiting_tx);
 
@@ -1148,7 +1156,7 @@ fn repeated_sources_list_the_repository_once() {
     let c = client();
     let wanted = ranges(&[("a", "^1.2"), ("b", "^1.2"), ("c", "^1.2"), ("d", "^1.2")]);
 
-    let _ = env.update(Network::Online(&c), &policy(&[&key]), &wanted, &[]);
+    let _ = env.update(Network::Online(&c), &policy(&reg, &[&key]), &wanted, &[]);
 
     assert_eq!(server.count("/v2/acme/style/tags/list"), 1);
 }
@@ -1170,7 +1178,7 @@ fn oversized_tags_are_ignored_before_they_reach_semver() {
     let report = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", req.as_str())]),
             &[],
         )
@@ -1196,7 +1204,7 @@ fn the_listing_budget_is_shared_across_repositories() {
     ]);
     let c = client();
     let revocations = env.revocations();
-    let pol = policy(&[&key]);
+    let pol = policy(&reg, &[&key]);
 
     // Each list is `{"tags":["1.2.0","1.3.0"]}`, 27 bytes. 40 bytes cover one
     // list and not two. Repositories are listed in name order: `other` first.
@@ -1302,7 +1310,7 @@ fn assert_one_listing_uses_up_the_budget(
     ]);
     let c = client();
     let revocations = env.revocations();
-    let pol = policy(&[&key]);
+    let pol = policy(&reg, &[&key]);
 
     // Repositories are listed in name order: `other` first.
     let report = Updater::new(Network::Online(&c), &pol, &revocations)
@@ -1392,7 +1400,7 @@ fn bytes_read_before_a_late_page_failure_still_count_against_the_budget() {
     let before = env.write_lock(&entries);
     let c = client();
     let revocations = env.revocations();
-    let pol = policy(&[&key]);
+    let pol = policy(&reg, &[&key]);
 
     // One first page and its failing second page use most of the budget; the second repository runs out, so the third gets no request.
     let report = Updater::new(Network::Online(&c), &pol, &revocations)
@@ -1436,7 +1444,7 @@ fn a_lock_that_grows_during_resolution_is_refused_without_reading_it_whole() {
     let err = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -1457,7 +1465,7 @@ fn windows_refusal(
     let before = env.write_lock(&[entry("style", &server.registry(), &style[0], true)]);
     let c = client();
 
-    let err = run(&env, &c, &policy(&[&key])).unwrap_err();
+    let err = run(&env, &c, &policy(&server.registry(), &[&key])).unwrap_err();
 
     assert!(
         matches!(err, UpdateError::UnsupportedOnWindows(_)),
@@ -1498,7 +1506,7 @@ fn off_windows_the_same_update_writes_the_lock() {
     env.write_lock(&[entry("style", &server.registry(), &style[0], true)]);
     let c = client();
     let revocations = env.revocations();
-    let pol = policy(&[&key]);
+    let pol = policy(&server.registry(), &[&key]);
 
     let report = Updater::new(Network::Online(&c), &pol, &revocations)
         .update_seam(env.dir.path(), &ranges(&[("style", "^1.2")]), &[], false)
@@ -1520,7 +1528,7 @@ fn the_guard_file_is_created_private() {
 
     env.update(
         Network::Online(&c),
-        &policy(&[&key]),
+        &policy(&server.registry(), &[&key]),
         &ranges(&[("style", "^1.2")]),
         &[],
     )
@@ -1550,7 +1558,7 @@ fn a_guard_file_that_others_can_open_is_refused() {
     let err = env
         .update(
             Network::Online(&c),
-            &policy(&[&key]),
+            &policy(&server.registry(), &[&key]),
             &ranges(&[("style", "^1.2")]),
             &[],
         )
@@ -1572,7 +1580,7 @@ fn a_synced_updated_lock_installs_the_new_content_and_stays_unchanged() {
     let env = Env::new();
     env.write_lock(&[entry("style", &server.registry(), &v120, true)]);
     let c = client();
-    let pol = policy(&[&key]);
+    let pol = policy(&server.registry(), &[&key]);
     env.update(
         Network::Online(&c),
         &pol,
@@ -1628,7 +1636,7 @@ fn a_hostile_project_directory_name_is_escaped_in_a_real_failure() {
         .update_at(
             &root,
             Network::Online(&c),
-            &policy(&[]),
+            &KeyPolicy::default(),
             &BTreeMap::new(),
             &[],
         )

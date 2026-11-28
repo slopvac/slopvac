@@ -493,6 +493,7 @@ fn an_invalid_lockfile_fails_the_check() {
 
 #[test]
 fn trust_reports_counts_and_fingerprints_but_never_keys() {
+    use slopvac_plugins::sign::{PinScope, PublicKey};
     use slopvac_plugins::trust::{DeclSummary, TrustRecord, TrustStore};
     let w = World::new();
     let store = TrustStore::open(w.state_root());
@@ -500,7 +501,13 @@ fn trust_reports_counts_and_fingerprints_but_never_keys() {
         .unwrap()
         .pk
         .to_base64();
-    store.pin_key("acme", &key, "2026-11-15T00:00:00Z").unwrap();
+    store
+        .pin_key(
+            &PinScope::new("ghcr.io", "acme"),
+            &PublicKey::from_base64(&key).unwrap(),
+            "2026-11-15T00:00:00Z",
+        )
+        .unwrap();
     store
         .record(TrustRecord {
             hash: "sha256:".to_owned() + &"a".repeat(64),
@@ -755,12 +762,13 @@ fn a_fifo_trust_file_does_not_hang_doctor() {
 /// Write a hand-made `trust.json` whose single pin is `pin`.
 fn write_trust(w: &World, pin: &Value) {
     fs::create_dir_all(w.state_root()).unwrap();
-    let doc = json!({"schema_version": 1, "records": [], "pins": [pin]});
+    let doc = json!({"schema_version": 2, "records": [], "pins": [pin]});
     fs::write(w.state_root().join("trust.json"), doc.to_string()).unwrap();
 }
 
 fn pin(namespace: &str, fingerprint: &str, key: &str) -> Value {
     json!({
+        "registry": "ghcr.io",
         "namespace": namespace,
         "fingerprint": fingerprint,
         "key": key,

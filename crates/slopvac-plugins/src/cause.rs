@@ -124,7 +124,8 @@ pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
         TrustError::NotAHash(_)
         | TrustError::NamespaceBound { .. }
         | TrustError::ReservedNamespace { .. }
-        | TrustError::NotPinned(_)
+        | TrustError::NotPinned { .. }
+        | TrustError::PinsWithoutHost { .. }
         | TrustError::Revoked(_)
         | TrustError::TooLarge { .. } => e.to_string(),
         _ => withheld(e.code().or_else(|| spawn_code(e)).unwrap_or(STORE_FAILED)),

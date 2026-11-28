@@ -33,9 +33,11 @@ use slopvac_plugins::revoke::{
     RevocationNotice, Revocations, Revoked,
 };
 use slopvac_plugins::sign::{
-    MEDIA_MINISIG, PublicKey, RotationProof, SignError, plugins_key, verify_rotation,
+    MEDIA_MINISIG, PinScope, PublicKey, RotationProof, SignError, plugins_key, verify_rotation,
 };
-use slopvac_plugins::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
+use slopvac_plugins::trust::{
+    NamedFile, RotationFiles, TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin,
+};
 use slopvac_plugins::{PluginError, PluginSpec, SpawnGate};
 
 const ROOT_PUB: &str = include_str!("fixtures/revoke/root.pub");
@@ -923,7 +925,7 @@ fn a_rotation_must_be_newer_than_the_pins_not_before() {
 }
 
 fn pinned_ids(store: &TrustStore) -> Vec<String> {
-    store.pinned_map().unwrap()["acme"]
+    store.pinned_map().unwrap()[&PinScope::new("ghcr.io", "acme")]
         .iter()
         .map(PublicKey::key_id)
         .collect()
@@ -934,12 +936,12 @@ fn rotation_replaces_the_pin_and_sets_its_not_before() {
     let state = support::scratch();
     let store = TrustStore::open(state.path());
     store
-        .pin_key("acme", OLD_PUB.lines().nth(1).unwrap(), FETCHED)
+        .pin_key(&PinScope::new("ghcr.io", "acme"), &key(OLD_PUB), FETCHED)
         .unwrap();
     let new = key(NEW_PUB);
     let pin = store
         .rotate_key(
-            "acme",
+            &PinScope::new("ghcr.io", "acme"),
             &proof(ROTATION_OLD_SIG, ROTATION_NEW_SIG, &new),
             &RevocationList::default(),
             "2026-11-14T00:00:00Z",
@@ -951,7 +953,7 @@ fn rotation_replaces_the_pin_and_sets_its_not_before() {
 
     // The same statement again no longer names the pinned key as the old one.
     let again = store.rotate_key(
-        "acme",
+        &PinScope::new("ghcr.io", "acme"),
         &proof(ROTATION_OLD_SIG, ROTATION_NEW_SIG, &new),
         &RevocationList::default(),
         "2026-11-15T00:00:00Z",
@@ -972,14 +974,62 @@ fn rotation_needs_an_existing_pin() {
     let new = key(NEW_PUB);
     let err = store
         .rotate_key(
-            "acme",
+            &PinScope::new("ghcr.io", "acme"),
             &proof(ROTATION_OLD_SIG, ROTATION_NEW_SIG, &new),
             &RevocationList::default(),
             FETCHED,
         )
         .unwrap_err();
-    assert!(matches!(err, TrustError::NotPinned(_)), "{err:?}");
+    assert!(matches!(err, TrustError::NotPinned { .. }), "{err:?}");
     assert!(store.pinned_map().unwrap().is_empty());
+}
+
+#[rstest::rstest]
+#[case::core("core")]
+#[case::first_party("slopvac")]
+fn k13_a_rotation_for_a_reserved_namespace_is_refused_with_a_code(#[case] namespace: &str) {
+    let state = support::scratch();
+    let store = TrustStore::open(state.path());
+    let new = key(NEW_PUB);
+    let err = store
+        .rotate_key(
+            &PinScope::new("ghcr.io", namespace),
+            &proof(ROTATION_OLD_SIG, ROTATION_NEW_SIG, &new),
+            &RevocationList::default(),
+            FETCHED,
+        )
+        .unwrap_err();
+    assert!(
+        matches!(&err, TrustError::ReservedNamespace { namespace: n } if n == namespace),
+        "{err:?}"
+    );
+    assert_eq!(err.code(), Some("namespace-reserved"));
+    assert!(
+        !state.path().join("trust.json").exists(),
+        "nothing was written"
+    );
+}
+
+#[test]
+fn k17_a_rotation_on_a_registry_without_the_pin_is_not_pinned() {
+    let state = support::scratch();
+    let store = TrustStore::open(state.path());
+    let pinned_on = PinScope::new("registry-a.example", "acme");
+    store.pin_key(&pinned_on, &key(OLD_PUB), FETCHED).unwrap();
+    let new = key(NEW_PUB);
+    let err = store
+        .rotate_key(
+            &PinScope::new("registry-b.example", "acme"),
+            &proof(ROTATION_OLD_SIG, ROTATION_NEW_SIG, &new),
+            &RevocationList::default(),
+            "2026-11-14T00:00:00Z",
+        )
+        .unwrap_err();
+    assert!(matches!(err, TrustError::NotPinned { .. }), "{err:?}");
+    assert_eq!(
+        store.pinned_map().unwrap()[&pinned_on][0].key_id(),
+        OLD_KEY_ID
+    );
 }
 
 #[test]
@@ -989,12 +1039,12 @@ fn k5_a_revoked_old_key_cannot_rotate_to_a_new_one() {
     let state = support::scratch();
     let store = TrustStore::open(state.path());
     store
-        .pin_key("acme", OLD_PUB.lines().nth(1).unwrap(), FETCHED)
+        .pin_key(&PinScope::new("ghcr.io", "acme"), &key(OLD_PUB), FETCHED)
         .unwrap();
     let new = key(NEW_PUB);
     let err = store
         .rotate_key(
-            "acme",
+            &PinScope::new("ghcr.io", "acme"),
             &proof(ROTATION_OLD_SIG, ROTATION_NEW_SIG, &new),
             &list,
             "2026-11-14T00:00:00Z",
@@ -1037,7 +1087,12 @@ fn rotate_with(
         new_key: &new_key,
     };
     store
-        .rotate_key("acme", &p, revoked, "2026-12-31T00:00:00Z")
+        .rotate_key(
+            &PinScope::new("ghcr.io", "acme"),
+            &p,
+            revoked,
+            "2026-12-31T00:00:00Z",
+        )
         .map(drop)
 }
 
@@ -1050,7 +1105,7 @@ fn pinned_store(key: &Root) -> (support::Scratch, TrustStore) {
     let state = support::scratch();
     let store = TrustStore::open(state.path());
     store
-        .pin_key("acme", &key.public().to_base64(), FETCHED)
+        .pin_key(&PinScope::new("ghcr.io", "acme"), &key.public(), FETCHED)
         .unwrap();
     (state, store)
 }
@@ -1220,4 +1275,262 @@ fn manifest_of(root: &Path) -> Vec<u8> {
         return NATIVE.as_bytes().to_vec();
     }
     read.expect("the fixture manifest is readable")
+}
+
+// ---- `plugins rotate` from files: the statement and both signatures, checked offline ----
+
+const ACME: (&str, &str) = ("ghcr.io", "acme");
+
+fn acme() -> PinScope {
+    PinScope::new(ACME.0, ACME.1)
+}
+
+/// A scratch state directory with `old` pinned for `acme`, the three rotation files, and a
+/// revocation cache signed by a test root that revokes `revoked` key ids.
+struct Rotation {
+    state: support::Scratch,
+    root: Root,
+}
+
+impl Rotation {
+    fn new(old: &PublicKey) -> Self {
+        let r = Self {
+            state: support::scratch(),
+            root: Root::new(),
+        };
+        r.store().pin_key(&acme(), old, FETCHED).unwrap();
+        r.files(
+            ROTATION,
+            ROTATION_OLD_SIG.as_bytes(),
+            ROTATION_NEW_SIG.as_bytes(),
+        );
+        r
+    }
+    fn store(&self) -> TrustStore {
+        TrustStore::open(self.state.path())
+    }
+    fn path(&self, name: &str) -> std::path::PathBuf {
+        self.state.path().join(name)
+    }
+    fn files(&self, statement: &[u8], old_sig: &[u8], new_sig: &[u8]) {
+        fs::write(self.path("rotation.json"), statement).unwrap();
+        fs::write(self.path("old.minisig"), old_sig).unwrap();
+        fs::write(self.path("new.minisig"), new_sig).unwrap();
+    }
+    fn revocations(&self) -> Revocations {
+        Revocations::new(
+            self.state.path(),
+            vec![self.root.public()],
+            offline_source(),
+            "2026-11-14T00:00:00Z",
+        )
+        .unwrap()
+    }
+    /// Cache a list that revokes `keys`.
+    fn cache(&self, keys: &[&str]) -> Revocations {
+        let list = Signed::by(
+            &self.root,
+            list_json("2026-11-12T00:00:00Z", "2026-12-12T00:00:00Z", keys, &[]),
+        );
+        let revocations = self.revocations();
+        let doc = serde_json::json!({
+            "schema_version": 1,
+            "fetched_at": "2026-11-13T00:00:00Z",
+            "statement": String::from_utf8(list.statement).unwrap(),
+            "minisig": list.minisig,
+        });
+        fs::write(revocations.cache_file(), doc.to_string()).unwrap();
+        revocations
+    }
+    fn rotate(
+        &self,
+        fingerprint: &str,
+        revocations: &Revocations,
+    ) -> Result<slopvac_plugins::trust::Rotated, TrustError> {
+        let (st, old, new) = (
+            self.path("rotation.json"),
+            self.path("old.minisig"),
+            self.path("new.minisig"),
+        );
+        let files = RotationFiles {
+            statement: NamedFile {
+                path: &st,
+                shown: "rotation.json",
+            },
+            old_signature: NamedFile {
+                path: &old,
+                shown: "old.minisig",
+            },
+            new_signature: NamedFile {
+                path: &new,
+                shown: "new.minisig",
+            },
+        };
+        self.store().rotate_key_files(
+            &acme(),
+            fingerprint,
+            &files,
+            revocations,
+            "2026-11-14T00:00:00Z",
+        )
+    }
+    fn pinned_id(&self) -> String {
+        self.store().pinned_map().unwrap()[&acme()][0].key_id()
+    }
+}
+
+fn new_fp() -> String {
+    key(NEW_PUB).fingerprint()
+}
+
+#[test]
+fn k16_a_rotation_from_files_replaces_the_pin_and_records_its_not_before() {
+    let r = Rotation::new(&key(OLD_PUB));
+    let rotated = r.rotate(&new_fp(), &r.cache(&[])).unwrap();
+    assert_eq!(rotated.old_fingerprint, key(OLD_PUB).fingerprint());
+    assert_eq!(rotated.pin.fingerprint, new_fp());
+    assert_eq!(
+        rotated.pin.not_before.as_deref(),
+        Some("2026-11-10T00:00:00Z")
+    );
+    assert_eq!(r.pinned_id(), NEW_KEY_ID);
+}
+
+#[rstest::rstest]
+#[case::only_the_old_key_signs(ROTATION.to_vec(), ROTATION_OLD_SIG, ROTATION_OLD_SIG)]
+#[case::only_the_new_key_signs(ROTATION.to_vec(), ROTATION_NEW_SIG, ROTATION_NEW_SIG)]
+#[case::not_canonical([b" ", ROTATION].concat(), ROTATION_OLD_SIG, ROTATION_NEW_SIG)]
+#[case::statement_over_4_kib(vec![b' '; 4097], ROTATION_OLD_SIG, ROTATION_NEW_SIG)]
+fn k18_a_rotation_that_does_not_verify_is_invalid_and_the_pin_kept(
+    #[case] statement: Vec<u8>,
+    #[case] old_sig: &str,
+    #[case] new_sig: &str,
+) {
+    let r = Rotation::new(&key(OLD_PUB));
+    r.files(&statement, old_sig.as_bytes(), new_sig.as_bytes());
+    let err = r.rotate(&new_fp(), &r.cache(&[])).unwrap_err();
+    assert_eq!(err.code(), Some("rotation-invalid"), "{err:?}");
+    assert_eq!(r.pinned_id(), OLD_KEY_ID);
+}
+
+#[test]
+fn k18_a_signature_file_over_4_kib_is_invalid() {
+    let r = Rotation::new(&key(OLD_PUB));
+    r.files(ROTATION, &vec![b'x'; 4097], ROTATION_NEW_SIG.as_bytes());
+    let err = r.rotate(&new_fp(), &r.cache(&[])).unwrap_err();
+    assert_eq!(err.code(), Some("rotation-invalid"), "{err:?}");
+    assert!(err.to_string().contains("old.minisig"), "{err}");
+}
+
+#[test]
+fn k18_a_rotation_whose_old_key_is_not_the_pinned_key_is_invalid() {
+    let other = Root::new();
+    let r = Rotation::new(&other.public());
+    let err = r.rotate(&new_fp(), &r.cache(&[])).unwrap_err();
+    assert_eq!(err.code(), Some("rotation-invalid"), "{err:?}");
+    assert_eq!(r.pinned_id(), other.public().key_id());
+}
+
+#[test]
+fn k19_a_rotation_no_later_than_the_pins_is_a_rollback() {
+    let (a, b, c) = (Root::new(), Root::new(), Root::new());
+    let r = Rotation::new(&a.public());
+    let at = "2026-11-10T00:00:00Z";
+    let first = rotation_doc(&a.public(), &b.public(), at, "rotation", 1);
+    r.files(&first, a.sign(&first).as_bytes(), b.sign(&first).as_bytes());
+    r.rotate(&b.public().fingerprint(), &r.cache(&[])).unwrap();
+    let second = rotation_doc(&b.public(), &c.public(), at, "rotation", 1);
+    r.files(
+        &second,
+        b.sign(&second).as_bytes(),
+        c.sign(&second).as_bytes(),
+    );
+    let err = r
+        .rotate(&c.public().fingerprint(), &r.cache(&[]))
+        .unwrap_err();
+    assert_eq!(err.code(), Some("rotation-rollback"), "{err:?}");
+    assert_eq!(r.pinned_id(), b.public().key_id());
+}
+
+#[rstest::rstest]
+#[case::old_key_revoked(Some(OLD_KEY_ID), "rotation-key-revoked")]
+#[case::new_key_revoked(Some(NEW_KEY_ID), "rotation-key-revoked")]
+#[case::never_fetched(None, "rotation-revocations-missing")]
+fn k20_a_rotation_needs_a_cached_list_that_revokes_neither_key(
+    #[case] revoked: Option<&str>,
+    #[case] code: &str,
+) {
+    let r = Rotation::new(&key(OLD_PUB));
+    let revocations = match revoked {
+        Some(id) => r.cache(&[id]),
+        None => r.revocations(),
+    };
+    let err = r.rotate(&new_fp(), &revocations).unwrap_err();
+    assert_eq!(err.code(), Some(code), "{err:?}");
+    assert_eq!(r.pinned_id(), OLD_KEY_ID);
+}
+
+#[test]
+fn k20_a_damaged_revocation_cache_refuses_the_rotation() {
+    let r = Rotation::new(&key(OLD_PUB));
+    let revocations = r.revocations();
+    fs::write(revocations.cache_file(), b"{}").unwrap();
+    let err = r.rotate(&new_fp(), &revocations).unwrap_err();
+    assert!(
+        matches!(&err, TrustError::Revocation(e) if e.code() == "revocation-cache-invalid"),
+        "{err:?}"
+    );
+    assert_eq!(r.pinned_id(), OLD_KEY_ID);
+}
+
+#[test]
+fn k21_a_fingerprint_that_is_not_the_new_keys_is_refused_with_both() {
+    let r = Rotation::new(&key(OLD_PUB));
+    let named = "0".repeat(64);
+    let err = r.rotate(&named, &r.cache(&[])).unwrap_err();
+    assert_eq!(err.code(), Some("key-fingerprint-mismatch"), "{err:?}");
+    let text = err.to_string();
+    assert!(text.contains(&named) && text.contains(&new_fp()), "{text}");
+    assert_eq!(r.pinned_id(), OLD_KEY_ID);
+}
+
+#[rstest::rstest]
+#[case::core("core")]
+#[case::first_party("slopvac")]
+fn k13_rotate_from_files_refuses_a_reserved_namespace_before_any_read(#[case] namespace: &str) {
+    let state = support::scratch();
+    let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let revocations = Revocations::new(
+        state.path(),
+        vec![Root::new().public()],
+        offline_source(),
+        FETCHED,
+    )
+    .unwrap()
+    .with_access_counter_for_tests(std::sync::Arc::clone(&counter));
+    let missing = state.path().join("missing");
+    let file = NamedFile {
+        path: &missing,
+        shown: "missing",
+    };
+    let files = RotationFiles {
+        statement: file,
+        old_signature: file,
+        new_signature: file,
+    };
+    let err = TrustStore::open(state.path())
+        .rotate_key_files(
+            &PinScope::new("ghcr.io", namespace),
+            &new_fp(),
+            &files,
+            &revocations,
+            FETCHED,
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), Some("namespace-reserved"), "{err:?}");
+    assert_eq!(
+        counter.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "the revocation source was used"
+    );
 }

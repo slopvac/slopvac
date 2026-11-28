@@ -15,7 +15,7 @@ mod common;
 
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::decl;
 use flate2::Compression;
@@ -24,6 +24,7 @@ use serde_json::json;
 use slopvac_plugins::extract::{Limits, TreeHash, evict, extract_targz};
 use slopvac_plugins::oci::Digest;
 use slopvac_plugins::protocol::{FeatureSet, HookDecl};
+use slopvac_plugins::sign::{PinScope, PublicKey};
 use slopvac_plugins::trust::{
     DeclSummary, Revocation, TrustError, TrustGate, TrustInputs, TrustKey, TrustRecord, TrustState,
     TrustStore, VerifiedPlugin, is_forbidden_env_name, parse_trust_env, trust_hash,
@@ -820,7 +821,7 @@ fn an_unsupported_schema_version_is_rejected_and_the_file_is_kept() {
     let store = TrustStore::open(s.dir("state"));
     fs::create_dir_all(s.dir("state")).unwrap();
     let file = s.dir("state/trust.json");
-    let future = json!({"schema_version": 2, "records": [], "pins": []}).to_string();
+    let future = json!({"schema_version": 3, "records": [], "pins": []}).to_string();
     fs::write(&file, &future).unwrap();
     assert!(matches!(store.records(), Err(TrustError::Corrupt { .. })));
     assert!(matches!(
@@ -832,6 +833,104 @@ fn an_unsupported_schema_version_is_rejected_and_the_file_is_kept() {
         Err(TrustError::Corrupt { .. })
     ));
     assert_eq!(fs::read_to_string(&file).unwrap(), future);
+}
+
+/// A pin as a store written before pins had a registry host holds it.
+fn hostless_pin() -> serde_json::Value {
+    let key = new_key();
+    let fingerprint = slopvac_plugins::sign::PublicKey::from_base64(&key)
+        .unwrap()
+        .fingerprint();
+    json!({"namespace": "acme", "fingerprint": fingerprint, "key": key, "pinned_at": NOW})
+}
+
+#[test]
+fn k23_a_version_1_store_with_a_key_pin_is_refused_with_the_fix_and_kept() {
+    let s = Scratch::new("v1-pins");
+    let store = TrustStore::open(s.dir("state"));
+    fs::create_dir_all(s.dir("state")).unwrap();
+    let file = s.dir("state/trust.json");
+    let pin = hostless_pin();
+    let old = json!({"schema_version": 1, "records": [], "pins": [pin]}).to_string();
+    fs::write(&file, &old).unwrap();
+    let errors = [
+        store.records().map(drop).unwrap_err(),
+        store.pinned_map().map(drop).unwrap_err(),
+        store
+            .pin_key(
+                &PinScope::new("ghcr.io", "other"),
+                &PublicKey::from_base64(&new_key()).unwrap(),
+                NOW,
+            )
+            .map(drop)
+            .unwrap_err(),
+    ];
+    for err in errors {
+        let text = err.to_string();
+        assert!(
+            text.contains("<external>/trust.json")
+                && text.contains("--registry")
+                && text.contains("pins"),
+            "{text}"
+        );
+        for stored in [
+            "acme",
+            pin["fingerprint"].as_str().unwrap(),
+            pin["key"].as_str().unwrap(),
+        ] {
+            assert!(!text.contains(stored), "{text}");
+        }
+    }
+    assert_eq!(fs::read_to_string(&file).unwrap(), old);
+}
+
+#[test]
+fn k23b_a_version_1_store_with_records_only_is_read_and_written_as_version_2() {
+    let s = Scratch::new("v1-records");
+    let store = TrustStore::open(s.dir("state"));
+    fs::create_dir_all(s.dir("state")).unwrap();
+    let file = s.dir("state/trust.json");
+    let (a, b) = (Digest::of(b"a").to_string(), Digest::of(b"b").to_string());
+    let records = [
+        serde_json::to_value(record(&a, "a")).unwrap(),
+        serde_json::to_value(record(&b, "b")).unwrap(),
+    ];
+    let old = json!({"schema_version": 1, "records": records}).to_string();
+    fs::write(&file, &old).unwrap();
+
+    assert_eq!(store.records().unwrap().len(), 2);
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        old,
+        "a read writes nothing"
+    );
+
+    assert!(store.forget(&Digest::of(b"a")).unwrap());
+    let written: serde_json::Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+    assert_eq!(written["schema_version"], 2);
+    assert_eq!(written["records"].as_array().unwrap().len(), 1);
+    assert_eq!(written["records"][0]["hash"], b.as_str());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+}
+
+#[test]
+fn a_version_2_pin_without_a_registry_is_a_damaged_store() {
+    let s = Scratch::new("v2-hostless");
+    let store = TrustStore::open(s.dir("state"));
+    fs::create_dir_all(s.dir("state")).unwrap();
+    let doc = json!({"schema_version": 2, "records": [], "pins": [hostless_pin()]});
+    fs::write(s.dir("state/trust.json"), doc.to_string()).unwrap();
+    assert!(matches!(
+        store.pinned_map(),
+        Err(TrustError::Corrupt { .. })
+    ));
 }
 
 #[test]
@@ -928,30 +1027,214 @@ fn tm22_key_pins_bind_a_namespace_and_feed_the_verifier() {
         .unwrap()
         .pk
         .to_base64();
-    let pin = store.pin_key("acme", &a, NOW).unwrap();
+    let pin = store
+        .pin_key(
+            &PinScope::new("ghcr.io", "acme"),
+            &PublicKey::from_base64(&a).unwrap(),
+            NOW,
+        )
+        .unwrap();
     assert_eq!(pin.fingerprint.len(), 64);
     assert_eq!(
-        store.pin_key("acme", &a, NOW).unwrap(),
+        store
+            .pin_key(
+                &PinScope::new("ghcr.io", "acme"),
+                &PublicKey::from_base64(&a).unwrap(),
+                NOW
+            )
+            .unwrap(),
         pin,
         "pinning the same key again is a no-op"
     );
-    let err = store.pin_key("acme", &b, NOW).unwrap_err();
+    let err = store
+        .pin_key(
+            &PinScope::new("ghcr.io", "acme"),
+            &PublicKey::from_base64(&b).unwrap(),
+            NOW,
+        )
+        .unwrap_err();
     assert!(matches!(err, TrustError::NamespaceBound { .. }), "{err:?}");
-    assert!(store.pin_key("other", &b, NOW).is_ok());
-    let pinned = store.pinned_map().unwrap();
-    assert_eq!(
-        pinned.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["acme", "other"]
+    assert!(
+        store
+            .pin_key(
+                &PinScope::new("ghcr.io", "other"),
+                &PublicKey::from_base64(&b).unwrap(),
+                NOW
+            )
+            .is_ok()
     );
-    assert_eq!(pinned["acme"].len(), 1);
-    assert_eq!(pinned["acme"][0].fingerprint(), pin.fingerprint);
-    assert!(!pinned.contains_key("nobody"));
+    let pinned = store.pinned_map().unwrap();
+    let acme = PinScope::new("ghcr.io", "acme");
+    let other = PinScope::new("ghcr.io", "other");
+    assert_eq!(
+        pinned.keys().cloned().collect::<Vec<_>>(),
+        [acme.clone(), other.clone()]
+    );
+    assert_eq!(pinned[&acme].len(), 1);
+    assert_eq!(pinned[&acme][0].fingerprint(), pin.fingerprint);
+    assert!(!pinned.contains_key(&PinScope::new("ghcr.io", "nobody")));
     let policy = slopvac_plugins::sign::KeyPolicy {
         pinned,
         ..Default::default()
     };
-    assert_eq!(policy.pinned["other"].len(), 1);
-    assert!(store.pin_key("acme", "garbage", NOW).is_err());
+    assert_eq!(policy.pinned[&other].len(), 1);
+}
+
+fn new_key() -> String {
+    minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk
+        .to_base64()
+}
+
+#[test]
+fn k14_one_namespace_takes_another_key_on_another_registry() {
+    let s = Scratch::new("pins-two-hosts");
+    let store = TrustStore::open(s.dir("state"));
+    let on_a = PinScope::new("registry-a.example", "acme");
+    let on_b = PinScope::new("registry-b.example", "acme");
+    let (a, b) = (new_key(), new_key());
+    store
+        .pin_key(&on_a, &PublicKey::from_base64(&a).unwrap(), NOW)
+        .unwrap();
+    let pin_b = store
+        .pin_key(&on_b, &PublicKey::from_base64(&b).unwrap(), NOW)
+        .unwrap();
+    assert_eq!(pin_b.key, b);
+    let err = store
+        .pin_key(&on_a, &PublicKey::from_base64(&b).unwrap(), NOW)
+        .unwrap_err();
+    assert!(matches!(err, TrustError::NamespaceBound { .. }), "{err:?}");
+    assert_eq!(err.code(), Some("namespace-bound"));
+}
+
+// ---- `plugins pin --key`: the key comes from a file and must have the named fingerprint ----
+
+const SHOWN: &str = "keys/acme.pub";
+
+/// A `minisign.pub` file for a new key, and the key's fingerprint.
+fn key_file(s: &Scratch) -> (PathBuf, String) {
+    let pk = minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk;
+    let b64 = pk.to_base64();
+    let path = s.dir("acme.pub");
+    fs::write(
+        &path,
+        format!("untrusted comment: minisign public key\n{b64}\n"),
+    )
+    .unwrap();
+    (path, PublicKey::from_base64(&b64).unwrap().fingerprint())
+}
+
+#[cfg(unix)]
+fn inode(path: &Path) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    fs::metadata(path).unwrap().ino()
+}
+
+#[test]
+#[cfg(unix)]
+fn k10_a_key_file_with_the_named_fingerprint_is_pinned_once() {
+    let s = Scratch::new("pin-file");
+    let store = TrustStore::open(s.dir("state"));
+    let (file, fingerprint) = key_file(&s);
+    let scope = PinScope::new("ghcr.io", "acme");
+    let pin = store
+        .pin_key_file(&scope, &fingerprint, &file, SHOWN, NOW)
+        .unwrap();
+    assert_eq!(
+        (pin.registry.as_str(), pin.namespace.as_str()),
+        ("ghcr.io", "acme")
+    );
+    assert_eq!(pin.fingerprint, fingerprint);
+    let pinned = store.pinned_map().unwrap();
+    assert_eq!(pinned[&scope][0].fingerprint(), fingerprint);
+
+    let trust = s.dir("state/trust.json");
+    let (bytes, ino) = (fs::read(&trust).unwrap(), inode(&trust));
+    store
+        .pin_key_file(&scope, &fingerprint, &file, SHOWN, NOW)
+        .unwrap();
+    assert_eq!(fs::read(&trust).unwrap(), bytes);
+    assert_eq!(inode(&trust), ino, "the second pin writes nothing");
+}
+
+#[test]
+fn k11_a_key_file_with_another_fingerprint_is_refused_with_both() {
+    let s = Scratch::new("pin-wrong-fp");
+    let store = TrustStore::open(s.dir("state"));
+    let (file, actual) = key_file(&s);
+    let named = "0".repeat(64);
+    let err = store
+        .pin_key_file(&PinScope::new("ghcr.io", "acme"), &named, &file, SHOWN, NOW)
+        .unwrap_err();
+    assert_eq!(err.code(), Some("key-fingerprint-mismatch"), "{err:?}");
+    let text = err.to_string();
+    assert!(text.contains(&named) && text.contains(&actual), "{text}");
+    assert!(!s.dir("state/trust.json").exists(), "nothing was written");
+}
+
+#[rstest::rstest]
+#[case::missing(None)]
+#[case::over_4_kib(Some(vec![b'#'; 4097]))]
+#[case::no_key_line(Some(b"untrusted comment: LEAKME\n".to_vec()))]
+#[case::not_a_minisign_key(Some(b"untrusted comment: x\nTEVBS01FTEVBS01FTEVBS01F\n".to_vec()))]
+fn k12_a_key_file_that_cannot_be_used_is_refused_without_quoting_it(
+    #[case] content: Option<Vec<u8>>,
+) {
+    let s = Scratch::new("pin-bad-file");
+    let store = TrustStore::open(s.dir("state"));
+    let file = s.dir("acme.pub");
+    if let Some(bytes) = &content {
+        fs::write(&file, bytes).unwrap();
+    }
+    let err = store
+        .pin_key_file(
+            &PinScope::new("ghcr.io", "acme"),
+            &"0".repeat(64),
+            &file,
+            SHOWN,
+            NOW,
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), Some("key-invalid"), "{err:?}");
+    let text = err.to_string();
+    assert!(text.contains(SHOWN), "{text}");
+    for quoted in ["LEAKME", "TEVBS01F", "####"] {
+        assert!(!text.contains(quoted), "{text}");
+    }
+    assert!(!s.dir("state/trust.json").exists(), "nothing was written");
+}
+
+#[rstest::rstest]
+#[case::core("core")]
+#[case::first_party("slopvac")]
+fn k13_pin_refuses_a_reserved_namespace_before_it_reads_the_file(#[case] namespace: &str) {
+    let s = Scratch::new("pin-reserved");
+    let store = TrustStore::open(s.dir("state"));
+    let err = store
+        .pin_key_file(
+            &PinScope::new("ghcr.io", namespace),
+            &"0".repeat(64),
+            &s.dir("does-not-exist.pub"),
+            SHOWN,
+            NOW,
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), Some("namespace-reserved"), "{err:?}");
+}
+
+#[test]
+fn the_pinned_map_keeps_each_pin_under_its_own_registry() {
+    let s = Scratch::new("pins-map-host");
+    let store = TrustStore::open(s.dir("state"));
+    let scope = PinScope::new("registry-b.example", "acme");
+    store
+        .pin_key(&scope, &PublicKey::from_base64(&new_key()).unwrap(), NOW)
+        .unwrap();
+    let pinned = store.pinned_map().unwrap();
+    assert_eq!(pinned.keys().cloned().collect::<Vec<_>>(), [scope]);
 }
 
 fn with_env(mut spec: PluginSpec, name: &str, value: &str) -> PluginSpec {
@@ -1680,7 +1963,13 @@ fn pin_key_refuses_reserved_and_first_party_namespaces_with_a_code() {
         .pk
         .to_base64();
     for ns in ["core", "slopvac"] {
-        let err = store.pin_key(ns, &key, NOW).unwrap_err();
+        let err = store
+            .pin_key(
+                &PinScope::new("ghcr.io", ns),
+                &PublicKey::from_base64(&key).unwrap(),
+                NOW,
+            )
+            .unwrap_err();
         assert!(
             matches!(&err, TrustError::ReservedNamespace { namespace } if namespace == ns),
             "{err:?}"
@@ -1702,7 +1991,13 @@ fn a_store_that_pins_a_reserved_namespace_is_refused_on_load() {
         .unwrap()
         .pk
         .to_base64();
-    store.pin_key("acme", &key, NOW).unwrap();
+    store
+        .pin_key(
+            &PinScope::new("ghcr.io", "acme"),
+            &PublicKey::from_base64(&key).unwrap(),
+            NOW,
+        )
+        .unwrap();
     let file = dir.join("trust.json");
     let text = fs::read_to_string(&file).unwrap();
     fs::write(&file, text.replace("\"acme\"", "\"core\"")).unwrap();

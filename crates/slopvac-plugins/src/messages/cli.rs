@@ -107,6 +107,42 @@ pub(crate) enum CliText {
     #[code("plugins-help-arg-registry")]
     #[text("The registry host. Default: ghcr.io.")]
     ArgRegistry,
+    /// Help for the `--key` option of `pin`.
+    #[code("plugins-help-arg-key")]
+    #[text(
+        "The publisher's minisign.pub file, or a file with only its base64 line. At most 4 KiB."
+    )]
+    ArgKey,
+    /// Help for the fingerprint argument of `rotate`.
+    #[code("plugins-help-arg-new-fingerprint")]
+    #[text("The fingerprint of the new key: 64 lowercase hex digits.")]
+    ArgNewFingerprint,
+    /// Help for the `--statement` option of `rotate`.
+    #[code("plugins-help-arg-statement")]
+    #[text("The rotation statement file. At most 4 KiB.")]
+    ArgStatement,
+    /// Help for the `--old-signature` option of `rotate`.
+    #[code("plugins-help-arg-old-signature")]
+    #[text("The signature of the statement by the pinned key. At most 4 KiB.")]
+    ArgOldSignature,
+    /// Help for the `--new-signature` option of `rotate`.
+    #[code("plugins-help-arg-new-signature")]
+    #[text("The signature of the statement by the new key. At most 4 KiB.")]
+    ArgNewSignature,
+    /// A namespace argument that is not a namespace.
+    #[code("plugins-arg-bad-namespace")]
+    #[text(
+        "a namespace is a lowercase letter followed by up to 63 lowercase letters, digits or hyphens"
+    )]
+    BadNamespace,
+    /// A fingerprint argument that is not 64 lowercase hex digits.
+    #[code("plugins-arg-bad-fingerprint")]
+    #[text("a fingerprint is 64 lowercase hex digits")]
+    BadFingerprint,
+    /// A `--registry` value that is not a registry host.
+    #[code("plugins-arg-bad-registry")]
+    #[text("a registry is a host name with an optional port, such as ghcr.io")]
+    BadRegistry,
     /// Help for the name argument of `new`.
     #[code("plugins-help-arg-name")]
     #[text("The id of the new plugin.")]
@@ -292,6 +328,23 @@ pub(crate) enum CliText {
     #[code("plugins-why-no-envs")]
     #[text("the managed Python environments are not available")]
     WhyNoEnvs,
+    /// A publisher key was pinned.
+    #[code("plugins-pinned")]
+    #[text("pinned key {fingerprint} for namespace `{namespace}` on {registry}")]
+    Pinned {
+        fingerprint: String,
+        namespace: String,
+        registry: String,
+    },
+    /// A key rotation replaced a pin.
+    #[code("plugins-rotated")]
+    #[text("rotated the key for namespace `{namespace}` on {registry} from {old} to {new}")]
+    Rotated {
+        namespace: String,
+        registry: String,
+        old: String,
+        new: String,
+    },
     /// Trust for a plugin was removed.
     #[code("plugins-untrusted")]
     #[text("removed the trust recorded for `{id}`")]

@@ -13,7 +13,7 @@
 //!
 //! - The artifact id is the pack id from its manifest. The namespace is the owner segment of
 //!   the repository, and it is signed too, so a signed artifact cannot be passed off under
-//!   another owner. Keys are pinned per namespace.
+//!   another owner. Keys are pinned per pair of registry host and namespace.
 //! - The signature layers use the media types [`MEDIA_STATEMENT`] and [`MEDIA_MINISIG`].
 //! - An artifact has exactly one layer of each. They are never listed in the statement.
 //! - The minisign trusted comment is signed but never used to decide anything.
@@ -197,6 +197,42 @@ pub(crate) fn release_key_from(text: &str) -> Result<PublicKey, SignError> {
     PublicKey::from_pub_file(text)
 }
 
+/// The registry host that `plugins pin` and `plugins rotate` use when no `--registry` is given.
+pub const DEFAULT_REGISTRY: &str = "ghcr.io";
+
+/// The pair a key pin binds: one registry host and one namespace on it.
+///
+/// A host name is case-insensitive, so the host is kept in ASCII lowercase and `GHCR.io` names
+/// the same pair as `ghcr.io`. The port, when present, is part of the host.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PinScope {
+    registry: String,
+    namespace: String,
+}
+
+impl PinScope {
+    /// The pair of `registry` (a host with an optional port) and `namespace`.
+    #[must_use]
+    pub fn new(registry: &str, namespace: &str) -> Self {
+        Self {
+            registry: registry.to_ascii_lowercase(),
+            namespace: namespace.to_owned(),
+        }
+    }
+
+    /// The registry host, in ASCII lowercase.
+    #[must_use]
+    pub fn registry(&self) -> &str {
+        &self.registry
+    }
+
+    /// The namespace.
+    #[must_use]
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+}
+
 /// Which keys may sign which namespaces.
 #[derive(Debug, Clone, Default)]
 pub struct KeyPolicy {
@@ -204,15 +240,16 @@ pub struct KeyPolicy {
     pub first_party: Vec<PublicKey>,
     /// Namespaces that only first-party keys may sign.
     pub first_party_namespaces: Vec<String>,
-    /// Keys the user pinned, or an earlier verified sync pinned in the lockfile, by namespace.
-    /// A key pinned for one namespace never signs another.
-    pub pinned: BTreeMap<String, Vec<PublicKey>>,
+    /// Keys the user pinned in the trust store, by pair of registry host and namespace. A key
+    /// pinned for one pair never signs another. The lockfile supplies no keys.
+    pub pinned: BTreeMap<PinScope, Vec<PublicKey>>,
 }
 
 impl KeyPolicy {
     /// The shipped policy: the compiled plugins key for [`FIRST_PARTY_NAMESPACES`],
-    /// and no pinned keys. The release key is not listed. Tests build the struct
-    /// directly to inject other keys.
+    /// and no pinned keys. The release key is not listed. The binary then fills
+    /// [`Self::pinned`] from the trust store, and tests build the struct directly to
+    /// inject other keys.
     ///
     /// # Errors
     /// [`SignError::InvalidKey`] when the compiled key does not parse. There is then
@@ -232,7 +269,7 @@ impl KeyPolicy {
         })
     }
 
-    fn candidates(&self, namespace: &str) -> &[PublicKey] {
+    fn candidates(&self, registry: &str, namespace: &str) -> &[PublicKey] {
         if namespace == RESERVED_ID {
             // Fails closed: the built-in pack is never fetched.
             &[]
@@ -241,7 +278,9 @@ impl KeyPolicy {
         {
             &self.first_party
         } else {
-            self.pinned.get(namespace).map_or(&[], Vec::as_slice)
+            self.pinned
+                .get(&PinScope::new(registry, namespace))
+                .map_or(&[], Vec::as_slice)
         }
     }
 }
@@ -268,7 +307,7 @@ pub struct Statement {
     /// The pack id, as in its manifest (`^[a-z][a-z0-9-]*$`).
     pub id: String,
     /// The namespace: the owner segment of the repository the artifact is published under.
-    /// The user pins publisher keys per namespace.
+    /// The user pins publisher keys per pair of registry host and namespace.
     pub namespace: String,
     /// Semantic version.
     pub version: String,
@@ -371,6 +410,8 @@ fn entry_of(d: &Descriptor) -> LayerEntry {
 pub struct Expectation<'a> {
     /// Pack id.
     pub id: &'a str,
+    /// Registry host the artifact is fetched from. A pinned key signs only on its own host.
+    pub registry: &'a str,
     /// Namespace, from the repository the artifact is fetched from.
     pub namespace: &'a str,
     /// Requested version.
@@ -556,7 +597,7 @@ pub fn verify(
 
     // The key id only selects among keys the policy already trusts.
     let key = policy
-        .candidates(&namespace)
+        .candidates(expect.registry, &namespace)
         .iter()
         .find(|k| k.key_id() == statement.key_id)
         .ok_or_else(|| SignError::KeyNotPinned {
@@ -718,6 +759,18 @@ pub struct RotationProof<'a> {
     pub new_signature: &'a str,
     /// The new key. Its id must be the statement's `newKeyId`.
     pub new_key: &'a PublicKey,
+}
+
+/// The new key that a rotation statement names in `newKey`, read before any key is checked, so
+/// the caller can compare its fingerprint with the one the user named.
+///
+/// # Errors
+/// [`SignError::NotCanonical`] or [`SignError::InvalidStatement`] when the statement is not a
+/// canonical rotation statement of at most [`MAX_ROTATION_BYTES`] with a minisign `newKey`.
+pub fn rotation_new_key(statement: &[u8]) -> Result<PublicKey, SignError> {
+    let st: RotationStatement = parse_canonical(statement, MAX_ROTATION_BYTES)?;
+    PublicKey::from_base64(&st.new_key)
+        .map_err(|_| SignError::InvalidStatement(SignPhrase::RotationKeyForm.as_static().into()))
 }
 
 /// Verify a rotation for `namespace` against the key pinned for it.

@@ -15,11 +15,12 @@ use slopvac_plugins::oci::{
 };
 use slopvac_plugins::sign::{
     ANNOTATION_ID, ANNOTATION_VERSION, Expectation, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT,
-    PublicKey, SignError, Statement, canonical_json, fetch_and_verify, plugins_key, release_key,
-    signature_layers, verify,
+    PinScope, PublicKey, SignError, Statement, canonical_json, fetch_and_verify, plugins_key,
+    release_key, signature_layers, verify,
 };
 
 const NS: &str = "acme";
+const REG: &str = "ghcr.io";
 const ID: &str = "style";
 const ART: &str = "application/vnd.slopvac.pack.v1";
 type Edit = Box<dyn Fn(&mut Manifest)>;
@@ -141,8 +142,16 @@ fn good(key: &Key) -> Signed {
 }
 
 fn policy(pinned: &[&Key]) -> KeyPolicy {
+    policy_on(REG, pinned)
+}
+
+/// `pinned` pinned for [`NS`] on `registry`.
+fn policy_on(registry: &str, pinned: &[&Key]) -> KeyPolicy {
     KeyPolicy {
-        pinned: BTreeMap::from([(NS.to_owned(), pinned.iter().map(|k| k.public()).collect())]),
+        pinned: BTreeMap::from([(
+            PinScope::new(registry, NS),
+            pinned.iter().map(|k| k.public()).collect(),
+        )]),
         ..KeyPolicy::default()
     }
 }
@@ -150,6 +159,7 @@ fn policy(pinned: &[&Key]) -> KeyPolicy {
 fn expect() -> Expectation<'static> {
     Expectation {
         id: ID,
+        registry: REG,
         namespace: NS,
         version: "1.2.0",
         artifact_type: ART,
@@ -305,7 +315,7 @@ fn tm24_a_first_party_namespace_verifies_only_against_compiled_keys() {
         first_party: vec![compiled.public()],
         first_party_namespaces: vec!["slopvac".into()],
         pinned: BTreeMap::from([(
-            "slopvac".to_owned(),
+            PinScope::new(REG, "slopvac"),
             vec![user_pinned.public(), compiled.public()],
         )]),
     };
@@ -507,9 +517,26 @@ fn fetch_and_verify_reads_the_signature_blobs_from_the_registry() {
     });
     let r = Reference::parse(&format!("{}/acme/style:1.2.0", server.registry())).unwrap();
     let client = Client::with_loopback_http_for_tests(Box::new(Anonymous));
-    let v = fetch_and_verify(&client, &r, &s.manifest, &policy(&[&key]), &expect()).unwrap();
+    let e = Expectation {
+        registry: &r.registry,
+        ..expect()
+    };
+    let v = fetch_and_verify(
+        &client,
+        &r,
+        &s.manifest,
+        &policy_on(&r.registry, &[&key]),
+        &e,
+    )
+    .unwrap();
     assert_eq!(v.statement().version, "1.2.0");
-    let wrong = fetch_and_verify(&client, &r, &s.manifest, &policy(&[&Key::new()]), &expect());
+    let wrong = fetch_and_verify(
+        &client,
+        &r,
+        &s.manifest,
+        &policy_on(&r.registry, &[&Key::new()]),
+        &e,
+    );
     assert!(matches!(wrong, Err(SignError::KeyNotPinned { .. })));
 }
 
@@ -625,7 +652,7 @@ fn a_fixed_vector_from_the_minisign_cli_has_the_expected_identity_and_verifies()
     let st: Statement = serde_json::from_slice(FIXED_STATEMENT).unwrap();
     assert_eq!(st.canonical_bytes(), FIXED_STATEMENT);
     let policy = KeyPolicy {
-        pinned: BTreeMap::from([(NS.to_owned(), vec![key])]),
+        pinned: BTreeMap::from([(PinScope::new(REG, NS), vec![key])]),
         ..KeyPolicy::default()
     };
     assert_eq!(
@@ -644,7 +671,7 @@ fn a_fixed_vector_from_the_minisign_cli_has_the_expected_identity_and_verifies()
 #[test]
 fn a_legacy_non_prehashed_signature_is_refused() {
     let policy = KeyPolicy {
-        pinned: BTreeMap::from([(NS.to_owned(), vec![fixed_key()])]),
+        pinned: BTreeMap::from([(PinScope::new(REG, NS), vec![fixed_key()])]),
         ..KeyPolicy::default()
     };
     assert_eq!(
@@ -666,8 +693,8 @@ fn a_key_pinned_for_one_namespace_cannot_sign_another() {
     let b = Key::new();
     let policy = KeyPolicy {
         pinned: BTreeMap::from([
-            ("acme".to_owned(), vec![a.public()]),
-            ("other".to_owned(), vec![b.public()]),
+            (PinScope::new(REG, "acme"), vec![a.public()]),
+            (PinScope::new(REG, "other"), vec![b.public()]),
         ]),
         ..KeyPolicy::default()
     };
@@ -691,6 +718,79 @@ fn a_key_pinned_for_one_namespace_cannot_sign_another() {
         Err(SignError::KeyNotPinned { namespace, .. }) if namespace == "other"
     ));
     assert_eq!(for_other(&b), Ok(()));
+}
+
+// ---- A pin binds one pair of registry host and namespace ----
+
+fn on_registry(registry: &str) -> Expectation<'_> {
+    Expectation {
+        registry,
+        ..expect()
+    }
+}
+
+#[test]
+fn a_key_pinned_on_one_registry_does_not_sign_the_namespace_on_another() {
+    let key = Key::new();
+    let policy = policy_on("registry-a.example", &[&key]);
+    assert!(matches!(
+        run(&good(&key), &policy, &on_registry("registry-b.example")),
+        Err(SignError::KeyNotPinned { namespace, .. }) if namespace == NS
+    ));
+}
+
+#[test]
+fn one_namespace_pinned_on_two_registries_verifies_each_with_its_own_key() {
+    let a = Key::new();
+    let b = Key::new();
+    let policy = KeyPolicy {
+        pinned: BTreeMap::from([
+            (PinScope::new("registry-a.example", NS), vec![a.public()]),
+            (PinScope::new("registry-b.example", NS), vec![b.public()]),
+        ]),
+        ..KeyPolicy::default()
+    };
+    assert_eq!(
+        run(&good(&b), &policy, &on_registry("registry-b.example")),
+        Ok(())
+    );
+    assert!(matches!(
+        run(&good(&b), &policy, &on_registry("registry-a.example")),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[rstest]
+#[case::pin_upper_fetch_lower("GHCR.io", "ghcr.io")]
+#[case::pin_lower_fetch_upper("ghcr.io", "GHCR.IO")]
+fn a_pin_matches_its_registry_host_in_any_case(#[case] pinned: &str, #[case] fetched: &str) {
+    let key = Key::new();
+    assert_eq!(
+        run(
+            &good(&key),
+            &policy_on(pinned, &[&key]),
+            &on_registry(fetched)
+        ),
+        Ok(())
+    );
+}
+
+#[rstest]
+#[case::default_host("ghcr.io")]
+#[case::other_host("registry.example:5000")]
+fn the_slopvac_namespace_verifies_with_the_first_party_key_on_any_registry(#[case] registry: &str) {
+    let compiled = Key::new();
+    let policy = KeyPolicy {
+        first_party: vec![compiled.public()],
+        first_party_namespaces: vec!["slopvac".into()],
+        pinned: BTreeMap::new(),
+    };
+    let e = Expectation {
+        registry,
+        namespace: "slopvac",
+        ..expect()
+    };
+    assert_eq!(run(&signed_in(&compiled, "slopvac"), &policy, &e), Ok(()));
 }
 
 /// A correctly signed statement whose fields `edit` changed after the manifest was bound.
@@ -747,7 +847,7 @@ fn a_signed_statement_with_a_malformed_namespace_or_id_is_refused() {
         let mut pol = policy(&[&key]);
         if field == "namespace" {
             e.namespace = value;
-            pol.pinned = BTreeMap::from([(value.to_owned(), vec![key.public()])]);
+            pol.pinned = BTreeMap::from([(PinScope::new(REG, value), vec![key.public()])]);
         } else {
             e.id = value;
         }
@@ -792,7 +892,17 @@ fn fetch_with_minisig_size(size: usize) -> (Result<(), SignError>, usize) {
     });
     let r = Reference::parse(&format!("{}/acme/style:1.2.0", server.registry())).unwrap();
     let client = Client::with_loopback_http_for_tests(Box::new(Anonymous));
-    let result = fetch_and_verify(&client, &r, &s.manifest, &policy(&[&key]), &expect());
+    let e = Expectation {
+        registry: &r.registry,
+        ..expect()
+    };
+    let result = fetch_and_verify(
+        &client,
+        &r,
+        &s.manifest,
+        &policy_on(&r.registry, &[&key]),
+        &e,
+    );
     let hits = server.count(&format!(
         "/v2/acme/style/blobs/{}",
         s.manifest.layers[3].digest
@@ -891,7 +1001,7 @@ fn reserved_policy(compiled: &Key, pinned_for: &str, pinned: &Key) -> KeyPolicy 
     KeyPolicy {
         first_party: vec![compiled.public()],
         first_party_namespaces: vec!["slopvac".into()],
-        pinned: BTreeMap::from([(pinned_for.to_owned(), vec![pinned.public()])]),
+        pinned: BTreeMap::from([(PinScope::new(REG, pinned_for), vec![pinned.public()])]),
     }
 }
 
@@ -946,7 +1056,7 @@ fn a_slopvac_artifact_signed_by_a_pinned_key_is_refused_even_without_the_first_p
     let bare = KeyPolicy {
         first_party: vec![compiled.public()],
         first_party_namespaces: Vec::new(),
-        pinned: BTreeMap::from([("slopvac".to_owned(), vec![pinned.public()])]),
+        pinned: BTreeMap::from([(PinScope::new(REG, "slopvac"), vec![pinned.public()])]),
     };
     assert!(matches!(
         run(&signed_in(&pinned, "slopvac"), &bare, &e),
@@ -1053,7 +1163,7 @@ fn a_slopvac_statement_naming_the_release_key_is_refused_with_no_first_party_key
     let policy = KeyPolicy {
         first_party: Vec::new(),
         first_party_namespaces: vec!["slopvac".into()],
-        pinned: BTreeMap::from([("slopvac".to_owned(), vec![release.clone()])]),
+        pinned: BTreeMap::from([(PinScope::new(REG, "slopvac"), vec![release.clone()])]),
     };
     assert!(matches!(
         run(
@@ -1085,7 +1195,9 @@ fn a_third_party_namespace_does_not_verify_through_the_first_party_list(
     let mut policy = KeyPolicy::compiled().unwrap();
     policy.first_party.push(signer.public());
     if let Some(p) = &pinned {
-        policy.pinned.insert("acme".into(), vec![p.public()]);
+        policy
+            .pinned
+            .insert(PinScope::new(REG, "acme"), vec![p.public()]);
     }
     let e = Expectation {
         namespace: "acme",
