@@ -119,7 +119,11 @@ mod tests {
         let s = settings(&text);
         let read = crate::tree::TEXT_BYTES_READ.with(std::cell::Cell::get);
         assert_eq!(s.len(), KEYS);
-        assert!(read <= KEYS + 1, "{read} bytes read for {} lookups", KEYS + 1);
+        assert!(
+            read <= KEYS + 1,
+            "{read} bytes read for {} lookups",
+            KEYS + 1
+        );
         // The last key sits at its byte offset on line 1: the text is ASCII.
         let last = format!("k{}", KEYS - 1);
         let column = text.find(&format!("{last} =")).unwrap() + 1;
