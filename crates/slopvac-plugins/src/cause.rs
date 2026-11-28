@@ -12,6 +12,7 @@ use slopvac_messages::{Catalog, Entry, render};
 
 use crate::lock::LockDiff;
 use crate::messages::cli::Reported;
+use crate::messages::host::HostMessage;
 use crate::messages::sync::{cache_tampered, cache_unreadable, config_drift, update_busy};
 use crate::revoke::RevocationError;
 use crate::sync::SyncError;
@@ -58,7 +59,12 @@ fn spawn_code(e: &TrustError) -> Option<&'static str> {
         TrustError::KeyUnusable { .. } => Some("trust-key-unusable"),
         // `plugins trust` verifies the tree and the environment before it records anything, and
         // the spawn gate reports the same two failures as a hash mismatch.
-        TrustError::Tree(_) | TrustError::PythonEnv(_) => Some("plugin-hash-mismatch"),
+        TrustError::Tree(_) | TrustError::PythonEnv(_) => Some(
+            HostMessage::HashMismatch {
+                plugin: String::new(),
+            }
+            .code(),
+        ),
         _ => None,
     }
 }
