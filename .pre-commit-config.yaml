@@ -7,6 +7,14 @@ repos:
         language: system
         pass_filenames: false
         files: ^packages/slopvac-lint/.*\.py$
+      # CI's workflow-lint job runs this hook, so the yamllint pin lives only here.
+      - id: yamllint
+        name: yamllint workflows
+        entry: yamllint -c .yamllint.yml
+        language: python
+        additional_dependencies: ["yamllint==1.37.1"]
+        types: [yaml]
+        files: ^(\.github/workflows/|\.github/ci-paths\.yml$)
       - id: cargo-fmt
         name: cargo fmt
         entry: cargo fmt --all --check
