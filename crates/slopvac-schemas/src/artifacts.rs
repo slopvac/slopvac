@@ -321,7 +321,7 @@ pub const ARTIFACTS: &[Artifact] = &[
             "rule.schema.json",
             "lint-report.schema.json",
         ],
-        inline: &["AiSignal"],
+        inline: &[],
         keep: &["ExplainOutput"],
         build: rules_output,
     },

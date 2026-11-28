@@ -12,9 +12,9 @@ use slopvac_model::{
     x_extensions,
 };
 use slopvac_rules::{
-    AiSignalSource, AppliesTo, ApplyMode, BlockKind, Case, Citation, ContextGate, Example,
-    Exception, LoadedCategory, LoadedRule, Match, MatchKind, Scope, TextTypeSchema, UniqueVec,
-    Weight, judgement_constraints,
+    AiSignalSource, AppliesTo, BlockKind, Case, Citation, ContextGate, Example, Exception,
+    LoadedCategory, LoadedRule, Match, MatchKind, Scope, TextTypeSchema, UniqueVec, Weight,
+    judgement_constraints,
 };
 
 use crate::rule_catalog::Catalog;
