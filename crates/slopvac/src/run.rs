@@ -335,8 +335,12 @@ fn dispatch(
                 let cwd = std::env::current_dir().unwrap_or_default();
                 // policies.md 1.5: while the configuration does not resolve, offline mode is
                 // unknown, so `--gh --yes` stops on the failure before it writes or prints.
+                let unresolved = context.preflight.unresolved(&cwd);
+                // config.md 2.2: no network action until the config resolves, so `--open`
+                // prints the URL as it does offline.
+                let offline = globals.offline || unresolved.is_some();
                 if m.get_flag("yes")
-                    && let Some(failure) = context.preflight.unresolved(&cwd)
+                    && let Some(failure) = unresolved
                 {
                     return Err(failure);
                 }
@@ -346,7 +350,7 @@ fn dispatch(
                     m,
                     &report::Deps {
                         env,
-                        offline: globals.offline,
+                        offline,
                         cwd,
                         opener: &opener,
                         gh: &gh,
