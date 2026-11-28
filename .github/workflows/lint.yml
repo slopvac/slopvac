@@ -410,8 +410,14 @@ jobs:
           echo "slopvac exited $status"
           exit "$status"
       # Findings for reviewdog. The gate above keeps deciding pass or fail; this step
-      # only records what it found, so a status above 1 is left to the gate. Comments
-      # are posted by .github/workflows/reviewdog.yml, never from this read-only job.
+      # only records what it found, so a lint status above 1 is left to the gate. It runs
+      # the linter twice, once on the Markdown docs and once on the starter config in
+      # code-comments mode, because a mode applies to a whole run. Each run writes its own
+      # SARIF file, and the step merges the runs of the reports that exist into
+      # findings.sarif. A run that exits above 1 wrote no complete report and is skipped.
+      # A jq failure on those reports is an infrastructure failure, not a finding, so it
+      # fails the step. Comments are posted by .github/workflows/reviewdog.yml, never from
+      # this read-only job.
       - name: Export prose findings
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         env:
@@ -433,12 +439,13 @@ jobs:
             crates/slopvac/templates/slopvac.toml \
             --format sarif --out reviewdog-out/config.sarif || config_status=$?
           echo "slopvac exited $config_status while exporting starter config findings"
-          # One artifact: merge the runs of both reports into findings.sarif. A report
-          # that was not written (exit 2) is skipped.
           parts=()
-          for f in reviewdog-out/docs.sarif reviewdog-out/config.sarif; do
-            if [ -s "$f" ]; then parts+=("$f"); fi
-          done
+          if [ "$status" -le 1 ] && [ -s reviewdog-out/docs.sarif ]; then
+            parts+=(reviewdog-out/docs.sarif)
+          fi
+          if [ "$config_status" -le 1 ] && [ -s reviewdog-out/config.sarif ]; then
+            parts+=(reviewdog-out/config.sarif)
+          fi
           if [ "${#parts[@]}" -gt 0 ]; then
             jq -s '.[0] + {runs: [.[].runs[]]}' "${parts[@]}" > reviewdog-out/findings.sarif
           fi

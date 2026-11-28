@@ -194,7 +194,7 @@ def test_the_gate_step_exits_with_the_higher_of_the_two_runs(
 
 
 def test_the_gate_step_runs_the_starter_config_in_code_comments_mode() -> None:
-    script = re.sub(r"\\\n\s*", " ", _step(_prose_job(), GATE)["run"])
+    script = " ".join(re.sub(r"\\\n", " ", _step(_prose_job(), GATE)["run"]).split())
     assert (
         "target/debug/slopvac lint --mode code-comments "
         "crates/slopvac/templates/slopvac.toml"

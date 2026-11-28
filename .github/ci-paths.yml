@@ -164,6 +164,7 @@ docs:
   - '**/*.rst'
   - '**/*.html'
   - 'slopvac.toml'
+  - 'crates/slopvac/templates/slopvac.toml'
   - 'packages/slopvac-lint/src/slopvac/rules/**'
 
 # Inputs to workflow/action/hook contract checks.
