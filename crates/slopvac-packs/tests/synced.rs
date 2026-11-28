@@ -2067,14 +2067,25 @@ fn signed_world() -> (World, Lockfile) {
     (w, lock)
 }
 
+/// The store of [`signed_world`] holds no cached statement or signature, so with the signing key
+/// pinned the load has nothing to verify, and refuses the entry.
 #[test]
-fn a_signed_data_plugin_loads_while_its_key_is_pinned_for_its_registry_and_namespace() {
+fn a_signed_data_plugin_with_no_cached_signature_is_refused_while_its_key_is_pinned() {
     let (w, lock) = signed_world();
 
-    let packs = load_synced(&ids(&["rulepack"]), &lock, &w.store(), &pinned(&[KEY_A])).unwrap();
+    let result = load_synced(&ids(&["rulepack"]), &lock, &w.store(), &pinned(&[KEY_A]));
 
-    let loaded: Vec<&str> = packs.iter().map(|p| p.manifest().id.as_str()).collect();
-    assert_eq!(loaded, ["rulepack"]);
+    let loaded: Vec<String> = result
+        .as_ref()
+        .map(|packs| packs.iter().map(|p| p.manifest().id.to_string()).collect())
+        .unwrap_or_default();
+    assert_eq!(loaded, Vec::<String>::new(), "nothing from the entry loads");
+    let err = result.unwrap_err();
+    assert_eq!(err.code(), Some("signature-invalid"));
+    assert_eq!(
+        err.to_string(),
+        "plugin `rulepack`: signature check failed: the artifact has no signature"
+    );
 }
 
 /// A signed entry loads only while the policy pins its key for its pair. With no key for the
