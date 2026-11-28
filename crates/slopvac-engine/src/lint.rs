@@ -41,7 +41,7 @@ use crate::matching::{
 };
 use crate::messages::EngineNotice;
 use crate::metrics::{self, Subject};
-use crate::prepare::{Prepared, Unit, with_html_prose};
+use crate::prepare::{Prepared, Unit, html_file, with_html_prose};
 use crate::rst::{RstAdapter, RstError, RstOptions};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
@@ -69,6 +69,9 @@ pub enum Kind {
     Mdx,
     /// reStructuredText, read through docutils (see [`crate::rst`]).
     Rst,
+    /// A standalone HTML file. As in 2.x, the visible text of each source line is one
+    /// paragraph, and front matter is not read: see [`Input::html`].
+    Html,
     /// A source file in this language. Only its comments are prose: see
     /// [`Input::comments`].
     Comments(Language),
@@ -189,6 +192,23 @@ impl<'a> Input<'a> {
     pub const fn rst(path: &'a str, source: &'a str) -> Self {
         Self {
             kind: Kind::Rst,
+            ..Self::markdown(path, source)
+        }
+    }
+
+    /// A standalone HTML file read from disk.
+    ///
+    /// The visible text of each source line is one paragraph, whatever elements it comes
+    /// from, so a sentence never runs over a line end. The text of all the elements on one line
+    /// joins, and a tag or comment between two words adds a space that maps to no source
+    /// bytes. `<pre>` is a code block, and inline `<code>`, `<kbd>` and `<samp>` are code
+    /// spans that add no words. `<script>`, `<style>`, `<noscript>`, `<template>`, `<head>`
+    /// and `<title>` give no prose. A decoded entity maps to the whole entity. Front matter
+    /// is not read.
+    #[must_use]
+    pub const fn html(path: &'a str, source: &'a str) -> Self {
+        Self {
+            kind: Kind::Html,
             ..Self::markdown(path, source)
         }
     }
@@ -1013,7 +1033,9 @@ impl Engine {
                 masked.as_ref().map_or("", |(masked, _)| masked.as_str()),
                 lookup,
             ),
-            _ => scan(parsed, &lines, front_span, lookup),
+            Kind::Markdown | Kind::Mdx | Kind::Rst | Kind::Html => {
+                scan(parsed, &lines, front_span, lookup)
+            }
         };
         let subject = Subject::new(&prepared, parsed, &lines, front_span);
         let run = Run {
@@ -2505,8 +2527,8 @@ impl Preparsed {
     fn read(input: &Input<'_>, rst: &RstAdapter) -> Result<Self, EngineError> {
         // Front matter is metadata, not prose: the parser reads only what follows it.
         let front = match input.kind {
-            Kind::Diagram(_) | Kind::Rst | Kind::Comments(_) => None,
-            _ => detect(input.source),
+            Kind::Diagram(_) | Kind::Rst | Kind::Html | Kind::Comments(_) => None,
+            Kind::Markdown | Kind::Mdx => detect(input.source),
         };
         let body_start = front.as_ref().map_or(0, |b| b.body_start);
         let body = Span::new(body_start, input.source.len())?;
@@ -2516,6 +2538,7 @@ impl Preparsed {
             Kind::Markdown => parse_markdown(input.source, body)?,
             Kind::Mdx => parse_mdx(input.source, body)?,
             Kind::Rst => parse_rst(rst, input, &mut extra),
+            Kind::Html => html_file(input.source, body)?,
             Kind::Diagram(_) => Parsed::default(),
             Kind::Comments(language) => {
                 let text = comments::read(input.source, language)?;

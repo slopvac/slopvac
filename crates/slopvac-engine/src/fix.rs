@@ -283,7 +283,7 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
         Kind::Markdown => parse_markdown(input.source, body)?,
         Kind::Mdx => parse_mdx(input.source, body)?,
         // Source files never get here: `fix_document` refuses their findings first.
-        Kind::Diagram(_) | Kind::Rst | Kind::Comments(_) => Parsed::default(),
+        Kind::Diagram(_) | Kind::Rst | Kind::Html | Kind::Comments(_) => Parsed::default(),
     };
     let parsed = with_html_prose(
         input.source,
