@@ -146,14 +146,16 @@
           "$ref": "#/$defs/Path"
         },
         "layer": {
-          "description": "`explicit` for a file named with `--config`, `project` for the nearest `slopvac.toml`.",
+          "description": "`explicit` for the file named with `--config`, `project` for the nearest config or a 2.x config that the search meets, `extends` for a file that an `extends` entry names. The set can grow.",
           "enum": [
             "explicit",
-            "project"
-          ]
+            "project",
+            "extends"
+          ],
+          "x-slopvac-extensible": true
         },
         "status": {
-          "description": "`ok` when the file parses and declares `schema_version` 3. `legacy` for a 2.x file (no `schema_version` or 2). `missing`, `unreadable` or `invalid` otherwise.",
+          "description": "`ok` when the file reads, parses and passes validation. `legacy` for a 2.x file. `missing`, `unreadable` or `invalid` otherwise.",
           "enum": [
             "ok",
             "legacy",

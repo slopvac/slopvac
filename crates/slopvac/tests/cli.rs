@@ -766,26 +766,6 @@ fn invocations_that_skip_the_preflight_run_on_a_broken_config(#[case] args: &[&s
     assert!(!stderr.contains("error["), "{args:?}: {stderr}");
 }
 
-#[test]
-fn lsp_skips_the_preflight_on_a_broken_config() {
-    let dir = broken_project();
-    let input = [
-        INITIALIZE,
-        r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
-        r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#,
-        r#"{"jsonrpc":"2.0","method":"exit"}"#,
-    ]
-    .map(frame)
-    .concat();
-    slopvac()
-        .current_dir(dir.path())
-        .arg("lsp")
-        .write_stdin(input)
-        .timeout(std::time::Duration::from_secs(20))
-        .assert()
-        .code(0);
-}
-
 #[rstest::rstest]
 #[case::not_utf8(NOT_UTF8.to_vec(), "error[config-io]: cannot read {file}: not valid UTF-8")]
 #[case::oversize(oversize(), "error[config-too-large]: {file} is larger than 1048576 bytes")]

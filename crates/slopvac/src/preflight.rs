@@ -160,3 +160,19 @@ impl Preflight {
         Some(crate::engine::config_error(err, cwd))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `lsp` reads each document's config itself, so the preflight leaves it alone. Its own
+    /// first load still refuses a broken project config, which a binary test cannot tell
+    /// apart from a preflight refusal.
+    #[test]
+    fn lsp_skips_the_preflight() {
+        let matches = crate::cli::command()
+            .try_get_matches_from(["slopvac", "lsp"])
+            .expect("parses");
+        assert_eq!(Mode::of(&matches), Mode::Skip);
+    }
+}
