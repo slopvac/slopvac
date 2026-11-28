@@ -34,7 +34,7 @@ use slopvac_rules::MatchKind;
 use slopvac_styles::{BuiltinSource, Style};
 
 use crate::errors::CliError;
-use crate::lint_messages::LintOptionError;
+use crate::lint_messages::{LintOptionError, LintSettingsText};
 use crate::rule_catalog::Catalog;
 
 /// The genre of a document that no assignment, declaration or detection reaches, as the
@@ -428,6 +428,49 @@ pub fn presets() -> &'static (dyn Presets + Send + Sync) {
     })
 }
 
+/// The genres a document can take: the registry that the engine chooses genres from.
+fn genre_registry() -> &'static slopvac_context::GenreRegistry {
+    static GENRES: OnceLock<slopvac_context::GenreRegistry> = OnceLock::new();
+    GENRES.get_or_init(|| {
+        #[expect(
+            clippy::expect_used,
+            reason = "the built-in genres are compiled into the binary, so a failed load is a build defect"
+        )]
+        slopvac_context::builtin_genres().expect("the built-in genres load")
+    })
+}
+
+/// Check that the genre that a layer of `resolved` names is one the registry holds, as the
+/// engine checks it before it lints the document. `slopvac lint`, `--explain-config`, the
+/// language server and `slopvac migrate` all build settings through [`build_with_origins`],
+/// which calls this, so each refuses the same genre.
+///
+/// # Errors
+/// `config-invalid-value` at the location of the `genre` key. The message names the
+/// location and never the value, which is document or config text (policies.md, section
+/// 1.7).
+pub(crate) fn check_genre(resolved: &Resolved) -> Result<(), CliError> {
+    let Some(name) = resolved.get(&["genre"]).and_then(Json::as_str) else {
+        return Ok(());
+    };
+    if genre_registry().spec(name).is_some() {
+        return Ok(());
+    }
+    let source = resolved.source(&["genre"]);
+    let text = match source.and_then(|s| Some((s.file.as_deref()?, s.line?, s.column?))) {
+        Some((file, line, column)) => {
+            slopvac_messages::render(&LintSettingsText::GenreUnregistered {
+                location: format!("{file}:{line}:{column}"),
+            })
+        }
+        None => slopvac_messages::render(&LintSettingsText::GenreUnregisteredUnplaced),
+    };
+    Err(CliError::escaping(
+        slopvac_config::Code::InvalidValue.as_str(),
+        &text,
+    ))
+}
+
 /// What the document's own `slopvac:` front-matter block and inline directives read as, with
 /// their diagnostics.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -744,11 +787,14 @@ fn base_settings(
         .and_then(Json::as_str)
         .unwrap_or("normal");
     let genre = match (resolved.get(&["genre"]).and_then(Json::as_str), detected) {
-        (Some(name), _) => GenreResult {
-            id: GenreId::new(name).map_err(|e| internal("genre", e))?,
-            source: GenreSource::Explicit,
-            reasons: Vec::new(),
-        },
+        (Some(name), _) => {
+            check_genre(resolved)?;
+            GenreResult {
+                id: GenreId::new(name).map_err(|e| internal("genre", e))?,
+                source: GenreSource::Explicit,
+                reasons: Vec::new(),
+            }
+        }
         (None, Some(chosen)) => GenreResult {
             id: chosen.id.clone(),
             source: chosen.source,

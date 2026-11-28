@@ -51,6 +51,7 @@ pub static ALL: &[Registered] = &[
     ("lint options", lint_option_entries),
     ("lint fix", lint_fix_entries),
     ("lint fix reason", lint_fix_reason_entries),
+    ("lint settings", lint_settings_entries),
     ("init", crate::init::message_entries),
     ("self update", slopvac_update::error_entries),
     ("self update text", slopvac_update::text_entries),
@@ -71,6 +72,10 @@ fn lint_fix_entries() -> &'static [Entry] {
 
 fn lint_fix_reason_entries() -> &'static [Entry] {
     <crate::lint_messages::LintFixReason as slopvac_messages::Catalog>::entries()
+}
+
+fn lint_settings_entries() -> &'static [Entry] {
+    <crate::lint_messages::LintSettingsText as slopvac_messages::Catalog>::entries()
 }
 
 /// A code that no longer exists. Its meaning stays reserved and the reference page keeps it.

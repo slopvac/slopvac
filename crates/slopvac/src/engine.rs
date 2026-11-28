@@ -168,6 +168,23 @@ impl Run {
         self.incomplete.push(error);
     }
 
+    /// Record a document whose settings were refused: an exit-2 error and a report notice
+    /// with the error's own code. The document is not linted.
+    fn refuse(&mut self, shown: &str, error: CliError) {
+        let raw = error
+            .report_message
+            .clone()
+            .unwrap_or_else(|| error.message.clone());
+        self.notices.push(Notice {
+            code: KebabName::new(error.code).expect("error codes are kebab-case"),
+            level: NoticeLevel::Warning,
+            message: NonEmptyString::new(raw).expect("messages are not empty"),
+            path: Some(shown.to_owned()),
+            data: error.data.clone(),
+        });
+        self.incomplete.push(error);
+    }
+
     /// Record what is wrong with a document's `slopvac:` block: an exit-2 error and a report
     /// notice for each diagnostic. The block then contributes nothing and the document is
     /// still linted. The error text is escaped for a terminal; the notice keeps the raw
@@ -435,6 +452,11 @@ impl Linter for EngineLinter {
             let layers = DocumentLayers::from_blocks(&blocks)
                 .with_detected_genre(reads.detected[index].clone());
             let resolved = lint_settings::resolve(config, &rel, &layers);
+            // A genre that lint refuses gets the same refusal here, and no record.
+            if let Err(err) = lint_settings::check_genre(&resolved) {
+                run.incomplete.push(err);
+                continue;
+            }
             let mut explained = lint_settings::explain(&resolved, &catalog);
             for entry in &mut explained {
                 redact_urls(&mut entry.value);
@@ -990,6 +1012,17 @@ pub(crate) fn file_settings(
     layers: &DocumentLayers,
 ) -> Result<(slopvac_engine::Settings, slopvac_config::Resolved), CliError> {
     let resolved = lint_settings::resolve(config, rel, layers);
+    settings_of(rules, config, resolved, overrides, layers)
+}
+
+/// [`file_settings`] from the config that `config` and `layers` already resolved to.
+fn settings_of(
+    rules: &Catalog,
+    config: &LoadedConfig,
+    resolved: slopvac_config::Resolved,
+    overrides: &Overrides,
+    layers: &DocumentLayers,
+) -> Result<(slopvac_engine::Settings, slopvac_config::Resolved), CliError> {
     let files = config_files(config);
     let (mut settings, _) = lint_settings::build_with_origins(
         rules,
@@ -1091,6 +1124,7 @@ fn group_by_settings(
     request: &LintRequest,
     items: &[Item],
     rules: &Catalog,
+    run: &mut Run,
 ) -> Result<(Groups, Vec<Option<Preparsed>>), CliError> {
     let mut groups = Groups::new();
     let none = LoadedConfig::without_files(request.root.clone());
@@ -1106,8 +1140,14 @@ fn group_by_settings(
             item.config.as_ref().map(|(c, _)| &**c),
         )
         .with_detected_genre(reads.detected[index].clone());
+        let resolved = lint_settings::resolve(config, &rel, &layers);
+        // A document whose genre no registry holds is not linted, and the run goes on.
+        if let Err(err) = lint_settings::check_genre(&resolved) {
+            run.refuse(&item.shown, err);
+            continue;
+        }
         let (settings, terms, key) =
-            settings_for(rules, config, &rel, &request.overrides, &layers)?;
+            settings_for_resolved(rules, config, resolved, &request.overrides, &layers)?;
         groups
             .entry(key)
             .or_insert_with(|| (settings, terms, Vec::new()))
@@ -1127,7 +1167,19 @@ pub(crate) fn settings_for(
     cli: &Overrides,
     layers: &DocumentLayers,
 ) -> Result<(slopvac_engine::Settings, TermInputs, String), CliError> {
-    let (settings, resolved) = file_settings(rules, config, rel, cli, layers)?;
+    let resolved = lint_settings::resolve(config, rel, layers);
+    settings_for_resolved(rules, config, resolved, cli, layers)
+}
+
+/// [`settings_for`] from the config that `config` and `layers` already resolved to.
+fn settings_for_resolved(
+    rules: &Catalog,
+    config: &LoadedConfig,
+    resolved: slopvac_config::Resolved,
+    cli: &Overrides,
+    layers: &DocumentLayers,
+) -> Result<(slopvac_engine::Settings, TermInputs, String), CliError> {
+    let (settings, resolved) = settings_of(rules, config, resolved, cli, layers)?;
     let terms = lint_terms::inputs(&resolved, &config.root);
     let key = format!("{settings:?}{terms:?}");
     Ok((settings, terms, key))
@@ -1301,7 +1353,7 @@ fn lint_items(
     rules: &Catalog,
     mut run: Run,
 ) -> RunOutcome {
-    let (groups, mut preparsed) = match group_by_settings(request, &items, rules) {
+    let (groups, mut preparsed) = match group_by_settings(request, &items, rules, &mut run) {
         Ok(found) => found,
         Err(err) => return failed(request, run, &err),
     };

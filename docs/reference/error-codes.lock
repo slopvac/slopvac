@@ -494,6 +494,8 @@ lint-fix-reason-acl-check text
 lint-fix-reason-io text
 lint-fix-reason-not-utf8 text
 lint-fix-reason-root-changed text
+lint-genre-unregistered text
+lint-genre-unregistered-unplaced text
 lock-mismatch error
 lsp-action-allow text
 lsp-action-fix text
