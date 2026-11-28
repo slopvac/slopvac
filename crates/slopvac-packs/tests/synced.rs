@@ -611,6 +611,65 @@ fn a_manifest_kind_that_differs_from_its_lock_entry_is_refused(
     assert_eq!(err.code(), Some("plugin-manifest-mismatch"));
 }
 
+#[rstest]
+#[case::data_locked_code_installed("data", "code")]
+#[case::code_locked_data_installed("code", "data")]
+fn a_manifest_kind_that_differs_from_its_lock_entry_is_refused_before_any_file_compiles(
+    #[case] locked_kind: &'static str,
+    #[case] kind: &'static str,
+) {
+    // The pattern does not compile. A load that compiled the files first would report that.
+    let mut w = World::new();
+    w.install(&Spec {
+        kind,
+        locked_kind,
+        ..Spec::new("acme").rules(&["("])
+    });
+
+    let err = w.load(&["acme"]).unwrap_err();
+
+    assert!(
+        matches!(err, SyncedError::ManifestMismatch { field: "kind", .. }),
+        "{err}"
+    );
+}
+
+/// The bytes a load of `spec` reads: its manifest and each file it ships.
+fn bytes_of(spec: &Spec) -> u64 {
+    let files: usize = spec.files.iter().map(|(_, text)| text.len()).sum();
+    (spec.manifest().len() + files) as u64
+}
+
+#[rstest]
+#[case::rules(|_: &Spec, l: &mut Limits| l.run_rules = 1)]
+#[case::bytes(|next: &Spec, l: &mut Limits| l.run_bytes = bytes_of(next))]
+fn a_manifest_kind_that_differs_from_its_lock_entry_charges_nothing_to_the_run_budget(
+    #[case] fit: fn(&Spec, &mut Limits),
+) {
+    let mut w = World::new();
+    w.install(&Spec {
+        kind: "code",
+        locked_kind: "data",
+        ..Spec::new("acme").rules(&["a"])
+    });
+    let next = Spec::new("next").rules(&["b"]);
+    w.install(&next);
+    // The run budget holds `next` alone, so any charge for `acme` leaves too little for it.
+    let mut budget = Budget::new(small(|l| fit(&next, l)));
+
+    let refused = load_synced_within(&ids(&["acme"]), &w.lock(), &w.store(), &mut budget);
+    let loaded = load_synced_within(&ids(&["next"]), &w.lock(), &w.store(), &mut budget);
+
+    assert!(
+        matches!(
+            refused,
+            Err(SyncedError::ManifestMismatch { field: "kind", .. })
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(loaded_ids(&loaded.unwrap()), ["next"]);
+}
+
 #[test]
 fn a_required_version_the_lock_does_not_provide_is_refused() {
     let mut w = World::new();

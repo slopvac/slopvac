@@ -212,27 +212,42 @@ impl LoadedPack {
         origin: Source,
         budget: &mut Budget,
     ) -> Result<Self, PackError> {
-        // The manifest counts toward both byte budgets like any pack file, before it is parsed.
-        let manifest_text = source.manifest_text()?;
+        Self::load_checked(source, origin, budget, |_| Ok(()))
+    }
+
+    /// Like [`LoadedPack::load_within`], and `check` sees the parsed manifest first. `check` runs
+    /// before the load charges `budget` and before it reads any other file. A manifest that
+    /// `check` refuses leaves the budget as it was.
+    pub(crate) fn load_checked<E: From<PackError>>(
+        source: &dyn PackSource,
+        origin: Source,
+        budget: &mut Budget,
+        check: impl FnOnce(&Manifest) -> Result<(), E>,
+    ) -> Result<Self, E> {
+        // The manifest counts toward both byte budgets like any pack file. The per-pack cap
+        // bounds the parse. The charge waits until `check` accepts the manifest.
+        let manifest_text = source.manifest_text().map_err(PackError::from)?;
         let manifest_bytes = manifest_text.len() as u64;
         if manifest_bytes > budget.limits().pack_bytes {
-            return Err(refusal(PackBudget::Bytes, budget.limits().pack_bytes));
+            return Err(refusal(PackBudget::Bytes, budget.limits().pack_bytes).into());
         }
-        budget.charge_bytes(manifest_bytes)?;
-        let mut manifest = Manifest::parse_allowing_core(&manifest_text)?;
+        let mut manifest =
+            Manifest::parse_allowing_core(&manifest_text).map_err(PackError::from)?;
         let is_core = manifest.id.as_str() == RESERVED_ID;
         match (origin, is_core) {
-            (Source::Core, false) => return Err(PackError::NotCore),
-            (Source::Pack | Source::Plugin, true) => return Err(PackError::ReservedId),
+            (Source::Core, false) => return Err(PackError::NotCore.into()),
+            (Source::Pack | Source::Plugin, true) => return Err(PackError::ReservedId.into()),
             _ => {}
         }
         if origin == Source::Core {
             manifest.version =
                 Version::parse(env!("CARGO_PKG_VERSION")).map_err(|_| PackError::BinaryVersion)?;
         }
+        check(&manifest)?;
+        budget.charge_bytes(manifest_bytes)?;
         let id = manifest.id.clone();
         Self::load_files(source, origin, budget, manifest, manifest_bytes)
-            .map_err(|e| e.in_plugin(&id))
+            .map_err(|e| E::from(e.in_plugin(&id)))
     }
 
     /// Read and check the files the manifest lists, once the manifest is in and charged.
