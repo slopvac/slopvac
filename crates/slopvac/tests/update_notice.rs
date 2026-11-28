@@ -302,6 +302,27 @@ mod conformance {
         Ok(())
     }
 
+    /// The JSON lint report lists no update notice in `notices`. The notice goes to stderr, which
+    /// the first assertion shows is active in this run.
+    ///
+    /// Conformance: N6
+    #[test]
+    fn lint_json_carries_no_update_notice() -> io::Result<()> {
+        let fx = fixture()?;
+        let cache = seeded_cache()?;
+        let out = run(&fx, cache.path(), &["lint", "doc.md", "--format", "json"]);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(NOTICE), "stderr: {stderr}");
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout)
+            .unwrap_or_else(|e| panic!("stdout is not JSON ({e}): {out:?}"));
+        let codes: Vec<&str> = report["notices"]
+            .as_array()
+            .map(|list| list.iter().filter_map(|n| n["code"].as_str()).collect())
+            .unwrap_or_default();
+        assert!(!codes.contains(&"update-available"), "notices: {codes:?}");
+        Ok(())
+    }
+
     /// `--version --json` is the JSON document that carries the notice, in `notices`.
     ///
     /// Conformance: N6

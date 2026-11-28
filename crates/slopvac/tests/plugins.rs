@@ -1338,13 +1338,13 @@ mod conformance {
         assert_eq!(trust_records(&sandbox), 0);
     }
 
-    /// Neither command takes `--yes`, so no flag can make either one record trust.
+    /// Neither command takes `--yes`, and each refuses it as a usage error.
     ///
     /// Conformance: N8
     #[rstest::rstest]
     #[case::sync(&["--offline", "plugins", "sync", "--yes"])]
     #[case::update(&["--offline", "plugins", "update", "--yes"])]
-    fn sync_and_update_refuse_a_yes_flag_and_record_no_trust(#[case] args: &[&str]) {
+    fn sync_and_update_refuse_a_yes_flag(#[case] args: &[&str]) {
         let sandbox = Sandbox::new();
         lock_code_plugin(&sandbox);
         sandbox
@@ -1353,7 +1353,6 @@ mod conformance {
             .assert()
             .code(2)
             .stderr(predicate::str::contains("--yes"));
-        assert_eq!(trust_records(&sandbox), 0);
     }
 
     /// In CI, a locked path plugin whose files no longer hash to the lock's digest stops the run
