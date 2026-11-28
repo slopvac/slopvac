@@ -1073,3 +1073,70 @@ def test_a_change_to_the_generated_rules_reference_alone_runs_its_drift_check():
     assert evaluate(JOBS["lint-package"]["if"], outputs) is True
     commands = [step.get("run", "") for step in JOBS["lint-package"]["steps"]]
     assert any("slopvac reference --write" in c and "--check" in c for c in commands)
+
+
+# --- the prime prose gate --------------------------------------------------
+
+PRIME_GATE_STEP = "Gate the rendered prime guidance"
+
+
+def prime_gate_job() -> str:
+    """The test.yml job that calls the workflow holding the prime prose gate step."""
+    for name, job in JOBS.items():
+        uses = job.get("uses", "")
+        if not uses.startswith("./.github/workflows/"):
+            continue
+        called = load(uses.rsplit("/", 1)[1])["jobs"]
+        steps = [s for j in called.values() for s in j.get("steps", [])]
+        if any(s.get("name") == PRIME_GATE_STEP for s in steps):
+            return name
+    pytest.fail(f"no workflow called from test.yml has the step {PRIME_GATE_STEP!r}")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # The topics and the messages they render.
+        "crates/slopvac-agents/topics/review.md.j2",
+        "crates/slopvac-agents/topics/write.md.j2",
+        "crates/slopvac-agents/src/messages.rs",
+        "crates/slopvac-agents/data/model-evals.json",
+        # The command list of the base topic comes from the CLI crate.
+        "crates/slopvac/src/owners.rs",
+        # The config that `prime` reads, and the schemas that validate it.
+        "crates/slopvac-config/src/schema.rs",
+        "schemas/v3/config.schema.json",
+        "schemas/v3/frontmatter.schema.json",
+        "docs/contract/compat/profiles/legacy-normal.toml",
+        # The ruleset that lints the rendered text.
+        "crates/slopvac-rules/tests/fixtures/core-v3/ai-residue.json",
+        "crates/slopvac-styles/presets/ste.toml",
+        "crates/slopvac-engine/src/lib.rs",
+        # The build, the fixture config and the gate script.
+        "Cargo.lock",
+        "rust-toolchain.toml",
+        "scripts/ci/gate_prime_prose.sh",
+        ".github/action-fixtures/slopvac-v3.toml",
+    ],
+)
+def test_every_input_of_the_rendered_prime_text_runs_the_prime_gate(path):
+    job = prime_gate_job()
+    assert evaluate(JOBS[job]["if"], classes_of([path])) is True
+
+
+def test_the_2x_e2e_job_builds_no_rust():
+    jobs = load("cli-e2e.yml")["jobs"].values()
+    steps = [s for j in jobs for s in j.get("steps", [])]
+    assert [s["name"] for s in steps if "cargo" in s.get("run", "")] == []
+
+
+def test_the_prime_gate_runs_after_the_job_builds_the_binary():
+    uses = JOBS[prime_gate_job()]["uses"]
+    steps = next(
+        j["steps"]
+        for j in load(uses.rsplit("/", 1)[1])["jobs"].values()
+        if any(s.get("name") == PRIME_GATE_STEP for s in j["steps"])
+    )
+    names = [s["name"] for s in steps]
+    assert "Build the slopvac binary" in names
+    assert names.index("Build the slopvac binary") < names.index(PRIME_GATE_STEP)
