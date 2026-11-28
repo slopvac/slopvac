@@ -32,6 +32,7 @@ pub mod owners;
 mod plugin_loader;
 pub mod redact;
 pub mod report;
+mod review_provider;
 pub mod rule_catalog;
 mod run;
 pub mod severity;

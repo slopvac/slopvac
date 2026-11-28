@@ -239,30 +239,58 @@ pub fn prime(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
     Ok(exit::PASS)
 }
 
-/// The model that wrote the revision, from `[review] author_model` of the nearest config.
-fn author_model(root: &Path) -> Result<Option<String>, CliError> {
-    let presets = StylePresets(BuiltinSource);
-    let found = Discovery::new(&presets)
-        .nearest(root)
-        .map_err(|e| engine::config_error(&e, root))?;
-    Ok(found
-        .and_then(|config| config.project_value(&["review", "author_model"]))
-        .and_then(|value| value.as_str().map(str::to_owned)))
-}
-
 /// `slopvac review`.
 ///
-/// No model provider is installed yet, so a run without `--dry-run` that needs one fails
-/// with `review-provider-missing`; `--dry-run` and the mechanical type call none.
-pub fn review(m: &ArgMatches, offline: bool, out: &mut dyn Write) -> Result<u8, CliError> {
-    let env = ReviewEnv {
-        offline,
-        author_model: author_model(&cwd())?,
-        ..ReviewEnv::default()
+/// `[review] provider`, `model` and `author_model` come from the resolved project config, and
+/// the flags win over them. The provider plugin starts only when the run calls it. A run that
+/// stops prints no plan; the notices known before it stopped go to `err_out`.
+pub fn review(
+    m: &ArgMatches,
+    offline: bool,
+    env: &dyn crate::env::Env,
+    out: &mut dyn Write,
+    err_out: &mut dyn Write,
+) -> Result<u8, CliError> {
+    let root = cwd();
+    let presets = StylePresets(BuiltinSource);
+    let config = Discovery::new(&presets)
+        .nearest(&root)
+        .map_err(|e| engine::config_error(&e, &root))?;
+    let value = |key: &str| {
+        config
+            .as_ref()
+            .and_then(|c| c.project_value(&["review", key]))
+            .and_then(|v| v.as_str().map(str::to_owned))
     };
-    let text = review::run(m, &env).map_err(|e| agents_error(&e, &cwd()))?;
-    write(out, &text)?;
-    Ok(exit::PASS)
+    let provider = value("provider").map(|id| {
+        crate::review_provider::PluginProvider::new(id, offline, env, &root, config.as_deref())
+    });
+    let review_env = ReviewEnv {
+        offline: crate::offline::project(offline, env, config.as_deref()),
+        provider: provider.as_ref().map(|p| p as &dyn review::ModelProvider),
+        author_model: value("author_model"),
+        reviewer_model: value("model"),
+    };
+    match review::run(m, &review_env) {
+        Ok(text) => {
+            write(out, &text)?;
+            Ok(exit::PASS)
+        }
+        Err(stopped) => Err(stopped_error(&stopped, err_out, &root)),
+    }
+}
+
+/// The error of a review that stopped, after its notices went to `err_out`. A notice that
+/// cannot be written must not hide the error: the error is what the run reports. The first
+/// failed write ends the notices, because the stream is broken.
+fn stopped_error(stopped: &review::Stopped, err_out: &mut dyn Write, root: &Path) -> CliError {
+    for notice in &stopped.notices {
+        if writeln!(err_out, "{}", slopvac_report::render_notice(notice)).is_err() {
+            // The stream is broken, so the notices after this one cannot reach it either.
+            break;
+        }
+    }
+    agents_error(&stopped.error, root)
 }
 
 /// `slopvac claims`. Reads the two named files and nothing else, so it needs no network.
@@ -295,6 +323,83 @@ pub fn claims(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    /// A writer that refuses every write.
+    struct Refusing;
+
+    impl Write for Refusing {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+        }
+    }
+
+    /// A writer that counts its calls and refuses each one.
+    #[derive(Default)]
+    struct Counting(usize);
+
+    impl Write for Counting {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            self.0 += 1;
+            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn warning(code: &str) -> slopvac_model::Notice {
+        slopvac_model::Notice::from_catalog(
+            slopvac_model::NoticeLevel::Warning,
+            slopvac_model::NoticeMessage::new(
+                slopvac_model::KebabName::new(code).unwrap(),
+                slopvac_model::NonEmptyString::new("a notice").unwrap(),
+            ),
+        )
+    }
+
+    /// The first notice that cannot be written ends the notices: the stream is broken, and the
+    /// review error is still the result.
+    #[test]
+    fn a_failed_notice_write_ends_the_notices_and_keeps_the_error() {
+        let stopped = review::Stopped::new(
+            AgentsError::new_coded("review-provider-missing", "no provider"),
+            vec![
+                warning("review-model-unchecked"),
+                warning("review-model-same"),
+            ],
+        );
+        let mut err_out = Counting::default();
+
+        let error = stopped_error(&stopped, &mut err_out, Path::new("proj"));
+
+        assert_eq!(error.code, "review-provider-missing");
+        assert_eq!(err_out.0, 1, "writes after the first failed one");
+    }
+
+    /// A stopped review whose notices cannot be written still reports its own error.
+    #[test]
+    fn a_notice_that_cannot_be_written_leaves_the_review_error() {
+        let notice = slopvac_model::Notice::from_catalog(
+            slopvac_model::NoticeLevel::Warning,
+            slopvac_model::NoticeMessage::new(
+                slopvac_model::KebabName::new("review-model-unchecked").unwrap(),
+                slopvac_model::NonEmptyString::new("a notice").unwrap(),
+            ),
+        );
+        let stopped = review::Stopped::new(
+            AgentsError::new_coded("review-provider-missing", "no provider"),
+            vec![notice],
+        );
+
+        let error = stopped_error(&stopped, &mut Refusing, Path::new("proj"));
+
+        assert_eq!(error.code, "review-provider-missing");
+    }
 
     // Owners report paths relative to the project. With a relative root, each variant shows
     // the root once.

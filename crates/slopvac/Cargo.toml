@@ -73,6 +73,8 @@ predicates = "3.1.4"
 proptest.workspace = true
 roxmltree.workspace = true
 rstest.workspace = true
+# The TM-19 test compares the JSON text of each request value as written.
+serde_json = { workspace = true, features = ["raw_value"] }
 slopvac-pcre2.workspace = true
 snapbox.workspace = true
 tar.workspace = true

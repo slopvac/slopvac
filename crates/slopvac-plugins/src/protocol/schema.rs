@@ -134,19 +134,6 @@ pub(crate) struct FeatureNameSchema;
 )]
 pub(crate) struct ProtocolVersion(ApiVersion);
 
-/// The review types of `provider/complete`.
-#[derive(JsonSchema)]
-#[schemars(inline, rename_all = "kebab-case")]
-#[expect(
-    dead_code,
-    reason = "schema only: the derive reads the variants and no code builds one"
-)]
-pub(crate) enum TaskKind {
-    FactCheck,
-    Update,
-    Rewrite,
-}
-
 /// Any JSON value: the schema of `result`, whose shape depends on the method.
 struct Anything;
 

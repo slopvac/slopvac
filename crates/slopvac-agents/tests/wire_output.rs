@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use slopvac_agents::claims;
 use slopvac_agents::error::AgentsError;
 use slopvac_agents::review::{
-    self, ModelProvider, Payload, ProviderReply, ReportedItem, ReviewEnv,
+    self, ModelProvider, ProviderReply, ProviderRequest, ReplyItem, ReviewEnv,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -26,13 +26,24 @@ impl ModelProvider for Reporting {
     fn name(&self) -> &'static str {
         "reporting"
     }
-    fn model(&self) -> &'static str {
-        "claude-x"
+    fn model(&self) -> Option<&str> {
+        Some("claude-x")
     }
-    fn review(&self, _: &Payload) -> Result<ProviderReply, AgentsError> {
+    fn review(&self, request: &ProviderRequest<'_>) -> Result<ProviderReply, AgentsError> {
         Ok(ProviderReply::new(
-            "reported",
-            vec![ReportedItem::new(0, "gpt-5"), ReportedItem::new(1, "gpt-5")],
+            request
+                .items
+                .iter()
+                .enumerate()
+                .map(|(i, sent)| {
+                    let model = if sent.item < 2 {
+                        "gpt-5"
+                    } else {
+                        request.model
+                    };
+                    ReplyItem::text(i, "reported", model)
+                })
+                .collect(),
         ))
     }
 }
@@ -112,6 +123,9 @@ fn plan_with_a_reported_model_keeps_its_item_locations_byte_for_byte() -> TestRe
         provider: Some(&Reporting),
         ..ReviewEnv::default()
     };
-    let plan = plan_json(&["--author-model", "gpt-5"], &env)?;
+    let plan = plan_json(
+        &["--author-model", "gpt-5", "--reviewer-model", "claude-x"],
+        &env,
+    )?;
     assert_golden("plan-reported.json", &plan)
 }

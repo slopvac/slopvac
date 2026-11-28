@@ -31,7 +31,9 @@ use std::path::PathBuf;
 use common::*;
 use rstest::rstest;
 use serde_json::{Value, json};
-use slopvac_plugins::hooks::{CompleteItem, Document, Finding, FindingsDocument, Span};
+use slopvac_plugins::hooks::{
+    CompleteItem, CompleteRequest, Document, Finding, FindingsDocument, ProviderTask, Span,
+};
 use slopvac_plugins::{DocOutcome, HostConfig, Plugin, PluginDeclaration, PluginError};
 
 const GOLDENS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/wire");
@@ -267,7 +269,10 @@ fn hook_run(hook: &str) -> Run {
                         instruction: Some("fail".into()),
                     },
                 ];
-                seen(p.complete("main", "rewrite", "m1", &items))
+                seen(p.complete(
+                    "main",
+                    &CompleteRequest::new(ProviderTask::Rewrite, Some("m1".into()), items.to_vec()),
+                ))
             }
             "recipe" => {
                 let options = json!({"marker": "hi", "force": true});

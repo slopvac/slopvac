@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use slopvac_agents::claims;
 use slopvac_agents::error::AgentsError;
 use slopvac_agents::review::{
-    self, ModelProvider, Payload, ProviderReply, ReportedItem, ReviewEnv,
+    self, ModelProvider, ProviderReply, ProviderRequest, ReplyItem, ReviewEnv,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -32,13 +32,24 @@ impl ModelProvider for Reporting {
     fn name(&self) -> &'static str {
         "reporting"
     }
-    fn model(&self) -> &'static str {
-        "claude-x"
+    fn model(&self) -> Option<&str> {
+        Some("claude-x")
     }
-    fn review(&self, _: &Payload) -> Result<ProviderReply, AgentsError> {
+    fn review(&self, request: &ProviderRequest<'_>) -> Result<ProviderReply, AgentsError> {
         Ok(ProviderReply::new(
-            "reported",
-            vec![ReportedItem::new(0, "gpt-5"), ReportedItem::new(1, "gpt-5")],
+            request
+                .items
+                .iter()
+                .enumerate()
+                .map(|(i, sent)| {
+                    let model = if sent.item < 2 {
+                        "gpt-5"
+                    } else {
+                        request.model
+                    };
+                    ReplyItem::text(i, "reported", model)
+                })
+                .collect(),
         ))
     }
 }
@@ -148,6 +159,7 @@ fn mechanical_plan() -> Result<Value, Box<dyn std::error::Error>> {
     let object = plan.as_object_mut().ok_or("the plan is not an object")?;
     object.remove("author_model");
     object.remove("reviewer_model");
+    object.remove("request");
     Ok(plan)
 }
 
@@ -216,7 +228,10 @@ fn a_plan_with_a_provider_report_and_located_items_validates() -> TestResult {
         provider: Some(&Reporting),
         ..ReviewEnv::default()
     };
-    let plan = plan_output(&["--author-model", "gpt-5"], &env)?;
+    let plan = plan_output(
+        &["--author-model", "gpt-5", "--reviewer-model", "claude-x"],
+        &env,
+    )?;
     assert!(plan["report"].is_string(), "{plan}");
     assert!(
         plan["notices"]
@@ -344,7 +359,7 @@ fn a_lost_literal_alone_makes_a_fact_candidate(
                 );
             }, &[("const", "/payload/kind")])]
 #[case::a_rewrite_with_the_passages_payload(|d: &mut Value| set(d, "/review_type", json!("rewrite")), &[("const", "/payload/kind")])]
-#[case::an_update_without_a_provider(|d: &mut Value| set(d, "/uses_provider", json!(false)), &[("const", "/uses_provider")])]
+#[case::an_update_without_a_provider(|d: &mut Value| set(d, "/uses_provider", json!(false)), &[("const", "/uses_provider"), ("not", "")])]
 #[case::a_document_item_among_passages(|d: &mut Value| set(d, "/payload/items/2/role", json!("revised_document")), &[("enum", "/payload/items/2/role")])]
 #[case::a_changed_item_without_its_original(|d: &mut Value| remove(d, "/payload/items/0", "original"), &[("required", "/payload/items/0")])]
 #[case::an_added_item_with_an_original(|d: &mut Value| set(d, "/payload/items/2/original", json!("x")), &[("not", "/payload/items/2")])]
@@ -381,7 +396,7 @@ fn an_update_plan_that_breaks_the_contract_fails_on_exactly_that(
                     items.push(json!({"role": "revised_document", "line": 1, "text": "c"}));
                 }
             }, &[("maxItems", "/payload/items")])]
-#[case::a_rewrite_without_a_provider(|d: &mut Value| set(d, "/uses_provider", json!(false)), &[("const", "/uses_provider")])]
+#[case::a_rewrite_without_a_provider(|d: &mut Value| set(d, "/uses_provider", json!(false)), &[("const", "/uses_provider"), ("not", "")])]
 fn a_rewrite_plan_that_breaks_the_contract_fails_on_exactly_that(
     #[case] change: fn(&mut Value),
     #[case] expect: &[(&str, &str)],
@@ -429,9 +444,42 @@ fn a_rewrite_plan_that_breaks_the_contract_fails_on_exactly_that(
                     json!([{"role": "dropped", "line": 1, "text": "t"}]),
                 );
             }, &[("maxItems", "/payload/items")])]
+#[case::a_mechanical_review_with_a_request(|d: &mut Value| set(d, "/request", json!({
+                "task": "update",
+                "items": [{"id": "1", "instruction": "i", "text": "t"}]
+            })), &[("not", "")])]
 fn a_mechanical_plan_that_breaks_the_contract_fails_on_exactly_that(
     #[case] change: fn(&mut Value),
     #[case] expect: &[(&str, &str)],
 ) -> TestResult {
     assert_exact(PLAN, mechanical_plan()?, change, expect)
+}
+
+/// The plan's `request` takes every task of `provider/complete`, the protocol's full enum, so a
+/// task the protocol allows never breaks the plan.
+#[rstest]
+#[case::fact_check("fact-check")]
+#[case::update("update")]
+#[case::rewrite("rewrite")]
+fn a_request_takes_every_protocol_task(#[case] task: &str) -> TestResult {
+    let mut plan = rewrite_plan()?;
+    assert!(
+        plan["request"].is_object(),
+        "the rewrite plan holds a request: {plan}"
+    );
+    plan["request"]["task"] = json!(task);
+    assert_valid(&validator(PLAN)?, &plan);
+    Ok(())
+}
+
+/// The protocol's task enum is the whole list: a task outside it fails on `enum`, and a request
+/// needs at least one item, as `provider/complete` does.
+#[rstest]
+#[case::an_unknown_task(|d: &mut Value| set(d, "/request/task", json!("deep")), &[("enum", "/request/task")])]
+#[case::a_request_with_no_items(|d: &mut Value| set(d, "/request/items", json!([])), &[("minItems", "/request/items")])]
+fn a_request_that_breaks_the_protocol_fails_on_exactly_that(
+    #[case] change: fn(&mut Value),
+    #[case] expect: &[(&str, &str)],
+) -> TestResult {
+    assert_exact(PLAN, rewrite_plan()?, change, expect)
 }

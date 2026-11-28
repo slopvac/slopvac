@@ -179,3 +179,46 @@ fn a_different_reviewer_passes_the_author_model_check_in_a_dry_run() {
     let plan: Value = serde_json::from_slice(&out.stdout).expect("a JSON plan");
     assert_eq!(plan["reviewer_model_checked"], true, "{plan}");
 }
+
+/// The built binary through snapbox, set up like [`slopvac`].
+fn snap(dir: &std::path::Path) -> snapbox::cmd::Command {
+    let mut cmd = snapbox::cmd::Command::new(snapbox::cmd::cargo_bin!("slopvac"))
+        .current_dir(dir)
+        .env("SLOPVAC_NO_UPDATE_CHECK", "1");
+    for var in [
+        "SLOPVAC_OFFLINE",
+        "SLOPVAC_LOG",
+        "FORCE_COLOR",
+        "CLICOLOR_FORCE",
+    ] {
+        cmd = cmd.env_remove(var);
+    }
+    cmd.env("NO_COLOR", "1")
+}
+
+/// A scope over the budget is approved with the flag only. The refusal names no config key,
+/// because none exists.
+#[test]
+fn a_scope_over_the_budget_names_only_the_approval_flag() {
+    let dir = project();
+    let out = snap(dir.path())
+        .args([
+            "review",
+            "new.md",
+            "--original",
+            "old.md",
+            "--dry-run",
+            "--extra",
+            "99",
+        ])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.starts_with("error[review-scope-approval]: "),
+        "{stderr}"
+    );
+    assert!(stderr.contains("--scope-approved"), "{stderr}");
+    assert!(!stderr.contains("review_approval"), "{stderr}");
+}

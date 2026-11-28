@@ -22,6 +22,18 @@ pub fn resolve(flag: bool, env: &dyn Env, config: Option<bool>) -> bool {
     flag || env_requests_offline(env) || config == Some(true)
 }
 
+/// [`resolve`] with the `[network] offline` value of the resolved project `config`.
+///
+/// The global preflight reads the nearest file only, so an `[network] offline` in an extended
+/// file reaches a command through the resolved config. The resolver keeps offline sticky
+/// across every layer (policies.md, 1.3; config.md, "Layer order"): a later `false` never wins.
+#[must_use]
+pub fn project(flag: bool, env: &dyn Env, config: Option<&slopvac_config::LoadedConfig>) -> bool {
+    let config =
+        config.map(|c| crate::lint_settings::resolve(c, std::path::Path::new(".")).is_offline());
+    resolve(flag, env, config)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

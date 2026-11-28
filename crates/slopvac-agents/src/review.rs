@@ -4,6 +4,7 @@
 //! It stays off until trusted and named under `[review] provider`, never runs
 //! during lint or offline, and receives only the text the review type needs.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
@@ -12,14 +13,12 @@ use serde::Serialize;
 
 use slopvac_messages::Catalog;
 use slopvac_model::{Notice, NoticeLevel, SchemaVersion};
+use slopvac_plugins::hooks::{CompleteItem, CompleteRequest, ProviderTask};
 use slopvac_update::messages::UpdateMessage;
 
 use crate::claims::{self, Report};
 use crate::error::{AgentsError, notice};
 use crate::messages::{AgentsMessage, AgentsPhrase, AgentsText, quoted};
-
-// STUB(slopvac-8l4.11.8): `ReviewEnv` is filled by the caller; config and the provider hook replace it.
-// The `[review] author_model` and `[review] model` lookups sit behind the same seam.
 
 /// Genres whose claims carry contract weight. A review of one never runs as `mechanical`.
 pub const STRICT_GENRES: [&str; 4] = ["reference", "specification", "api", "decision-record"];
@@ -56,34 +55,23 @@ impl ReviewType {
         }
     }
 
+    /// The `task` a provider is asked for this type, or `None` for `mechanical`, which calls
+    /// no provider.
+    #[must_use]
+    pub fn task(self) -> Option<ProviderTask> {
+        match self {
+            Self::Mechanical => None,
+            Self::Update => Some(ProviderTask::Update),
+            Self::Rewrite => Some(ProviderTask::Rewrite),
+        }
+    }
+
     /// Parse a type name.
     #[must_use]
     pub fn parse(name: &str) -> Option<Self> {
         [Self::Mechanical, Self::Update, Self::Rewrite]
             .into_iter()
             .find(|t| t.name() == name)
-    }
-}
-
-/// Whether going past the scope budget needs the user.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Approval {
-    /// Ask the user to confirm the scope. The default.
-    #[default]
-    Ask,
-    /// Proceed without asking (`review_approval = "auto"`).
-    Auto,
-}
-
-impl Approval {
-    /// Parse the config value.
-    #[must_use]
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "ask" => Some(Self::Ask),
-            "auto" => Some(Self::Auto),
-            _ => None,
-        }
     }
 }
 
@@ -197,14 +185,13 @@ impl Scope {
         }
     }
 
-    /// Decide whether `extra` more checks (unchanged claims, more sources) can run.
-    pub fn admit(
-        &self,
-        extra: usize,
-        approval: Approval,
-        user_confirmed: bool,
-    ) -> Result<(), AgentsError> {
-        if extra <= self.extra_budget || approval == Approval::Auto || user_confirmed {
+    /// Decide whether `extra` more checks (unchanged claims, more sources) can run. Above the
+    /// budget they need the user's confirmation, which `--scope-approved` gives.
+    ///
+    /// # Errors
+    /// `review-scope-approval` when `extra` is over the budget and the user has not confirmed.
+    pub fn admit(&self, extra: usize, user_confirmed: bool) -> Result<(), AgentsError> {
+        if extra <= self.extra_budget || user_confirmed {
             return Ok(());
         }
         Err(AgentsError::coded(&AgentsMessage::ScopeApproval {
@@ -359,59 +346,222 @@ fn rank(kind: ReviewType) -> u8 {
     }
 }
 
-/// A model provider, supplied by the plugin host once it exists.
+/// A model provider: the plugin host's adapter in the binary, or a stand-in in a test.
 pub trait ModelProvider {
     /// The provider's name as in `[review] provider`.
     fn name(&self) -> &str;
-    /// The model the provider reports it will use.
-    fn model(&self) -> &str;
-    /// Review the payload and return the reviewer's report with the model each item ran on.
+    /// The model the provider declares before any call, if it declares one. A plugin declares
+    /// none: each of its answers reports the model that wrote it.
+    fn model(&self) -> Option<&str>;
+    /// Send `request` and return the answers.
     ///
     /// # Errors
-    /// The provider could not review the payload.
-    fn review(&self, payload: &Payload) -> Result<ProviderReply, AgentsError>;
+    /// The provider could not be asked, or its reply breaks the plugin protocol.
+    fn review(&self, request: &ProviderRequest<'_>) -> Result<ProviderReply, AgentsError>;
 }
 
-/// The model a provider reports it used for one payload item.
+/// One item sent to a provider.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
-pub struct ReportedItem {
-    /// Index into [`Payload::items`].
-    pub index: usize,
-    /// The model the provider reports for that item.
-    pub model: String,
+pub struct SentItem {
+    /// The id, unique in the request: the payload position counted from 1, or
+    /// `<position>-original` for the sentence before a change.
+    pub id: String,
+    /// Fixed host text that says what the item is. It holds no document text.
+    pub instruction: &'static str,
+    /// Document text, exactly as the payload holds it.
+    pub text: String,
+    /// The payload item this one belongs to, as an index into [`Payload::items`].
+    pub item: usize,
+    /// True for the sentence before a change, which is context and not part of the report.
+    pub context: bool,
 }
 
-impl ReportedItem {
-    /// Report `model` for the payload item at `index`.
+/// What a provider is asked.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct ProviderRequest<'a> {
+    /// The task as the protocol names it: `update` or `rewrite`.
+    pub task: &'static str,
+    /// The reviewer model from `--reviewer-model`, else `[review] model`.
+    pub model: &'a str,
+    /// The items, from [`provider_items`], with what each one belongs to.
+    pub items: &'a [SentItem],
+    /// The `provider/complete` request: the plan's own `request`, sent as it is.
+    pub call: &'a CompleteRequest,
+}
+
+/// A provider's answer for one sent item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Answer {
+    /// The model's text, which is untrusted, and the model the provider reports for it.
+    Text {
+        /// The text.
+        text: String,
+        /// The model the provider reports.
+        model: String,
+    },
+    /// The provider failed this item. `code` is the host's code for the failure, never the
+    /// plugin's own.
+    Failed {
+        /// The host's code.
+        code: &'static str,
+    },
+}
+
+/// The answer for the sent item at `index`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ReplyItem {
+    /// Index into [`ProviderRequest::items`].
+    pub index: usize,
+    /// The answer.
+    pub answer: Answer,
+}
+
+impl ReplyItem {
+    /// `text` from `model` for the sent item at `index`.
     #[must_use]
-    pub fn new(index: usize, model: impl Into<String>) -> Self {
+    pub fn text(index: usize, text: impl Into<String>, model: impl Into<String>) -> Self {
         Self {
             index,
-            model: model.into(),
+            answer: Answer::Text {
+                text: text.into(),
+                model: model.into(),
+            },
+        }
+    }
+
+    /// A failure with the host's `code` for the sent item at `index`.
+    #[must_use]
+    pub fn failed(index: usize, code: &'static str) -> Self {
+        Self {
+            index,
+            answer: Answer::Failed { code },
         }
     }
 }
 
-/// A provider's answer: the report text and the models it says it used. This in-process type
-/// accepts a partial list. It does not relax the plugin protocol, whose result must be complete.
+/// A provider's reply: one answer per sent item, in any order. A reply that leaves an item
+/// out, names one twice or names one that was not sent is refused, as the plugin protocol
+/// refuses it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ProviderReply {
-    /// The reviewer's report.
-    pub report: String,
-    /// Reported models, at most one entry per payload item.
-    pub items: Vec<ReportedItem>,
+    /// The answers.
+    pub items: Vec<ReplyItem>,
 }
 
 impl ProviderReply {
-    /// A reply with `report` and the reported `items`.
+    /// A reply with these answers.
     #[must_use]
-    pub fn new(report: impl Into<String>, items: Vec<ReportedItem>) -> Self {
-        Self {
-            report: report.into(),
-            items,
+    pub fn new(items: Vec<ReplyItem>) -> Self {
+        Self { items }
+    }
+}
+
+/// The `review-provider-reply-invalid` refusal, for an adapter whose own protocol check
+/// refused the result for `count` sent items (plugin-protocol.md section 5.3).
+#[must_use]
+pub fn reply_invalid(count: usize) -> AgentsError {
+    AgentsError::coded(&AgentsMessage::ProviderReplyInvalid { count })
+}
+
+/// A failure of the whole request under the host's `code`, with the provider's own message
+/// withheld, because it can quote the document (policies.md section 1.7).
+#[must_use]
+pub fn request_failed(code: &'static str) -> AgentsError {
+    AgentsError::new_coded(
+        code,
+        AgentsText::ProviderRequestFailed {
+            code: code.to_owned(),
         }
+        .to_string(),
+    )
+}
+
+/// A provider that answered and then did not shut down cleanly, under the host's `code`.
+#[must_use]
+pub fn shutdown_failed(code: &'static str) -> AgentsError {
+    AgentsError::new_coded(
+        code,
+        AgentsText::ProviderShutdownFailed {
+            code: code.to_owned(),
+        }
+        .to_string(),
+    )
+}
+
+/// The `review-provider-missing` refusal, for a plugin named under `[review] provider` that
+/// declares no provider hook, so it is not a model provider.
+#[must_use]
+pub fn not_a_provider() -> AgentsError {
+    AgentsError::coded(&AgentsMessage::ProviderMissing)
+}
+
+/// The items a provider receives for `payload`: each payload item's text in an item of its
+/// own, and the sentence before a change in a context item right after it. Each item carries a
+/// fixed instruction, so no document text reaches the instructions.
+#[must_use]
+pub fn provider_items(payload: &Payload) -> Vec<SentItem> {
+    let mut items = Vec::new();
+    for (index, item) in payload.items.iter().enumerate() {
+        let position = index + 1;
+        items.push(SentItem {
+            id: position.to_string(),
+            instruction: instruction(item.role, item.original.is_some()).as_static(),
+            text: item.text.clone(),
+            item: index,
+            context: false,
+        });
+        if let Some(original) = &item.original {
+            items.push(SentItem {
+                id: format!("{position}-original"),
+                instruction: AgentsPhrase::InstructionOriginalContext.as_static(),
+                text: original.clone(),
+                item: index,
+                context: true,
+            });
+        }
+    }
+    items
+}
+
+/// The `provider/complete` request for `items`, or `None` when nothing would be sent: a type
+/// with no task, or no items. The plan prints this value, and a call sends the same value.
+/// `model` is the reviewer model a call names, from the flag or the config.
+#[must_use]
+pub fn provider_request(
+    review_type: ReviewType,
+    items: &[SentItem],
+    model: Option<&str>,
+) -> Option<CompleteRequest> {
+    let task = review_type.task()?;
+    if items.is_empty() {
+        return None;
+    }
+    let sent = items
+        .iter()
+        .map(|item| CompleteItem {
+            id: item.id.clone(),
+            instruction: Some(item.instruction.to_owned()),
+            text: item.text.clone(),
+        })
+        .collect();
+    Some(CompleteRequest::new(task, model.map(str::to_owned), sent))
+}
+
+/// The instruction for a payload item of `role`. The roles are the closed set that
+/// [`payload`] builds.
+fn instruction(role: &str, with_original: bool) -> AgentsPhrase {
+    match (role, with_original) {
+        ("changed", true) => AgentsPhrase::InstructionChangedWithOriginal,
+        ("changed", false) => AgentsPhrase::InstructionChanged,
+        ("added", _) => AgentsPhrase::InstructionAdded,
+        ("dropped", _) => AgentsPhrase::InstructionDropped,
+        ("original_document", _) => AgentsPhrase::InstructionOriginalDocument,
+        _ => AgentsPhrase::InstructionRevisedDocument,
     }
 }
 
@@ -420,14 +570,49 @@ impl ProviderReply {
 pub struct ReviewEnv<'a> {
     /// Offline mode blocks every provider call.
     pub offline: bool,
-    /// The trusted provider named under `[review] provider`, if any.
+    /// The provider named under `[review] provider`, if any. It starts only when a call is due.
     pub provider: Option<&'a dyn ModelProvider>,
-    /// `review_approval`.
-    pub approval: Approval,
     /// The author's model from `[review] author_model`, if set. `--author-model` wins.
     pub author_model: Option<String>,
     /// The reviewer model from `[review] model`, if set. `--reviewer-model` wins.
     pub reviewer_model: Option<String>,
+}
+
+/// Why a review stopped, with the notices that were known before it stopped.
+///
+/// No plan is printed for a stopped review, so the caller shows `notices` as diagnostics.
+#[derive(Debug, thiserror::Error)]
+#[error("{error}")]
+#[non_exhaustive]
+pub struct Stopped {
+    /// The failure, which is also the error source.
+    #[source]
+    pub error: AgentsError,
+    /// The notices known before the failure, such as `review-model-same`.
+    pub notices: Vec<Notice>,
+}
+
+impl Stopped {
+    /// A stop with its failure and the notices known before it.
+    #[must_use]
+    pub fn new(error: AgentsError, notices: Vec<Notice>) -> Self {
+        Self { error, notices }
+    }
+
+    /// The stable code of the failure.
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        self.error.code()
+    }
+}
+
+impl From<AgentsError> for Box<Stopped> {
+    fn from(error: AgentsError) -> Self {
+        Box::new(Stopped {
+            error,
+            notices: Vec::new(),
+        })
+    }
 }
 
 /// The plan a review run prints.
@@ -446,6 +631,11 @@ pub struct Plan {
     pub scope: Scope,
     /// The exact provider payload.
     pub payload: Payload,
+    /// The `provider/complete` request that a call sends: present when the review uses a provider
+    /// and the payload has items, also on `--dry-run`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
+    pub request: Option<CompleteRequest>,
     /// False for `mechanical`, which never calls a provider.
     pub uses_provider: bool,
     /// The author's model, if known.
@@ -460,7 +650,8 @@ pub struct Plan {
     pub reviewer_model_checked: bool,
     /// Notices that leave the run intact, such as an unchecked model rule.
     pub notices: Vec<Notice>,
-    /// The provider's report; absent on `--dry-run`.
+    /// The provider's report, which is untrusted provider output and starts with the
+    /// `review-report-untrusted` line; absent on `--dry-run`.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(transform = slopvac_model::absent_not_null)]
     pub report: Option<String>,
@@ -537,8 +728,12 @@ pub fn command() -> Command {
 /// Run the parsed `review` command.
 ///
 /// With `--dry-run` it prints the plan and the payload and calls nothing. Without
-/// it, a trusted provider must be present and the run must be online.
-pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsError> {
+/// it, a trusted provider must be present, the run must be online and the reviewer model
+/// must be named.
+///
+/// # Errors
+/// Why the review stopped, with the notices known before it stopped.
+pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, Box<Stopped>> {
     let read = |id: &str| -> Result<String, AgentsError> {
         let path = matches.get_one::<PathBuf>(id).cloned().unwrap_or_default();
         std::fs::read_to_string(&path).map_err(|e| AgentsError::io(path, e))
@@ -563,29 +758,12 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
     let scope = Scope::for_report(&report);
     scope.admit(
         matches.get_one::<usize>("extra").copied().unwrap_or(0),
-        env.approval,
         matches.get_flag("scope-approved"),
     )?;
     let uses_provider = review_type != ReviewType::Mechanical;
     // A mechanical review calls no reviewer, so the models and their rule do not apply.
     let (author, reviewer, author_source, reviewer_source) = if uses_provider {
-        let pick = |flag: Option<String>, config: Option<String>| match (flag, config) {
-            (Some(v), _) => (Some(v), "flag"),
-            (None, Some(v)) => (Some(v), "config"),
-            (None, None) => (None, "none"),
-        };
-        let (author, author_source) = pick(
-            matches.get_one::<String>("author-model").cloned(),
-            env.author_model.clone(),
-        );
-        let (reviewer, reviewer_source) = match pick(
-            matches.get_one::<String>("reviewer-model").cloned(),
-            env.reviewer_model.clone(),
-        ) {
-            (None, _) => (env.provider.map(|p| p.model().to_owned()), "provider"),
-            found => found,
-        };
-        (author, reviewer, author_source, reviewer_source)
+        models(matches, env)
     } else {
         (None, None, "none", "none")
     };
@@ -600,13 +778,25 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
     } else {
         (false, Vec::new())
     };
+    let payload = payload(review_type, &report, &original, &revised);
+    // The model a call names: only the flag or the config, never one the provider declares.
+    let call_model = match reviewer_source {
+        "flag" | "config" => reviewer.as_deref(),
+        _ => None,
+    };
+    let request = if uses_provider {
+        provider_request(review_type, &provider_items(&payload), call_model)
+    } else {
+        None
+    };
     let mut plan = Plan {
         schema_version: SchemaVersion,
         review_type,
         reason,
         stats,
         scope,
-        payload: payload(review_type, &report, &original, &revised),
+        payload,
+        request,
         uses_provider,
         author_model: author,
         reviewer_model: reviewer,
@@ -619,7 +809,15 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
             author: author_source,
             reviewer: reviewer_source,
         };
-        plan.report = Some(call_provider(env, &mut plan, &sources)?);
+        match call_provider(env, &mut plan, &sources) {
+            Ok(report) => plan.report = report,
+            Err(error) => {
+                return Err(Box::new(Stopped {
+                    error,
+                    notices: plan.notices,
+                }));
+            }
+        }
     }
     let mut json = serde_json::to_string_pretty(&plan).map_err(|e| {
         AgentsError::usage(
@@ -634,6 +832,36 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
 }
 
 /// Where the plan got the author and reviewer models: `flag`, `config` or `provider`.
+/// The author and reviewer models with where each came from: the flag, then the config. A
+/// blank reviewer model counts as unset, so the next source decides; with neither, the model
+/// the provider declares stands in.
+fn models(
+    matches: &ArgMatches,
+    env: &ReviewEnv<'_>,
+) -> (Option<String>, Option<String>, &'static str, &'static str) {
+    let pick = |flag: Option<String>, config: Option<String>| match (flag, config) {
+        (Some(v), _) => (Some(v), "flag"),
+        (None, Some(v)) => (Some(v), "config"),
+        (None, None) => (None, "none"),
+    };
+    let (author, author_source) = pick(
+        matches.get_one::<String>("author-model").cloned(),
+        env.author_model.clone(),
+    );
+    let named = |v: Option<String>| v.filter(|m| !m.trim().is_empty());
+    let (reviewer, reviewer_source) = match pick(
+        named(matches.get_one::<String>("reviewer-model").cloned()),
+        named(env.reviewer_model.clone()),
+    ) {
+        (None, _) => (
+            env.provider.and_then(|p| p.model()).map(str::to_owned),
+            "provider",
+        ),
+        found => found,
+    };
+    (author, reviewer, author_source, reviewer_source)
+}
+
 struct Sources {
     author: &'static str,
     reviewer: &'static str,
@@ -697,13 +925,14 @@ fn precall_notices(
             None,
         )?);
     }
-    if let (ModelCheck::Different, Some(a), Some(p)) = (comparison, author, provider)
-        && compare_models(Some(a), p.model()) == ModelCheck::Same
+    if let (ModelCheck::Different, Some(a), Some(declared)) =
+        (comparison, author, provider.and_then(|p| p.model()))
+        && compare_models(Some(a), declared) == ModelCheck::Same
     {
         notices.push(same_model_notice(
             a,
             author_source,
-            p.model(),
+            declared,
             "provider",
             None,
         )?);
@@ -720,6 +949,26 @@ fn same_model_notice(
     reviewer_source: &str,
     items: Option<serde_json::Value>,
 ) -> Result<Notice, AgentsError> {
+    same_model_notice_shown(
+        author,
+        author_source,
+        reviewer,
+        &quoted(reviewer),
+        reviewer_source,
+        items,
+    )
+}
+
+/// [`same_model_notice`] with the reviewer as the message shows it, for a value that is
+/// already escaped.
+fn same_model_notice_shown(
+    author: &str,
+    author_source: &str,
+    reviewer: &str,
+    shown: &str,
+    reviewer_source: &str,
+    items: Option<serde_json::Value>,
+) -> Result<Notice, AgentsError> {
     let mut data = serde_json::Map::new();
     data.insert("author".into(), author.into());
     data.insert("author_source".into(), author_source.into());
@@ -731,7 +980,7 @@ fn same_model_notice(
     Ok(notice(
         NoticeLevel::Warning,
         &AgentsMessage::ModelSame {
-            reviewer: quoted(reviewer),
+            reviewer: shown.to_owned(),
         },
     )?
     .with_data(data))
@@ -757,11 +1006,19 @@ fn unchecked_notice(
     .map(Some)
 }
 
+/// Call the provider and return its report, after every gate that keeps it idle: offline
+/// mode, a missing provider and a missing reviewer model. The report is built only once every
+/// answer has passed the check and none failed. A payload with no items calls nothing, so it
+/// passes every gate: it needs no network, no provider and no model.
 fn call_provider(
     env: &ReviewEnv<'_>,
     plan: &mut Plan,
     sources: &Sources,
-) -> Result<String, AgentsError> {
+) -> Result<Option<String>, AgentsError> {
+    // A payload with nothing to send has no request and makes no call.
+    let Some(call) = plan.request.clone() else {
+        return Ok(None);
+    };
     if env.offline {
         // The code has one home, in the `slopvac-update` catalog, with the command as a parameter.
         let message = UpdateMessage::OfflineNetworkNeeded {
@@ -772,74 +1029,187 @@ fn call_provider(
     let provider = env
         .provider
         .ok_or_else(|| AgentsError::coded(&AgentsMessage::ProviderMissing))?;
-    let declared = provider.model();
-    let reply = provider.review(&plan.payload)?;
-    check_reply(&reply, &plan.payload)?;
-    // Group the reported items by model, in the order models first appear.
+    let model = call
+        .model
+        .as_deref()
+        .ok_or_else(|| AgentsError::coded(&AgentsMessage::ModelMissing))?;
+    let model_source = sources.reviewer;
+    let items = provider_items(&plan.payload);
+    let reply = provider.review(&ProviderRequest {
+        task: call.task.as_str(),
+        model,
+        items: &items,
+        call: &call,
+    })?;
+    let answers = check_reply(&reply, &items)?;
+    refuse_failed_items(&answers, &items)?;
+    // The text and the model a provider reports are plugin-origin text. Models are compared and
+    // text is trimmed on the values as sent, and each is escaped once where it enters the plan,
+    // so the report and the notices carry no live control.
+    let answered: Vec<(&SentItem, &str, &str)> = items
+        .iter()
+        .zip(&answers)
+        .filter_map(|(sent, answer)| match answer {
+            Answer::Text { text, model } => Some((sent, text.as_str(), model.as_str())),
+            Answer::Failed { .. } => None,
+        })
+        .collect();
+    let notices = reported_notices(plan, sources.author, model, model_source, &answered)?;
+    plan.notices.extend(notices);
+    Ok(Some(assemble_report(&plan.payload, &answered)))
+}
+
+/// Group the answers by the model they report, in payload order, and add the notices for a
+/// model that is the author's and for one that is not the requested model. The models are
+/// compared as reported, and a reported model is escaped where a notice shows it.
+fn reported_notices(
+    plan: &Plan,
+    author_source: &str,
+    requested: &str,
+    requested_source: &str,
+    answered: &[(&SentItem, &str, &str)],
+) -> Result<Vec<Notice>, AgentsError> {
     let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
-    for item in &reply.items {
+    for (sent, _, model) in answered {
         match groups
             .iter_mut()
-            .find(|(m, _)| model_key(m) == model_key(&item.model))
+            .find(|(m, _)| model_key(m) == model_key(model))
         {
-            Some((_, indexes)) => indexes.push(item.index),
-            None => groups.push((item.model.clone(), vec![item.index])),
+            Some((_, indexes)) => {
+                if !indexes.contains(&sent.item) {
+                    indexes.push(sent.item);
+                }
+            }
+            None => groups.push(((*model).to_owned(), vec![sent.item])),
         }
     }
-    let (requested, requested_source) = match plan.reviewer_model.clone() {
-        Some(r) => (r, sources.reviewer),
-        None => (declared.to_owned(), "provider"),
-    };
-    for (reported, indexes) in groups {
+    let mut notices = Vec::new();
+    for (raw, indexes) in groups {
         let items = item_locations(&plan.payload, &indexes)?;
-        if let Some(author) = plan.author_model.clone()
-            && compare_models(Some(&author), &reported) == ModelCheck::Same
+        let reported = slopvac_sanitize::structured(&raw);
+        if let Some(author) = plan.author_model.as_deref()
+            && compare_models(Some(author), &raw) == ModelCheck::Same
         {
-            plan.notices.push(same_model_notice(
-                &author,
-                sources.author,
+            notices.push(same_model_notice_shown(
+                author,
+                author_source,
                 &reported,
+                &quote_escaped(&reported),
                 "reported",
                 Some(items.clone()),
             )?);
         }
-        if model_key(&requested) != model_key(&reported) {
+        if model_key(requested) != model_key(&raw) {
             let mut data = serde_json::Map::new();
-            data.insert("requested".into(), requested.clone().into());
+            data.insert("requested".into(), requested.into());
             data.insert("requested_source".into(), requested_source.into());
             data.insert("reported".into(), reported.clone().into());
             data.insert("items".into(), items);
-            plan.notices.push(
+            notices.push(
                 notice(
                     NoticeLevel::Info,
                     &AgentsMessage::ModelReportedMismatch {
-                        requested: quoted(&requested),
-                        reported: quoted(&reported),
+                        requested: quoted(requested),
+                        reported: quote_escaped(&reported),
                     },
                 )?
                 .with_data(data),
             );
         }
     }
-    Ok(reply.report)
+    Ok(notices)
 }
 
-/// Reject a reply that names an item the payload lacks, names one twice or reports an empty
-/// model. This owned in-process trait accepts a partial list. The production adapter for
-/// `provider/complete` must refuse every result that the plugin protocol refuses, with this
-/// same error code.
-fn check_reply(reply: &ProviderReply, payload: &Payload) -> Result<(), AgentsError> {
-    let mut seen = std::collections::BTreeSet::new();
-    for item in &reply.items {
-        if item.index >= payload.items.len()
-            || !seen.insert(item.index)
-            || item.model.trim().is_empty()
+/// Quote a value that `slopvac_sanitize` has already escaped, so it is escaped once: only a
+/// quote mark gets a backslash, and a backslash is never doubled again.
+fn quote_escaped(escaped: &str) -> String {
+    format!("\"{}\"", escaped.replace('"', "\\\""))
+}
+
+/// The answer for each sent item, in the order sent. A reply that names an item twice, names
+/// one that was not sent, leaves one out or reports an empty model is refused: the plugin
+/// protocol refuses the same results (plugin-protocol.md section 5.3).
+fn check_reply<'a>(
+    reply: &'a ProviderReply,
+    items: &[SentItem],
+) -> Result<Vec<&'a Answer>, AgentsError> {
+    let invalid = || reply_invalid(items.len());
+    let mut slots: Vec<Option<&Answer>> = vec![None; items.len()];
+    for answered in &reply.items {
+        let slot = slots.get_mut(answered.index).ok_or_else(invalid)?;
+        let empty_model =
+            matches!(&answered.answer, Answer::Text { model, .. } if model.trim().is_empty());
+        if slot.is_some() || empty_model {
+            return Err(invalid());
+        }
+        *slot = Some(&answered.answer);
+    }
+    slots.into_iter().map(|s| s.ok_or_else(invalid)).collect()
+}
+
+/// Stop the review when the provider failed any item. The error has the code of the first
+/// failed item in payload order and names every failed item by its position, never with the
+/// provider's own text.
+fn refuse_failed_items(answers: &[&Answer], items: &[SentItem]) -> Result<(), AgentsError> {
+    let mut failed: Vec<(usize, &'static str)> = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (answer, sent) in answers.iter().zip(items) {
+        if let Answer::Failed { code } = answer
+            && seen.insert((sent.item, *code))
         {
-            return Err(AgentsError::coded(&AgentsMessage::ProviderReplyInvalid {
-                index: item.index,
-                count: payload.items.len(),
-            }));
+            failed.push((sent.item + 1, *code));
         }
     }
-    Ok(())
+    let Some(&(_, first)) = failed.first() else {
+        return Ok(());
+    };
+    let listed: Vec<String> = failed
+        .iter()
+        .map(|&(position, code)| {
+            AgentsText::ProviderItemFailed {
+                position,
+                code: code.to_owned(),
+            }
+            .to_string()
+        })
+        .collect();
+    Err(AgentsError::new_coded(
+        first,
+        AgentsText::ProviderItemsFailed {
+            items: listed.join(", "),
+        }
+        .to_string(),
+    ))
+}
+
+/// The report: the line that marks it as untrusted provider output and a blank line, then one
+/// block per payload item in payload order, whatever order the reply came in.
+/// A block is the item's heading, then a blank line and the answer with its trailing newlines
+/// removed and then escaped; an empty answer leaves the heading alone. Blocks are separated by
+/// a blank line and the report ends with one newline.
+fn assemble_report(payload: &Payload, answered: &[(&SentItem, &str, &str)]) -> String {
+    let blocks: Vec<String> = answered
+        .iter()
+        .filter(|(sent, _, _)| !sent.context)
+        .filter_map(|(sent, text, _)| {
+            let item = payload.items.get(sent.item)?;
+            let heading = AgentsText::ReportItem {
+                position: sent.item + 1,
+                role: item.role.to_owned(),
+                line: item.line,
+            }
+            .to_string();
+            let body = slopvac_sanitize::structured(text.trim_end_matches(['\n', '\r']));
+            Some(if body.is_empty() {
+                heading
+            } else {
+                format!("{heading}\n\n{body}")
+            })
+        })
+        .collect();
+    format!(
+        "{}\n\n{}\n",
+        AgentsText::ReportUntrusted,
+        blocks.join("\n\n")
+    )
 }

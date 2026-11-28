@@ -53,11 +53,6 @@ Run `slopvac prime review --type <type>` for the steps of one type.
 - Fact checking covers changed claims and lost-fact candidates. Nothing else is in scope.
 - You may add 5 checks, plus half the required checks rounded up, without asking.
 - Above that, ask the user to confirm the exact scope. Then rerun with `--scope-approved`.
-{% if review_approval == "auto" %}
-- `review_approval = "auto"` is set, so go ahead without asking.
-{% else %}
-- `review_approval = "auto"` in the config skips the question.
-{% endif %}
 
 ## Reviewer
 

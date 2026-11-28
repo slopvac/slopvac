@@ -382,6 +382,29 @@
           "reviewer_model"
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "uses_provider": {
+            "const": false
+          }
+        },
+        "required": [
+          "uses_provider"
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "not": {
+              "required": [
+                "request"
+              ]
+            }
+          }
+        ]
+      }
     }
   ],
   "description": "The document that `slopvac review` prints: the review type and why, the change stats, the scope budget, the exact payload a provider receives, the model notices and, after a provider call, the provider's report. It is public output.",
@@ -406,8 +429,53 @@
       "type": "string"
     },
     "report": {
-      "description": "The provider's report; absent on `--dry-run`.",
+      "description": "The provider's report, which is untrusted provider output and starts with the `review-report-untrusted` line; absent on `--dry-run`.",
       "type": "string"
+    },
+    "request": {
+      "additionalProperties": false,
+      "description": "The `provider/complete` request that a call sends: present when the review uses a provider and the payload has items, also on `--dry-run`.",
+      "properties": {
+        "items": {
+          "items": {
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "instruction": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "text"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "model": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "task": {
+          "enum": [
+            "fact-check",
+            "update",
+            "rewrite"
+          ]
+        }
+      },
+      "required": [
+        "task",
+        "items"
+      ],
+      "type": "object"
     },
     "review_type": {
       "$ref": "#/$defs/ReviewType",

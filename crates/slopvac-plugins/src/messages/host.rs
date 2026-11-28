@@ -716,6 +716,14 @@ pub(crate) enum HostPhrase {
     #[code("plugins-host-shut-down")]
     #[text("the plugin has shut down")]
     ShutDown,
+    /// The answer to `shutdown` was not `null`.
+    #[code("plugins-host-shutdown-not-null")]
+    #[text("the answer to shutdown is not null")]
+    ShutdownNotNull,
+    /// A `provider/complete` request named no model.
+    #[code("plugins-host-complete-model-missing")]
+    #[text("a provider/complete request needs a model")]
+    CompleteModelMissing,
     /// The exit status is not known.
     #[code("plugins-host-status-unknown")]
     #[text("status unknown")]
@@ -760,6 +768,10 @@ pub(crate) enum HostPhrase {
     #[code("plugins-host-stderr-cap")]
     #[text("standard error volume cap reached")]
     StderrCap,
+    /// A line of standard error that the debug log shows by its length only.
+    #[code("plugins-host-stderr-line-withheld")]
+    #[text("a standard error line, withheld because it can quote the document")]
+    StderrLineWithheld,
     /// A write to the plugin blocked.
     #[code("plugins-host-write-blocked")]
     #[text("the write to the plugin blocked")]
@@ -1663,6 +1675,14 @@ mod tests {
     fn every_phrase_keeps_its_text_and_is_registered() {
         let table: Vec<(HostPhrase, &str)> = vec![
             (HostPhrase::ShutDown, "the plugin has shut down"),
+            (
+                HostPhrase::ShutdownNotNull,
+                "the answer to shutdown is not null",
+            ),
+            (
+                HostPhrase::CompleteModelMissing,
+                "a provider/complete request needs a model",
+            ),
             (HostPhrase::StatusUnknown, "status unknown"),
             (HostPhrase::Closed, "plugin is closed"),
             (HostPhrase::Dropped, "plugin dropped"),
@@ -1683,6 +1703,10 @@ mod tests {
             (HostPhrase::BudgetExceeded, "whole-run budget exceeded"),
             (HostPhrase::StdoutCap, "standard output volume cap reached"),
             (HostPhrase::StderrCap, "standard error volume cap reached"),
+            (
+                HostPhrase::StderrLineWithheld,
+                "a standard error line, withheld because it can quote the document",
+            ),
             (HostPhrase::WriteBlocked, "the write to the plugin blocked"),
             (HostPhrase::NoSlot, "no request slot became free"),
             (HostPhrase::Unknown, "unknown"),

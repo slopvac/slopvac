@@ -86,7 +86,9 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString>,
 {
-    main_with_io(args, env, out, &mut std::io::stderr().lock())
+    // Not a held lock: a log event from another thread, such as a plugin's standard error
+    // reader, would wait on it until the run ends.
+    main_with_io(args, env, out, &mut std::io::stderr())
 }
 
 /// Like [`main_with`], with both output streams supplied by the caller.
@@ -335,7 +337,7 @@ fn dispatch(
         Some(("validate", m)) => owners::validate(m, out),
         Some(("setup", m)) => owners::setup(m, out),
         Some(("prime", m)) => owners::prime(m, out),
-        Some(("review", m)) => owners::review(m, globals.offline, out),
+        Some(("review", m)) => owners::review(m, globals.offline, env, out, err_out),
         Some(("claims", m)) => owners::claims(m, out),
         Some(("man", m)) => man(m, out),
         Some(("plugins", m)) => plugins(m, globals.offline, env, out),
@@ -394,22 +396,33 @@ fn plugins(
     env: &dyn Env,
     out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
-    use slopvac_plugins::{Runner, oci, revoke, sign, sync};
     let cwd = std::env::current_dir().map_err(|e| plugins_setup_failed(&e.kind().to_string()))?;
     let presets = slopvac_styles::StylePresets(slopvac_styles::BuiltinSource);
     let config = slopvac_config::Discovery::new(&presets)
         .nearest(&cwd)
         .map_err(|e| crate::engine::config_error(&e, &cwd))?;
-    let root = config
-        .as_ref()
-        .map_or_else(|| cwd.clone(), |c| c.root.clone());
-    // The preflight reads the nearest file only, so an `[network] offline` in an extended file
-    // reaches this command through the resolved config. The resolver keeps offline sticky across
-    // every layer (policies.md, 1.3; config.md, "Layer order"): a later `false` never wins.
-    let config_offline = config
-        .as_ref()
-        .map(|c| crate::lint_settings::resolve(c, std::path::Path::new(".")).is_offline());
-    let offline = offline::resolve(offline, env, config_offline);
+    with_plugin_runner(offline, env, &cwd, config.as_deref(), |runner, _| {
+        slopvac_plugins::run(m, runner, out).map_err(|e| CliError::new(e.code(), e.to_string()))
+    })
+}
+
+/// Build the plugins runner for the project around `cwd` and hand it to `f`, with the loader
+/// of installed code plugins. `slopvac plugins` and the model provider of `slopvac review`
+/// share it, so both read the same lock, store, trust store, revocations and keys. `config` is
+/// the project config the caller resolved, so one run reads its config files once.
+pub(crate) fn with_plugin_runner<T>(
+    offline: bool,
+    env: &dyn Env,
+    cwd: &std::path::Path,
+    config: Option<&slopvac_config::LoadedConfig>,
+    f: impl FnOnce(
+        &slopvac_plugins::Runner<'_>,
+        &crate::plugin_loader::InstalledPlugins<'_>,
+    ) -> Result<T, CliError>,
+) -> Result<T, CliError> {
+    use slopvac_plugins::{Runner, oci, revoke, sign, sync};
+    let root = config.map_or_else(|| cwd.to_path_buf(), |c| c.root.clone());
+    let offline = offline::project(offline, env, config);
     let dirs = plugin_dirs(env, root.clone())?;
     let dirs_state = dirs.state_dir.clone();
     let store_dir = dirs.cache_dir.clone();
@@ -428,7 +441,7 @@ fn plugins(
         .and_then(|file| std::path::Path::new(file).parent())
         .map_or_else(|| root.clone(), |dir| root.join(dir));
     if let Some(serde_json::Value::Array(entries)) =
-        config.as_ref().and_then(|c| c.project_value(&["plugins"]))
+        config.and_then(|c| c.project_value(&["plugins"]))
     {
         for (index, entry) in entries.iter().enumerate() {
             let Some(id) = entry.get("id").and_then(|v| v.as_str()) else {
@@ -476,7 +489,7 @@ fn plugins(
         .with_core_version(env!("CARGO_PKG_VERSION"))
         .with_loader(&loader)
         .with_locked(ci);
-    slopvac_plugins::run(m, &runner, out).map_err(|e| CliError::new(e.code(), e.to_string()))
+    f(&runner, &loader)
 }
 
 /// `slopvac doctor`: print the report, and exit 2 when something needs attention.
@@ -965,5 +978,50 @@ mod plugin_dir_tests {
             "{:?}",
             dirs.state_dir
         );
+    }
+
+    /// The runner works from the config snapshot that the command resolved and never discovers
+    /// the config again: given project A's snapshot while the working directory is B, it reads
+    /// A's lock.
+    #[test]
+    fn the_runner_reads_the_project_of_the_resolved_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (dir.path().join("a"), dir.path().join("b"));
+        let tree = a.join("plugins/p");
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::create_dir_all(a.join(".slopvac")).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(tree.join("main.txt"), "x").unwrap();
+        std::fs::write(a.join("slopvac.toml"), "schema_version = 3\n").unwrap();
+        let digest = slopvac_plugins::extract::tree_hash(&tree).unwrap();
+        std::fs::write(
+            a.join(".slopvac/plugins.lock"),
+            format!(
+                "schema_version = 3\n\n[[plugins]]\nid = \"p\"\nkind = \"code\"\n\
+                 version = \"1.0.0\"\nslopvac_api = 1\nsource = \"plugins/p\"\n\
+                 digest = \"{digest}\"\n"
+            ),
+        )
+        .unwrap();
+        let presets = slopvac_styles::StylePresets(slopvac_styles::BuiltinSource);
+        let config = slopvac_config::Discovery::new(&presets)
+            .nearest(&a)
+            .unwrap()
+            .expect("project A's config");
+        let home = dir.path().join("home");
+        let (data, state) = (home.join("data"), home.join("state"));
+        let env = MapEnv::new(
+            &[
+                ("XDG_DATA_HOME", data.to_str().unwrap()),
+                ("XDG_STATE_HOME", state.to_str().unwrap()),
+            ],
+            false,
+        );
+
+        let found = with_plugin_runner(true, &env, &b, Some(&config), |runner, _| {
+            Ok(runner.locked_code("p").map(|pack| pack.id.to_string()))
+        });
+
+        assert_eq!(found.ok().and_then(Result::ok).as_deref(), Some("p"));
     }
 }

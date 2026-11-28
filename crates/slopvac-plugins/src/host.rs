@@ -181,6 +181,18 @@ impl std::fmt::Debug for DrainHook {
     }
 }
 
+/// What the debug log keeps of a plugin's standard error (plugin-protocol.md section 7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum StderrLog {
+    /// Each line, escaped to stay on one line.
+    #[default]
+    Lines,
+    /// The length in bytes of each line, and none of its text, for a plugin whose standard
+    /// error can quote the document it received (policies.md section 1.7).
+    Lengths,
+}
+
 /// What the host offers and proposes.
 #[derive(Debug, Clone)]
 pub struct HostConfig {
@@ -209,6 +221,8 @@ pub struct HostConfig {
     pub budget: Arc<RunBudget>,
     /// The program that starts each plugin on Unix.
     pub launcher: Launcher,
+    /// What the debug log keeps of the plugin's standard error.
+    pub stderr_log: StderrLog,
     /// Test seam: where a teardown reads the process table. `None`, the
     /// default, means `/bin/ps`; production code never sets it.
     #[doc(hidden)]
@@ -227,6 +241,14 @@ pub struct HostConfig {
     /// Test seam for the start of the shutdown drain; production code never sets it.
     #[doc(hidden)]
     pub drain_hook: Option<DrainHook>,
+    /// Test seam: called by [`Plugin::shutdown`] just before it registers the
+    /// `shutdown` request; production code never sets it.
+    #[doc(hidden)]
+    pub shutdown_request_hook: Option<DrainHook>,
+    /// Test seam: called once an end of the stream or of the process during
+    /// shutdown has failed the waiting requests; production code never sets it.
+    #[doc(hidden)]
+    pub release_hook: Option<DrainHook>,
 }
 
 impl Default for HostConfig {
@@ -244,11 +266,14 @@ impl Default for HostConfig {
             caps: RunCaps::default(),
             budget: Arc::default(),
             launcher: Launcher::CurrentExe,
+            stderr_log: StderrLog::default(),
             process_table: None,
             launcher_sweep: Duration::from_secs(2),
             limits_pause: Duration::ZERO,
             stderr_read_hook: None,
             drain_hook: None,
+            shutdown_request_hook: None,
+            release_hook: None,
         }
     }
 }
@@ -341,6 +366,12 @@ struct Shared {
     budget: Arc<RunBudget>,
     stderr_read_hook: Option<ReadHook>,
     drain_hook: Option<DrainHook>,
+    shutdown_request_hook: Option<DrainHook>,
+    release_hook: Option<DrainHook>,
+    /// The end that failed the waiting requests during shutdown. Set and read under the
+    /// `pending` lock, so a request that registers after the end still sees it.
+    released: Mutex<Option<PluginError>>,
+    stderr_log: StderrLog,
     exit_timeout: Duration,
     stream: Activity,
 }
@@ -407,12 +438,23 @@ impl Shared {
     /// During shutdown the stream or process ending is expected: fail what is
     /// still waiting, but leave success and the kill to `Plugin::shutdown`.
     fn release_pending(&self) {
-        let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
+        let ended = PluginError::Usage(HostPhrase::ShutDown.as_static().into());
+        let drained: Vec<Pending> = {
+            let mut pending = lock(&self.pending);
+            // Latched under the registration lock: a request that registers later fails
+            // with the same end, so the end is never lost.
+            let mut latch = lock(&self.released);
+            if latch.is_none() {
+                *latch = Some(ended.clone());
+            }
+            drop(latch);
+            pending.drain().map(|(_, p)| p).collect()
+        };
         for p in drained {
-            let _ = p.reply.try_send((
-                Instant::now(),
-                Err(PluginError::Usage(HostPhrase::ShutDown.as_static().into())),
-            ));
+            let _ = p.reply.try_send((Instant::now(), Err(ended.clone())));
+        }
+        if let Some(hook) = &self.release_hook {
+            (hook.0)();
         }
     }
 
@@ -646,6 +688,7 @@ fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) 
 struct LogLines {
     line: Vec<u8>,
     cut: bool,
+    mode: StderrLog,
 }
 
 impl LogLines {
@@ -663,9 +706,21 @@ impl LogLines {
 
     fn emit(&mut self, plugin: &str) {
         let line = self.line.strip_suffix(b"\r").unwrap_or(&self.line);
-        let text = slopvac_sanitize::line(&String::from_utf8_lossy(line));
-        let cut = if self.cut { " [cut]" } else { "" };
-        tracing::debug!(target: STDERR_LOG_TARGET, plugin, "{text}{cut}");
+        match self.mode {
+            StderrLog::Lines => {
+                let text = slopvac_sanitize::line(&String::from_utf8_lossy(line));
+                let cut = if self.cut { " [cut]" } else { "" };
+                tracing::debug!(target: STDERR_LOG_TARGET, plugin, "{text}{cut}");
+            }
+            StderrLog::Lengths => tracing::debug!(
+                target: STDERR_LOG_TARGET,
+                plugin,
+                bytes = line.len(),
+                cut = self.cut,
+                "{}",
+                HostPhrase::StderrLineWithheld.as_static()
+            ),
+        }
         self.line.clear();
         self.cut = false;
     }
@@ -677,6 +732,7 @@ fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
     let mut log = LogLines {
         line: Vec::new(),
         cut: false,
+        mode: shared.stderr_log,
     };
     loop {
         match stderr.read(&mut buf) {
@@ -837,6 +893,9 @@ impl Conn {
         {
             let mut pending = lock(&self.shared.pending);
             if let Some(e) = self.dead() {
+                return Err(e);
+            }
+            if let Some(e) = lock(&self.shared.released).clone() {
                 return Err(e);
             }
             pending.insert(
@@ -1299,13 +1358,30 @@ impl Plugin {
         // A descendant that left the group is lost to the final walk once its
         // parent exits, so it goes now. No snapshot is kept across the waits.
         shared.group.kill_strays();
-        // A plugin that a failure already ended is not asked.
+        // A plugin that a failure already ended is not asked; that failure is the reason.
         let mut acknowledged = false;
-        if self.conn.dead().is_none() {
-            acknowledged = self
+        let mut refused = self.conn.dead();
+        // The plugin's output or process ended before it answered `shutdown`.
+        let mut left_unanswered = false;
+        if refused.is_none() {
+            if let Some(hook) = &shared.shutdown_request_hook {
+                (hook.0)();
+            }
+            match self
                 .conn
                 .request::<()>(method::SHUTDOWN, None, self.timeouts.shutdown, false)
-                .is_ok_and(|v| v.is_null());
+            {
+                Ok(v) if v.is_null() => acknowledged = true,
+                Ok(_) => {
+                    refused = Some(PluginError::ProtocolViolation(
+                        HostPhrase::ShutdownNotNull.as_static().to_owned(),
+                    ));
+                }
+                // While shutting down, an end of the stream or of the process fails the
+                // waiting request with a usage error, so the plugin left without an answer.
+                Err(PluginError::Usage(_)) => left_unanswered = true,
+                Err(e) => refused = Some(e),
+            }
             if acknowledged {
                 // Before `exit`, so the waiter sees it when the leader leaves.
                 shared.group.acknowledge();
@@ -1337,10 +1413,21 @@ impl Plugin {
             Some(PluginError::ProtocolViolation(m)) => Some(m.clone()),
             _ => None,
         };
+        if left_unanswered {
+            refused = Some(PluginError::Exited {
+                plugin: shared.name.clone(),
+                status: shared
+                    .group
+                    .status()
+                    .unwrap_or_else(|| HostPhrase::StatusUnknown.as_static().into()),
+                stderr: shared.stderr_tail(),
+            });
+        }
         Shutdown {
             accounting_incomplete: !(stderr_drained && stdout_drained),
             violation,
             acknowledged,
+            refused,
             left,
             status: shared.group.exit_status(),
             teardown: shared.group.teardown(),
@@ -1361,6 +1448,11 @@ pub struct Shutdown {
     /// The plugin answered `shutdown` with `null`, and no failure had ended
     /// it before.
     pub acknowledged: bool,
+    /// Why the plugin did not acknowledge `shutdown`, or `None` when it did: the
+    /// failure that had already ended it, so it was not asked; the error that
+    /// the request ended with, such as an error answer, an exit or a timeout;
+    /// or a protocol violation for an answer that is not `null`.
+    pub refused: Option<PluginError>,
     /// The plugin left on its own, without a kill.
     pub left: bool,
     /// The leader's exit status, or `None` if it was not reaped by the end
@@ -1561,6 +1653,10 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         budget: Arc::clone(&cfg.budget),
         stderr_read_hook: cfg.stderr_read_hook.clone(),
         drain_hook: cfg.drain_hook.clone(),
+        shutdown_request_hook: cfg.shutdown_request_hook.clone(),
+        release_hook: cfg.release_hook.clone(),
+        released: Mutex::new(None),
+        stderr_log: cfg.stderr_log,
         exit_timeout: cfg.timeouts.exit,
         stream: Activity::new(),
     });

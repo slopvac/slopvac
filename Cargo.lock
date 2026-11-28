@@ -2472,6 +2472,7 @@ dependencies = [
  "slopvac-migrate",
  "slopvac-model",
  "slopvac-packs",
+ "slopvac-plugins",
  "slopvac-sanitize",
  "slopvac-text",
  "slopvac-update",

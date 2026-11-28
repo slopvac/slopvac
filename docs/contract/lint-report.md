@@ -89,7 +89,7 @@ These codes list rule ids in `data.rules`, an array of strings in sorted order:
 | `data.reviewer` | `review-model-same` | The reviewer model name that matches the author. |
 | `data.reviewer_source` | `review-model-same` | Where the reviewer model came from: `flag`, `config`, `provider` or `reported`. |
 | `data.requested` | `review-model-reported-mismatch` | The reviewer model the review asked for. |
-| `data.requested_source` | `review-model-reported-mismatch` | Where the requested model came from: `flag`, `config` or `provider`. |
+| `data.requested_source` | `review-model-reported-mismatch` | Where the requested model came from: `flag` or `config`. |
 | `data.reported` | `review-model-reported-mismatch` | The model the provider reports. |
 | `data.items` | `review-model-same`, `review-model-reported-mismatch` | The payload items the reported model covers, as an array of `{role, line}`. Present when `reviewer_source` is `reported`, and always on the mismatch notice. |
 
