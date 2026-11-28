@@ -322,6 +322,17 @@ def test_docs_and_python_changes_skip_the_rust_legs(paths, expected):
     assert {job: evaluate(JOBS[job]["if"], outputs) for job in HEAVY} == expected
 
 
+def test_a_starter_config_only_change_reaches_the_prose_gate():
+    # test.yml runs the reusable lint workflow, passes it `docs`, and lint.yml's prose
+    # job runs only when `docs` is set.
+    outputs = classes_of(["crates/slopvac/templates/slopvac.toml"])
+    lint = JOBS["lint"]
+    assert evaluate(lint["if"], outputs) is True
+    docs = evaluate(lint["with"]["docs"], outputs)
+    prose = load("lint.yml")["jobs"]["prose"]
+    assert evaluate_expr(prose["if"], {"inputs.docs": docs}) is True
+
+
 def test_the_generated_codes_file_routes_to_rust_and_the_docs_site():
     # `slopvac-schemas check` regenerates the file in the Rust job, and the site reads it.
     path = "docs/reference/plugin-protocol-codes.json"

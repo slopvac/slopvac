@@ -19,6 +19,7 @@ import copy
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from urllib.parse import unquote
@@ -153,6 +154,202 @@ def test_the_gate_step_exits_with_the_binary_exit_code(tmp_path, code) -> None:
 def test_a_swallowing_script_lets_exit_2_pass(tmp_path, mutate) -> None:
     script = _step(_mutated(mutate), GATE)["run"]
     assert _run_gate(script, tmp_path, 2) != 2
+
+
+def _run_two(script: str, tmp_path: Path, docs: int, config: int) -> int:
+    """Run a step against a stub that exits `config` in code-comments mode, else `docs`."""
+    stub = tmp_path / "target" / "debug" / "slopvac"
+    stub.parent.mkdir(parents=True)
+    stub.write_text(
+        "#!/bin/sh\n"
+        'for arg in "$@"; do printf "%s\\n" "$arg" >> calls.log; done\n'
+        'echo "==" >> calls.log\n'
+        'for arg in "$@"; do\n'
+        "  if [ \"$arg\" = \"--mode\" ]; then exit " + str(config) + "; fi\n"
+        "done\n"
+        f"exit {docs}\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return subprocess.run(
+        ["bash", "-c", script], cwd=tmp_path, check=False, capture_output=True
+    ).returncode
+
+
+@pytest.mark.parametrize(
+    ("docs", "config", "expected"),
+    [
+        pytest.param(0, 0, 0, id="both-pass"),
+        pytest.param(0, 1, 1, id="config-failed"),
+        pytest.param(1, 0, 1, id="docs-failed"),
+        pytest.param(0, 2, 2, id="config-incomplete"),
+        pytest.param(2, 0, 2, id="docs-incomplete"),
+        pytest.param(1, 2, 2, id="docs-failed-config-incomplete"),
+        pytest.param(2, 1, 2, id="docs-incomplete-config-failed"),
+    ],
+)
+def test_the_gate_step_exits_with_the_higher_of_the_two_runs(
+    tmp_path, docs, config, expected
+) -> None:
+    script = _step(_prose_job(), GATE)["run"]
+    assert _run_two(script, tmp_path, docs, config) == expected
+
+
+def _recorded_calls(tmp_path: Path) -> list[list[str]]:
+    """Read the stub's log: one argument per line, `==` after each invocation."""
+    calls: list[list[str]] = [[]]
+    for line in (tmp_path / "calls.log").read_text(encoding="utf-8").splitlines():
+        if line == "==":
+            calls.append([])
+        else:
+            calls[-1].append(line)
+    assert calls.pop() == []
+    return calls
+
+
+def test_the_gate_step_lints_the_docs_and_the_starter_config(tmp_path) -> None:
+    script = _step(_prose_job(), GATE)["run"]
+    assert _run_two(script, tmp_path, 0, 0) == 0
+    calls = _recorded_calls(tmp_path)
+    assert len(calls) == 2
+    assert sorted(calls) == sorted(
+        [
+            ["lint", *FILE_SET],
+            ["lint", "--mode", "code-comments", "crates/slopvac/templates/slopvac.toml"],
+        ]
+    )
+
+
+# ---- the findings export -----------------------------------------------------------
+
+SARIF_DOCS = '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"docs"}},"results":[]}]}'
+SARIF_CONFIG = (
+    '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"config"}},"results":[]}]}'
+)
+
+
+def _run_export(
+    tmp_path: Path,
+    docs: tuple[int, str | None],
+    config: tuple[int, str | None],
+) -> subprocess.CompletedProcess:
+    """Run the export step against a stub that exits with a code and writes a report.
+
+    A report of None means the run leaves no file, and "" means a zero-byte file.
+    """
+    stub = tmp_path / "target" / "debug" / "slopvac"
+    stub.parent.mkdir(parents=True)
+    stub.write_text(
+        "#!/bin/sh\n"
+        "out=\n"
+        "code=$DOCS_CODE\n"
+        "set_body=${DOCS_SARIF+x}\n"
+        "body=${DOCS_SARIF-}\n"
+        'while [ "$#" -gt 0 ]; do\n'
+        "  case $1 in\n"
+        "    --out) out=$2; shift ;;\n"
+        "    --mode) code=$CONFIG_CODE; set_body=${CONFIG_SARIF+x}; body=${CONFIG_SARIF-} ;;\n"
+        "  esac\n"
+        "  shift\n"
+        "done\n"
+        'if [ -n "$set_body" ]; then printf %s "$body" > "$out"; fi\n'
+        'exit "$code"\n',
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    env = {**os.environ, "PR_NUMBER": "7"}
+    for prefix, (code, body) in (("DOCS", docs), ("CONFIG", config)):
+        env[f"{prefix}_CODE"] = str(code)
+        env.pop(f"{prefix}_SARIF", None)
+        if body is not None:
+            env[f"{prefix}_SARIF"] = body
+    script = _step(_prose_job(), EXPORT)["run"]
+    return subprocess.run(
+        ["bash", "-c", script], cwd=tmp_path, env=env, check=False, capture_output=True
+    )
+
+
+def _merged_runs(tmp_path: Path) -> list[str]:
+    merged = json.loads((tmp_path / "reviewdog-out" / "findings.sarif").read_text("utf-8"))
+    assert merged["version"] == "2.1.0"
+    return [run["tool"]["driver"]["name"] for run in merged["runs"]]
+
+
+def _require_jq() -> None:
+    """Skip when jq is missing outside CI. CI runners ship jq, so there it must be found."""
+    if shutil.which("jq") is None:
+        if os.environ.get("CI"):
+            pytest.fail("jq is not installed, and the CI runner is expected to ship it")
+        pytest.skip("jq is not installed")
+
+
+@pytest.fixture
+def require_jq() -> None:
+    _require_jq()
+
+
+@pytest.mark.usefixtures("require_jq")
+@pytest.mark.parametrize(
+    ("docs", "config", "expected"),
+    [
+        pytest.param((1, SARIF_DOCS), (1, SARIF_CONFIG), ["docs", "config"], id="both"),
+        pytest.param((0, SARIF_DOCS), (0, SARIF_CONFIG), ["docs", "config"], id="both-clean"),
+        pytest.param((1, SARIF_DOCS), (2, None), ["docs"], id="config-no-file"),
+        pytest.param((2, None), (1, SARIF_CONFIG), ["config"], id="docs-no-file"),
+        pytest.param((1, SARIF_DOCS), (0, ""), ["docs"], id="config-zero-byte-file"),
+        pytest.param((0, ""), (1, SARIF_CONFIG), ["config"], id="docs-zero-byte-file"),
+        pytest.param((2, SARIF_DOCS), (1, SARIF_CONFIG), ["config"], id="docs-exit-2-partial"),
+        pytest.param((1, SARIF_DOCS), (2, SARIF_CONFIG), ["docs"], id="config-exit-2-partial"),
+    ],
+)
+def test_the_export_merges_the_reports_that_exist(
+    tmp_path, docs, config, expected
+) -> None:
+    result = _run_export(tmp_path, docs, config)
+    assert result.returncode == 0, result.stderr.decode()
+    assert _merged_runs(tmp_path) == expected
+
+
+@pytest.mark.usefixtures("require_jq")
+@pytest.mark.parametrize(
+    ("docs", "config"),
+    [
+        pytest.param((2, None), (2, None), id="no-files"),
+        pytest.param((2, SARIF_DOCS), (2, SARIF_CONFIG), id="both-exit-2-partial"),
+        pytest.param((0, ""), (0, ""), id="zero-byte-files"),
+    ],
+)
+def test_the_export_step_passes_and_writes_nothing_without_a_usable_report(
+    tmp_path, docs, config
+) -> None:
+    result = _run_export(tmp_path, docs, config)
+    assert result.returncode == 0, result.stderr.decode()
+    assert not (tmp_path / "reviewdog-out" / "findings.sarif").exists()
+
+
+@pytest.mark.usefixtures("require_jq")
+def test_a_report_that_jq_cannot_read_fails_the_export_step(tmp_path) -> None:
+    result = _run_export(tmp_path, (1, "not json"), (1, SARIF_CONFIG))
+    assert result.returncode != 0
+
+
+@pytest.mark.parametrize(
+    ("ci", "outcome"),
+    [
+        pytest.param("1", pytest.fail.Exception, id="in-ci-it-fails"),
+        pytest.param(None, pytest.skip.Exception, id="outside-ci-it-skips"),
+    ],
+)
+def test_a_missing_jq_fails_in_ci_and_skips_elsewhere(
+    monkeypatch, tmp_path, ci, outcome
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    if ci is None:
+        monkeypatch.delenv("CI", raising=False)
+    else:
+        monkeypatch.setenv("CI", ci)
+    with pytest.raises(outcome):
+        _require_jq()
 
 
 def _paths_after(script: str) -> tuple[str, ...]:

@@ -398,11 +398,26 @@ jobs:
           target/debug/slopvac lint \
             README.md packages/slopvac-lint/README.md \
             packages/slopvac-lint/docs || status=$?
+          # The starter config is gated in code-comments mode. A mode applies to a whole
+          # run, so it is a second invocation. The step keeps the higher exit code.
+          docs_status=$status
+          status=0
+          target/debug/slopvac lint --mode code-comments \
+            crates/slopvac/templates/slopvac.toml || status=$?
+          if [ "$docs_status" -gt "$status" ]; then
+            status=$docs_status
+          fi
           echo "slopvac exited $status"
           exit "$status"
       # Findings for reviewdog. The gate above keeps deciding pass or fail; this step
-      # only records what it found, so a status above 1 is left to the gate. Comments
-      # are posted by .github/workflows/reviewdog.yml, never from this read-only job.
+      # only records what it found, so a lint status above 1 is left to the gate. It runs
+      # the linter twice, once on the Markdown docs and once on the starter config in
+      # code-comments mode, because a mode applies to a whole run. Each run writes its own
+      # SARIF file, and the step merges the runs of the reports that exist into
+      # findings.sarif. A run that exits above 1 wrote no complete report and is skipped.
+      # A jq failure on those reports is an infrastructure failure, not a finding, so it
+      # fails the step. Comments are posted by .github/workflows/reviewdog.yml, never from
+      # this read-only job.
       - name: Export prose findings
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         env:
@@ -417,8 +432,23 @@ jobs:
           target/debug/slopvac lint \
             README.md packages/slopvac-lint/README.md \
             packages/slopvac-lint/docs \
-            --format sarif --out reviewdog-out/findings.sarif || status=$?
+            --format sarif --out reviewdog-out/docs.sarif || status=$?
           echo "slopvac exited $status while exporting findings"
+          config_status=0
+          target/debug/slopvac lint --mode code-comments \
+            crates/slopvac/templates/slopvac.toml \
+            --format sarif --out reviewdog-out/config.sarif || config_status=$?
+          echo "slopvac exited $config_status while exporting starter config findings"
+          parts=()
+          if [ "$status" -le 1 ] && [ -s reviewdog-out/docs.sarif ]; then
+            parts+=(reviewdog-out/docs.sarif)
+          fi
+          if [ "$config_status" -le 1 ] && [ -s reviewdog-out/config.sarif ]; then
+            parts+=(reviewdog-out/config.sarif)
+          fi
+          if [ "${#parts[@]}" -gt 0 ]; then
+            jq -s '.[0] + {runs: [.[].runs[]]}' "${parts[@]}" > reviewdog-out/findings.sarif
+          fi
       - name: Upload prose findings
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
