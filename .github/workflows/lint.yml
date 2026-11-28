@@ -398,6 +398,14 @@ jobs:
           target/debug/slopvac lint \
             README.md packages/slopvac-lint/README.md \
             packages/slopvac-lint/docs || status=$?
+          # The starter config is gated in code-comments mode. A mode applies to a whole
+          # run, so it is a second invocation. The first non-zero exit is kept.
+          config_status=0
+          target/debug/slopvac lint --mode code-comments \
+            crates/slopvac/templates/slopvac.toml || config_status=$?
+          if [ "$status" -eq 0 ]; then
+            status=$config_status
+          fi
           echo "slopvac exited $status"
           exit "$status"
       # Findings for reviewdog. The gate above keeps deciding pass or fail; this step
@@ -417,8 +425,22 @@ jobs:
           target/debug/slopvac lint \
             README.md packages/slopvac-lint/README.md \
             packages/slopvac-lint/docs \
-            --format sarif --out reviewdog-out/findings.sarif || status=$?
+            --format sarif --out reviewdog-out/docs.sarif || status=$?
           echo "slopvac exited $status while exporting findings"
+          config_status=0
+          target/debug/slopvac lint --mode code-comments \
+            crates/slopvac/templates/slopvac.toml \
+            --format sarif --out reviewdog-out/config.sarif || config_status=$?
+          echo "slopvac exited $config_status while exporting starter config findings"
+          # One artifact: merge the runs of both reports into findings.sarif. A report
+          # that was not written (exit 2) is skipped.
+          parts=()
+          for f in reviewdog-out/docs.sarif reviewdog-out/config.sarif; do
+            if [ -s "$f" ]; then parts+=("$f"); fi
+          done
+          if [ "${#parts[@]}" -gt 0 ]; then
+            jq -s '.[0] + {runs: [.[].runs[]]}' "${parts[@]}" > reviewdog-out/findings.sarif
+          fi
       - name: Upload prose findings
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
