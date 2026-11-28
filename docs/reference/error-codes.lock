@@ -1492,6 +1492,7 @@ plugins-trust-phrase-replace-store text
 plugins-trust-phrase-secure-dir text
 plugins-trust-phrase-secure-file text
 plugins-trust-phrase-store-over-cap text
+plugins-trust-phrase-store-pin-no-host text
 plugins-trust-phrase-store-schema text
 plugins-trust-phrase-sync-key text
 plugins-trust-phrase-sync-store text

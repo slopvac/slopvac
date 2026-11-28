@@ -152,7 +152,7 @@ fn k23_a_pin_without_a_registry_host_is_a_damaged_store_that_stops_the_command(
     let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
     assert_eq!(
         stderr,
-        "error[plugins-store-failed]: plugins-store-failed: details are withheld because they can name paths outside the project\n"
+        "error[plugins-store-failed]: the trust store <external>/trust.json is damaged: a key pin names no registry host\n"
     );
     assert_eq!(fs::read_to_string(trust_file(&sandbox)).unwrap(), before);
 }
@@ -274,13 +274,14 @@ fn sync_offline_from_any_source_reports_the_missing_cache_entry(
 /// request, the revocation fetch included, reaches it. It answers nothing.
 struct NetworkTally {
     port: u16,
+    listener: Arc<TcpListener>,
     seen: Arc<AtomicUsize>,
     stop: Arc<AtomicBool>,
 }
 
 impl NetworkTally {
     fn start() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let listener = Arc::new(TcpListener::bind("127.0.0.1:0").expect("bind"));
         listener.set_nonblocking(true).unwrap();
         let port = listener.local_addr().unwrap().port();
         let (seen, stop) = (
@@ -288,7 +289,9 @@ impl NetworkTally {
             Arc::new(AtomicBool::new(false)),
         );
         let (count, done) = (Arc::clone(&seen), Arc::clone(&stop));
+        let accepting = Arc::clone(&listener);
         std::thread::spawn(move || {
+            let listener = accepting;
             while !done.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok(_) => {
@@ -298,10 +301,21 @@ impl NetworkTally {
                 }
             }
         });
-        Self { port, seen, stop }
+        Self {
+            port,
+            listener,
+            seen,
+            stop,
+        }
     }
 
+    /// Every connection opened so far. Call it after the child exits: it first accepts every
+    /// connection still waiting in the listen queue, so a connection the background thread has
+    /// not reached yet is counted too.
     fn requests(&self) -> usize {
+        while self.listener.accept().is_ok() {
+            self.seen.fetch_add(1, Ordering::AcqRel);
+        }
         self.seen.load(Ordering::Acquire)
     }
 
@@ -1364,6 +1378,86 @@ fn a_key_pinned_with_plugins_pin_verifies_a_signed_sync() {
     );
 }
 
+/// Pin the key `b64` with fingerprint `fingerprint` for `acme` on `registry` through the binary.
+fn pin_text_through_the_binary(sandbox: &Sandbox, b64: &str, fingerprint: &str, registry: &str) {
+    let file = sandbox.dir.path().join(format!("acme-{registry}.pub"));
+    fs::write(&file, format!("untrusted comment: test key\n{b64}\n")).unwrap();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "pin", "acme", fingerprint, "--key"])
+        .arg(&file)
+        .args(["--registry", registry])
+        .assert()
+        .success();
+}
+
+/// Two registries pin keys that share one minisign key id, and the key on the other registry
+/// is pinned first. `plugins trust` of a signed code plugin from [`SIGNED_REGISTRY`] records,
+/// in the trust store itself, the fingerprint of the key that its own registry pins.
+#[test]
+fn trust_records_the_fingerprint_of_the_key_pinned_on_the_plugins_own_registry() {
+    let sandbox = Sandbox::new();
+    let key = signed_fixture::Key::primary();
+    let scoped = key.public();
+    let twin = {
+        let mut bytes = minisign::PublicKey::from_base64(&scoped.to_base64())
+            .unwrap()
+            .to_bytes();
+        let last = bytes.len() - 1;
+        bytes[last] ^= 0x01;
+        minisign::PublicKey::from_bytes(&bytes).unwrap().to_base64()
+    };
+    let twin_pk = slopvac_plugins::sign::PublicKey::from_base64(&twin).unwrap();
+    assert_eq!(twin_pk.key_id(), scoped.key_id());
+    assert_ne!(twin_pk.fingerprint(), scoped.fingerprint());
+    pin_text_through_the_binary(&sandbox, &twin, &twin_pk.fingerprint(), "ghcr.io");
+    pin_text_through_the_binary(
+        &sandbox,
+        &scoped.to_base64(),
+        &scoped.fingerprint(),
+        SIGNED_REGISTRY,
+    );
+
+    let p = signed_fixture::publish(
+        &key,
+        "acme",
+        "fmt",
+        "1.0.0",
+        SIGNED_NOT_BEFORE,
+        &[
+            ("bin/fmt", b""),
+            ("slopvac-plugin.toml", PLUGIN_MANIFEST.as_bytes()),
+        ],
+    );
+    p.cache_into(&plugin_store(&sandbox));
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"oci://{SIGNED_REGISTRY}/acme/fmt:1.0.0\"\ndigest = \"{}\"\n\n\
+         [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{SIGNED_NOT_BEFORE}\"\n",
+        p.digest, p.key_id
+    ));
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .success();
+
+    let records =
+        slopvac_plugins::trust::TrustStore::open(sandbox.dir.path().join("home/state/slopvac"))
+            .records()
+            .unwrap();
+    let recorded: Vec<(&str, Option<&str>)> = records
+        .iter()
+        .map(|r| (r.name.as_str(), r.key_fingerprint.as_deref()))
+        .collect();
+    assert_eq!(recorded, [("fmt", Some(scoped.fingerprint().as_str()))]);
+}
+
 /// K16: once a rotation replaces the pin, the cached entry that the old key signed no longer
 /// verifies, and sync refuses it with `signature-invalid`.
 #[test]
@@ -1437,10 +1531,20 @@ fn k22_pin_and_rotate_finish_with_stdin_closed_and_open_no_connection() {
         ),
     )
     .unwrap();
+    // A rotation from the pinned key to another that passes every check of its files, so
+    // rotate gets as far as the revocation list, which this machine never fetched.
+    let new = signed_fixture::Key::secondary();
+    let (old_pk, new_pk) = (key.public(), new.public());
+    let statement = format!(
+        "{{\"namespace\":\"acme\",\"newKey\":\"{}\",\"newKeyId\":\"{}\",\"notBefore\":\"2026-11-10T00:00:00Z\",\"oldKeyId\":\"{}\",\"schema_version\":1,\"type\":\"rotation\"}}",
+        new_pk.to_base64(),
+        new_pk.key_id(),
+        old_pk.key_id()
+    );
     let dir = sandbox.dir.path();
-    for name in ["rotation.json", "old.minisig", "new.minisig"] {
-        fs::write(dir.join(name), b"x").unwrap();
-    }
+    fs::write(dir.join("rotation.json"), &statement).unwrap();
+    fs::write(dir.join("old.minisig"), key.sign(statement.as_bytes())).unwrap();
+    fs::write(dir.join("new.minisig"), new.sign(statement.as_bytes())).unwrap();
     let tally = NetworkTally::start();
     let run = |args: Vec<std::ffi::OsString>| {
         let mut cmd = sandbox.slopvac();
@@ -1461,10 +1565,11 @@ fn k22_pin_and_rotate_finish_with_stdin_closed_and_open_no_connection() {
     ])
     .success()
     .stdout(format!("pinned key {fp} for namespace `acme` on ghcr.io\n"));
+    assert_eq!(tally.requests(), 0, "pin opened a connection");
     let rotated = run(vec![
         "rotate".into(),
         "acme".into(),
-        fp.into(),
+        new_pk.fingerprint().into(),
         "--statement".into(),
         dir.join("rotation.json").into(),
         "--old-signature".into(),
@@ -1473,6 +1578,10 @@ fn k22_pin_and_rotate_finish_with_stdin_closed_and_open_no_connection() {
         dir.join("new.minisig").into(),
     ])
     .code(2);
-    assert_eq!(stderr_code(&rotated), "rotation-invalid");
+    assert_eq!(stderr_code(&rotated), "rotation-revocations-missing");
+    assert_eq!(
+        String::from_utf8(rotated.get_output().stderr.clone()).unwrap(),
+        "error[rotation-revocations-missing]: rotation refused: no revocation list has been fetched, so a revoked key cannot be ruled out; run `slopvac plugins sync` online\n"
+    );
     assert_eq!(tally.requests(), 0, "pin or rotate opened a connection");
 }

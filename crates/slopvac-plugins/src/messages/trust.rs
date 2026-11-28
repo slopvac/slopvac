@@ -390,6 +390,10 @@ pub(crate) enum TrustPhrase {
     #[code("plugins-trust-phrase-store-schema")]
     #[text("unsupported schema_version")]
     StoreSchema,
+    /// A version 2 store with a key pin that names no registry host.
+    #[code("plugins-trust-phrase-store-pin-no-host")]
+    #[text("a key pin names no registry host")]
+    StorePinNoHost,
     /// A key file that cannot be opened or read.
     #[code("plugins-trust-phrase-key-file-unreadable")]
     #[text("the file cannot be read")]
@@ -890,6 +894,14 @@ pub(crate) fn environment_refused(why: &str) -> String {
 }
 
 /// The refusal of a rotation whose statement failed `cause`: a rollback has its own code.
+/// A rotation refused for a statement that cannot be one, with the cause's fixed text.
+pub(crate) fn rotation_statement_refused(cause: crate::sign::RotationCause) -> String {
+    TrustMessage::RotationInvalid {
+        cause: cause.to_string(),
+    }
+    .to_string()
+}
+
 pub(crate) fn rotation_refused(cause: &crate::sign::SignError) -> String {
     let text = cause.to_string();
     match cause {
@@ -1776,6 +1788,10 @@ mod tests {
         let phrases = [
             (TrustPhrase::StoreOverCap, "larger than 8 MiB"),
             (TrustPhrase::StoreSchema, "unsupported schema_version"),
+            (
+                TrustPhrase::StorePinNoHost,
+                "a key pin names no registry host",
+            ),
             (TrustPhrase::KeyFileUnreadable, "the file cannot be read"),
             (TrustPhrase::KeyFileOverCap, "it holds more than 4 KiB"),
             (TrustPhrase::KeyFileNoKey, "it holds no minisign public key"),

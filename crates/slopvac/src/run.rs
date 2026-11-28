@@ -466,7 +466,7 @@ fn plugins(
     policy.pinned = slopvac_plugins::trust::TrustStore::open(&dirs_state)
         .pinned_map()
         .map_err(|e| {
-            let e = slopvac_plugins::RunError::trust_store(&e);
+            let e = slopvac_plugins::RunError::trust_store(&root, &e);
             CliError::new(e.code(), e.to_string())
         })?;
     let source = oci::Reference::parse(revoke::DEFAULT_SOURCE)

@@ -1188,12 +1188,18 @@ fn k11_a_key_file_with_another_fingerprint_is_refused_with_both() {
     assert!(!s.dir("state/trust.json").exists(), "nothing was written");
 }
 
+/// The refusal keeps the cause as a kind only: its `source()` is that kind, and neither the
+/// refusal, its `Debug` form nor any text in its chain quotes the file.
 #[rstest::rstest]
-#[case::missing(None)]
-#[case::no_key_line(Some(b"untrusted comment: LEAKME\n".to_vec()))]
-#[case::not_a_minisign_key(Some(b"untrusted comment: x\nTEVBS01FTEVBS01FTEVBS01F\n".to_vec()))]
+#[case::missing(None, FileCause::Read(slopvac_fs::InputKind::NotFound))]
+#[case::no_key_line(Some(b"untrusted comment: LEAKME\n".to_vec()), FileCause::NoKey)]
+#[case::not_a_minisign_key(
+    Some(b"untrusted comment: x\nTEVBS01FTEVBS01FTEVBS01F\n".to_vec()),
+    FileCause::NoKey
+)]
 fn k12_a_key_file_that_cannot_be_used_is_refused_without_quoting_it(
     #[case] content: Option<Vec<u8>>,
+    #[case] cause: FileCause,
 ) {
     let s = Scratch::new("pin-bad-file");
     let store = TrustStore::open(s.dir("state"));
@@ -1215,6 +1221,28 @@ fn k12_a_key_file_that_cannot_be_used_is_refused_without_quoting_it(
     assert!(text.contains(SHOWN), "{text}");
     for quoted in ["LEAKME", "TEVBS01F", "####"] {
         assert!(!text.contains(quoted), "{text}");
+    }
+    assert!(
+        matches!(&err, TrustError::KeyInvalid { cause: found, .. } if *found == cause),
+        "{err:?}"
+    );
+    let source = std::error::Error::source(&err).expect("the refusal keeps its cause");
+    assert_eq!(
+        source.downcast_ref::<FileCause>(),
+        Some(&cause),
+        "{source:?}"
+    );
+    let mut shown = vec![format!("{err:?}")];
+    let mut next: Option<&dyn std::error::Error> = Some(&err);
+    while let Some(e) = next {
+        shown.push(e.to_string());
+        shown.push(format!("{e:?}"));
+        next = e.source();
+    }
+    for s in &shown {
+        for quoted in ["LEAKME", "TEVBS01F"] {
+            assert!(!s.contains(quoted), "{s}");
+        }
     }
     assert!(!s.dir("state/trust.json").exists(), "nothing was written");
 }

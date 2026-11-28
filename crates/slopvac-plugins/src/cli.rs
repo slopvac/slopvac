@@ -435,10 +435,10 @@ impl RunError {
 
     /// A trust store failure while the group is set up, such as reading the pinned keys for
     /// the key policy. It reports the code of the failure, or `plugins-store-failed`, with
-    /// every path shown as the commands of the group show it.
+    /// every path shown as the commands of the group show it, under `project_root`.
     #[must_use]
-    pub fn trust_store(e: &TrustError) -> Self {
-        store_failed(e)
+    pub fn trust_store(project_root: &Path, e: &TrustError) -> Self {
+        store_failed(project_root, e)
     }
 
     /// The code that the failure reports: the code of its cause when it has one. It is the
@@ -464,7 +464,8 @@ impl RunError {
 pub fn preflight(matches: &ArgMatches) -> Result<(), RunError> {
     if let Some(("pin" | "rotate", m)) = matches.subcommand() {
         let (scope, _) = pin_args(m);
-        crate::trust::reject_reserved(&scope).map_err(|e| store_failed(&e))?;
+        // The refusal names no path, so no project root is needed to show it.
+        crate::trust::reject_reserved(&scope).map_err(|e| store_failed(Path::new(""), &e))?;
     }
     Ok(())
 }
@@ -540,10 +541,10 @@ fn kind_name(kind: PackKind) -> String {
     kind.as_str().to_owned()
 }
 
-/// A trust store failure, with every path shown under the project root. A failure with a code
-/// keeps it.
-fn store_failed(e: &TrustError) -> RunError {
-    match cause::store(e) {
+/// A trust store failure, with every path shown under `root`, the project root. A failure with
+/// a code keeps it.
+fn store_failed(root: &Path, e: &TrustError) -> RunError {
+    match cause::store(root, e) {
         Ok(source) => RunError::Failed { source },
         Err(detail) => RunError::Store {
             source: Redacted::new(detail.clone()),
@@ -590,7 +591,7 @@ fn trust_part(runner: &Runner<'_>, pack: &LockedPack) -> CliText {
         .and_then(|(gate, vp, spec)| {
             gate.state(&vp, &spec)
                 .map(|(_, s)| s)
-                .map_err(|e| store_failed(&e).to_string())
+                .map_err(|e| store_failed(&runner.dirs.project_root, &e).to_string())
         });
     match state {
         Ok(TrustState::Trusted) => CliText::PartTrusted,
@@ -915,13 +916,15 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         }
     })?;
     let (gate, spec) = runner.prepared(&vp, spec, TRUST_INPUTS).map_err(refused)?;
-    let (_, state) = gate.state(&vp, &spec).map_err(|e| store_failed(&e))?;
+    let (_, state) = gate
+        .state(&vp, &spec)
+        .map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
     if state == TrustState::Revoked {
         return Err(RunError::Revoked { id: line(id) });
     }
     let record = gate
         .record_trust(&vp, &spec, &runner.now)
-        .map_err(|e| store_failed(&e))?;
+        .map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
     say(
         out,
         &CliText::Trusted {
@@ -984,7 +987,7 @@ fn run_pin(runner: &Runner<'_>, m: &ArgMatches, out: &mut dyn Write) -> Result<u
     let pin = runner
         .trust_store()
         .pin_key_file(&scope, &fingerprint, key, &shown, &runner.now)
-        .map_err(|e| store_failed(&e))?;
+        .map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
     say(
         out,
         &CliText::Pinned {
@@ -1030,7 +1033,7 @@ fn run_rotate(runner: &Runner<'_>, m: &ArgMatches, out: &mut dyn Write) -> Resul
             runner.revocations,
             &runner.now,
         )
-        .map_err(|e| store_failed(&e))?;
+        .map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
     notices(out, &rotated.notices)?;
     say(
         out,
@@ -1052,7 +1055,7 @@ fn run_untrust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8,
     let store = runner.trust_store();
     let hashes: Vec<String> = store
         .records()
-        .map_err(|e| store_failed(&e))?
+        .map_err(|e| store_failed(&runner.dirs.project_root, &e))?
         .into_iter()
         .filter(|r| r.name == id)
         .map(|r| r.hash)
@@ -1062,12 +1065,17 @@ fn run_untrust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8,
     }
     for hash in hashes {
         let digest = Digest::parse(&hash).map_err(|e| {
-            store_failed(&TrustError::Corrupt {
-                path: runner.dirs.state_dir.join("trust.json"),
-                why: e.to_string(),
-            })
+            store_failed(
+                &runner.dirs.project_root,
+                &TrustError::Corrupt {
+                    path: runner.dirs.state_dir.join("trust.json"),
+                    why: e.to_string(),
+                },
+            )
         })?;
-        store.forget(&digest).map_err(|e| store_failed(&e))?;
+        store
+            .forget(&digest)
+            .map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
     }
     say(out, &CliText::Untrusted { id: line(id) })?;
     Ok(0)
