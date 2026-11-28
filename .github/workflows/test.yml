@@ -323,19 +323,24 @@ jobs:
             # The checkout is shallow, so fetch the base commit the comparison reads.
             git fetch --no-tags --depth=1 origin "$BASE_SHA"
             # A failed read leaves no label, so growth fails closed.
-            labels="$(gh api "repos/$REPO/issues/$PR_NUMBER/labels" --jq '[.[].name]' || echo '[]')"
+            # The pulls endpoint needs `pull-requests: read`, which the workflow grants.
+            labels="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '[.labels[].name]' || echo '[]')"
             args=(--base "$BASE_SHA" --labels "$labels")
           fi
           python3 scripts/ci/check_no_hand_json.py "${args[@]}"
 
       # The checker's own tests, including the ones that run the rule. The pytest job has no
       # ast-grep, so they run here, and REQUIRE_AST_GREP makes a missing binary a failure.
+      # pytest comes from the locked environment, so uv.lock pins it with hashes.
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
       - name: No-hand-json checker tests
         env:
           REQUIRE_AST_GREP: "1"
-        run: |
-          python3 -m pip install --quiet pytest==9.2.0
-          python3 -m pytest -q tests/test_no_hand_json_allow_list.py
+        run: uv run --locked --extra dev python -m pytest -q tests/test_no_hand_json_allow_list.py
 
       # The fuzz crate is outside the workspace (cargo-fuzz needs nightly), so build it
       # here to keep the target compiling.
