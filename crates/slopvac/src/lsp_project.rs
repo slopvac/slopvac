@@ -511,7 +511,13 @@ impl Project {
                 settings_for(&ready.catalog, config_ref, &rel, &Overrides::default())
                     .map_err(shown)?;
             let cached = ready.engines.get(&key).cloned();
-            (settings, terms, key, cached, ready.catalog.shared_sets())
+            // The rule-set handles are cloned only when an engine is to be built.
+            let sets = if cached.is_none() {
+                ready.catalog.shared_sets()
+            } else {
+                Vec::new()
+            };
+            (settings, terms, key, cached, sets)
         };
         let engine = if let Some(engine) = cached {
             engine

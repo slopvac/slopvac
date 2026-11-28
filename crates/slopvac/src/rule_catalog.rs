@@ -175,7 +175,7 @@ impl Catalog {
 
     /// The rule sets, shared, to hand to one engine of the run.
     #[must_use]
-    pub fn shared_sets(&self) -> Vec<Arc<RuleSet>> {
+    pub(crate) fn shared_sets(&self) -> Vec<Arc<RuleSet>> {
         self.sets.clone()
     }
 
