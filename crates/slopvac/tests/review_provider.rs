@@ -566,9 +566,11 @@ impl RawRequest<'_> {
 }
 
 /// TM-19: the `task`, `model` and `items` the provider receives equal the `request` in the
-/// `--dry-run` plan of the same project. The test compares the JSON text of every value as
-/// written on each side: the plan on stdout and the request body the plugin received. Only the
-/// whitespace between values differs, because the plan is indented.
+/// `--dry-run` plan of the same project. The params the plugin received, without the hook id,
+/// must equal the plan's `request` as one whole value, so a missing, extra or reordered item
+/// or member fails. The JSON text of every value must also match byte for byte on both sides,
+/// the plan on stdout and the request body. Only the whitespace between values differs,
+/// because the plan is indented.
 #[rstest]
 #[case::update(UPDATE, "update")]
 #[case::rewrite(REWRITE, "rewrite")]
@@ -589,10 +591,23 @@ fn the_provider_receives_the_request_that_a_dry_run_prints(
 
     let live = world.review(&["--type", task]);
 
-    assert_eq!(live.status.code(), Some(0), "{}", stderr(&live));
-    let printed: RawPlan<'_> = serde_json::from_slice(&dry.stdout).expect("the dry-run plan");
     let bodies = world.raw_requests();
     assert_eq!(bodies.len(), 1);
+    let mut received: Value = serde_json::from_str(&bodies[0]).expect("the request body");
+    let mut params = received["params"].take();
+    let members = params.as_object_mut().expect("the params are an object");
+    assert!(
+        members.remove("provider").is_some(),
+        "the params name the hook: {}",
+        bodies[0]
+    );
+    assert_eq!(
+        params,
+        plan(&dry)["request"],
+        "the params, without the hook id, equal the dry run's request"
+    );
+    assert_eq!(live.status.code(), Some(0), "{}", stderr(&live));
+    let printed: RawPlan<'_> = serde_json::from_slice(&dry.stdout).expect("the dry-run plan");
     let body: RawBody<'_> = serde_json::from_str(&bodies[0]).expect("the request body");
     assert_eq!(body.params.values(), printed.request.values());
     assert_eq!(plan(&live)["request"], plan(&dry)["request"]);
