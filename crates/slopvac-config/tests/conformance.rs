@@ -24,7 +24,8 @@ mod conformance {
             .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
             .map(|e| e.unwrap().path())
             .filter(|p| {
-                p.extension().is_some_and(|x| x == "toml" || x == "yaml") && !p.ends_with("cases.toml")
+                p.extension().is_some_and(|x| x == "toml" || x == "yaml")
+                    && !p.ends_with("cases.toml")
             })
             .collect();
         out.sort();

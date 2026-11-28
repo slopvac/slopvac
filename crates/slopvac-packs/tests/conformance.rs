@@ -12,12 +12,15 @@ mod conformance {
     use slopvac_packs::Manifest;
 
     fn corpus() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/conformance/plugin-manifest")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../schemas/v3/conformance/plugin-manifest")
     }
 
     fn expected() -> toml::Table {
-        toml::from_str(&fs::read_to_string(corpus().join("invalid/cases.toml")).expect("cases.toml"))
-            .expect("cases.toml parses")
+        toml::from_str(
+            &fs::read_to_string(corpus().join("invalid/cases.toml")).expect("cases.toml"),
+        )
+        .expect("cases.toml parses")
     }
 
     fn load(path: &Path) -> Result<Manifest, slopvac_packs::ManifestError> {

@@ -215,7 +215,8 @@ mod conformance {
             ),
         ];
         let yaml_list = |file: &str| -> Vec<Value> {
-            let v: Value = serde_saphyr::from_str(&fs::read_to_string(before(file)).unwrap()).unwrap();
+            let v: Value =
+                serde_saphyr::from_str(&fs::read_to_string(before(file)).unwrap()).unwrap();
             v.as_array().unwrap().clone()
         };
         let inputs: [(&str, Vec<Value>); 2] = [

@@ -43,9 +43,10 @@ mod conformance {
 
     /// A validator for one `$defs` entry of the published `common.schema.json`.
     fn published_common_def(def: &str) -> jsonschema::Validator {
-        let common: Value =
-            serde_json::from_str(&fs::read_to_string(schemas().join("common.schema.json")).unwrap())
-                .unwrap();
+        let common: Value = serde_json::from_str(
+            &fs::read_to_string(schemas().join("common.schema.json")).unwrap(),
+        )
+        .unwrap();
         let id = common["$id"].as_str().unwrap().to_owned();
         let registry = jsonschema::Registry::new()
             .add(id.clone(), common)

@@ -52,8 +52,7 @@ mod conformance {
             finding("suggestion", "Consider it.", Some((11, 16, [2, 1, 2, 6]))),
             finding("warning", "Document-wide.", None),
         ]);
-        doc1["gate"] =
-            json!({"passed": false, "reasons": ["orwell: 3.0 per 100 words exceeds the budget of 1"]});
+        doc1["gate"] = json!({"passed": false, "reasons": ["orwell: 3.0 per 100 words exceeds the budget of 1"]});
         doc1["unchecked"] = json!([{"code": "spell-check-skipped", "level": "warning", "message": "No dictionary.", "path": DOC1_PATH}]);
         let mut doc2 = template;
         doc2["path"] = json!(DOC2_PATH);
@@ -145,7 +144,8 @@ mod conformance {
 
     #[test]
     fn rdjsonl_lines_validate_and_documents_wide_findings_have_no_column() {
-        let validator = jsonschema::draft7::new(&fixture("reviewdog-diagnostic.schema.json")).unwrap();
+        let validator =
+            jsonschema::draft7::new(&fixture("reviewdog-diagnostic.schema.json")).unwrap();
         let rendered = out(Format::Rdjsonl);
         let lines: Vec<Value> = rendered
             .lines()
@@ -331,7 +331,9 @@ mod conformance {
             .text()
             .collect::<String>();
         assert!(!styles.contains("http"));
-        assert!(styles.contains("prefers-color-scheme") && styles.contains("prefers-reduced-motion"));
+        assert!(
+            styles.contains("prefers-color-scheme") && styles.contains("prefers-reduced-motion")
+        );
     }
 
     #[test]
@@ -350,9 +352,10 @@ mod conformance {
                 .as_deref(),
             Some("https://example.test/slopvac/v3/rules/prose-inflation/slop-lexicon/")
         );
-        let sarif: Value =
-            serde_json::from_str(&render_with(Format::Sarif, &report(), &sources(), &options).unwrap())
-                .unwrap();
+        let sarif: Value = serde_json::from_str(
+            &render_with(Format::Sarif, &report(), &sources(), &options).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             sarif["runs"][0]["tool"]["driver"]["rules"][0]["helpUri"],
             want
@@ -361,9 +364,10 @@ mod conformance {
         let first: Value = serde_json::from_str(rd.lines().next().unwrap()).unwrap();
         assert_eq!(first["code"]["url"], want);
         let none = RenderOptions { docs_base: None };
-        let plain: Value =
-            serde_json::from_str(&render_with(Format::Sarif, &report(), &sources(), &none).unwrap())
-                .unwrap();
+        let plain: Value = serde_json::from_str(
+            &render_with(Format::Sarif, &report(), &sources(), &none).unwrap(),
+        )
+        .unwrap();
         assert!(
             plain["runs"][0]["tool"]["driver"]["rules"][0]
                 .get("helpUri")
@@ -389,9 +393,10 @@ mod conformance {
             docs_base: Some("https://example.test/slopvac/".into()),
         };
         let report = report_with_a_plugin_finding();
-        let sarif: Value =
-            serde_json::from_str(&render_with(Format::Sarif, &report, &sources(), &options).unwrap())
-                .unwrap();
+        let sarif: Value = serde_json::from_str(
+            &render_with(Format::Sarif, &report, &sources(), &options).unwrap(),
+        )
+        .unwrap();
         let rules = sarif["runs"][0]["tool"]["driver"]["rules"]
             .as_array()
             .unwrap();

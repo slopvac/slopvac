@@ -633,7 +633,9 @@ mod conformance {
         let (result, out) = w.run(&refs(&args));
         assert_eq!(result.unwrap(), 0);
         assert!(
-            out.contains("pasted opaque-env-token-9 and legacy-env-token-8 and marker-pass-phrase-77"),
+            out.contains(
+                "pasted opaque-env-token-9 and legacy-env-token-8 and marker-pass-phrase-77"
+            ),
             "{out}"
         );
         assert_eq!(*w.stderr.borrow(), "");
@@ -921,7 +923,8 @@ mod conformance {
     #[test]
     fn urls_that_merely_mention_a_forge_host_are_kept() {
         let w = World::new();
-        let line = "see https://example.com/github.com/guide and https://docs.example.com/gitlab.com/x";
+        let line =
+            "see https://example.com/github.com/guide and https://docs.example.com/gitlab.com/x";
         let args = bug(&["--field", &format!("output={line}")]);
         let (result, out) = w.run(&refs(&args));
         assert_eq!(result.unwrap(), 0);
@@ -977,8 +980,9 @@ mod conformance {
             assert!(!posted.contains(marker), "{marker} reached the filed issue");
         }
         assert!(
-            preview
-                .contains("clone https://github.com/<org>/<repo> and git@github.com:<org>/<repo> now"),
+            preview.contains(
+                "clone https://github.com/<org>/<repo> and git@github.com:<org>/<repo> now"
+            ),
             "{preview}"
         );
     }

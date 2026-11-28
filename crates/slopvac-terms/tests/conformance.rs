@@ -102,7 +102,8 @@ mod conformance {
 
     #[test]
     fn terms_cases_file_lists_exactly_the_invalid_files() {
-        let text = std::fs::read_to_string(Path::new(ROOT).join("terms/invalid/cases.toml")).unwrap();
+        let text =
+            std::fs::read_to_string(Path::new(ROOT).join("terms/invalid/cases.toml")).unwrap();
         let cases: toml::Table = text.parse().unwrap();
         let mut listed: Vec<_> = cases.keys().cloned().collect();
         listed.sort();
