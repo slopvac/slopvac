@@ -3,11 +3,6 @@
 //! `slopvac-config`, which checks the shape and keeps spans, and `Style::parse` in
 //! `slopvac-styles`, which loads the preset. The schema is what editors and other tools read.
 //! This test holds all three to one verdict, for the generated file and the committed one.
-#![allow(
-    clippy::panic,
-    clippy::unwrap_used,
-    reason = "test code: a panic is a failed test"
-)]
 #![allow(missing_docs, reason = "an integration test crate has no public API")]
 
 use std::fs;
@@ -17,6 +12,7 @@ use rstest::rstest;
 use serde_json::Value;
 use slopvac_config::tree::parse_toml;
 use slopvac_config::validate_style;
+use slopvac_model::SchemaVersion;
 use slopvac_schemas::generate;
 use slopvac_styles::Style;
 
@@ -101,4 +97,68 @@ fn the_schema_gives_the_readers_verdict_on_every_case(#[case] source: fn(&str) -
         &source("config.schema.json"),
     );
     assert_eq!(disagreements(&schema), Vec::<String>::new());
+}
+
+fn config_accepts(text: &str) -> bool {
+    validate_style(&parse_toml(text).unwrap(), text).is_empty()
+}
+
+fn styles_accept(text: &str) -> bool {
+    Style::parse("probe", text).is_ok()
+}
+
+/// `schema_version` takes one value in the schema, the config-side reader and the style
+/// loader, and that value is `SchemaVersion::VALUE`.
+#[test]
+fn both_readers_accept_only_the_shared_schema_version() {
+    for n in 0..=10_i64 {
+        let text = format!("schema_version = {n}\n");
+        let want = n == i64::from(SchemaVersion::VALUE);
+        assert_eq!(config_accepts(&text), want, "validate_style on version {n}");
+        assert_eq!(styles_accept(&text), want, "Style::parse on version {n}");
+    }
+}
+
+/// The `minLength` of the field at `pointer`, followed through one `$ref` if it has one.
+fn min_length(schema: &Value, pointer: &str) -> usize {
+    let node = schema.pointer(pointer).unwrap();
+    let node = match node.get("$ref").and_then(Value::as_str) {
+        Some(target) => schema.pointer(target.trim_start_matches('#')).unwrap(),
+        None => node,
+    };
+    usize::try_from(node["minLength"].as_u64().unwrap()).unwrap()
+}
+
+/// The three string fields of a style have one floor. The schema states it three times, and
+/// the readers check it, so a string one character short of it fails every reader.
+#[rstest]
+#[case::description("/properties/description", "description = \"{}\"\n")]
+#[case::allow_entry(
+    "/$defs/StyleTerms/properties/allow/items",
+    "[terms]\nallow = [\"{}\"]\n"
+)]
+#[case::blocklist_path(
+    "/$defs/StyleTerms/properties/blocklists/items",
+    "[terms]\nblocklists = [\"{}\"]\n"
+)]
+fn the_string_fields_share_one_floor_with_the_readers(#[case] pointer: &str, #[case] body: &str) {
+    let schema = generated("style.schema.json");
+    let floor = min_length(&schema, "/properties/description");
+    assert_eq!(
+        min_length(&schema, pointer),
+        floor,
+        "schema floor at {pointer}"
+    );
+    for (len, want) in [(floor - 1, false), (floor, true)] {
+        let text = format!(
+            "schema_version = 3\n{}",
+            body.replace("{}", &"a".repeat(len))
+        );
+        assert_eq!(
+            config_accepts(&text),
+            want,
+            "validate_style, {len} characters"
+        );
+        assert_eq!(styles_accept(&text), want, "Style::parse, {len} characters");
+    }
 }
