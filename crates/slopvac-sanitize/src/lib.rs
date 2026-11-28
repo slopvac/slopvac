@@ -218,6 +218,24 @@ pub fn html(text: &str) -> String {
     })
 }
 
+/// Writes text into the text of an HTML document: `&`, `<` and `>` become character
+/// references, and every other character stays as it is. Use it for content the document
+/// keeps, such as the replacement of a fix, where [`html`] would also rewrite quotes and
+/// unsafe characters that the author chose.
+///
+/// ```
+/// assert_eq!(slopvac_sanitize::html_text("a<b>&\"c\""), "a&lt;b&gt;&amp;\"c\"");
+/// ```
+#[must_use]
+pub fn html_text(text: &str) -> String {
+    map(text, |c, out| match c {
+        '&' => out.push_str("&amp;"),
+        '<' => out.push_str("&lt;"),
+        '>' => out.push_str("&gt;"),
+        c => out.push(c),
+    })
+}
+
 /// Returns `uri` as a link target that is safe in HTML attributes, Markdown
 /// destinations and SARIF, or `None` when it is not a clean https link.
 ///
