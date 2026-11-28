@@ -26,9 +26,8 @@ use slopvac_plugins::oci::Digest;
 use slopvac_plugins::protocol::{FeatureSet, HookDecl};
 use slopvac_plugins::sign::{PinScope, PublicKey};
 use slopvac_plugins::trust::{
-    FileCause,
-    DeclSummary, Revocation, TrustError, TrustGate, TrustInputs, TrustKey, TrustRecord, TrustState,
-    TrustStore, VerifiedPlugin, is_forbidden_env_name, parse_trust_env, trust_hash,
+    DeclSummary, FileCause, Revocation, TrustError, TrustGate, TrustInputs, TrustKey, TrustRecord,
+    TrustState, TrustStore, VerifiedPlugin, is_forbidden_env_name, parse_trust_env, trust_hash,
 };
 use slopvac_plugins::{PluginDeclaration, PluginError, PluginSpec, SpawnGate};
 
@@ -858,7 +857,10 @@ fn a_version_1_store_is_a_damaged_store_and_kept() {
     let old = json!({"schema_version": 1, "records": records}).to_string();
     fs::write(&file, &old).unwrap();
     assert!(matches!(store.records(), Err(TrustError::Corrupt { .. })));
-    assert!(matches!(store.pinned_map(), Err(TrustError::Corrupt { .. })));
+    assert!(matches!(
+        store.pinned_map(),
+        Err(TrustError::Corrupt { .. })
+    ));
     assert!(matches!(
         store.forget(&Digest::of(b"a")),
         Err(TrustError::Corrupt { .. })
@@ -1095,16 +1097,19 @@ fn k12_a_valid_key_file_over_4_kib_is_refused_for_its_size() {
     let store = TrustStore::open(s.dir("state"));
     let (file, fingerprint) = padded_key_file(&s, 4097);
     let err = store
-        .pin_key_file(&PinScope::new("ghcr.io", "acme"), &fingerprint, &file, SHOWN, NOW)
+        .pin_key_file(
+            &PinScope::new("ghcr.io", "acme"),
+            &fingerprint,
+            &file,
+            SHOWN,
+            NOW,
+        )
         .unwrap_err();
     match err {
         TrustError::KeyInvalid { file, why, cause } => {
             assert_eq!(file, SHOWN);
             assert_eq!(why, "it holds more than 4 KiB");
-            assert_eq!(
-                cause,
-                FileCause::Read(slopvac_fs::InputKind::TooLarge)
-            );
+            assert_eq!(cause, FileCause::Read(slopvac_fs::InputKind::TooLarge));
         }
         other => panic!("{other:?}"),
     }
@@ -1117,7 +1122,13 @@ fn a_valid_key_file_of_exactly_4_kib_is_pinned() {
     let store = TrustStore::open(s.dir("state"));
     let (file, fingerprint) = padded_key_file(&s, 4096);
     let pin = store
-        .pin_key_file(&PinScope::new("ghcr.io", "acme"), &fingerprint, &file, SHOWN, NOW)
+        .pin_key_file(
+            &PinScope::new("ghcr.io", "acme"),
+            &fingerprint,
+            &file,
+            SHOWN,
+            NOW,
+        )
         .unwrap();
     assert_eq!(pin.fingerprint, fingerprint);
 }
@@ -2037,7 +2048,13 @@ fn pin_refuses_a_fifo_key_file_without_waiting_for_a_writer() {
     let state = s.dir("state");
     let err = within_deadline(move || {
         TrustStore::open(state)
-            .pin_key_file(&PinScope::new("ghcr.io", "acme"), &"0".repeat(64), &file, SHOWN, NOW)
+            .pin_key_file(
+                &PinScope::new("ghcr.io", "acme"),
+                &"0".repeat(64),
+                &file,
+                SHOWN,
+                NOW,
+            )
             .unwrap_err()
     });
     assert_eq!(err.code(), Some("key-invalid"), "{err:?}");

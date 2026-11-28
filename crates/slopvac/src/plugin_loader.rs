@@ -368,14 +368,19 @@ mod tests {
     #[test]
     fn the_recorded_fingerprint_is_the_key_pinned_on_the_plugins_own_registry() {
         let mut world = World::new();
-        let pk = minisign::KeyPair::generate_unencrypted_keypair().unwrap().pk;
+        let pk = minisign::KeyPair::generate_unencrypted_keypair()
+            .unwrap()
+            .pk;
         let on_ghcr = PublicKey::from_base64(&pk.to_base64()).unwrap();
         let on_example = PublicKey::from_base64(&twin_of(&pk)).unwrap();
         assert_eq!(on_ghcr.key_id(), on_example.key_id());
         assert_ne!(on_ghcr.fingerprint(), on_example.fingerprint());
         world.policy.pinned = std::collections::BTreeMap::from([
             (PinScope::new("ghcr.io", "acme"), vec![on_ghcr]),
-            (PinScope::new("registry.example", "acme"), vec![on_example.clone()]),
+            (
+                PinScope::new("registry.example", "acme"),
+                vec![on_example.clone()],
+            ),
         ]);
 
         // The cache that sync leaves for an OCI plugin: the manifest the lock pins, its one

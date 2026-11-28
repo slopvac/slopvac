@@ -131,9 +131,9 @@ pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
         | TrustError::KeyInvalid { .. }
         | TrustError::FingerprintMismatch { .. }
         | TrustError::RotationFile { .. }
-        | TrustError::RevocationsMissing => e.to_string(),
+        | TrustError::RevocationsMissing
         // A parse or key failure can quote the statement, so only the fixed causes print.
-        TrustError::Rotation(
+        | TrustError::Rotation(
             SignError::BadSignature
             | SignError::KeyNotPinned { .. }
             | SignError::Mismatch(_)

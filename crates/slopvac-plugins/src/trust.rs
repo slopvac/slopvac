@@ -242,7 +242,9 @@ impl FileCause {
             | slopvac_fs::Error::Io { .. }
             | slopvac_fs::Error::Read { .. } => std::error::Error::source(e)
                 .and_then(|s| s.downcast_ref::<io::Error>())
-                .map_or(Self::Read(slopvac_fs::InputKind::Io), |s| Self::Io(s.kind())),
+                .map_or(Self::Read(slopvac_fs::InputKind::Io), |s| {
+                    Self::Io(s.kind())
+                }),
             slopvac_fs::Error::CapExceeded { .. } => Self::Read(slopvac_fs::InputKind::TooLarge),
             slopvac_fs::Error::NotUtf8 { .. } => Self::Read(slopvac_fs::InputKind::NotUtf8),
             _ => Self::Read(e.input_kind().unwrap_or(slopvac_fs::InputKind::Io)),

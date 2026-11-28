@@ -36,7 +36,8 @@ use slopvac_plugins::sign::{
     MEDIA_MINISIG, PinScope, PublicKey, RotationProof, SignError, plugins_key, verify_rotation,
 };
 use slopvac_plugins::trust::{
-    FileCause, NamedFile, RotationFiles, TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin,
+    FileCause, NamedFile, RotationFiles, TrustError, TrustGate, TrustState, TrustStore,
+    VerifiedPlugin,
 };
 use slopvac_plugins::{PluginError, PluginSpec, SpawnGate};
 
@@ -1451,10 +1452,7 @@ fn k18_a_rotation_file_over_4_kib_is_refused_with_its_name(#[case] name: &str) {
     match &err {
         TrustError::RotationFile { file, cause } => {
             assert_eq!(file, name);
-            assert_eq!(
-                *cause,
-                FileCause::Read(slopvac_fs::InputKind::TooLarge)
-            );
+            assert_eq!(*cause, FileCause::Read(slopvac_fs::InputKind::TooLarge));
         }
         other => panic!("{other:?}"),
     }

@@ -501,10 +501,10 @@ fn k14_pin_with_a_registry_binds_the_namespace_on_that_host_only() {
 }
 
 #[rstest::rstest]
-#[case::uppercase_fingerprint(&["pin", "acme", &"A".repeat(64), "--key", "k.pub"], ErrorKind::ValueValidation, "<FINGERPRINT>")]
-#[case::short_fingerprint(&["pin", "acme", &"a".repeat(63), "--key", "k.pub"], ErrorKind::ValueValidation, "<FINGERPRINT>")]
+#[case::uppercase_fingerprint(&["pin", "acme", &"A".repeat(64), "--key", "k.pub"], ErrorKind::ValueValidation, "<fingerprint>")]
+#[case::short_fingerprint(&["pin", "acme", &"a".repeat(63), "--key", "k.pub"], ErrorKind::ValueValidation, "<fingerprint>")]
 #[case::no_key(&["pin", "acme", &"a".repeat(64)], ErrorKind::MissingRequiredArgument, "--key <FILE>")]
-#[case::capital_namespace(&["pin", "Acme", &"a".repeat(64), "--key", "k.pub"], ErrorKind::ValueValidation, "<NAMESPACE>")]
+#[case::capital_namespace(&["pin", "Acme", &"a".repeat(64), "--key", "k.pub"], ErrorKind::ValueValidation, "<namespace>")]
 #[case::bad_registry(&["pin", "acme", &"a".repeat(64), "--key", "k.pub", "--registry", "a b"], ErrorKind::ValueValidation, "--registry <HOST>")]
 #[case::trailing_dot_registry(&["pin", "acme", &"a".repeat(64), "--key", "k.pub", "--registry", "ghcr.io."], ErrorKind::ValueValidation, "--registry <HOST>")]
 #[case::rotate_without_a_signature(&["rotate", "acme", &"a".repeat(64), "--statement", "s", "--old-signature", "o"], ErrorKind::MissingRequiredArgument, "--new-signature <FILE>")]
@@ -2399,7 +2399,13 @@ fn pin_with_a_missing_key_file_names_the_file_and_the_reason() {
     let missing = f.base.path().join("missing.pub");
     let err = f
         .run(
-            &["pin", "acme", &"a".repeat(64), "--key", missing.to_str().unwrap()],
+            &[
+                "pin",
+                "acme",
+                &"a".repeat(64),
+                "--key",
+                missing.to_str().unwrap(),
+            ],
             false,
             |s| s,
         )
@@ -2458,7 +2464,15 @@ fn pin_on_the_default_port_pins_the_host_without_it() {
     let key = f.key_file("old.pub", OLD_PUB);
     let fp = pub_key(OLD_PUB).fingerprint();
     let ran = f.run(
-        &["pin", "acme", &fp, "--key", &key, "--registry", "GHCR.io:443"],
+        &[
+            "pin",
+            "acme",
+            &fp,
+            "--key",
+            &key,
+            "--registry",
+            "GHCR.io:443",
+        ],
         false,
         |s| s,
     );
@@ -2468,4 +2482,73 @@ fn pin_on_the_default_port_pins_the_host_without_it() {
         format!("pinned key {fp} for namespace `acme` on ghcr.io\n")
     );
     assert_eq!(f.pinned(), [("ghcr.io".to_owned(), "acme".to_owned(), fp)]);
+}
+
+/// A registry that serves the signed `acme/style` releases: the tag list, each manifest by tag
+/// and by digest, and every blob.
+fn signed_registry(releases: Vec<(&'static str, signed_fixture::Published)>) -> Server {
+    Server::start(move |req| {
+        let last = req.path.rsplit('/').next().unwrap_or_default();
+        if req.path.starts_with("/v2/acme/style/tags/list") {
+            let tags: Vec<&str> = releases.iter().map(|(t, _)| *t).collect();
+            return Response::new(200).json(&serde_json::json!({ "tags": tags }));
+        }
+        if req.path.starts_with("/v2/acme/style/manifests/") {
+            return releases
+                .iter()
+                .find(|(tag, p)| *tag == last || p.digest == last)
+                .map_or_else(
+                    || Response::new(404),
+                    |(_, p)| {
+                        Response::new(200)
+                            .header("Content-Type", slopvac_plugins::oci::MEDIA_MANIFEST)
+                            .body(p.manifest.clone())
+                    },
+                );
+        }
+        releases
+            .iter()
+            .find_map(|(_, p)| p.blobs.get(last))
+            .map_or_else(|| Response::new(404), |b| Response::new(200).body(b.clone()))
+    })
+}
+
+#[test]
+fn a_key_pinned_with_pin_verifies_the_update_that_advances_the_lock() {
+    let f = Fixture::new();
+    let key = signed_fixture::Key::primary();
+    let files: &[(&str, &[u8])] = &[("pack.toml", b"id = \"style\"\n")];
+    let v120 = signed_fixture::publish(&key, "acme", "style", "1.2.0", NOT_BEFORE, files);
+    let v130 = signed_fixture::publish(&key, "acme", "style", "1.3.0", "2026-11-05T00:00:00Z", files);
+    let digest = v130.digest.clone();
+    let entry = format!(
+        "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
+         source = \"oci://{{reg}}/acme/style:1.2.0\"\ndigest = \"{}\"\n\n\
+         [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{NOT_BEFORE}\"\n",
+        v120.digest, v120.key_id
+    );
+    let server = signed_registry(vec![("1.2.0", v120), ("1.3.0", v130)]);
+    let reg = server.registry();
+    f.write_lock(&[entry.replace("{reg}", &reg)]);
+    let file = f.key_file(
+        "acme.pub",
+        &format!("untrusted comment: test key\n{}\n", key.public().to_base64()),
+    );
+    let fp = key.public().fingerprint();
+    let pinned = f.run(&["pin", "acme", &fp, "--key", &file, "--registry", &reg], false, |s| s);
+    assert_eq!(pinned.result.unwrap(), 0, "{}", pinned.out);
+
+    // The binary builds its key policy from the store's pins before any command runs.
+    let policy = KeyPolicy {
+        pinned: TrustStore::open(f.state()).pinned_map().unwrap(),
+        ..KeyPolicy::default()
+    };
+    let ran = f.run(&["update"], true, |s| s.range("style", "^1.2").policy(policy));
+    assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
+    let lock = slopvac_plugins::lock::read_project_lock(&f.project(), false).unwrap();
+    let style = lock.get(&"style".parse().unwrap()).unwrap();
+    assert_eq!(
+        (style.version.to_string(), style.digest.to_string()),
+        ("1.3.0".to_owned(), digest)
+    );
 }

@@ -57,7 +57,7 @@ impl Key {
         PublicKey::from_base64(&self.pk.to_base64()).unwrap()
     }
 
-    fn sign(&self, bytes: &[u8]) -> String {
+    pub(crate) fn sign(&self, bytes: &[u8]) -> String {
         minisign::sign(Some(&self.pk), &self.sk, Cursor::new(bytes), None, None)
             .unwrap()
             .to_string()
