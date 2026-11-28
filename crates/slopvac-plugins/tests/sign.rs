@@ -270,7 +270,13 @@ fn tm22_tm24_a_key_that_is_not_pinned_is_refused() {
     let s = good(&signer);
     let err = run(&s, &policy(&[&other]), &expect()).unwrap_err();
     assert!(matches!(err, SignError::KeyNotPinned { .. }), "{err:?}");
-    assert!(err.to_string().contains("slopvac plugins trust --key"));
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "key {} is not pinned for namespace `acme`; pin it with `slopvac plugins pin acme <fingerprint> --key <file>`",
+            signer.public().key_id()
+        )
+    );
     let err = run(&s, &KeyPolicy::default(), &expect()).unwrap_err();
     assert!(matches!(err, SignError::KeyNotPinned { .. }), "{err:?}");
 }

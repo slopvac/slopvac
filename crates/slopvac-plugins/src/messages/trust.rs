@@ -1919,7 +1919,7 @@ mod tests {
                     key_id: s("AB"),
                     namespace: s("acme"),
                 },
-                "key AB is not pinned for namespace `acme`; pin it with `slopvac plugins trust --key <fingerprint>`",
+                "key AB is not pinned for namespace `acme`; pin it with `slopvac plugins pin acme <fingerprint> --key <file>`",
             ),
             (
                 SignText::Mismatch { why: s("w") },
