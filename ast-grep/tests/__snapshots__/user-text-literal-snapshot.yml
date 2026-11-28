@@ -390,6 +390,10 @@ snapshots:
       style: secondary
       start: 39
       end: 45
+    - source: alloc
+      style: secondary
+      start: 32
+      end: 37
     - source: alloc::format
       style: secondary
       start: 32
@@ -402,6 +406,68 @@ snapshots:
       style: secondary
       start: 32
       end: 55
+  "fn f() { CliError::new(\"usage\", alloc::string::String::from(\"text\")); }":
+    labels:
+    - source: CliError::new("usage", alloc::string::String::from("text"))
+      style: primary
+      start: 9
+      end: 68
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: from
+      style: secondary
+      start: 55
+      end: 59
+    - source: String
+      style: secondary
+      start: 47
+      end: 53
+    - source: string
+      style: secondary
+      start: 39
+      end: 45
+    - source: alloc
+      style: secondary
+      start: 32
+      end: 37
+    - source: alloc::string
+      style: secondary
+      start: 32
+      end: 45
+    - source: alloc::string::String
+      style: secondary
+      start: 32
+      end: 53
+    - source: alloc::string::String::from
+      style: secondary
+      start: 32
+      end: 59
+    - source: "\"text\""
+      style: secondary
+      start: 60
+      end: 66
+    - source: "\"text\""
+      style: secondary
+      start: 60
+      end: 66
+    - source: alloc::string::String::from("text")
+      style: secondary
+      start: 32
+      end: 67
+    - source: alloc::string::String::from("text")
+      style: secondary
+      start: 32
+      end: 67
   "fn f() { CliError::new(\"usage\", concat!(\"a\", \"b\")); }":
     labels:
     - source: CliError::new("usage", concat!("a", "b"))
@@ -432,6 +498,44 @@ snapshots:
       style: secondary
       start: 32
       end: 49
+  "fn f() { CliError::new(\"usage\", core::concat!(\"a\", \"b\")); }":
+    labels:
+    - source: CliError::new("usage", core::concat!("a", "b"))
+      style: primary
+      start: 9
+      end: 56
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: concat
+      style: secondary
+      start: 38
+      end: 44
+    - source: core
+      style: secondary
+      start: 32
+      end: 36
+    - source: core::concat
+      style: secondary
+      start: 32
+      end: 44
+    - source: core::concat!("a", "b")
+      style: secondary
+      start: 32
+      end: 55
+    - source: core::concat!("a", "b")
+      style: secondary
+      start: 32
+      end: 55
   "fn f() { CliError::new(\"usage\", format!(\"{}\", name)); }":
     labels:
     - source: CliError::new("usage", format!("{}", name))
@@ -514,6 +618,44 @@ snapshots:
       style: secondary
       start: 32
       end: 49
+  "fn f() { CliError::new(\"usage\", std :: format!(\"{}\", v)); }":
+    labels:
+    - source: "CliError::new(\"usage\", std :: format!(\"{}\", v))"
+      style: primary
+      start: 9
+      end: 56
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: format
+      style: secondary
+      start: 39
+      end: 45
+    - source: std
+      style: secondary
+      start: 32
+      end: 35
+    - source: "std :: format"
+      style: secondary
+      start: 32
+      end: 45
+    - source: "std :: format!(\"{}\", v)"
+      style: secondary
+      start: 32
+      end: 55
+    - source: "std :: format!(\"{}\", v)"
+      style: secondary
+      start: 32
+      end: 55
   "fn f() { CliError::new(\"usage\", std::concat!(\"a\", \"b\")); }":
     labels:
     - source: CliError::new("usage", std::concat!("a", "b"))
@@ -536,6 +678,10 @@ snapshots:
       style: secondary
       start: 37
       end: 43
+    - source: std
+      style: secondary
+      start: 32
+      end: 35
     - source: std::concat
       style: secondary
       start: 32
@@ -570,6 +716,10 @@ snapshots:
       style: secondary
       start: 37
       end: 43
+    - source: std
+      style: secondary
+      start: 32
+      end: 35
     - source: std::format
       style: secondary
       start: 32
@@ -608,6 +758,18 @@ snapshots:
       style: secondary
       start: 45
       end: 51
+    - source: string
+      style: secondary
+      start: 37
+      end: 43
+    - source: std
+      style: secondary
+      start: 32
+      end: 35
+    - source: std::string
+      style: secondary
+      start: 32
+      end: 43
     - source: std::string::String
       style: secondary
       start: 32

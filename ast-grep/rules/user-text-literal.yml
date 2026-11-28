@@ -147,9 +147,23 @@ utils:
             - kind: identifier
               regex: ^(format|concat)$
             - kind: scoped_identifier
-              has:
-                field: name
-                regex: ^(format|concat)$
+              all:
+                - has:
+                    field: name
+                    regex: ^format$
+                - has:
+                    field: path
+                    kind: identifier
+                    regex: ^(std|alloc)$
+            - kind: scoped_identifier
+              all:
+                - has:
+                    field: name
+                    regex: ^concat$
+                - has:
+                    field: path
+                    kind: identifier
+                    regex: ^(std|alloc|core)$
       - kind: parenthesized_expression
         has:
           matches: cli-message
@@ -184,9 +198,21 @@ utils:
                       - kind: identifier
                         regex: ^String$
                       - kind: scoped_identifier
-                        has:
-                          field: name
-                          regex: ^String$
+                        all:
+                          - has:
+                              field: name
+                              regex: ^String$
+                          - has:
+                              field: path
+                              kind: scoped_identifier
+                              all:
+                                - has:
+                                    field: name
+                                    regex: ^string$
+                                - has:
+                                    field: path
+                                    kind: identifier
+                                    regex: ^(std|alloc)$
           - has:
               field: arguments
               has:

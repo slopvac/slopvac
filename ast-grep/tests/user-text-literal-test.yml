@@ -13,6 +13,10 @@ valid:
   - 'fn f() { CliError::new("usage", msg.render()); }'
   - 'fn f() { CliError::new("usage", name.to_string()); }'
   - 'fn f() { CliError::new("usage", String::from(name)); }'
+  # CliError: a wrapper from another path is not the standard one.
+  - 'fn f() { CliError::new("usage", catalog::format!("{}", v)); }'
+  - 'fn f() { CliError::new("usage", catalog::concat!("a", "b")); }'
+  - 'fn f() { CliError::new("usage", catalog::String::from("text")); }'
   - 'fn f() { CliError::escaping("usage", raw); }'
   # CliError: the code argument is never checked.
   - 'fn f() { CliError::new("pass paths", message); }'
@@ -76,6 +80,9 @@ invalid:
   - 'fn f() { CliError::new("usage", std::format!("{}", v)); }'
   - 'fn f() { CliError::new("usage", alloc::format!("{}", v)); }'
   - 'fn f() { CliError::new("usage", std::concat!("a", "b")); }'
+  - 'fn f() { CliError::new("usage", core::concat!("a", "b")); }'
+  - 'fn f() { CliError::new("usage", std :: format!("{}", v)); }'
+  - 'fn f() { CliError::new("usage", alloc::string::String::from("text")); }'
   - 'fn f() { CliError::new("usage", std::string::String::from("text")); }'
   - 'fn f() { CliError::new("usage", String :: from("text")); }'
   # CliError: comments before an argument do not hide the message.
