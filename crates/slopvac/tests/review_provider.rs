@@ -258,7 +258,8 @@ fn a_refused_provider_result_exits_2_as_an_invalid_reply(#[case] script: Value) 
     assert!(out.stdout.is_empty(), "no plan on a failed run");
 }
 
-/// Failures outside the result check keep their host codes and the host's own text for them.
+/// Failures outside the result check keep their host codes. The plugin's own message never
+/// reaches stderr, because it can quote document text (policies.md section 1.7).
 #[rstest]
 #[case::malformed_error_object(json!({"bad_error": ["1"]}), "plugin-output-invalid")]
 #[case::request_level_error(json!({"request_error": -32603}), "internal-error")]
@@ -274,6 +275,11 @@ fn a_failure_outside_the_result_check_keeps_its_host_code(
 
     assert_refused(&out, code);
     assert!(out.stdout.is_empty(), "no plan on a failed run");
+    assert!(
+        !stderr(&out).contains("PLUGIN-SECRET-MESSAGE"),
+        "{}",
+        stderr(&out)
+    );
 }
 
 /// An entry with `error` stops the review: no plan, the code of the first failed item in
@@ -630,4 +636,106 @@ fn reported_models_get_located_notices_and_the_review_passes() {
     assert_eq!(mismatch["data"]["requested_source"], "config");
     assert_eq!(mismatch["data"]["reported"], "vendor/author-model#high");
     assert_eq!(mismatch["data"]["items"], located);
+}
+
+/// The provider's text and the model it reports are plugin-origin text. They reach the plan
+/// with every bidirectional and other unsafe control escaped (threat model O1 to O4), so no
+/// control is live in the JSON on stdout.
+#[test]
+fn provider_text_and_reported_models_reach_the_plan_escaped() {
+    let world = World::new(REWRITE, &configured());
+    world.trust();
+    world.script(&json!({
+        "text": {"1": "safe\u{202e}txet"},
+        "models": {"2": "vendor\u{2066}model"}
+    }));
+
+    let out = world.review(&[]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let raw = String::from_utf8_lossy(&out.stdout);
+    assert!(!raw.contains('\u{202e}'), "a live override on stdout");
+    assert!(!raw.contains('\u{2066}'), "a live isolate on stdout");
+    let plan = plan(&out);
+    assert!(
+        plan["report"]
+            .as_str()
+            .is_some_and(|r| r.contains("safe\\u{202e}txet")),
+        "{plan}"
+    );
+    let list = notices(&plan);
+    let mismatch = notice(&list, "review-model-reported-mismatch");
+    assert_eq!(mismatch["data"]["reported"], "vendor\\u{2066}model");
+}
+
+/// A reply that passes, then a framing violation in answer to `shutdown`: the plugin broke the
+/// protocol, so the review stops under the host code and prints no plan.
+#[test]
+fn a_shutdown_violation_after_a_valid_reply_stops_the_review() {
+    let world = World::new(REWRITE, &configured());
+    world.trust();
+    world.script(&json!({"shutdown": "garbage"}));
+
+    let out = world.review(&[]);
+
+    assert_refused(&out, "plugin-protocol-violation");
+    assert!(out.stdout.is_empty(), "no plan on a failed run");
+}
+
+/// A request that failed first keeps its own code when the shutdown fails too.
+#[test]
+fn a_request_failure_keeps_its_code_when_the_shutdown_fails_too() {
+    let world = World::new(REWRITE, &configured());
+    world.trust();
+    world.script(&json!({"omit": ["2"], "shutdown": "garbage"}));
+
+    let out = world.review(&[]);
+
+    assert_refused(&out, "review-provider-reply-invalid");
+    assert!(
+        !stderr(&out).contains("error[plugin-protocol-violation]"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+/// The manifest declares two provider hooks and the handshake offers only the second. The
+/// request goes to the hook the plugin offered.
+#[test]
+fn the_request_goes_to_the_provider_hook_the_handshake_offered() {
+    let world = World::with_hooks(
+        REWRITE,
+        &configured(),
+        "[{ kind = \"provider\", id = \"first\" }, { kind = \"provider\", id = \"review\" }]",
+    );
+    world.trust();
+    world.script(&json!({"offer_hooks": [{"kind": "provider", "id": "review"}]}));
+
+    let out = world.review(&[]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let requests = world.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0]["provider"], "review");
+}
+
+const UNCHANGED: (&str, &str) = (
+    "# Cache\n\nThe cache holds 10 entries. It evicts the oldest entry first.\n",
+    "# Cache\n\nThe cache holds 10 entries. It evicts the oldest entry first.\n",
+);
+
+/// An update of identical files has nothing to send, so it needs no reviewer model and starts
+/// no plugin.
+#[test]
+fn an_update_with_nothing_to_send_needs_no_reviewer_model() {
+    let world = World::new(UNCHANGED, &config("provider = \"provider\"\n"));
+    world.trust();
+
+    let out = world.review(&["--type", "update"]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let plan = plan(&out);
+    assert_eq!(plan["payload"]["items"], json!([]), "{plan}");
+    assert!(plan.get("report").is_none(), "{plan}");
+    assert_eq!(world.spawns(), 0, "the plugin started");
 }

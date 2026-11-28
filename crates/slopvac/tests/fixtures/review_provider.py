@@ -14,6 +14,9 @@ answers comes from LOG_DIR/script.json, which the test writes before each run:
 - "errors": {id: code} answers the item with a JSON-RPC error object.
 - "results": a value sent as `results` in place of the list.
 - "request_error": a JSON-RPC code; the whole request fails with it.
+- "offer_hooks": the hooks the `initialize` reply offers, in place of the one provider hook.
+- "shutdown": "garbage" answers `shutdown` with a header line without a colon, which breaks
+  the framing after every request has been answered.
 """
 
 import json
@@ -116,7 +119,11 @@ while True:
     method = msg.get("method")
     id_ = msg.get("id")
     if method == "initialize":
-        send({"jsonrpc": "2.0", "id": id_, "result": INIT})
+        reply = json.loads(json.dumps(INIT))
+        offered = script().get("offer_hooks")
+        if offered is not None:
+            reply["capabilities"]["hooks"] = offered
+        send({"jsonrpc": "2.0", "id": id_, "result": reply})
     elif method == "provider/complete":
         params = msg["params"]
         with open(os.path.join(log_dir, "requests"), "a") as f:
@@ -129,7 +136,11 @@ while True:
         else:
             send({"jsonrpc": "2.0", "id": id_, "result": {"results": answer(params, s)}})
     elif method == "shutdown":
-        send({"jsonrpc": "2.0", "id": id_, "result": None})
+        if script().get("shutdown") == "garbage":
+            out.write(b"no colon in this header\r\n\r\n")
+            out.flush()
+        else:
+            send({"jsonrpc": "2.0", "id": id_, "result": None})
     elif method == "exit":
         sys.exit(0)
     elif id_ is not None:
