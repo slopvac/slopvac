@@ -399,12 +399,13 @@ jobs:
             README.md packages/slopvac-lint/README.md \
             packages/slopvac-lint/docs || status=$?
           # The starter config is gated in code-comments mode. A mode applies to a whole
-          # run, so it is a second invocation. The first non-zero exit is kept.
-          config_status=0
+          # run, so it is a second invocation. The step keeps the higher exit code.
+          docs_status=$status
+          status=0
           target/debug/slopvac lint --mode code-comments \
-            crates/slopvac/templates/slopvac.toml || config_status=$?
-          if [ "$status" -eq 0 ]; then
-            status=$config_status
+            crates/slopvac/templates/slopvac.toml || status=$?
+          if [ "$docs_status" -gt "$status" ]; then
+            status=$docs_status
           fi
           echo "slopvac exited $status"
           exit "$status"
