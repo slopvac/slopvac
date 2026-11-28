@@ -214,31 +214,109 @@ struct GenreDocument {
     rules: Option<Keyed<RuleLevel>>,
 }
 
+/// Why the genre schema could not be generated.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum GenreSchemaError {
+    /// The config schema has no definition of this name, so the genre schema cannot take it.
+    #[error("config.schema.json defines no `{name}`, which the genre schema takes from it")]
+    MissingConfigDefinition {
+        /// The definition name.
+        name: String,
+    },
+}
+
+/// The definitions of `config.schema.json` that the genre schema takes.
+const CONFIG_DEFINITIONS: [&str; 4] = ["Ref", "RuleKey", "RuleLevel", "CategorySettings"];
+
+/// Refuse a config schema that lacks a definition the genre schema takes. Without this check a
+/// missing definition would become an unrestricted local one, and the generator links only the
+/// definitions that another file owns.
+fn check_config_definitions(config: &Schema) -> Result<(), GenreSchemaError> {
+    // STUB(slopvac-8l4.5.57): the check lands with the next commit.
+    let _ = (config, CONFIG_DEFINITIONS);
+    Ok(())
+}
+
 /// The schema of a genre file, with its `$defs`. The references to config definitions stay
 /// local here, and `slopvac-schemas` points them at the config schema. `slopvac-schemas`
 /// writes it to `schemas/v3/genre.schema.json`.
-#[must_use]
-pub fn genre_schema() -> Schema {
-    schema_generator().into_root_schema_for::<GenreDocument>()
+///
+/// # Errors
+///
+/// [`GenreSchemaError::MissingConfigDefinition`] when the config schema lacks a definition
+/// that the genre schema takes from it.
+pub fn genre_schema() -> Result<Schema, GenreSchemaError> {
+    let config = Schema::try_from(slopvac_config::config_schema())
+        .unwrap_or_else(|_| json_schema!({}));
+    check_config_definitions(&config)?;
+    Ok(schema_generator().into_root_schema_for::<GenreDocument>())
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 mod tests {
-    use serde_json::json;
+    use std::collections::BTreeSet;
+
+    use serde_json::{Value, json};
 
     use super::*;
 
-    #[test]
-    fn each_kind_is_written_in_the_schema_as_the_reader_reads_it() {
-        let kinds: Vec<SignalKind> = SIGNAL_RULES
+    /// The kind names that the `Signal` definition states: the `kind` enum, and the kinds
+    /// that each per-kind condition (`allOf`) names.
+    fn spelled(signal: &Value) -> (BTreeSet<String>, BTreeSet<String>) {
+        let names = |v: &Value| -> Vec<String> {
+            match v {
+                Value::String(one) => vec![one.clone()],
+                Value::Array(many) => many.iter().filter_map(Value::as_str).map(str::to_owned).collect(),
+                _ => Vec::new(),
+            }
+        };
+        let listed = names(&signal["properties"]["kind"]["enum"]);
+        let conditions: Vec<String> = signal["allOf"]
+            .as_array()
+            .unwrap()
             .iter()
-            .flat_map(|rule| rule.kinds.iter().copied())
+            .flat_map(|c| {
+                let kind = &c["if"]["properties"]["kind"];
+                names(if kind.get("const").is_some() { &kind["const"] } else { &kind["enum"] })
+            })
             .collect();
-        assert_eq!(kinds.len(), 4, "every kind has one row");
-        for kind in kinds {
-            let read: SignalKind = serde_json::from_value(json!(kind.as_str())).unwrap();
-            assert_eq!(read, kind, "`{}`", kind.as_str());
+        (listed.into_iter().collect(), conditions.into_iter().collect())
+    }
+
+    #[test]
+    fn the_enum_and_the_conditions_spell_each_kind_as_the_reader_reads_it() {
+        let schema = genre_schema().unwrap().to_value();
+        let (listed, conditioned) = spelled(&schema["$defs"]["Signal"]);
+        assert_eq!(listed.len(), 4, "the schema lists every kind: {listed:?}");
+        assert_eq!(listed, conditioned, "a condition names a kind the enum lacks, or the reverse");
+        for name in &listed {
+            let read = serde_json::from_value::<SignalKind>(json!(name));
+            assert!(read.is_ok(), "the reader refuses `{name}`, which the schema accepts");
         }
+    }
+
+    #[test]
+    fn a_config_schema_without_ref_is_refused_by_name() {
+        let config = json_schema!({"$defs": {"RuleKey": {}, "RuleLevel": {}, "CategorySettings": {}}});
+        assert_eq!(
+            check_config_definitions(&config),
+            Err(GenreSchemaError::MissingConfigDefinition { name: "Ref".into() })
+        );
+    }
+
+    #[test]
+    fn a_config_schema_without_any_definitions_is_refused() {
+        assert_eq!(
+            check_config_definitions(&json_schema!({})),
+            Err(GenreSchemaError::MissingConfigDefinition { name: "Ref".into() })
+        );
+    }
+
+    #[test]
+    fn the_published_config_schema_has_every_definition_the_genre_schema_takes() {
+        let config = Schema::try_from(slopvac_config::config_schema()).unwrap();
+        assert_eq!(check_config_definitions(&config), Ok(()));
     }
 }

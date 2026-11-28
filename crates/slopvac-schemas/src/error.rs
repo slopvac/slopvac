@@ -22,6 +22,15 @@ pub enum Error {
         #[source]
         source: serde_json::Error,
     },
+    /// An artifact's builder failed.
+    #[error("cannot build the schema for {file}")]
+    Build {
+        /// The artifact file name.
+        file: &'static str,
+        /// The cause.
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
     /// A type's schema is not a JSON object.
     #[error("the generated schema for {file} is not an object")]
     NotAnObject {

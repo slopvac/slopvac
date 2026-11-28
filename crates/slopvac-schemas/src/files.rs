@@ -44,6 +44,10 @@ pub struct Drift {
 /// Generate every artifact in [`ARTIFACTS`] in memory, then the data file under
 /// `docs/reference` that the docs site reads.
 pub fn generate() -> Result<Vec<Generated>> {
+    slopvac_context::genre_schema().map_err(|source| Error::Build {
+        file: "genre.schema.json",
+        source: Box::new(source),
+    })?;
     let mut files = generate_from(ARTIFACTS)?;
     files.push(Generated {
         dir: REFERENCE_DIR,

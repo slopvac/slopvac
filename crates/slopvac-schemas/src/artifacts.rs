@@ -461,8 +461,11 @@ fn style() -> Value {
 
 /// A genre file, which the reader accepts as input. The types are schema-only
 /// (`slopvac_context::genre_schema`), and the reader checks the file itself.
+///
+/// A schema that cannot be built gives a value that is not an object, which the generator
+/// refuses. `generate` asks for the schema first, so it reports the reason by name.
 fn genre() -> Value {
-    slopvac_context::genre_schema().to_value()
+    slopvac_context::genre_schema().map_or(Value::Null, |schema| schema.to_value())
 }
 
 fn rule() -> Value {

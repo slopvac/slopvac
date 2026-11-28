@@ -50,7 +50,7 @@ pub use view::{
     BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, sentence_budget,
     split_sentences, split_sentences_within,
 };
-pub use wire::genre_schema;
+pub use wire::{GenreSchemaError, genre_schema};
 #[cfg(feature = "work-counters")]
 #[doc(hidden)]
 pub use work::{

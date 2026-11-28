@@ -115,3 +115,49 @@ fn each_form_accepts_what_it_names(
         "rule key {s:?}"
     );
 }
+
+/// Until the checks move to `slopvac-config`: the copies here and the ones it exports accept
+/// the same strings.
+mod equivalence {
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn the_name_check_equals_configs(s in text()) {
+            prop_assert_eq!(is_name(&s), slopvac_config::is_name(&s));
+        }
+
+        #[test]
+        fn the_reference_check_equals_configs(s in text()) {
+            prop_assert_eq!(is_ref(&s), slopvac_config::is_ref(&s));
+        }
+
+        #[test]
+        fn the_rule_key_check_equals_configs(s in text()) {
+            prop_assert_eq!(is_rule_key(&s), slopvac_config::is_rule_key(&s));
+        }
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::bom("\u{feff}a")]
+    #[case::next_line("a\u{85}")]
+    #[case::line_separator("a\u{2028}")]
+    #[case::trailing_newline("a\n")]
+    #[case::colon_only(":")]
+    #[case::empty_qualifier(":a")]
+    #[case::empty_name("a:")]
+    #[case::two_colons("a:b:c")]
+    #[case::upper_qualifier("A:b")]
+    #[case::digit_first("1a")]
+    #[case::digit_first_rule_key("core:1a")]
+    #[case::dot_first(".a")]
+    #[case::non_ascii_letter("\u{e9}a")]
+    #[case::fullwidth("\u{ff41}")]
+    #[case::long(&"a".repeat(100_000))]
+    fn the_checks_equal_configs_at_the_edges(#[case] s: &str) {
+        assert_eq!(is_name(s), slopvac_config::is_name(s), "name {s:?}");
+        assert_eq!(is_ref(s), slopvac_config::is_ref(s), "ref {s:?}");
+        assert_eq!(is_rule_key(s), slopvac_config::is_rule_key(s), "rule key {s:?}");
+    }
+}
