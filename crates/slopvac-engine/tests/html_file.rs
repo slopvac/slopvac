@@ -212,6 +212,28 @@ fn a_tag_adds_a_space_only_between_two_non_space_characters(
     assert_eq!(spans(&doc), vec![span]);
 }
 
+#[rstest]
+// `<table>` is 7 bytes, so `one` is 7..10, and `<tr><td>` puts `two` at 18..21.
+#[case::text_before_a_row("<table>one<tr><td>two</td></tr>three</table>\n", vec![(7, 21)])]
+// `<table><tr><td>` is 15 bytes, so `one` is 15..18, and `</td></tr>` puts `two` at 28..31.
+#[case::text_after_a_row("<table><tr><td>one</td></tr>two</table>\n", vec![(15, 31)])]
+// The source reads `one cell two`, so the two words are not next to each other.
+#[case::text_around_a_row("<table>one<tr><td>cell</td></tr>two</table>\n", vec![])]
+fn text_moved_out_of_a_table_reads_in_source_order(
+    #[case] html: &str,
+    #[case] want: Vec<(usize, usize)>,
+) {
+    // 2.x reads a line in source order. The tree builder moves text that sits in a table in
+    // front of it, so the line's text must go back to source order before rules match.
+    let engine = engine(&[rule(
+        "pair",
+        &json!({"kind": "pattern", "pattern": "one two"}),
+        &json!({}),
+    )]);
+    let doc = engine.lint(&Input::html("page.html", html)).unwrap();
+    assert_eq!(spans(&doc), want);
+}
+
 #[test]
 fn a_word_between_inline_tags_is_matched_as_a_whole_word() {
     // 2.x reads `Use leverage now.`. The match starts after `<p>Use<b>` (9 bytes) and ends
