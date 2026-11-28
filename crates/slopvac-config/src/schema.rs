@@ -9,6 +9,7 @@ use std::ops::Range;
 use crate::diag::{Code, Diagnostic, closest};
 use crate::messages::{ConfigPhrase, ConfigText};
 use crate::tree::{Entry, Node, Value};
+use crate::version::SUPPORTED;
 use slopvac_model::{RESERVED_ID, RESERVED_NAMESPACES, is_reserved_namespace};
 
 /// The shape a value must have.
@@ -597,7 +598,7 @@ pub(crate) const REL_PATH_PATTERN: &str =
 fn is_rel_path(s: &str) -> bool {
     let drive = s.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
         && s.as_bytes().get(1) == Some(&b':');
-    !s.is_empty()
+    s.chars().take(MIN_STRING).count() >= MIN_STRING
         && !s.starts_with(['/', '\\'])
         && !drive
         && !s.contains('\\')
@@ -870,8 +871,8 @@ fn check_map(
 
 fn check_version_value(ctx: &mut Ctx<'_>, node: &Node, path: &[String]) {
     match node.value {
-        Value::Int(3) => {}
-        Value::Int(n) if n > 3 => ctx.value_error(
+        Value::Int(n) if n == SUPPORTED => {}
+        Value::Int(n) if n > SUPPORTED => ctx.value_error(
             node,
             path,
             ConfigText::VersionNewer {

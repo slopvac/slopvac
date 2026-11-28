@@ -3,9 +3,11 @@
 use crate::diag::{Code, Diagnostic};
 use crate::messages::{ConfigPhrase, ConfigText};
 use crate::tree::{Node, Value};
+use slopvac_model::SchemaVersion;
 
-/// The schema version this build reads.
-pub const SUPPORTED: i64 = 3;
+/// The schema version this build reads. It is `SchemaVersion::VALUE`, the one number the schemas
+/// and the config and style readers share.
+pub const SUPPORTED: i64 = SchemaVersion::VALUE as i64;
 
 /// Refuse a 2.x config, or a config from a newer slopvac, with one diagnostic.
 ///

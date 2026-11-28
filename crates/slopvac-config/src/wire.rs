@@ -613,6 +613,13 @@ pub fn frontmatter_schema() -> Value {
 #[schemars(with = "String", extend("minLength" = MIN_STRING, "pattern" = REL_PATH_PATTERN))]
 pub(crate) struct RelPath;
 
+// A string of at least `MIN_STRING` characters, the floor the readers check. `NonEmptyString`
+// in `slopvac-model` states a literal 1, so the style fields use this type instead. It is
+// inline and has no doc comment, so the generated schema names no definition for it.
+#[derive(JsonSchema)]
+#[schemars(with = "String", inline, extend("minLength" = MIN_STRING))]
+pub(crate) struct MinString;
+
 /// Terms the style brings.
 #[derive(JsonSchema)]
 #[schemars(transform = x_extensions)]
@@ -622,7 +629,7 @@ pub(crate) struct RelPath;
 )]
 pub(crate) struct StyleTerms {
     /// Words the style lets through the spelling check. A list replaces.
-    allow: Option<Vec<NonEmptyString>>,
+    allow: Option<Vec<MinString>>,
     /// Blocklist files, relative to this style file.
     blocklists: Option<Vec<RelPath>>,
 }
@@ -642,7 +649,7 @@ pub(crate) struct StyleTerms {
 )]
 pub(crate) struct StyleDocument {
     schema_version: SchemaVersion,
-    description: Option<NonEmptyString>,
+    description: Option<MinString>,
     /// Styles applied before this one, lowest first.
     #[schemars(extend("uniqueItems" = true))]
     extends: Option<Vec<Ref>>,

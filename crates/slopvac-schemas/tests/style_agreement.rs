@@ -3,6 +3,10 @@
 //! `slopvac-config`, which checks the shape and keeps spans, and `Style::parse` in
 //! `slopvac-styles`, which loads the preset. The schema is what editors and other tools read.
 //! This test holds all three to one verdict, for the generated file and the committed one.
+#![allow(
+    clippy::unwrap_used,
+    reason = "clippy.toml exempts only code inside a test function, and the helpers here sit outside one"
+)]
 #![allow(missing_docs, reason = "an integration test crate has no public API")]
 
 use std::fs;
@@ -151,7 +155,8 @@ fn the_string_fields_share_one_floor_with_the_readers(#[case] pointer: &str, #[c
     );
     for (len, want) in [(floor - 1, false), (floor, true)] {
         let text = format!(
-            "schema_version = 3\n{}",
+            "schema_version = {}\n{}",
+            SchemaVersion::VALUE,
             body.replace("{}", &"a".repeat(len))
         );
         assert_eq!(
