@@ -44,7 +44,7 @@ use std::ops::RangeInclusive;
 use frontmatter_spans::detect;
 use similar::TextDiff;
 use slopvac_model::{
-    Document, Edit, EditError, Finding, LineCol, RuleId, SourceIndex, Span, apply_edits,
+    Document, Edit, EditError, Finding, LineCol, RuleId, SourceIndex, Span, SpanError, apply_edits,
 };
 use slopvac_parse::{
     BlockKind, Document as Parsed, ParseError, mdx_syntax_spans, parse_markdown, parse_mdx,
@@ -110,6 +110,10 @@ pub enum FixError {
     /// The accepted edits did not apply. This is a bug: they were checked first.
     #[error(transparent)]
     Edit(#[from] EditError),
+    /// A protected range of a parsed file ends before it starts. This is a bug: the ranges
+    /// come from the parse in source order.
+    #[error(transparent)]
+    Span(#[from] SpanError),
     /// A file could not be read or written.
     #[error("{}", crate::messages::path_error(.path, .source))]
     Io {
@@ -138,11 +142,13 @@ pub fn fix_document(
     let mut tables = Vec::new();
     // Comment text is not edited: every fix in a source file is refused.
     let comments = matches!(input.kind, Kind::Comments(_));
-    let protected = if comments {
+    let fixes = doc.findings.iter().any(|f| f.fix.is_some());
+    let protected = if comments || (input.kind == Kind::Html && !fixes) {
+        // Nothing is edited, so an HTML file needs no parse or address scan.
         Vec::new()
     } else if input.kind != Kind::Rst {
         protected_spans(input)?
-    } else if doc.findings.iter().any(|f| f.fix.is_some()) {
+    } else if fixes {
         let parsed = engine.rst_adapter().parse(input.source)?;
         tables = parsed
             .document
@@ -294,7 +300,7 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
     )?;
     spans.extend(parsed.code_spans.iter().copied());
     spans.extend(match input.kind {
-        Kind::Html => html_destinations(input.source),
+        Kind::Html => html_destinations(input.source, &parsed)?,
         Kind::Markdown | Kind::Mdx | Kind::Rst | Kind::Diagram(_) | Kind::Comments(_) => {
             destinations(input.source, body_start)
         }

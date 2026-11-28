@@ -8,13 +8,14 @@
 //!
 //! Link text stays fixable: the `delta` in `[delta](https://example.com)` is prose.
 //!
-//! A standalone HTML file is not Markdown: [`html_destinations`] protects its tags and the
-//! addresses in its text instead.
+//! A standalone HTML file is not Markdown: [`html_destinations`] protects every byte that
+//! its parse does not read as text, and the addresses in that text.
 
 use std::ops::Range;
 
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
-use slopvac_model::Span;
+use slopvac_model::{Span, SpanError};
+use slopvac_parse::{Document, TokenKind};
 
 const OPTIONS: Options = Options::ENABLE_TABLES
     .union(Options::ENABLE_STRIKETHROUGH)
@@ -79,39 +80,71 @@ pub(crate) fn destinations(source: &str, body_start: usize) -> Vec<Span> {
     spans
 }
 
-/// The protected spans of a standalone HTML file: every tag, from `<` to `>` with its
-/// attribute values, quoted or not, and the bare URLs, `www.` hosts and email addresses of its
-/// text. The file is not Markdown, so `[label](target)` in its text is prose and no link or
-/// reference syntax is read. Tags are blanked before the address scan, so text next to a tag
-/// (`<a href="u">text</a>`) is not taken for part of an address.
-pub(crate) fn html_destinations(source: &str) -> Vec<Span> {
-    let tags = tags(source);
-    let mut blanked = source.as_bytes().to_vec();
-    for tag in &tags {
-        if let Some(bytes) = blanked.get_mut(tag.clone()) {
-            bytes.fill(b' ');
+/// The protected spans of a standalone HTML file, read from `doc`, its parse.
+///
+/// Only the text the parse projects is fixable: the characters, decoded entities and white
+/// space of its prose. Every other byte is protected: tags with their attribute values,
+/// comments, the doctype, and the content of hidden elements and code. The tokenizer decides
+/// where a tag or comment ends, so a quote or `>` inside one cannot end it early. Inside the
+/// text, bare URLs, `www.` hosts and email addresses are protected too. The file is not
+/// Markdown, so `[label](target)` in its text is prose.
+///
+/// # Errors
+/// Returns a [`SpanError`] if a protected range would end before it starts. The ranges come
+/// from the parse in source order, so this is a bug.
+pub(crate) fn html_destinations(source: &str, doc: &Document) -> Result<Vec<Span>, SpanError> {
+    let mut text: Vec<Span> = doc
+        .blocks
+        .iter()
+        .filter_map(|b| b.projection.as_ref())
+        .flat_map(|p| p.tokens())
+        .filter(|t| {
+            matches!(
+                t.kind,
+                TokenKind::Identity | TokenKind::Entity | TokenKind::Collapse
+            )
+        })
+        .map(|t| t.src)
+        .filter(|s| !s.is_empty())
+        .collect();
+    text.sort_unstable_by_key(Span::start);
+    let mut segments: Vec<(usize, usize)> = Vec::new();
+    for span in &text {
+        match segments.last_mut() {
+            Some((_, end)) if span.start() <= *end => *end = (*end).max(span.end()),
+            _ => segments.push((span.start(), span.end())),
         }
     }
-    let mut spans: Vec<Span> = tags
-        .iter()
-        .filter_map(|tag| Span::new(tag.start, tag.end).ok())
-        .collect();
-    // A tag starts at `<` and ends after `>` or at the end of the file, so blanking whole
-    // tags leaves whole characters, and the text stays UTF-8.
-    let Ok(text) = String::from_utf8(blanked) else {
-        return spans;
-    };
-    for run in runs(&text) {
-        let Some(word) = text.get(run.clone()) else {
+    let mut spans = Vec::new();
+    let mut at = 0;
+    for &(start, end) in &segments {
+        if start > at {
+            spans.push(Span::new(at, start)?);
+        }
+        at = end;
+    }
+    if source.len() > at {
+        spans.push(Span::new(at, source.len())?);
+    }
+    for &(start, end) in &segments {
+        // Token ranges fall on character boundaries. Should one not, the whole segment is
+        // protected rather than scanned.
+        let Some(segment) = source.get(start..end) else {
+            spans.push(Span::new(start, end)?);
             continue;
         };
-        for (from, to) in addresses(word) {
-            if let Ok(span) = Span::new(run.start + from, run.start + to) {
-                spans.push(span);
+        for run in runs(segment) {
+            let (from, to) = (start + run.start, start + run.end);
+            let Some(word) = segment.get(run) else {
+                spans.push(Span::new(from, to)?);
+                continue;
+            };
+            for (a, b) in addresses(word) {
+                spans.push(Span::new(from + a, from + b)?);
             }
         }
     }
-    spans
+    Ok(spans)
 }
 
 /// Maximal runs of non-space text.
@@ -170,41 +203,71 @@ fn tags(html: &str) -> Vec<Range<usize>> {
 /// Byte ranges in one run of non-space text that are an address: a URL from its scheme to
 /// the end of the run, a `www.` host from its start to the end of the run, an email
 /// address, or an angle-bracket autolink such as `<tel:123>`.
+///
+/// Each kind takes one pass over the run, so the scan is linear in its length.
 fn addresses(run: &str) -> Vec<(usize, usize)> {
-    const STOP: &[char] = &['[', ']', '(', ')', '<', '>', '"', '\'', ',', ';'];
+    const STOP: &[u8] = b"[]()<>\"',;";
+    let scheme_char = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'.' | b'-');
+    let bytes = run.as_bytes();
+    let len = bytes.len();
     let mut found = Vec::new();
-    for (at, _) in run.match_indices("://") {
-        let scheme = run[..at]
-            .rfind(|c: char| !(c.is_ascii_alphanumeric() || "+.-".contains(c)))
-            .map_or(0, |i| i + 1);
-        found.push((scheme, run.len()));
+    // A URL starts after the last character before `://` that cannot be in a scheme.
+    let mut scheme = 0;
+    for (at, c) in run.char_indices() {
+        if bytes.get(at..at + 3) == Some(b"://".as_slice()) {
+            found.push((scheme, len));
+        }
+        if !(c.is_ascii_alphanumeric() || "+.-".contains(c)) {
+            scheme = at + 1;
+        }
     }
-    for (at, _) in run.match_indices("www.") {
-        if run[..at]
-            .chars()
-            .next_back()
-            .is_none_or(|c| !c.is_alphanumeric())
+    // A `www.` host starts a word.
+    let mut before: Option<char> = None;
+    for (at, c) in run.char_indices() {
+        if bytes.get(at..at + 4) == Some(b"www.".as_slice())
+            && before.is_none_or(|c| !c.is_alphanumeric())
         {
-            found.push((at, run.len()));
+            found.push((at, len));
+        }
+        before = Some(c);
+    }
+    // An email address runs from the stop character before its `@` to the one after it.
+    let mut start = 0;
+    let mut open = Vec::new();
+    for (at, &b) in bytes.iter().enumerate() {
+        if STOP.contains(&b) {
+            found.extend(open.drain(..).map(|from| (from, at)));
+            start = at + 1;
+        } else if b == b'@' {
+            open.push(start);
         }
     }
-    for (at, _) in run.match_indices('@') {
-        let start = run[..at].rfind(STOP).map_or(0, |i| i + 1);
-        let end = run[at..].find(STOP).map_or(run.len(), |i| at + i);
-        found.push((start, end));
-    }
-    for (at, _) in run.match_indices('<') {
-        let rest = &run[at + 1..];
-        let scheme = rest.find(':').filter(|&i| {
-            i > 1
-                && rest[..i].starts_with(|c: char| c.is_ascii_alphabetic())
-                && rest[..i]
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
-        });
-        if let (Some(_), Some(close)) = (scheme, rest.find('>')) {
-            found.push((at, at + 1 + close + 1));
+    found.extend(open.into_iter().map(|from| (from, len)));
+    // An autolink is `<`, a scheme of two or more characters that starts with a letter, the
+    // first `:` after the `<`, and a `>` later on. The pass runs backward, so the first `:`,
+    // the first `>` and the first character that cannot be in a scheme after each byte are
+    // known when the pass reaches it.
+    let mut links = Vec::new();
+    let (mut colon, mut close, mut other) = (None, None, None);
+    for (at, &b) in bytes.iter().enumerate().rev() {
+        if b == b'<'
+            && let (Some(colon), Some(close)) = (colon, close)
+            && colon > at + 2
+            && other == Some(colon)
+            && bytes.get(at + 1).is_some_and(u8::is_ascii_alphabetic)
+        {
+            links.push((at, close + 1));
+        }
+        if b == b':' {
+            colon = Some(at);
+        }
+        if b == b'>' {
+            close = Some(at);
+        }
+        if !scheme_char(b) {
+            other = Some(at);
         }
     }
+    found.extend(links.into_iter().rev());
     found
 }

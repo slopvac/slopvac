@@ -1,7 +1,7 @@
 //! The text units a rule reads, cut from a parsed document by the rule's `scope`.
 
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::ops::Range;
 
 use slopvac_model::SourceIndex;
@@ -90,8 +90,8 @@ pub(crate) fn with_html_prose(
 ///
 /// The visible text of each source line is one paragraph of the kind `Paragraph`, whatever
 /// elements it came from, so a heading, list item or table cell is a paragraph too, and a
-/// sentence never runs over a line end. Text of several elements on one line joins into that
-/// line's paragraph. Inline code (`<code>`, `<kbd>`, `<samp>`) joins the code spans and is
+/// sentence never runs over a line end. The text of all the elements on one line joins into
+/// that line's paragraph. Inline code (`<code>`, `<kbd>`, `<samp>`) joins the code spans and is
 /// left out of the prose, `<pre>` stays a code block, and the hidden elements of
 /// [`parse_html`] give nothing. A Markdown fence in the file is plain text. A line ends at LF,
 /// CRLF or a lone CR, as everywhere else in the engine.
@@ -102,14 +102,13 @@ pub(crate) fn with_html_prose(
 pub(crate) fn html_file(source: &str, body: Span) -> Result<Document, ParseError> {
     let mut doc = parse_html(source, body)?;
     let lines = Lines::new(source);
-    let mut by_line: BTreeMap<usize, Vec<Projection>> = BTreeMap::new();
+    let mut cursor = LineCursor::new(&lines);
+    let mut pieces = Vec::new();
     let mut blocks = Vec::new();
     for mut block in std::mem::take(&mut doc.blocks) {
         match &block.projection {
             Some(projection) if !projection.text().is_empty() => {
-                for (line, piece) in line_pieces(source, &lines, projection) {
-                    by_line.entry(line).or_default().push(piece);
-                }
+                line_pieces(source, &mut cursor, projection, &mut pieces);
             }
             _ => {
                 block.containers.clear();
@@ -117,8 +116,13 @@ pub(crate) fn html_file(source: &str, body: Span) -> Result<Document, ParseError
             }
         }
     }
-    for pieces in by_line.into_values() {
-        let projection = join(pieces.iter());
+    // The blocks come in source order, so the lines of their pieces ascend. Only text that
+    // the tree builder moves, such as text fostered out of a table, needs the sort.
+    if !pieces.is_sorted_by_key(|(line, _)| *line) {
+        pieces.sort_by_key(|(line, _)| *line);
+    }
+    for group in pieces.chunk_by(|(a, _), (b, _)| a == b) {
+        let projection = join(group.iter().map(|(_, piece)| piece));
         let extents = projection.extents();
         let (Some(first), Some(last)) = (
             extents.iter().map(Span::start).min(),
@@ -141,16 +145,50 @@ pub(crate) fn html_file(source: &str, body: Span) -> Result<Document, ParseError
     Ok(doc)
 }
 
-/// The pieces of `projection` that sit on one source line each, with the line number.
+/// The line of each offset, found by moving forward from the line of the offset before.
+///
+/// Offsets that ascend cost one step a line in all. An offset before the current line, which
+/// only text the tree builder moves gives, falls back to a search of the line table.
+struct LineCursor<'l, 'a> {
+    lines: &'l Lines<'a>,
+    /// The one-based line of the last offset.
+    line: usize,
+}
+
+impl<'l, 'a> LineCursor<'l, 'a> {
+    const fn new(lines: &'l Lines<'a>) -> Self {
+        Self { lines, line: 1 }
+    }
+
+    /// The one-based line that holds `offset`.
+    fn line_of(&mut self, offset: usize) -> usize {
+        let count = self.lines.len();
+        if count == 0 {
+            return 1;
+        }
+        if offset < self.lines.start(self.line) {
+            self.line = self.lines.line_of(offset);
+        } else {
+            while self.line < count && self.lines.start(self.line + 1) <= offset {
+                self.line += 1;
+            }
+        }
+        self.line
+    }
+}
+
+/// Append to `out` the pieces of `projection` that sit on one source line each, with the
+/// line number.
 ///
 /// A whitespace run that holds a line end cuts the text, and so does a token that starts on a
 /// later line than the piece. Masked code is left out, as 2.x skips `<code>`, `<kbd>` and
 /// `<samp>`: it adds no word and no placeholder, and a line with nothing else is no paragraph.
 fn line_pieces(
     source: &str,
-    lines: &Lines<'_>,
+    cursor: &mut LineCursor<'_, '_>,
     projection: &Projection,
-) -> Vec<(usize, Projection)> {
+    out: &mut Vec<(usize, Projection)>,
+) {
     fn finish(out: &mut Vec<(usize, Projection)>, line: usize, mut tokens: Vec<Token>) {
         while tokens
             .last()
@@ -165,7 +203,6 @@ fn line_pieces(
         out.push((line, piece));
     }
 
-    let mut out = Vec::new();
     let mut current: Option<(usize, Vec<Token>)> = None;
     for token in projection.tokens() {
         if token.kind == TokenKind::Masked {
@@ -177,15 +214,15 @@ fn line_pieces(
                 .is_some_and(|run| run.contains(['\n', '\r']));
         if ends_line {
             if let Some((line, tokens)) = current.take() {
-                finish(&mut out, line, tokens);
+                finish(out, line, tokens);
             }
             continue;
         }
-        let line = lines.line_of(token.src.start());
+        let line = cursor.line_of(token.src.start());
         let spills = token.kind != TokenKind::Wrap
             && current.as_ref().is_some_and(|(open, _)| *open != line);
         if spills && let Some((open, tokens)) = current.take() {
-            finish(&mut out, open, tokens);
+            finish(out, open, tokens);
         }
         match &mut current {
             Some((_, tokens)) => {
@@ -209,9 +246,8 @@ fn line_pieces(
         }
     }
     if let Some((line, tokens)) = current {
-        finish(&mut out, line, tokens);
+        finish(out, line, tokens);
     }
-    out
 }
 
 /// Whether 2.x puts a space between the adjacent tokens `before` and `after` of one line.

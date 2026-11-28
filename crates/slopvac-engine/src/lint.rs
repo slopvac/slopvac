@@ -187,7 +187,7 @@ impl<'a> Input<'a> {
     /// A standalone HTML file read from disk.
     ///
     /// The visible text of each source line is one paragraph, whatever elements it comes
-    /// from, so a sentence never runs over a line end. Text of several elements on one line
+    /// from, so a sentence never runs over a line end. The text of all the elements on one line
     /// joins, and a tag or comment between two words adds a space that maps to no source
     /// bytes. `<pre>` is a code block, and inline `<code>`, `<kbd>` and `<samp>` are code
     /// spans that add no words. `<script>`, `<style>`, `<noscript>`, `<template>`, `<head>`
