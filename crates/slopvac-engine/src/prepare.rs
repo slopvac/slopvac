@@ -117,12 +117,17 @@ pub(crate) fn html_file(source: &str, body: Span) -> Result<Document, ParseError
         }
     }
     // The blocks come in source order, so the lines of their pieces ascend. Only text that
-    // the tree builder moves, such as text fostered out of a table, needs the sort.
+    // the tree builder moves, such as text fostered out of a table, needs the sort, and a line
+    // with such text has its tokens merged back into source order.
     if !pieces.is_sorted_by_key(|(line, _)| *line) {
         pieces.sort_by_key(|(line, _)| *line);
     }
     for group in pieces.chunk_by(|(a, _), (b, _)| a == b) {
-        let projection = join(group.iter().map(|(_, piece)| piece));
+        let projection = if in_source_order(group) {
+            join(group.iter().map(|(_, piece)| piece))
+        } else {
+            merge_in_source_order(source, group)
+        };
         let extents = projection.extents();
         let (Some(first), Some(last)) = (
             extents.iter().map(Span::start).min(),
@@ -147,8 +152,9 @@ pub(crate) fn html_file(source: &str, body: Span) -> Result<Document, ParseError
 
 /// The line of each offset, found by stepping on from the line of the offset before.
 ///
-/// Offsets that ascend cost one step a line in all. An offset before the current line, which
-/// only text the tree builder moves gives, falls back to a search of the line table.
+/// An offset on the current line or the next one costs one step. Any other offset, such as
+/// one that text the tree builder moves gives, is found by a search of the line table, so
+/// offsets out of order never make the cursor walk over many lines.
 struct LineCursor<'l, 'a> {
     lines: &'l Lines<'a>,
     /// The one-based line of the last offset.
@@ -166,15 +172,63 @@ impl<'l, 'a> LineCursor<'l, 'a> {
         if count == 0 {
             return 1;
         }
-        if offset < self.lines.start(self.line) {
+        let far = self.line + 2 <= count && self.lines.start(self.line + 2) <= offset;
+        if offset < self.lines.start(self.line) || far {
             self.line = self.lines.line_of(offset);
-        } else {
-            while self.line < count && self.lines.start(self.line + 1) <= offset {
-                self.line += 1;
-            }
+        } else if self.line < count && self.lines.start(self.line + 1) <= offset {
+            self.line += 1;
         }
         self.line
     }
+}
+
+/// Whether the real tokens of a line's pieces, read piece by piece, ascend in the source.
+fn in_source_order(group: &[(usize, Projection)]) -> bool {
+    let mut end = 0;
+    for token in group
+        .iter()
+        .flat_map(|(_, piece)| piece.tokens())
+        .filter(|t| t.kind.is_real())
+    {
+        if token.src.start() < end {
+            return false;
+        }
+        end = token.src.end();
+    }
+    true
+}
+
+/// The pieces of one line merged into one projection in source order, as 2.x reads the line.
+///
+/// The tree builder can move text out of a table to the front of it, so a line's pieces can
+/// overlap in the source. The merge drops the synthetic spaces, sorts the tokens by source
+/// offset and adds a space again wherever a tag or comment sits between two words. A space
+/// between tokens of two different pieces bridges the source between them.
+fn merge_in_source_order(source: &str, group: &[(usize, Projection)]) -> Projection {
+    let mut tokens: Vec<(usize, &Token)> = group
+        .iter()
+        .enumerate()
+        .flat_map(|(at, (_, piece))| piece.tokens().iter().map(move |t| (at, t)))
+        .filter(|(_, t)| !(t.kind == TokenKind::Wrap && t.src.is_empty()))
+        .collect();
+    tokens.sort_by_key(|(_, t)| (t.src.start(), t.src.end()));
+    let mut merged = Projection::new();
+    let mut last: Option<(usize, &Token)> = None;
+    for (piece, token) in tokens {
+        if let Some((before, previous)) = last
+            && tag_between(source, previous, token)
+        {
+            let at = Span::empty(previous.src.end());
+            if before == piece {
+                merged.push_unordered(TokenKind::Wrap, " ", at);
+            } else {
+                merged.push_bridge(TokenKind::Wrap, " ", at);
+            }
+        }
+        merged.push_unordered(token.kind, &token.text, token.src);
+        last = Some((piece, token));
+    }
+    merged
 }
 
 /// Append to `out` the pieces of `projection` that sit on one source line each, with the
