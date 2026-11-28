@@ -10,7 +10,7 @@
     reason = "test code: a panic is a failed test"
 )]
 
-use assert_cmd::Command;
+use snapbox::cmd::{Command, cargo_bin};
 use rstest::rstest;
 use serde_json::{Value, json};
 use std::fs;
@@ -119,8 +119,8 @@ impl World {
 
     fn slopvac(&self) -> Command {
         let home = self.dir.path().join("home");
-        let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
-        cmd.current_dir(self.project())
+        let mut cmd = Command::new(cargo_bin!("slopvac"))
+            .current_dir(self.project())
             .env("SLOPVAC_NO_UPDATE_CHECK", "1")
             .env("HOME", &home)
             .env("XDG_CACHE_HOME", home.join("cache"))
@@ -137,7 +137,7 @@ impl World {
             "FORCE_COLOR",
             "CLICOLOR_FORCE",
         ] {
-            cmd.env_remove(var);
+            cmd = cmd.env_remove(var);
         }
         cmd
     }
