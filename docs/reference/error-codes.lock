@@ -1473,6 +1473,7 @@ plugins-trust-not-containment text
 plugins-trust-not-pinned text
 plugins-trust-opening text
 plugins-trust-phrase-draw-key text
+plugins-trust-phrase-file-not-regular text
 plugins-trust-phrase-install-key text
 plugins-trust-phrase-key-file-no-key text
 plugins-trust-phrase-key-file-over-cap text
@@ -1514,6 +1515,7 @@ plugins-trust-revoked text
 plugins-trust-revoked-key text
 plugins-trust-revoked-plugin error
 plugins-trust-rotation-file text
+plugins-trust-rotation-file-unusable text
 plugins-trust-rotation-refused text
 plugins-trust-spawn-environment-refused text
 plugins-trust-spawn-key-unusable text

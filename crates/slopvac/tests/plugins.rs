@@ -1380,7 +1380,11 @@ fn a_key_pinned_with_plugins_pin_verifies_a_signed_sync() {
     let trees: Vec<_> = fs::read_dir(plugin_store(&sandbox).join("trees"))
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| p.is_dir())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("tree-"))
+        })
         .collect();
     assert_eq!(trees.len(), 1, "{trees:?}");
     assert_eq!(

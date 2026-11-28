@@ -132,7 +132,7 @@ pub enum TrustError {
         cause: RotationCause,
     },
     /// A rotation file cannot be read or is over its cap.
-    #[error("{}", messages::rotation_file(.file))]
+    #[error("{}", messages::rotation_file(.file, *.cause))]
     RotationFile {
         /// The file, shown under the project root or as `<external>/<file name>`.
         file: String,
@@ -243,6 +243,14 @@ pub enum FileCause {
 }
 
 impl FileCause {
+    /// Whether the file is not a regular file: a FIFO, socket, device, directory or a link.
+    pub(crate) fn is_not_regular(self) -> bool {
+        matches!(
+            self,
+            Self::Read(slopvac_fs::InputKind::NotRegular | slopvac_fs::InputKind::Symlink)
+        )
+    }
+
     fn of(e: &slopvac_fs::Error) -> Self {
         match e {
             slopvac_fs::Error::Input {
@@ -844,6 +852,7 @@ impl TrustStore {
         reject_reserved(scope)?;
         let invalid = |cause: FileCause| {
             let why = match cause {
+                _ if cause.is_not_regular() => TrustPhrase::FileNotRegular,
                 FileCause::Read(slopvac_fs::InputKind::TooLarge) => TrustPhrase::KeyFileOverCap,
                 FileCause::Read(slopvac_fs::InputKind::NotUtf8) | FileCause::NoKey => {
                     TrustPhrase::KeyFileNoKey
