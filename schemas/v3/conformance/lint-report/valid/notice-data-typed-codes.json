@@ -103,6 +103,92 @@
         "budget": "fragments",
         "limit": 1000
       }
+    },
+    {
+      "code": "context-budget-exceeded",
+      "level": "warning",
+      "message": "Notice for context-budget-exceeded.",
+      "data": {
+        "budget": "tags",
+        "limit": 70000,
+        "path": "docs/a.md"
+      }
+    },
+    {
+      "code": "config-budget-exceeded",
+      "level": "warning",
+      "message": "Notice for config-budget-exceeded.",
+      "data": {
+        "budget": "extends-depth",
+        "limit": 32,
+        "path": "<external>/b.toml"
+      }
+    },
+    {
+      "code": "config-unknown-rule",
+      "level": "warning",
+      "message": "Notice for config-unknown-rule.",
+      "data": {
+        "rule": "core:a.b",
+        "line": 4,
+        "column": 2
+      }
+    },
+    {
+      "code": "config-unknown-rule",
+      "level": "warning",
+      "message": "Notice for config-unknown-rule.",
+      "data": {
+        "rule": "a.b"
+      }
+    },
+    {
+      "code": "review-model-same",
+      "level": "warning",
+      "message": "Notice for review-model-same.",
+      "data": {
+        "author": "a-model",
+        "author_source": "flag",
+        "reviewer": "a-model",
+        "reviewer_source": "provider"
+      }
+    },
+    {
+      "code": "review-model-same",
+      "level": "warning",
+      "message": "Notice for review-model-same.",
+      "data": {
+        "author": "a-model",
+        "author_source": "none",
+        "reviewer": "a-model",
+        "reviewer_source": "reported",
+        "items": [
+          {
+            "role": "original_document",
+            "line": 1
+          },
+          {
+            "role": "revised_document",
+            "line": 1
+          }
+        ]
+      }
+    },
+    {
+      "code": "review-model-reported-mismatch",
+      "level": "info",
+      "message": "Notice for review-model-reported-mismatch.",
+      "data": {
+        "requested": "a-model",
+        "requested_source": "config",
+        "reported": "b-model",
+        "items": [
+          {
+            "role": "changed",
+            "line": 3
+          }
+        ]
+      }
     }
   ]
 }

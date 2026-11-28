@@ -86,7 +86,7 @@ pub struct BudgetNoticeData {
 
 /// A budget that stopped work at a path, such as a document or a config file.
 ///
-/// A sibling of [`BudgetNoticeData`]: an extraction budget never names a path, and a budget
+/// A sibling of `BudgetNoticeData`: an extraction budget never names a path, and a budget
 /// code that dropped its path must not match the schema.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[non_exhaustive]
