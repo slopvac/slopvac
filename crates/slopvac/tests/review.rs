@@ -180,12 +180,28 @@ fn a_different_reviewer_passes_the_author_model_check_in_a_dry_run() {
     assert_eq!(plan["reviewer_model_checked"], true, "{plan}");
 }
 
+/// The built binary through snapbox, set up like [`slopvac`].
+fn snap(dir: &std::path::Path) -> snapbox::cmd::Command {
+    let mut cmd = snapbox::cmd::Command::new(snapbox::cmd::cargo_bin!("slopvac"))
+        .current_dir(dir)
+        .env("SLOPVAC_NO_UPDATE_CHECK", "1");
+    for var in [
+        "SLOPVAC_OFFLINE",
+        "SLOPVAC_LOG",
+        "FORCE_COLOR",
+        "CLICOLOR_FORCE",
+    ] {
+        cmd = cmd.env_remove(var);
+    }
+    cmd.env("NO_COLOR", "1")
+}
+
 /// A scope over the budget is approved with the flag only. The refusal names no config key,
 /// because none exists.
 #[test]
 fn a_scope_over_the_budget_names_only_the_approval_flag() {
     let dir = project();
-    let out = slopvac(dir.path())
+    let out = snap(dir.path())
         .args([
             "review",
             "new.md",
