@@ -28,6 +28,7 @@ thiserror = { workspace = true }
 [dev-dependencies]
 jsonschema = { workspace = true }
 rstest = { workspace = true }
+slopvac-styles = { workspace = true }
 snapbox = { workspace = true }
 tempfile = { workspace = true }
 toml = { workspace = true }

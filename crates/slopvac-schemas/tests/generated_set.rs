@@ -15,7 +15,6 @@ use slopvac_schemas::ARTIFACTS;
 const NOT_GENERATED: &[(&str, &str)] = &[
     ("genre.schema.json", "slopvac-8l4.5.57"),
     ("rules-output.schema.json", "slopvac-8l4.12.88"),
-    ("style.schema.json", "slopvac-8l4.8.14"),
 ];
 
 fn on_disk() -> BTreeSet<String> {
