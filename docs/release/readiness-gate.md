@@ -86,7 +86,7 @@ The Rust suite items select tests by module path prefix. An epic that owns a sui
 - `golden::` for golden corpus tests.
 - `accuracy::` for the precision and recall gate.
 - `compat::preserve` for compatibility matrix rows with the `preserve` disposition.
-- `conformance::` for the tests described in `docs/contract/*.md`. Put them in a `mod conformance { ... }` block in the test file, which gives the test the path prefix. A test that covers a row of the policies.md section 4 table carries the doc line `/// Conformance: <ID>`, with several IDs separated by commas when one test serves several rows. `tests/contract/test_policies_section4_rows.py` reads the row IDs from the table and fails when a row has no marked test, when a marker names an ID that the table lacks, or when a marked test sits outside the module.
+- `conformance::` for the tests described in `docs/contract/*.md`. Put them in a `mod conformance { ... }` block in the test file, which gives the test the path prefix. A test that covers a row of the policies.md section 4 table carries the doc line `/// Conformance: <ID>`, with several IDs separated by commas when one test serves several rows. `tests/contract/test_policies_section4_rows.py` reads the row IDs from the table and fails when an N row has no marked test, when a marker names an ID that the table lacks, or when a marked test sits outside the module.
 - `migration_e2e::` for migration end-to-end tests on fixture repositories.
 - `perf_budget::` for budget measurements. These tests run the installed CLI.
 
