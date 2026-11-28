@@ -62,6 +62,14 @@
         "none"
       ]
     },
+    "AuthorSource": {
+      "description": "Where the author model of a review came from.",
+      "enum": [
+        "flag",
+        "config",
+        "none"
+      ]
+    },
     "BudgetNoticeData": {
       "description": "The cap that stopped an extraction.",
       "properties": {
@@ -595,6 +603,141 @@
       ],
       "type": "object"
     },
+    "ItemLocation": {
+      "description": "Where a payload item sits, as a review notice names it under `items`.",
+      "properties": {
+        "line": {
+          "description": "The payload item's one-based line: in the revision, except for `dropped` and `original_document`, which sit in the original.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "role": {
+          "description": "The payload item's role.",
+          "enum": [
+            "changed",
+            "added",
+            "dropped",
+            "original_document",
+            "revised_document"
+          ]
+        }
+      },
+      "required": [
+        "role",
+        "line"
+      ],
+      "type": "object"
+    },
+    "ModelMismatchNoticeData": {
+      "description": "A reported model that is not the model the review asked for.",
+      "properties": {
+        "items": {
+          "description": "The payload items the reported model covers.",
+          "items": {
+            "$ref": "#/$defs/ItemLocation"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "reported": {
+          "description": "The model the provider reports.",
+          "type": "string"
+        },
+        "requested": {
+          "description": "The reviewer model the review asked for.",
+          "type": "string"
+        },
+        "requested_source": {
+          "$ref": "#/$defs/RequestedSource",
+          "description": "Where the requested model came from."
+        }
+      },
+      "required": [
+        "requested",
+        "requested_source",
+        "reported",
+        "items"
+      ],
+      "type": "object"
+    },
+    "ModelSameNoticeData": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "reviewer_source": {
+                "const": "reported"
+              }
+            },
+            "required": [
+              "reviewer_source"
+            ]
+          },
+          "then": {
+            "required": [
+              "items"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reviewer_source": {
+                "enum": [
+                  "flag",
+                  "config",
+                  "provider"
+                ]
+              }
+            },
+            "required": [
+              "reviewer_source"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "items"
+              ]
+            }
+          }
+        }
+      ],
+      "description": "A reviewer that is the author's model.",
+      "properties": {
+        "author": {
+          "description": "The author model name.",
+          "type": "string"
+        },
+        "author_source": {
+          "$ref": "#/$defs/AuthorSource",
+          "description": "Where the author model came from."
+        },
+        "items": {
+          "description": "The payload items the reported model covers. Present when `reviewer_source` is `reported`, and absent otherwise.",
+          "items": {
+            "$ref": "#/$defs/ItemLocation"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "reviewer": {
+          "description": "The reviewer model name that matches the author.",
+          "type": "string"
+        },
+        "reviewer_source": {
+          "$ref": "#/$defs/ReviewerSource",
+          "description": "Where the reviewer model came from."
+        }
+      },
+      "required": [
+        "author",
+        "author_source",
+        "reviewer",
+        "reviewer_source"
+      ],
+      "type": "object"
+    },
     "Notice": {
       "additionalProperties": false,
       "allOf": [
@@ -730,6 +873,101 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "context-budget-exceeded"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/PathBudgetNoticeData"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "config-budget-exceeded"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/PathBudgetNoticeData"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "config-unknown-rule"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/UnknownRuleNoticeData"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "review-model-same"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/ModelSameNoticeData"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "review-model-reported-mismatch"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/ModelMismatchNoticeData"
+              }
+            }
+          }
         }
       ],
       "description": "A stable, machine-readable fact with a human message. Consumers branch on `code`, never on `message`.",
@@ -808,6 +1046,45 @@
         "range"
       ],
       "type": "object"
+    },
+    "PathBudgetNoticeData": {
+      "description": "A budget that stopped work at a path, such as a document or a config file.\n\nA sibling of `BudgetNoticeData`: an extraction budget never names a path, and a budget code that dropped its path must not match the schema.",
+      "properties": {
+        "budget": {
+          "description": "Name of the budget that was passed. The list of names grows in 3.x.",
+          "type": "string"
+        },
+        "limit": {
+          "$ref": "#/$defs/Count",
+          "description": "Limit of the budget, in the unit that policies.md, section 1.9, gives for it."
+        },
+        "path": {
+          "description": "The document or config file at which the budget tripped, as the report shows it: relative to the root, `<external>/<file name>` outside it, or `<stdin>`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "budget",
+        "limit",
+        "path"
+      ],
+      "type": "object"
+    },
+    "RequestedSource": {
+      "description": "Where the model a review asked for came from.",
+      "enum": [
+        "flag",
+        "config"
+      ]
+    },
+    "ReviewerSource": {
+      "description": "Where the reviewer model that matches the author came from.",
+      "enum": [
+        "flag",
+        "config",
+        "provider",
+        "reported"
+      ]
     },
     "RulesNoticeData": {
       "description": "The rules a notice is about.",
@@ -922,6 +1199,29 @@
       "required": [
         "start",
         "end"
+      ],
+      "type": "object"
+    },
+    "UnknownRuleNoticeData": {
+      "description": "A rule id that a config layer names and no rule has.",
+      "properties": {
+        "column": {
+          "description": "One-based column of the key. Absent without a column.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "line": {
+          "description": "One-based line of the key. Absent without a line.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "rule": {
+          "description": "The id as the config wrote it, qualified or bare.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule"
       ],
       "type": "object"
     },
