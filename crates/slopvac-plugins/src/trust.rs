@@ -128,6 +128,9 @@ pub enum TrustError {
     RotationFile {
         /// The file, shown under the project root or as `<external>/<file name>`.
         file: String,
+        /// Why, as a kind with no path and no bytes from the file.
+        #[source]
+        cause: FileCause,
     },
     /// A rotation names a pair of registry host and namespace that has no pinned key.
     #[error("{}", messages::not_pinned(.registry, .namespace))]
@@ -144,6 +147,9 @@ pub enum TrustError {
         file: String,
         /// Why, as a fixed phrase that quotes nothing from the file.
         why: String,
+        /// The same cause as a kind with no path and no bytes from the file.
+        #[source]
+        cause: FileCause,
     },
     /// The key does not have the fingerprint that the command names.
     #[error("{}", messages::fingerprint_mismatch(.expected, .actual))]
@@ -204,6 +210,52 @@ impl TrustError {
             _ => None,
         }
     }
+}
+
+/// Why a file that `plugins pin` or `plugins rotate` names cannot be used, kept as a kind only.
+///
+/// It holds no path and no bytes from the file, because the refusal can reach a log or an error
+/// chain (policies section 1.7). The path the user named is in the refusal's own text, shown
+/// under the project root or as `<external>/<file name>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum FileCause {
+    /// The confined read refused the file or failed: not found, not a regular file, over the
+    /// cap, not UTF-8, a link, or another failure.
+    #[error("{0}")]
+    Read(slopvac_fs::InputKind),
+    /// The read failed with this I/O error kind.
+    #[error("{0}")]
+    Io(io::ErrorKind),
+    /// The file holds no minisign public key.
+    #[error("{}", TrustPhrase::KeyFileNoKey.as_static())]
+    NoKey,
+}
+
+impl FileCause {
+    fn of(e: &slopvac_fs::Error) -> Self {
+        match e {
+            slopvac_fs::Error::Input {
+                kind: slopvac_fs::InputKind::Io,
+                ..
+            }
+            | slopvac_fs::Error::Io { .. }
+            | slopvac_fs::Error::Read { .. } => std::error::Error::source(e)
+                .and_then(|s| s.downcast_ref::<io::Error>())
+                .map_or(Self::Read(slopvac_fs::InputKind::Io), |s| Self::Io(s.kind())),
+            slopvac_fs::Error::CapExceeded { .. } => Self::Read(slopvac_fs::InputKind::TooLarge),
+            slopvac_fs::Error::NotUtf8 { .. } => Self::Read(slopvac_fs::InputKind::NotUtf8),
+            _ => Self::Read(e.input_kind().unwrap_or(slopvac_fs::InputKind::Io)),
+        }
+    }
+}
+
+/// Read a file that `plugins pin` or `plugins rotate` names, under `cap`, through the shared
+/// confined reader (policies section 1.9): the open does not block, so a FIFO with no writer is
+/// refused at once, and only a regular file is read.
+fn read_named(path: &Path, cap: u64) -> Result<String, FileCause> {
+    slopvac_fs::read_capped_regular_to_string(path, cap, slopvac_fs::ReadOptions::new())
+        .map_err(|e| FileCause::of(&e))
 }
 
 fn io_err(what: impl Into<String>) -> impl FnOnce(io::Error) -> TrustError {
@@ -479,14 +531,13 @@ pub struct Rotated {
 }
 
 fn read_rotation_file(file: NamedFile<'_>) -> Result<String, TrustError> {
-    slopvac_fs::read_text_capped(file.path, MAX_ROTATION_FILE_BYTES).map_err(|_| {
-        TrustError::RotationFile {
-            file: file.shown.to_owned(),
-        }
+    read_named(file.path, MAX_ROTATION_FILE_BYTES).map_err(|cause| TrustError::RotationFile {
+        file: file.shown.to_owned(),
+        cause,
     })
 }
 
-fn reject_reserved(scope: &PinScope) -> Result<(), TrustError> {
+pub(crate) fn reject_reserved(scope: &PinScope) -> Result<(), TrustError> {
     if is_reserved_namespace(scope.namespace()) {
         return Err(TrustError::ReservedNamespace {
             namespace: scope.namespace().to_owned(),
@@ -741,17 +792,23 @@ impl TrustStore {
         now: &str,
     ) -> Result<KeyPin, TrustError> {
         reject_reserved(scope)?;
-        let invalid = |why: TrustPhrase| TrustError::KeyInvalid {
-            file: shown.to_owned(),
-            why: why.as_static().to_owned(),
+        let invalid = |cause: FileCause| {
+            let why = match cause {
+                FileCause::Read(slopvac_fs::InputKind::TooLarge) => TrustPhrase::KeyFileOverCap,
+                FileCause::Read(slopvac_fs::InputKind::NotUtf8) | FileCause::NoKey => {
+                    TrustPhrase::KeyFileNoKey
+                }
+                _ => TrustPhrase::KeyFileUnreadable,
+            };
+            TrustError::KeyInvalid {
+                file: shown.to_owned(),
+                why: why.as_static().to_owned(),
+                cause,
+            }
         };
-        let text = slopvac_fs::read_text_capped(file, MAX_KEY_FILE_BYTES).map_err(|e| match e {
-            slopvac_fs::Error::CapExceeded { .. } => invalid(TrustPhrase::KeyFileOverCap),
-            slopvac_fs::Error::NotUtf8 { .. } => invalid(TrustPhrase::KeyFileNoKey),
-            _ => invalid(TrustPhrase::KeyFileUnreadable),
-        })?;
-        let key =
-            PublicKey::from_pub_file(&text).map_err(|_| invalid(TrustPhrase::KeyFileNoKey))?;
+        let text = read_named(file, MAX_KEY_FILE_BYTES).map_err(invalid)?;
+        // The parse error can quote the file, so only its kind is kept.
+        let key = PublicKey::from_pub_file(&text).map_err(|_| invalid(FileCause::NoKey))?;
         check_fingerprint(fingerprint, &key)?;
         self.pin_key(scope, &key, now)
     }

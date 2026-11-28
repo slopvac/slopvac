@@ -289,7 +289,7 @@ impl TrustStore {
             if existing.is_none() {
                 create_key_file(&self.dir, &key)?;
             }
-            file.schema_version = 1;
+            file.schema_version = super::SCHEMA_VERSION;
             file.records
                 .retain(|r| names_key(r, &key) && r.hash != rec.hash);
             file.records.push(rec.clone());

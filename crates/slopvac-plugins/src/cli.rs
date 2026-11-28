@@ -455,6 +455,20 @@ impl RunError {
     }
 }
 
+/// Checks that need no runner, for the binary to call before it reads any store: `pin` and
+/// `rotate` of the reserved namespaces `slopvac` and `core` are refused here, so a damaged trust
+/// store cannot hide `namespace-reserved`.
+///
+/// # Errors
+/// [`RunError`] with the code `namespace-reserved`.
+pub fn preflight(matches: &ArgMatches) -> Result<(), RunError> {
+    if let Some(("pin" | "rotate", m)) = matches.subcommand() {
+        let (scope, _) = pin_args(m);
+        crate::trust::reject_reserved(&scope).map_err(|e| store_failed(&e))?;
+    }
+    Ok(())
+}
+
 /// Run the subcommand that `matches` selects, writing its report to `out`. Returns the exit
 /// status: 0 when the check passed, 2 when the report shows an incomplete state.
 ///

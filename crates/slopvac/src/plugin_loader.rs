@@ -16,6 +16,7 @@ use slopvac_packs::{
 use slopvac_plugins::extract::{ExtractError, Limits, TreeHash, tree_hash_capturing};
 use slopvac_plugins::host::PluginSpec;
 use slopvac_plugins::lock::{LockedPack, SourceKind};
+use slopvac_plugins::oci::Reference;
 use slopvac_plugins::sign::{KeyPolicy, PublicKey};
 use slopvac_plugins::sync::{Store, SyncError};
 use slopvac_plugins::trust::VerifiedPlugin;
@@ -63,14 +64,17 @@ impl<'a> InstalledPlugins<'a> {
         }
     }
 
-    /// The fingerprint of the key that signed `locked`, when the policy holds that key.
+    /// The fingerprint of the key that signed `locked`: the key that sync's verification
+    /// selected for the registry and namespace of its OCI source. Only an OCI source is signed.
     fn fingerprint(&self, locked: &LockedPack) -> Option<String> {
         let key_id = locked.signature.as_ref()?.key_id.as_str();
+        let SourceKind::Oci(text) = locked.source.kind() else {
+            return None;
+        };
+        let reference = Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).ok()?;
+        let namespace = reference.repository.split('/').next().unwrap_or_default();
         self.policy
-            .first_party
-            .iter()
-            .chain(self.policy.pinned.values().flatten())
-            .find(|key| key.key_id() == key_id)
+            .signing_key(&reference.registry, namespace, key_id)
             .map(PublicKey::fingerprint)
     }
 

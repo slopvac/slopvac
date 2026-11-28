@@ -26,6 +26,7 @@ use slopvac_plugins::oci::Digest;
 use slopvac_plugins::protocol::{FeatureSet, HookDecl};
 use slopvac_plugins::sign::{PinScope, PublicKey};
 use slopvac_plugins::trust::{
+    FileCause,
     DeclSummary, Revocation, TrustError, TrustGate, TrustInputs, TrustKey, TrustRecord, TrustState,
     TrustStore, VerifiedPlugin, is_forbidden_env_name, parse_trust_env, trust_hash,
 };
@@ -1072,6 +1073,55 @@ fn key_file(s: &Scratch) -> (PathBuf, String) {
     (path, PublicKey::from_base64(&b64).unwrap().fingerprint())
 }
 
+/// A valid `minisign.pub` file of exactly `len` bytes, padded in its untrusted comment. Returns
+/// its path and the fingerprint of its key.
+fn padded_key_file(s: &Scratch, len: usize) -> (PathBuf, String) {
+    let b64 = minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk
+        .to_base64();
+    let head = "untrusted comment: ";
+    let tail = format!("\n{b64}\n");
+    let text = format!("{head}{}{tail}", "p".repeat(len - head.len() - tail.len()));
+    assert_eq!(text.len(), len);
+    let path = s.dir("acme.pub");
+    fs::write(&path, text).unwrap();
+    (path, PublicKey::from_base64(&b64).unwrap().fingerprint())
+}
+
+#[test]
+fn k12_a_valid_key_file_over_4_kib_is_refused_for_its_size() {
+    let s = Scratch::new("pin-over-cap");
+    let store = TrustStore::open(s.dir("state"));
+    let (file, fingerprint) = padded_key_file(&s, 4097);
+    let err = store
+        .pin_key_file(&PinScope::new("ghcr.io", "acme"), &fingerprint, &file, SHOWN, NOW)
+        .unwrap_err();
+    match err {
+        TrustError::KeyInvalid { file, why, cause } => {
+            assert_eq!(file, SHOWN);
+            assert_eq!(why, "it holds more than 4 KiB");
+            assert_eq!(
+                cause,
+                FileCause::Read(slopvac_fs::InputKind::TooLarge)
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(!s.dir("state/trust.json").exists(), "nothing was written");
+}
+
+#[test]
+fn a_valid_key_file_of_exactly_4_kib_is_pinned() {
+    let s = Scratch::new("pin-at-cap");
+    let store = TrustStore::open(s.dir("state"));
+    let (file, fingerprint) = padded_key_file(&s, 4096);
+    let pin = store
+        .pin_key_file(&PinScope::new("ghcr.io", "acme"), &fingerprint, &file, SHOWN, NOW)
+        .unwrap();
+    assert_eq!(pin.fingerprint, fingerprint);
+}
+
 #[cfg(unix)]
 fn inode(path: &Path) -> u64 {
     use std::os::unix::fs::MetadataExt;
@@ -1114,15 +1164,18 @@ fn k11_a_key_file_with_another_fingerprint_is_refused_with_both() {
     let err = store
         .pin_key_file(&PinScope::new("ghcr.io", "acme"), &named, &file, SHOWN, NOW)
         .unwrap_err();
-    assert_eq!(err.code(), Some("key-fingerprint-mismatch"), "{err:?}");
-    let text = err.to_string();
-    assert!(text.contains(&named) && text.contains(&actual), "{text}");
+    match err {
+        TrustError::FingerprintMismatch {
+            expected,
+            actual: found,
+        } => assert_eq!((expected, found), (named, actual)),
+        other => panic!("{other:?}"),
+    }
     assert!(!s.dir("state/trust.json").exists(), "nothing was written");
 }
 
 #[rstest::rstest]
 #[case::missing(None)]
-#[case::over_4_kib(Some(vec![b'#'; 4097]))]
 #[case::no_key_line(Some(b"untrusted comment: LEAKME\n".to_vec()))]
 #[case::not_a_minisign_key(Some(b"untrusted comment: x\nTEVBS01FTEVBS01FTEVBS01F\n".to_vec()))]
 fn k12_a_key_file_that_cannot_be_used_is_refused_without_quoting_it(

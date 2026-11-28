@@ -16,6 +16,7 @@ mod revocations;
 mod signed_fixture;
 mod support;
 
+use clap::error::{ContextKind, ContextValue, ErrorKind};
 use std::collections::BTreeMap;
 use std::error::Error as _;
 use std::fs;
@@ -500,16 +501,28 @@ fn k14_pin_with_a_registry_binds_the_namespace_on_that_host_only() {
 }
 
 #[rstest::rstest]
-#[case::uppercase_fingerprint(&["pin", "acme", &"A".repeat(64), "--key", "k.pub"])]
-#[case::short_fingerprint(&["pin", "acme", &"a".repeat(63), "--key", "k.pub"])]
-#[case::no_key(&["pin", "acme", &"a".repeat(64)])]
-#[case::capital_namespace(&["pin", "Acme", &"a".repeat(64), "--key", "k.pub"])]
-#[case::bad_registry(&["pin", "acme", &"a".repeat(64), "--key", "k.pub", "--registry", "a b"])]
-#[case::rotate_without_a_signature(&["rotate", "acme", &"a".repeat(64), "--statement", "s", "--old-signature", "o"])]
-fn k15_a_malformed_pin_or_rotate_is_a_usage_error(#[case] args: &[&str]) {
+#[case::uppercase_fingerprint(&["pin", "acme", &"A".repeat(64), "--key", "k.pub"], ErrorKind::ValueValidation, "<FINGERPRINT>")]
+#[case::short_fingerprint(&["pin", "acme", &"a".repeat(63), "--key", "k.pub"], ErrorKind::ValueValidation, "<FINGERPRINT>")]
+#[case::no_key(&["pin", "acme", &"a".repeat(64)], ErrorKind::MissingRequiredArgument, "--key <FILE>")]
+#[case::capital_namespace(&["pin", "Acme", &"a".repeat(64), "--key", "k.pub"], ErrorKind::ValueValidation, "<NAMESPACE>")]
+#[case::bad_registry(&["pin", "acme", &"a".repeat(64), "--key", "k.pub", "--registry", "a b"], ErrorKind::ValueValidation, "--registry <HOST>")]
+#[case::trailing_dot_registry(&["pin", "acme", &"a".repeat(64), "--key", "k.pub", "--registry", "ghcr.io."], ErrorKind::ValueValidation, "--registry <HOST>")]
+#[case::rotate_without_a_signature(&["rotate", "acme", &"a".repeat(64), "--statement", "s", "--old-signature", "o"], ErrorKind::MissingRequiredArgument, "--new-signature <FILE>")]
+fn k15_a_malformed_pin_or_rotate_is_a_usage_error(
+    #[case] args: &[&str],
+    #[case] kind: ErrorKind,
+    #[case] argument: &str,
+) {
     let words = std::iter::once("plugins").chain(args.iter().copied());
     let err = command().try_get_matches_from(words).unwrap_err();
+    assert_eq!(err.kind(), kind, "{err}");
     assert_eq!(err.exit_code(), 2, "{err}");
+    let named = match err.get(ContextKind::InvalidArg) {
+        Some(ContextValue::String(arg)) => vec![arg.clone()],
+        Some(ContextValue::Strings(args)) => args.clone(),
+        other => panic!("{other:?}: {err}"),
+    };
+    assert_eq!(named, [argument.to_owned()], "{err}");
 }
 
 #[rstest::rstest]
