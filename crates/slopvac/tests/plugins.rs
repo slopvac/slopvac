@@ -1364,6 +1364,11 @@ mod conformance {
     fn sync_in_ci_exits_2_on_a_digest_mismatch_and_leaves_the_lock() {
         let sandbox = Sandbox::new();
         lock_path_plugin(&sandbox);
+        fs::write(
+            sandbox.project().join("slopvac.toml"),
+            "schema_version = 3\n[[plugins]]\nid = \"style\"\nsource = \"plugins/style\"\n",
+        )
+        .unwrap();
         fs::write(sandbox.project().join("plugins/style/rules.yml"), "a: c\n").unwrap();
         let before = lock_bytes(&sandbox);
         sandbox
