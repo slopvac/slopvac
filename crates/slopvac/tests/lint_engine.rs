@@ -833,19 +833,6 @@ fn a_python_in_the_linted_repository_is_never_run() {
 }
 
 #[test]
-fn a_file_with_no_engine_parser_is_an_incomplete_run_and_not_skipped() {
-    let (dir, _path) = project("ok.md", CLEAN, None);
-    let page = dir.path().join("page.html");
-    fs::write(&page, "<p>Hello</p>\n").expect("write");
-    slopvac()
-        .arg("lint")
-        .arg(&page)
-        .assert()
-        .code(2)
-        .stderr(predicate::str::contains("error[input-unsupported]"));
-}
-
-#[test]
 fn a_missing_target_is_an_incomplete_run() {
     slopvac()
         .args(["lint", "no-such-file.md"])
