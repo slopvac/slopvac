@@ -870,7 +870,7 @@ impl TrustStore {
                 _ if cause.is_not_regular() => TrustPhrase::FileNotRegular,
                 FileCause::Read(slopvac_fs::InputKind::TooLarge) => TrustPhrase::KeyFileOverCap,
                 FileCause::Read(slopvac_fs::InputKind::NotUtf8) | FileCause::NoKey => {
-                    TrustPhrase::KeyFileNoKey
+                    TrustPhrase::KeyFileUnreadable
                 }
                 _ => TrustPhrase::KeyFileUnreadable,
             };
