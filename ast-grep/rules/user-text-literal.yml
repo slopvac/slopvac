@@ -30,6 +30,11 @@ files:
   - crates/slopvac/src/errors.rs
   - crates/slopvac/src/output.rs
   - crates/slopvac/src/stdin.rs
+  - crates/slopvac/src/init/mod.rs
+  - crates/slopvac/src/generate.rs
+  - crates/slopvac/src/summary.rs
+  - crates/slopvac/src/update_notice.rs
+  - crates/slopvac/src/redact.rs
 ignores:
   # Audit output is for contributors reading a failing test, not for users.
   - crates/slopvac-messages/src/audit.rs

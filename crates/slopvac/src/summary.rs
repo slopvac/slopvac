@@ -53,7 +53,7 @@ pub fn summarize(documents: &[Document]) -> RunSummary {
         let weight = |d: &Document| d.words.max(1);
         #[allow(clippy::cast_precision_loss, reason = "word counts far below 2^52")]
         let denominator: f64 = documents.iter().map(|d| weight(d) as f64).sum();
-        #[allow(clippy::cast_precision_loss)]
+        #[allow(clippy::cast_precision_loss, reason = "counts far below 2^52")]
         if words > 0 {
             documents
                 .iter()
@@ -75,7 +75,7 @@ pub fn summarize(documents: &[Document]) -> RunSummary {
         .into_iter()
         .map(|(category, entries)| {
             let found: usize = entries.iter().map(|e| e.findings).sum();
-            #[allow(clippy::cast_precision_loss)]
+            #[allow(clippy::cast_precision_loss, reason = "counts far below 2^52")]
             let mean = entries.iter().map(|e| e.score.get()).sum::<f64>() / entries.len() as f64;
             CategorySummary {
                 category: category.clone(),

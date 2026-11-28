@@ -2887,6 +2887,7 @@ dependencies = [
  "slopvac-config",
  "slopvac-fs",
  "slopvac-messages",
+ "slopvac-model",
  "tempfile",
  "thiserror",
 ]
