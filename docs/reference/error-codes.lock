@@ -417,6 +417,7 @@ engine-locale-unknown text
 engine-masked-comment-error text
 engine-not-utf8 text
 engine-path-error text
+engine-preparsed-mismatch text
 engine-range-character text
 engine-range-invalid text
 engine-range-outside text

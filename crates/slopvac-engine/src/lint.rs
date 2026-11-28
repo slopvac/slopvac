@@ -2543,7 +2543,7 @@ impl Preparsed {
             Ok(())
         } else {
             Err(EngineError::Internal(
-                "a preparsed document was read from other text or another kind of file".to_owned(),
+                crate::messages::EnginePhrase::PreparsedMismatch.text(),
             ))
         }
     }

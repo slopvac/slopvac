@@ -851,6 +851,10 @@ pub(crate) enum EnginePhrase {
     #[code("engine-genres-need-assignments")]
     #[text("per-document genres need genre assignments in the settings")]
     GenresNeedAssignments,
+    /// A preparsed document was handed to the engine with another input.
+    #[code("engine-preparsed-mismatch")]
+    #[text("a preparsed document was read from other text or another kind of file")]
+    PreparsedMismatch,
 }
 
 impl EnginePhrase {
