@@ -2071,7 +2071,10 @@ mod unix_only {
         #[case] at_load: Place,
         #[case] expected: &str,
     ) {
-        let s = Scratch::new(&format!("u-interp-late-{}-{}", at_open as u8, at_load as u8));
+        let s = Scratch::new(&format!(
+            "u-interp-late-{}-{}",
+            at_open as u8, at_load as u8
+        ));
         let root = fs::canonicalize(&s.0).unwrap();
         let project = s.dir("project");
         fs::create_dir_all(&project).unwrap();
