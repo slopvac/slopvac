@@ -548,7 +548,7 @@ pub(crate) enum SignText {
     /// No pinned key has the key id of the statement.
     #[code("plugins-sign-key-not-pinned")]
     #[text(
-        "key {key_id} is not pinned for namespace `{namespace}`; pin it with `slopvac plugins trust --key <fingerprint>`"
+        "key {key_id} is not pinned for namespace `{namespace}`; pin it with `slopvac plugins pin {namespace} <fingerprint> --key <file>`"
     )]
     KeyNotPinned { key_id: String, namespace: String },
     /// The statement and the manifest disagree.
