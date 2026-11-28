@@ -916,7 +916,9 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         }
     })?;
     let (gate, spec) = runner.prepared(&vp, spec, TRUST_INPUTS).map_err(refused)?;
-    let (_, state) = gate.state(&vp, &spec).map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
+    let (_, state) = gate
+        .state(&vp, &spec)
+        .map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
     if state == TrustState::Revoked {
         return Err(RunError::Revoked { id: line(id) });
     }
@@ -1063,10 +1065,13 @@ fn run_untrust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8,
     }
     for hash in hashes {
         let digest = Digest::parse(&hash).map_err(|e| {
-            store_failed(&runner.dirs.project_root, &TrustError::Corrupt {
-                path: runner.dirs.state_dir.join("trust.json"),
-                why: e.to_string(),
-            })
+            store_failed(
+                &runner.dirs.project_root,
+                &TrustError::Corrupt {
+                    path: runner.dirs.state_dir.join("trust.json"),
+                    why: e.to_string(),
+                },
+            )
         })?;
         store.forget(&digest).map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
     }

@@ -86,6 +86,25 @@ pub enum SignError {
     InvalidKey(String),
 }
 
+/// Why a statement cannot be a rotation, kept as a kind only. The parser's text can quote the
+/// statement, so none of it is kept, and each kind shows a fixed text from the catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum RotationCause {
+    /// The statement is over [`MAX_ROTATION_BYTES`].
+    #[error("{}", messages::statement_too_large(MAX_ROTATION_BYTES))]
+    TooLarge,
+    /// The statement is not the canonical encoding of its own content.
+    #[error("{}", messages::sign_not_canonical(SignPhrase::Reencoding.as_static()))]
+    NotCanonical,
+    /// The statement does not parse as a version 1 rotation statement.
+    #[error("{}", messages::sign_invalid_statement(SignPhrase::NotRotation.as_static()))]
+    NotRotation,
+    /// The statement's `newKey` is not a minisign public key.
+    #[error("{}", messages::sign_invalid_statement(SignPhrase::RotationKeyForm.as_static()))]
+    NewKeyForm,
+}
+
 /// A minisign public key.
 #[derive(Clone)]
 pub struct PublicKey {
@@ -790,12 +809,16 @@ pub struct RotationProof<'a> {
 /// the caller can compare its fingerprint with the one the user named.
 ///
 /// # Errors
-/// [`SignError::NotCanonical`] or [`SignError::InvalidStatement`] when the statement is not a
-/// canonical rotation statement of at most [`MAX_ROTATION_BYTES`] with a minisign `newKey`.
-pub fn rotation_new_key(statement: &[u8]) -> Result<PublicKey, SignError> {
-    let st: RotationStatement = parse_canonical(statement, MAX_ROTATION_BYTES)?;
-    PublicKey::from_base64(&st.new_key)
-        .map_err(|_| SignError::InvalidStatement(SignPhrase::RotationKeyForm.as_static().into()))
+/// A [`RotationCause`] when the statement is not a canonical rotation statement of at most
+/// [`MAX_ROTATION_BYTES`] with a minisign `newKey`. The cause keeps no text of the statement.
+pub fn rotation_new_key(statement: &[u8]) -> Result<PublicKey, RotationCause> {
+    let st: RotationStatement =
+        parse_canonical(statement, MAX_ROTATION_BYTES).map_err(|e| match e {
+            SignError::StatementTooLarge => RotationCause::TooLarge,
+            SignError::NotCanonical(_) => RotationCause::NotCanonical,
+            _ => RotationCause::NotRotation,
+        })?;
+    PublicKey::from_base64(&st.new_key).map_err(|_| RotationCause::NewKeyForm)
 }
 
 /// Verify a rotation for `namespace` against the key pinned for it.

@@ -13,10 +13,10 @@ use slopvac_messages::{Catalog, Entry, render};
 use crate::lock::LockDiff;
 use crate::messages::cli::Reported;
 use crate::messages::sync::{cache_tampered, cache_unreadable, config_drift, update_busy};
+use crate::messages::trust::store_damaged;
 use crate::revoke::RevocationError;
 use crate::sign::SignError;
 use crate::sync::SyncError;
-use crate::messages::trust::store_damaged;
 use crate::trust::{TrustError, is_fixed_store_reason};
 use crate::update::UpdateError;
 
@@ -136,6 +136,7 @@ pub(crate) fn store(root: &Path, e: &TrustError) -> Result<Reported, String> {
         | TrustError::KeyInvalid { .. }
         | TrustError::FingerprintMismatch { .. }
         | TrustError::RotationFile { .. }
+        | TrustError::RotationStatement { .. }
         | TrustError::RevocationsMissing
         // A parse or key failure can quote the statement, so only the fixed causes print.
         | TrustError::Rotation(

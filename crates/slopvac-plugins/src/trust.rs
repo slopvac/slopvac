@@ -54,8 +54,8 @@ use crate::protocol::PluginDeclaration;
 use crate::pyenv::{EnvStore, ManagedEnv, PYTHON_FLAGS, PyEnvError, PythonRuntime};
 use crate::revoke::{RevocationError, RevocationList, RevocationNotice, Revocations};
 use crate::sign::{
-    PinScope, PublicKey, RotationProof, SignError, canonical_json, is_reserved_namespace,
-    verify_rotation,
+    PinScope, PublicKey, RotationCause, RotationProof, SignError, canonical_json,
+    is_reserved_namespace, verify_rotation,
 };
 
 mod key;
@@ -123,6 +123,14 @@ pub enum TrustError {
     /// pin's is a rollback; any other failure makes the rotation invalid.
     #[error("{}", messages::rotation_refused(.0))]
     Rotation(SignError),
+    /// The rotation statement cannot be a rotation. The cause is a kind only, because the
+    /// parser's text can quote the statement.
+    #[error("{}", messages::rotation_statement_refused(.cause))]
+    RotationStatement {
+        /// Why, as a kind with a fixed text.
+        #[source]
+        cause: RotationCause,
+    },
     /// A rotation file cannot be read or is over its cap.
     #[error("{}", messages::rotation_file(.file))]
     RotationFile {
@@ -204,7 +212,9 @@ impl TrustError {
             Self::NamespaceBound { .. } => Some(codes::NAMESPACE_BOUND),
             Self::NotPinned { .. } => Some(codes::NAMESPACE_NOT_PINNED),
             Self::Rotation(SignError::Rollback(_)) => Some(codes::ROTATION_ROLLBACK),
-            Self::Rotation(_) | Self::RotationFile { .. } => Some(codes::ROTATION_INVALID),
+            Self::Rotation(_) | Self::RotationStatement { .. } | Self::RotationFile { .. } => {
+                Some(codes::ROTATION_INVALID)
+            }
             Self::Revoked(_) => Some(codes::ROTATION_KEY_REVOKED),
             Self::RevocationsMissing => Some(codes::ROTATION_REVOCATIONS_MISSING),
             _ => None,
@@ -554,6 +564,12 @@ pub struct Rotated {
     pub notices: Vec<RevocationNotice>,
 }
 
+/// The new key of a rotation statement, or the scrubbed cause of a statement that cannot be one.
+fn rotation_new_key(statement: &[u8]) -> Result<PublicKey, TrustError> {
+    crate::sign::rotation_new_key(statement)
+        .map_err(|cause| TrustError::RotationStatement { cause })
+}
+
 fn read_rotation_file(file: NamedFile<'_>) -> Result<String, TrustError> {
     read_named(file.path, MAX_ROTATION_FILE_BYTES).map_err(|cause| TrustError::RotationFile {
         file: file.shown.to_owned(),
@@ -860,7 +876,7 @@ impl TrustStore {
     ///
     /// # Errors
     /// [`TrustError::ReservedNamespace`], [`TrustError::RotationFile`],
-    /// [`TrustError::Rotation`], [`TrustError::FingerprintMismatch`],
+    /// [`TrustError::RotationStatement`], [`TrustError::FingerprintMismatch`],
     /// [`TrustError::Revocation`] for a damaged cache, [`TrustError::RevocationsMissing`], and
     /// the errors of [`Self::rotate_key`].
     pub fn rotate_key_files(
@@ -875,8 +891,7 @@ impl TrustStore {
         let statement = read_rotation_file(files.statement)?;
         let old_signature = read_rotation_file(files.old_signature)?;
         let new_signature = read_rotation_file(files.new_signature)?;
-        let new_key =
-            crate::sign::rotation_new_key(statement.as_bytes()).map_err(TrustError::Rotation)?;
+        let new_key = rotation_new_key(statement.as_bytes())?;
         check_fingerprint(fingerprint, &new_key)?;
         // The list is read under the store lock and the cache lock, and both are held through
         // the pin write, so a refresh that caches a newer list while this call waits is the
@@ -915,6 +930,7 @@ impl TrustStore {
     /// # Errors
     /// [`TrustError::ReservedNamespace`] for `slopvac` and `core`, before the store is read,
     /// [`TrustError::NotPinned`] for a pair with no pin,
+    /// [`TrustError::RotationStatement`] for a statement that cannot be a rotation,
     /// [`TrustError::Rotation`] for a proof that fails verification,
     /// [`TrustError::Revoked`] for a revoked key, plus store failures.
     pub fn rotate_key(
@@ -942,6 +958,9 @@ impl TrustStore {
         now: &str,
     ) -> Result<(KeyPin, KeyPin), TrustError> {
         reject_reserved(scope)?;
+        // The statement is parsed here first, so a parse failure is a cause with a fixed text
+        // and the parser's text, which can quote the statement, never reaches the error.
+        rotation_new_key(proof.statement)?;
         let namespace = scope.namespace();
         let path = self.path();
         self.update_held(lock, |f| {
