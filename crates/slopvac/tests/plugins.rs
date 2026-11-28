@@ -1420,7 +1420,7 @@ fn k22_pin_and_rotate_finish_with_stdin_closed_and_open_no_connection() {
         tally.route(&mut cmd);
         cmd.args(["plugins"])
             .args(args)
-            .stdin(std::process::Stdio::null())
+            .write_stdin(Vec::<u8>::new())
             .timeout(std::time::Duration::from_secs(20))
             .assert()
     };
