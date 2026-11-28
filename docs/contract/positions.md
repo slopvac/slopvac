@@ -131,7 +131,7 @@ bridge's own range. Markdown and HTML tables put no bridge inside a cell, and th
 | `opaque` | Text a syntax rule produced, such as a JSX string expression | The whole construct |
 | `collapse` | One space for a whitespace run | The whole run, newlines included |
 | `masked` | A placeholder for text that rules must not read, such as inline code | The whole masked construct |
-| `wrap` | One synthetic space for a soft wrap | Empty, at the end of the previous real token |
+| `wrap` | One synthetic space for a soft wrap, or for a tag or comment between two words in a standalone HTML file | Empty, at the end of the previous real token |
 
 All kinds except `wrap` are **real**: they have a non-empty source range. Every projected
 point of a non-identity token maps to the whole token range. `wrap` is the only
@@ -166,8 +166,11 @@ Three consequences follow:
 - **Markdown and MDX.** Entities, backslash escapes and MDX escaped braces, such as `\{`, are
   tokens. A JSX string expression that renders text is `opaque`. Soft wraps are `wrap`.
   Inline code is `masked`.
-- **HTML.** Entities are `entity`. Tags and comments are gaps. A run of whitespace, with
-  or without newlines, is one `collapse` token.
+- **HTML.** Entities are `entity`. Tags and comments are gaps. A run of whitespace, with or
+  without newlines, is one `collapse` token. A standalone HTML file gives one paragraph for
+  each source line outside `<pre>` that has visible text, whatever element holds that text.
+  A tag or comment between two words, with no white space on either side, adds a `wrap`
+  space that maps to no source bytes, as 2.x does.
 - **reStructuredText.** The core parses the document with docutils. docutils records the
   source lines of every block and keeps the source text of every inline construct, and the
   core places each node's words inside that node's own lines, never elsewhere in the file.
