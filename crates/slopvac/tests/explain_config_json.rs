@@ -622,17 +622,31 @@ const UNREGISTERED: &str = "zzsecretgenre";
 
 /// A document that names a genre no registry holds is refused, by lint and by explain alike,
 /// with `config-invalid-value` at its key. The refusal never carries the value, neither on
-/// stderr nor in the report, and the other document of the run is still read.
+/// stderr nor in the report, and the other document of the run is still read. Explain prints
+/// no record for the refused input, in text or JSON (docs/contract/config.md, section 1.4.1).
+///
+/// The stderr line names the key: in the front matter, `genre` is on line 4 at column 3; in
+/// the directive, it follows the 14 characters of `<!-- slopvac: `, at column 15.
 #[rstest]
-#[case::front_matter("---\nslopvac:\n  v: 3\n  genre: zzsecretgenre\n---\n# Title\n\nText.\n")]
-#[case::directive("<!-- slopvac: genre=zzsecretgenre -->\n# Title\n\nText.\n")]
-fn an_unregistered_genre_is_refused_by_lint_and_explain_without_its_value(#[case] text: &str) {
+#[case::front_matter(
+    "---\nslopvac:\n  v: 3\n  genre: zzsecretgenre\n---\n# Title\n\nText.\n",
+    "a.md:4:3"
+)]
+#[case::directive(
+    "<!-- slopvac: genre=zzsecretgenre -->\n# Title\n\nText.\n",
+    "a.md:1:15"
+)]
+fn an_unregistered_genre_is_refused_by_lint_and_explain_without_its_value(
+    #[case] text: &str,
+    #[case] location: &str,
+) {
     let dir = project_with("schema_version = 3\n");
     fs::write(dir.path().join("a.md"), text).expect("write document");
 
     let (code, stdout, stderr) = outcome(dir.path(), &["lint", "--format", "json", "."]);
     assert_eq!(code, Some(2), "{stderr}");
     assert!(stderr.contains("error[config-invalid-value]"), "{stderr}");
+    assert!(stderr.contains(location), "{stderr}");
     assert!(!stderr.contains(UNREGISTERED), "{stderr}");
     assert!(!stdout.contains(UNREGISTERED), "{stdout}");
     let report: Value = serde_json::from_str(&stdout).expect("a lint report");
@@ -652,8 +666,22 @@ fn an_unregistered_genre_is_refused_by_lint_and_explain_without_its_value(#[case
     assert!(stderr.contains("error[config-invalid-value]"), "{stderr}");
     assert!(!stderr.contains(UNREGISTERED), "{stderr}");
     assert!(!stdout.contains(UNREGISTERED), "{stdout}");
+    let refusal = stderr
+        .lines()
+        .find(|l| l.starts_with("error[config-invalid-value]"))
+        .expect("a refusal line");
+    assert!(refusal.contains(location), "{stderr}");
     let doc: Value = serde_json::from_str(&stdout).expect("one JSON document");
     assert_eq!(only_input(&doc)["path"], json!("docs/a.md"), "{doc}");
+
+    // The text form prints one block per record, headed by the input's path.
+    let (code, stdout, stderr) = outcome(dir.path(), &["lint", "--explain-config", "."]);
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains(location), "{stderr}");
+    assert!(!stderr.contains(UNREGISTERED), "{stderr}");
+    assert!(!stdout.contains(UNREGISTERED), "{stdout}");
+    let headings: Vec<&str> = stdout.lines().filter(|l| l.ends_with("a.md")).collect();
+    assert_eq!(headings, ["docs/a.md"], "{stdout}");
 }
 
 /// With `[frontmatter] enabled = false` the document takes no part in resolution: the record
