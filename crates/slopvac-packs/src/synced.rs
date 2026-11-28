@@ -16,7 +16,7 @@ use slopvac_model::{ApiVersion, PackId};
 use slopvac_plugins::extract::tree_hash_capturing_files_observed;
 use slopvac_plugins::extract::{ExtractError, Limits as ExtractLimits, tree_hash_capturing_files};
 use slopvac_plugins::lock::{LockedPack, Lockfile, PackId as LockPackId, PackKind as LockKind};
-use slopvac_plugins::sign::RESERVED_ID;
+use slopvac_plugins::sign::{KeyPolicy, RESERVED_ID};
 use slopvac_plugins::sync::{Store, SyncError};
 
 use crate::messages::PackMessage;
@@ -258,8 +258,9 @@ pub fn load_synced(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
+    policy: &KeyPolicy,
 ) -> Result<Vec<LoadedPack>, SyncedError> {
-    load_synced_within(requested, lock, store, &mut Budget::default())
+    load_synced_within(requested, lock, store, policy, &mut Budget::default())
 }
 
 /// Like [`load_synced`], and charges `budget` as each pack loads: file bytes as they are read,
@@ -278,12 +279,14 @@ pub fn load_synced_within(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
+    policy: &KeyPolicy,
     budget: &mut Budget,
 ) -> Result<Vec<LoadedPack>, SyncedError> {
     load_inner(
         requested,
         lock,
         store,
+        policy,
         budget,
         #[cfg(feature = "test-support")]
         None,
@@ -302,16 +305,18 @@ pub fn load_synced_observed(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
+    policy: &KeyPolicy,
     budget: &mut Budget,
     after_hash: &mut dyn FnMut(&str, &Path),
 ) -> Result<Vec<LoadedPack>, SyncedError> {
-    load_inner(requested, lock, store, budget, Some(after_hash))
+    load_inner(requested, lock, store, policy, budget, Some(after_hash))
 }
 
 fn load_inner(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
+    _policy: &KeyPolicy,
     budget: &mut Budget,
     #[cfg(feature = "test-support")] mut after_hash: Option<HashObserver<'_>>,
 ) -> Result<Vec<LoadedPack>, SyncedError> {
@@ -396,8 +401,9 @@ impl Packs {
         requested: &[PackId],
         lock: &Lockfile,
         store: &Store,
+        policy: &KeyPolicy,
     ) -> Result<Self, SyncedError> {
-        Self::with_synced_within(requested, lock, store, Limits::default())
+        Self::with_synced_within(requested, lock, store, policy, Limits::default())
     }
 
     /// Like [`Packs::with_synced`], under `limits` for the run. The core pack counts toward the
@@ -409,6 +415,7 @@ impl Packs {
         requested: &[PackId],
         lock: &Lockfile,
         store: &Store,
+        policy: &KeyPolicy,
         limits: Limits,
     ) -> Result<Self, SyncedError> {
         let mut budget = Budget::new(limits);
@@ -417,7 +424,13 @@ impl Packs {
             Source::Core,
             &mut budget,
         )?];
-        packs.extend(load_synced_within(requested, lock, store, &mut budget)?);
+        packs.extend(load_synced_within(
+            requested,
+            lock,
+            store,
+            policy,
+            &mut budget,
+        )?);
         Ok(Self::new_within(packs, limits)?)
     }
 }

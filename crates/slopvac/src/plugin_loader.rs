@@ -10,12 +10,12 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use slopvac_messages::Catalog;
 use slopvac_packs::{
     CodePluginContext, CodePluginError, SyncedError, TooLargePart, load_code_plugin,
 };
 use slopvac_plugins::extract::{ExtractError, Limits, TreeHash, tree_hash_capturing};
 use slopvac_plugins::host::PluginSpec;
-use slopvac_messages::Catalog;
 use slopvac_plugins::lock::{LockedPack, SourceKind};
 use slopvac_plugins::oci::{OciError, Reference};
 use slopvac_plugins::sign::{KeyPolicy, PublicKey};
@@ -60,7 +60,9 @@ impl LoadRefusal {
         match self {
             Self::Synced(e) => e.code().unwrap_or("plugin-not-loaded"),
             Self::Code(e) => e.code(),
-            Self::SourceUnparsed { id, .. } => not_installed(id).code().unwrap_or("plugin-not-loaded"),
+            Self::SourceUnparsed { id, .. } => {
+                not_installed(id).code().unwrap_or("plugin-not-loaded")
+            }
         }
     }
 }
