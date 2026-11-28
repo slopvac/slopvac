@@ -270,9 +270,9 @@ fn hook_run(hook: &str) -> Run {
                     },
                 ];
                 seen(p.complete(
-        "main",
-        &CompleteRequest::new(ProviderTask::Rewrite, Some("m1".into()), items.to_vec()),
-    ))
+                    "main",
+                    &CompleteRequest::new(ProviderTask::Rewrite, Some("m1".into()), items.to_vec()),
+                ))
             }
             "recipe" => {
                 let options = json!({"marker": "hi", "force": true});

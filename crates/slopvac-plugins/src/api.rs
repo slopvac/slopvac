@@ -7,8 +7,8 @@ use serde_json::Value;
 
 use crate::error::{CompleteError, PluginError, RpcError};
 use crate::hooks::{
-    CompleteRequest, Completion, Document, FindingsDocument, FixEdit, RecipeFile, Rendered, Segment,
-    Tag, check_completions, match_entries, parse_edits, parse_error_object, parse_recipe,
+    CompleteRequest, Completion, Document, FindingsDocument, FixEdit, RecipeFile, Rendered,
+    Segment, Tag, check_completions, match_entries, parse_edits, parse_error_object, parse_recipe,
     parse_rendered, parse_score, parse_segments, parse_tags,
 };
 use crate::host::Plugin;
@@ -320,7 +320,8 @@ impl Plugin {
         hook: &str,
         request: &CompleteRequest,
     ) -> Result<Vec<Result<Completion, RpcError>>, PluginError> {
-        self.complete_checked(hook, request).map_err(PluginError::from)
+        self.complete_checked(hook, request)
+            .map_err(PluginError::from)
     }
 
     /// [`Self::complete`], with the stage of a failure kept: a refused result is
