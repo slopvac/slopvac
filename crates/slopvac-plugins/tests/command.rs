@@ -2591,6 +2591,52 @@ fn rotate_with_a_signature_file_that_is_a_fifo_is_refused_at_once() {
     assert_eq!(pinned, [("ghcr.io".to_owned(), "acme".to_owned(), old)]);
 }
 
+/// A valid key file named through a link at the file itself is refused with the regular-file
+/// text, and nothing is pinned: the confined read does not follow a leaf link.
+#[test]
+fn pin_refuses_a_valid_key_file_reached_through_a_leaf_link() {
+    let f = Fixture::uncached();
+    let target = f.key_file("acme.pub", OLD_PUB);
+    let link = f.base.path().join("acme-link.pub");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let (fp, link) = (
+        pub_key(OLD_PUB).fingerprint(),
+        link.to_string_lossy().into_owned(),
+    );
+    let err = f
+        .run(&["pin", "acme", &fp, "--key", &link], false, |s| s)
+        .result
+        .unwrap_err();
+    assert_eq!((err.code(), err.exit_code()), ("key-invalid", 2));
+    assert_eq!(
+        err.to_string(),
+        "the key file <external>/acme-link.pub cannot be used: it is not a regular file; save it to a regular file and pass that path"
+    );
+    assert_eq!(f.pinned(), Vec::<(String, String, String)>::new());
+}
+
+/// A valid rotation signature named through a link at the file itself is refused with the
+/// regular-file text, and the pin is kept.
+#[test]
+fn rotate_refuses_a_valid_rotation_file_reached_through_a_leaf_link() {
+    let f = Fixture::new();
+    let mut args = f.rotation();
+    let dir = f.base.path();
+    let link = dir.join("old-link.minisig");
+    std::os::unix::fs::symlink(dir.join("old.minisig"), &link).unwrap();
+    let at = args.iter().position(|a| a == "--old-signature").unwrap() + 1;
+    args[at] = link.to_string_lossy().into_owned();
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    let err = f.run(&words, false, |s| s).result.unwrap_err();
+    assert_eq!((err.code(), err.exit_code()), ("rotation-invalid", 2));
+    assert_eq!(
+        err.to_string(),
+        "rotation refused: <external>/old-link.minisig cannot be used: it is not a regular file; save it to a regular file and pass that path"
+    );
+    let old = pub_key(OLD_PUB).fingerprint();
+    assert_eq!(f.pinned(), [("ghcr.io".to_owned(), "acme".to_owned(), old)]);
+}
+
 #[test]
 fn rotate_whose_new_key_did_not_sign_says_the_signature_does_not_verify() {
     let f = Fixture::new();

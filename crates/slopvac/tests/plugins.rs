@@ -157,6 +157,34 @@ fn k23_a_pin_without_a_registry_host_is_a_damaged_store_that_stops_the_command(
     assert_eq!(fs::read_to_string(trust_file(&sandbox)).unwrap(), before);
 }
 
+/// The store of [`write_hostless_pin`] as version 1, the form before pins named a host.
+fn write_version_1_pin(sandbox: &Sandbox) -> String {
+    let text = write_hostless_pin(sandbox).replacen(
+        "\"schema_version\":2",
+        "\"schema_version\":1",
+        1,
+    );
+    fs::write(trust_file(sandbox), &text).unwrap();
+    text
+}
+
+/// A version 1 store with a key pin is a damaged store that stops the command: nothing is
+/// migrated, and the file is kept as it is.
+#[rstest::rstest]
+#[case::status(&["--offline", "plugins", "status"])]
+#[case::sync(&["--offline", "plugins", "sync"])]
+fn a_version_1_store_with_a_pin_is_a_damaged_store_that_stops_the_command(#[case] args: &[&str]) {
+    let sandbox = Sandbox::new();
+    let before = write_version_1_pin(&sandbox);
+    let out = sandbox.slopvac().args(args).assert().code(2);
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert_eq!(
+        stderr,
+        "error[plugins-store-failed]: the trust store <external>/trust.json is damaged: unsupported schema_version\n"
+    );
+    assert_eq!(fs::read_to_string(trust_file(&sandbox)).unwrap(), before);
+}
+
 /// `pin` and `rotate` refuse a reserved namespace before the trust store is read, so a damaged
 /// store does not hide the refusal.
 #[rstest::rstest]
@@ -277,6 +305,7 @@ struct NetworkTally {
     listener: Arc<TcpListener>,
     seen: Arc<AtomicUsize>,
     stop: Arc<AtomicBool>,
+    worker: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl NetworkTally {
@@ -290,7 +319,7 @@ impl NetworkTally {
         );
         let (count, done) = (Arc::clone(&seen), Arc::clone(&stop));
         let accepting = Arc::clone(&listener);
-        std::thread::spawn(move || {
+        let worker = std::thread::spawn(move || {
             let listener = accepting;
             while !done.load(Ordering::Acquire) {
                 match listener.accept() {
@@ -306,13 +335,19 @@ impl NetworkTally {
             listener,
             seen,
             stop,
+            worker: std::sync::Mutex::new(Some(worker)),
         }
     }
 
-    /// Every connection opened so far. Call it after the child exits: it first accepts every
-    /// connection still waiting in the listen queue, so a connection the background thread has
-    /// not reached yet is counted too.
+    /// Every connection opened so far. Call it after the child exits. It stops the background
+    /// thread and joins it, so a connection that thread accepted is in the count, and then
+    /// accepts every connection still waiting in the listen queue. A later call drains the
+    /// queue again.
     fn requests(&self) -> usize {
+        self.stop.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.lock().unwrap().take() {
+            worker.join().unwrap();
+        }
         while self.listener.accept().is_ok() {
             self.seen.fetch_add(1, Ordering::AcqRel);
         }
@@ -1396,6 +1431,21 @@ fn cache_signed_style(sandbox: &Sandbox, key: &signed_fixture::Key) -> signed_fi
     p
 }
 
+/// The hash of the tree in the pack layer that the manifest of `published` names, worked out
+/// from the layer bytes and not from the store.
+fn locked_tree(published: &signed_fixture::Published) -> slopvac_plugins::extract::TreeHash {
+    let manifest: serde_json::Value = serde_json::from_slice(&published.manifest).unwrap();
+    let layer = manifest["layers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["mediaType"] == "application/vnd.slopvac.pack.layer.v1.tar+gzip")
+        .and_then(|l| l["digest"].as_str())
+        .unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    extract_plugin(&published.blobs[layer], scratch.path()).hash
+}
+
 /// Pin `key` for `acme` on [`SIGNED_REGISTRY`] through the binary.
 fn pin_through_the_binary(sandbox: &Sandbox, key: &signed_fixture::Key) {
     let file = sandbox.dir.path().join("acme.pub");
@@ -1431,7 +1481,7 @@ fn stderr_code(out: &assert_cmd::assert::Assert) -> String {
 fn a_key_pinned_with_plugins_pin_verifies_a_signed_sync() {
     let sandbox = Sandbox::new();
     let key = signed_fixture::Key::primary();
-    cache_signed_style(&sandbox, &key);
+    let published = cache_signed_style(&sandbox, &key);
     let before = sandbox
         .slopvac()
         .args(["--offline", "plugins", "sync"])
@@ -1452,19 +1502,19 @@ fn a_key_pinned_with_plugins_pin_verifies_a_signed_sync() {
         sandbox.dir.path().join("home/data/slopvac/trees").is_dir(),
         "sync installed the plugin"
     );
-    // The one installed tree holds the files that the signed artifact carries, byte for byte.
-    let trees: Vec<_> = fs::read_dir(plugin_store(&sandbox).join("trees"))
+    // The one installed tree is the tree of the pack layer that the locked manifest names, and
+    // it holds the files that the signed artifact carries, byte for byte. Trees are named
+    // relative to the store, so a failure shows no temporary path.
+    let trees_dir = plugin_store(&sandbox).join("trees");
+    let expected = format!("tree-{}", locked_tree(&published).hex());
+    let trees: Vec<String> = fs::read_dir(&trees_dir)
         .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("tree-"))
-        })
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("tree-"))
         .collect();
-    assert_eq!(trees.len(), 1, "{trees:?}");
+    assert_eq!(trees, [expected.clone()]);
     assert_eq!(
-        snapshot(&trees[0]),
+        snapshot(&trees_dir.join(&expected)),
         std::collections::BTreeMap::from([
             (
                 "pack.toml".to_owned(),
@@ -1489,11 +1539,35 @@ fn pin_text_through_the_binary(sandbox: &Sandbox, b64: &str, fingerprint: &str, 
         .success();
 }
 
-/// Two registries pin keys that share one minisign key id, and the key on the other registry
-/// is pinned first. `plugins trust` of a signed code plugin from [`SIGNED_REGISTRY`] records,
-/// in the trust store itself, the fingerprint of the key that its own registry pins.
-#[test]
-fn trust_records_the_fingerprint_of_the_key_pinned_on_the_plugins_own_registry() {
+/// Pin the key `b64` with fingerprint `fingerprint` for `namespace` on `registry` through the
+/// binary.
+fn pin_text_in(sandbox: &Sandbox, namespace: &str, b64: &str, fingerprint: &str, registry: &str) {
+    let file = sandbox
+        .dir
+        .path()
+        .join(format!("{namespace}-{registry}.pub"));
+    fs::write(&file, format!("untrusted comment: test key\n{b64}\n")).unwrap();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "pin", namespace, fingerprint, "--key"])
+        .arg(&file)
+        .args(["--registry", registry])
+        .assert()
+        .success();
+}
+
+/// Two pairs pin keys that share one minisign key id, and the key of the other pair is pinned
+/// first: on another registry, or on the same registry in a namespace that sorts before
+/// `acme`, so a lookup by registry alone would find it first. `plugins trust` of a signed code
+/// plugin from [`SIGNED_REGISTRY`] records, in the trust store itself, the fingerprint of the
+/// key that its own registry and namespace pin.
+#[rstest::rstest]
+#[case::another_registry("ghcr.io", "acme")]
+#[case::another_namespace_on_the_same_registry(SIGNED_REGISTRY, "able")]
+fn trust_records_the_fingerprint_of_the_key_pinned_on_the_plugins_own_registry(
+    #[case] twin_registry: &str,
+    #[case] twin_namespace: &str,
+) {
     let sandbox = Sandbox::new();
     let key = signed_fixture::Key::primary();
     let scoped = key.public();
@@ -1508,7 +1582,13 @@ fn trust_records_the_fingerprint_of_the_key_pinned_on_the_plugins_own_registry()
     let twin_pk = slopvac_plugins::sign::PublicKey::from_base64(&twin).unwrap();
     assert_eq!(twin_pk.key_id(), scoped.key_id());
     assert_ne!(twin_pk.fingerprint(), scoped.fingerprint());
-    pin_text_through_the_binary(&sandbox, &twin, &twin_pk.fingerprint(), "ghcr.io");
+    pin_text_in(
+        &sandbox,
+        twin_namespace,
+        &twin,
+        &twin_pk.fingerprint(),
+        twin_registry,
+    );
     pin_text_through_the_binary(
         &sandbox,
         &scoped.to_base64(),

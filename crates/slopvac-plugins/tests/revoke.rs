@@ -33,7 +33,8 @@ use slopvac_plugins::revoke::{
     RevocationNotice, Revocations, Revoked,
 };
 use slopvac_plugins::sign::{
-    MEDIA_MINISIG, PinScope, PublicKey, RotationProof, SignError, plugins_key, verify_rotation,
+    MEDIA_MINISIG, PinScope, PublicKey, RotationCause, RotationProof, SignError, plugins_key,
+    verify_rotation,
 };
 use slopvac_plugins::trust::{
     FileCause, NamedFile, RotationFiles, TrustError, TrustGate, TrustState, TrustStore,
@@ -1581,51 +1582,244 @@ fn k20_a_rotation_needs_a_cached_list_that_revokes_neither_key(
     assert_eq!(r.pinned_id(), OLD_KEY_ID);
 }
 
-/// Whether another holder has the trust store lock now. A lock file that cannot be opened or
-/// tried reads as not locked, so the caller's deadline reports the failure.
-fn trust_store_locked(state: &Path) -> bool {
+/// Whether another holder has the lock file `name` in `state` now: a second open of the file
+/// cannot take the lock. A lock file that does not exist is not held.
+fn held_by_another(state: &Path, name: &str) -> bool {
     fs::OpenOptions::new()
         .write(true)
-        .open(state.join("trust.lock"))
+        .open(state.join(name))
         .is_ok_and(|f| matches!(f.try_lock(), Err(fs::TryLockError::WouldBlock)))
 }
 
-/// A sync that caches a list revoking the old key while a rotation waits must stop that
-/// rotation: the rotation reads the list under the trust store lock and the cache lock, so it
-/// cannot install the new key against an older list.
-///
-/// The test holds the cache lock, as a refresh does, and starts the rotation. It waits until
-/// the rotation has touched the revocation source and then either finished or taken the trust
-/// store lock. Only then does it cache the revoking list and release the cache lock. A
-/// rotation that read the cache before it took the locks has already read the old list.
+/// Which locks another holder had at each read of a rotation.
+#[derive(Debug, PartialEq, Eq)]
+struct LocksAtReads {
+    /// The trust store lock, at the read of the revocation list.
+    trust_at_list: bool,
+    /// The revocation cache lock, at the read of the revocation list.
+    cache_at_list: bool,
+    /// The revocation cache lock, at the read of the store that the pin write starts with.
+    cache_at_store: bool,
+}
+
+/// Rotate `r` from its files while the cached list (revoking `revoked`) and the store are
+/// FIFOs. A read of a FIFO blocks until the test opens the other end, so each read is a
+/// rendezvous: there the test records which locks another holder has, then hands over the
+/// bytes. Nothing waits on a clock. The store is a regular file again afterwards, with its
+/// bytes before the rotation when the rotation wrote nothing.
+fn rotate_through_fifos(
+    r: &Rotation,
+    revoked: &[&str],
+) -> (
+    Result<slopvac_plugins::trust::Rotated, TrustError>,
+    LocksAtReads,
+) {
+    let revocations = r.cache(revoked);
+    let (list_path, store_path) = (revocations.cache_file(), r.path("trust.json"));
+    let (list, store) = (fs::read(&list_path).unwrap(), fs::read(&store_path).unwrap());
+    for path in [&list_path, &store_path] {
+        fs::remove_file(path).unwrap();
+        let made = std::process::Command::new("mkfifo")
+            .arg(path)
+            .status()
+            .unwrap();
+        assert!(made.success(), "mkfifo");
+    }
+    let state = r.state.path();
+    let (result, seen) = std::thread::scope(|scope| {
+        let rotation = scope.spawn(|| r.rotate(&new_fp(), &revocations));
+        // Each open of the write end returns once the rotation has opened the read end. Only
+        // facts are recorded here: a failed check inside the scope would leave the rotation
+        // blocked on the next FIFO.
+        let mut writer = fs::OpenOptions::new().write(true).open(&list_path).unwrap();
+        let trust_at_list = held_by_another(state, "trust.lock");
+        let cache_at_list = held_by_another(state, "revocations.lock");
+        writer.write_all(&list).unwrap();
+        drop(writer);
+        let mut writer = fs::OpenOptions::new().write(true).open(&store_path).unwrap();
+        let cache_at_store = held_by_another(state, "revocations.lock");
+        writer.write_all(&store).unwrap();
+        drop(writer);
+        let seen = LocksAtReads {
+            trust_at_list,
+            cache_at_list,
+            cache_at_store,
+        };
+        (rotation.join().unwrap(), seen)
+    });
+    {
+        use std::os::unix::fs::FileTypeExt;
+        if fs::symlink_metadata(&store_path)
+            .unwrap()
+            .file_type()
+            .is_fifo()
+        {
+            fs::remove_file(&store_path).unwrap();
+            fs::write(&store_path, &store).unwrap();
+        }
+    }
+    (result, seen)
+}
+
+/// A rotation reads the revocation list while it holds the trust store lock and the cache
+/// lock, and still holds the cache lock when it reads the store for the pin write, so a sync
+/// cannot cache a list between the check and the write. The list it reads revokes the old
+/// key, so the rotation is refused and the pin kept.
 #[test]
 fn k20_a_list_cached_while_the_rotation_waits_for_the_lock_refuses_it() {
     let r = Rotation::new(&key(OLD_PUB));
-    r.cache(&[]);
-    let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let watched = r
-        .revocations()
-        .with_access_counter_for_tests(std::sync::Arc::clone(&counter));
-    let held = r.revocations().lock().unwrap();
-    let deadline = std::time::Instant::now() + Duration::from_secs(60);
-    let result = std::thread::scope(|scope| {
-        let rotation = scope.spawn(|| r.rotate(&new_fp(), &watched));
-        while counter.load(std::sync::atomic::Ordering::SeqCst) == 0
-            || !(rotation.is_finished() || trust_store_locked(r.state.path()))
-        {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the rotation never ran"
-            );
-            std::thread::sleep(Duration::from_millis(1));
+    let (result, seen) = rotate_through_fifos(&r, &[OLD_KEY_ID]);
+    assert_eq!(
+        seen,
+        LocksAtReads {
+            trust_at_list: true,
+            cache_at_list: true,
+            cache_at_store: true,
         }
-        r.cache(&[OLD_KEY_ID]);
-        drop(held);
-        rotation.join().unwrap()
-    });
+    );
     let err = result.unwrap_err();
     assert_eq!(err.code(), Some("rotation-key-revoked"), "{err:?}");
     assert_eq!(r.pinned_id(), OLD_KEY_ID);
+}
+
+/// The same locks hold on a rotation that succeeds: the list is read under both locks, and the
+/// cache lock is still held when the store is read for the write that replaces the pin.
+#[test]
+fn k20_a_rotation_holds_the_cache_lock_from_the_list_read_to_the_pin_write() {
+    let r = Rotation::new(&key(OLD_PUB));
+    let (result, seen) = rotate_through_fifos(&r, &[]);
+    assert_eq!(
+        seen,
+        LocksAtReads {
+            trust_at_list: true,
+            cache_at_list: true,
+            cache_at_store: true,
+        }
+    );
+    assert_eq!(result.unwrap().pin.fingerprint, new_fp());
+    assert_eq!(r.pinned_id(), NEW_KEY_ID);
+}
+
+/// A statement of another version or type is invalid as soon as it is read, so a machine that
+/// never fetched a revocation list still gets `rotation-invalid` for it.
+#[rstest::rstest]
+#[case::version_2(rotation_with("\"schema_version\":1", "\"schema_version\":2"))]
+#[case::another_type(rotation_with("\"type\":\"rotation\"", "\"type\":\"revocations\""))]
+fn a_statement_of_another_version_or_type_is_invalid_before_the_list_is_read(
+    #[case] statement: Vec<u8>,
+) {
+    let r = Rotation::new(&key(OLD_PUB));
+    r.files(
+        &statement,
+        ROTATION_OLD_SIG.as_bytes(),
+        ROTATION_NEW_SIG.as_bytes(),
+    );
+    let err = r.rotate(&new_fp(), &r.revocations()).unwrap_err();
+    assert_eq!(err.code(), Some("rotation-invalid"), "{err:?}");
+    assert_eq!(
+        err.to_string(),
+        "rotation refused: the signed statement is invalid: not a version 1 rotation statement"
+    );
+    assert_eq!(r.pinned_id(), OLD_KEY_ID);
+}
+
+/// Write a store that pins the pair `ghcr.io`/`acme` twice, as `ghcr.io` with the old key and
+/// as `ghcr.io:443` with the new key. Both spellings name one pair. Returns the bytes.
+fn store_with_two_spellings_of_one_pair(r: &Rotation) -> Vec<u8> {
+    let pin = |registry: &str, k: &PublicKey| {
+        serde_json::json!({
+            "registry": registry,
+            "namespace": "acme",
+            "fingerprint": k.fingerprint(),
+            "key": k.to_base64(),
+            "pinned_at": FETCHED,
+        })
+    };
+    let doc = serde_json::json!({
+        "schema_version": 2,
+        "records": [],
+        "pins": [pin("ghcr.io", &key(OLD_PUB)), pin("ghcr.io:443", &key(NEW_PUB))],
+    });
+    let bytes = serde_json::to_vec_pretty(&doc).unwrap();
+    fs::write(r.path("trust.json"), &bytes).unwrap();
+    bytes
+}
+
+/// Two pins for one pair would let two keys sign for it. The store is damaged, so verification,
+/// a new pin and a rotation are each refused before anything is checked or changed, and the
+/// file is kept as it is.
+#[rstest::rstest]
+#[case::verify("verify")]
+#[case::pin("pin")]
+#[case::rotate("rotate")]
+fn a_store_that_pins_one_pair_under_two_spellings_is_damaged(#[case] operation: &str) {
+    let r = Rotation::new(&key(OLD_PUB));
+    let revocations = r.cache(&[]);
+    let before = store_with_two_spellings_of_one_pair(&r);
+    let err = match operation {
+        "verify" => r.store().pinned_map().map(drop).unwrap_err(),
+        "pin" => r
+            .store()
+            .pin_key(&acme(), &key(NEW_PUB), FETCHED)
+            .map(drop)
+            .unwrap_err(),
+        _ => r.rotate(&new_fp(), &revocations).map(drop).unwrap_err(),
+    };
+    assert!(
+        matches!(
+            &err,
+            TrustError::Corrupt { why, .. }
+                if why == "two key pins name the same registry host and namespace"
+        ),
+        "{err:?}"
+    );
+    assert_eq!(fs::read(r.path("trust.json")).unwrap(), before);
+}
+
+/// `rotate_key`, given the proof itself, refuses a statement that does not parse as a rotation
+/// with the typed cause: its `source()` is the `RotationCause`, and no text in its chain quotes
+/// the statement.
+#[test]
+fn rotate_key_refuses_a_statement_that_does_not_parse_with_the_typed_cause() {
+    let (a, b) = (Root::new(), Root::new());
+    let (_state, store) = pinned_store(&a);
+    let doc = rotation_doc(
+        &a.public(),
+        &b.public(),
+        "2026-11-10T00:00:00Z",
+        "rotation",
+        1,
+    );
+    let statement = String::from_utf8(doc)
+        .unwrap()
+        .replacen("{\"namespace\"", "{\"LEAKME\":1,\"namespace\"", 1)
+        .into_bytes();
+    let err = rotate_with(&store, &a, &b, &statement, &RevocationList::default()).unwrap_err();
+    assert_eq!(err.code(), Some("rotation-invalid"), "{err:?}");
+    assert_eq!(
+        err.to_string(),
+        "rotation refused: the signed statement is invalid: not a version 1 rotation statement"
+    );
+    assert!(
+        matches!(
+            err,
+            TrustError::RotationStatement {
+                cause: RotationCause::NotRotation
+            }
+        ),
+        "{err:?}"
+    );
+    let source = std::error::Error::source(&err).expect("the refusal keeps its cause");
+    assert_eq!(
+        source.downcast_ref::<RotationCause>(),
+        Some(&RotationCause::NotRotation),
+        "{source:?}"
+    );
+    for shown in chain_texts(&err) {
+        assert!(!shown.contains("LEAKME"), "{shown}");
+    }
+    assert!(!format!("{err:?}").contains("LEAKME"), "{err:?}");
+    assert_eq!(pinned_ids(&store), vec![a.public().key_id()]);
 }
 
 #[test]

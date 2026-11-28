@@ -421,6 +421,62 @@ mod tests {
         );
     }
 
+    /// A signed entry whose OCI source does not parse names no registry and namespace, so no
+    /// pinned key can be selected for it. Sync parses the same source before it installs
+    /// anything, so the loader refuses the entry as one that sync did not install, and never
+    /// loads it with no fingerprint, even though the store holds the tree that its digest names.
+    #[test]
+    fn a_signed_entry_whose_oci_source_does_not_parse_is_refused() {
+        let mut world = World::new();
+        let pk = minisign::KeyPair::generate_unencrypted_keypair()
+            .unwrap()
+            .pk;
+        let key = PublicKey::from_base64(&pk.to_base64()).unwrap();
+        world.policy.pinned = std::collections::BTreeMap::from([(
+            PinScope::new("registry.example", "acme"),
+            vec![key.clone()],
+        )]);
+        let archive = plugin_archive(PLUGIN_TOML);
+        let layer = Digest::of(&archive);
+        let manifest = format!(
+            "{{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\
+             \"config\":{{\"mediaType\":\"application/vnd.oci.empty.v1+json\",\"digest\":\"{}\",\"size\":2}},\
+             \"layers\":[{{\"mediaType\":\"application/vnd.slopvac.pack.layer.v1.tar+gzip\",\"digest\":\"{layer}\",\"size\":{}}}]}}",
+            Digest::of(b"{}"),
+            archive.len()
+        );
+        let manifest_digest = Digest::of(manifest.as_bytes());
+        let blobs = world.store().join("blobs");
+        fs::create_dir_all(&blobs).unwrap();
+        fs::write(blobs.join(layer.hex()), &archive).unwrap();
+        fs::write(blobs.join(manifest_digest.hex()), &manifest).unwrap();
+        let tree = extract(&archive, &world.dir.path().join("hash")).hash;
+        world.install_as(&archive, &tree);
+        // No tag and no digest: the lock reader keeps the text, and a reference needs a target.
+        fs::write(
+            world.lock_path(),
+            format!(
+                "schema_version = 3\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
+                 slopvac_api = 1\nsource = \"oci://registry.example/acme/fmt\"\n\
+                 digest = \"{manifest_digest}\"\n[plugins.signature]\nkey_id = \"{}\"\n\
+                 not_before = \"2026-11-01T00:00:00Z\"\n",
+                key.key_id()
+            ),
+        )
+        .unwrap();
+
+        let refusal = world.loader().try_load(&world.fmt()).unwrap_err();
+
+        assert!(
+            matches!(
+                &refusal,
+                LoadRefusal::Synced(SyncedError::NotInstalled { id }) if id == "fmt"
+            ),
+            "{refusal:?}"
+        );
+        assert_eq!(refusal.code(), "plugin-not-installed");
+    }
+
     /// The hash comes before any parse, so a manifest broken after sync is tampering and not a
     /// manifest error.
     #[test]

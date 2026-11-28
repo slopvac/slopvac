@@ -1227,6 +1227,11 @@ fn k12_a_key_file_that_cannot_be_used_is_refused_without_quoting_it(
     assert_eq!(err.code(), Some("key-invalid"), "{err:?}");
     let text = err.to_string();
     assert!(text.contains(SHOWN), "{text}");
+    let why = match cause {
+        FileCause::NoKey => "it holds no minisign public key",
+        _ => "the file cannot be read",
+    };
+    assert_eq!(text, format!("the key file {SHOWN} cannot be used: {why}"));
     for quoted in ["LEAKME", "TEVBS01F", "####"] {
         assert!(!text.contains(quoted), "{text}");
     }
@@ -1253,6 +1258,54 @@ fn k12_a_key_file_that_cannot_be_used_is_refused_without_quoting_it(
         }
     }
     assert!(!s.dir("state/trust.json").exists(), "nothing was written");
+}
+
+/// A store the reader refuses names itself as `<external>/trust.json` and gives a fixed reason.
+/// Neither its text nor any text in its `source()` chain holds the state directory or bytes of
+/// the file, which carry the marker `LEAKME`.
+#[rstest::rstest]
+#[case::version_1_with_pins(
+    json!({"schema_version": 1, "records": [], "pins": [
+        {"namespace": "acme", "fingerprint": "LEAKME", "key": "LEAKME", "pinned_at": NOW}
+    ]}).to_string(),
+    "unsupported schema_version"
+)]
+#[case::unknown_field(
+    json!({"schema_version": 2, "records": [], "pins": [], "LEAKME": 1}).to_string(),
+    "it does not hold a valid trust store"
+)]
+#[case::not_json("{\"LEAKME\"".to_owned(), "it does not hold a valid trust store")]
+#[case::pin_key_not_a_key(
+    json!({"schema_version": 2, "records": [], "pins": [
+        {"registry": "ghcr.io", "namespace": "acme", "fingerprint": "x", "key": "LEAKME",
+         "pinned_at": NOW}
+    ]}).to_string(),
+    "a key pin holds a key that is not a minisign public key"
+)]
+fn a_damaged_store_names_no_absolute_path_and_quotes_no_file_bytes(
+    #[case] raw: String,
+    #[case] why: &str,
+) {
+    let s = Scratch::new("damaged-redacted");
+    let state = s.dir("state");
+    fs::create_dir_all(&state).unwrap();
+    fs::write(state.join("trust.json"), &raw).unwrap();
+    let err = TrustStore::open(state.clone()).pinned_map().unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        format!("the trust store <external>/trust.json is damaged: {why}")
+    );
+    let absolute = s.0.to_string_lossy().into_owned();
+    let mut next: Option<&dyn std::error::Error> = Some(&err);
+    while let Some(e) = next {
+        let text = e.to_string();
+        assert!(
+            !text.contains(&absolute) && !text.contains("LEAKME"),
+            "{text}"
+        );
+        next = e.source();
+    }
+    assert_eq!(fs::read_to_string(state.join("trust.json")).unwrap(), raw);
 }
 
 #[rstest::rstest]
