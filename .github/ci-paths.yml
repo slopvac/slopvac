@@ -28,6 +28,10 @@ code:
   - 'rust-toolchain.toml'
   # .cargo/config.toml sets how the binary links PCRE2.
   - '.cargo/**'
+  # build.rs of slopvac-report reads docs/site.toml, and the tests build with the pinned
+  # toolchain that this script installs.
+  - 'docs/site.toml'
+  - 'scripts/ci/install-rust-toolchain.sh'
   - 'scripts/ci/gate_prime_prose.sh'
   - 'scripts/**/*.py'
   - 'scripts/install_vale.py'
@@ -160,6 +164,7 @@ action:
   # script and the fixture config (.github/action-fixtures/** is above).
   - 'schemas/**'
   - 'docs/contract/compat/**'
+  - 'docs/site.toml'
   - 'scripts/ci/gate_prime_prose.sh'
 
 # The linter supports these prose extensions. Keep this list aligned with

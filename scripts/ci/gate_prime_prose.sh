@@ -3,8 +3,10 @@
 #
 # Usage: gate_prime_prose.sh <slopvac-binary> <v3-config> <output-dir>
 #
-# The output directory must not exist or must be empty; the script refuses anything else
-# with exit 2 and never deletes files it did not create.
+# The output directory must be a missing path or an empty directory that you can list and
+# write. The script refuses anything else with exit 2: a symlink (even a dangling one), a
+# file, a directory it cannot inspect and a non-empty directory. It never deletes a file, and
+# `noclobber` makes a write fail rather than truncate a file that appears during the run.
 #
 # The script renders every conditional branch of the two topics, then lints the files with
 # the 3.x binary. Exit 0 passes, exit 1 means a gate failed and exit 2 means the run was
@@ -20,17 +22,34 @@
 #                 level != minimal (verdict block)    review-auto-subagent-minimal and the rest
 #                 review_approval auto                not reachable: `prime` never sets it
 set -euo pipefail
+# Never overwrite a file that exists: a write into the output directory fails instead.
+set -o noclobber
 
+refuse() {
+  echo "gate_prime_prose.sh: $1" >&2
+  exit 2
+}
+
+[ "$#" -eq 3 ] || refuse "usage: gate_prime_prose.sh <slopvac-binary> <v3-config> <output-dir>"
 bin=$(realpath "$1")
 config=$(realpath "$2")
 out=$3
 
-# Never empty a directory the caller names: it can hold unrelated files.
-if [ -e "$out" ] && { [ ! -d "$out" ] || [ -n "$(ls -A "$out")" ]; }; then
-  echo "gate_prime_prose.sh: $out exists and is not an empty directory" >&2
-  exit 2
+# Use only a missing path or an empty directory that this user can list, search and write.
+# Fail closed: a path the script cannot inspect is refused. A symlink is refused even when
+# it dangles or points at an empty directory, because the script would write through it.
+if [ -L "$out" ]; then
+  refuse "$out is a symlink"
+elif [ -e "$out" ]; then
+  [ -d "$out" ] || refuse "$out exists and is not a directory"
+  [ -r "$out" ] && [ -w "$out" ] && [ -x "$out" ] || refuse "$out is not readable, writable and searchable"
+  entries=$(ls -A -- "$out") || refuse "cannot list $out"
+  [ -z "$entries" ] || refuse "$out is not empty"
+else
+  # `mkdir` without -p fails if the path appears meanwhile.
+  mkdir -p -- "$(dirname -- "$out")"
+  mkdir -- "$out" || refuse "cannot create $out"
 fi
-mkdir -p "$out"
 out=$(realpath "$out")
 
 # Render `prime <topic> [flags]` to <name>.md with [guidance] values from the remaining lines.
@@ -59,6 +78,6 @@ for depth in self subagent adversary; do
 done
 render review-auto-subagent-minimal review "--level minimal" 'review_depth = "subagent"'
 
-cp "$config" "$out/slopvac.toml"
+cat "$config" > "$out/slopvac.toml"
 cd "$out"
 "$bin" lint ./*.md

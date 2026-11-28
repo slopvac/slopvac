@@ -59,7 +59,7 @@ CONDITIONS = {
 
 
 def conditions_of(text: str) -> set[str]:
-    found = re.findall(r"{%-?\s*(?:if|elif)\s+(.*?)\s*-?%}", text)
+    found = re.findall(r"{%-?\s*(?:if|elif)\s+(.*?)\s*-?%}", text, re.DOTALL)
     return {" ".join(cond.split()) for cond in found}
 
 
