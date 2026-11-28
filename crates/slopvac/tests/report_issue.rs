@@ -1507,6 +1507,110 @@ fn the_repository_cannot_be_changed_by_flags_or_config() {
     assert!(!recorded.contains("other/repo"));
 }
 
+/// A fake `gh` on `PATH` that records every call, `auth status` included, one line of
+/// arguments each, and answers as a logged-in `gh` does. No call means no network action.
+#[cfg(unix)]
+fn counting_gh(dir: &std::path::Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let log = dir.join("calls.log");
+    let script = format!(
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nif [ \"$1\" = auth ]; then exit 0; fi\necho https://github.com/slopvac/slopvac/issues/5\n",
+        log.display()
+    );
+    let bin = dir.join("gh");
+    std::fs::write(&bin, script).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    log
+}
+
+/// A project whose config sets `[network] offline = true`, carries a private value, and
+/// extends `base.toml`, which `base` writes when it is `Some`.
+#[cfg(unix)]
+fn offline_project(base: Option<&str>, offline: bool) -> tempfile::TempDir {
+    let work = tempfile::tempdir().unwrap();
+    std::fs::write(
+        work.path().join("slopvac.toml"),
+        format!(
+            "schema_version = 3\nextends = [\"base.toml\"]\n# private-config-sentinel\n\n[network]\noffline = {offline}\n"
+        ),
+    )
+    .unwrap();
+    if let Some(text) = base {
+        std::fs::write(work.path().join("base.toml"), text).unwrap();
+    }
+    work
+}
+
+/// `report --gh --yes` in `work` with the fake `gh` of `bin_dir` on `PATH`.
+#[cfg(unix)]
+fn report_gh_yes(work: &Path, bin_dir: &Path) -> std::process::Output {
+    let body = work.join("b.md");
+    let args = bug(&["--body-file", body.to_str().unwrap(), "--gh", "--yes"]);
+    slopvac()
+        .current_dir(work)
+        .env("PATH", bin_dir)
+        .arg("report")
+        .args(&args)
+        .output()
+        .unwrap()
+}
+
+/// While the config does not resolve, its offline setting is unknown, so `report` takes no
+/// network action. The extended file is missing, which `lint` reports as `config-io`
+/// (policies.md, the read failure of a config file).
+#[cfg(unix)]
+#[test]
+fn the_binary_gh_yes_refuses_and_runs_no_gh_while_the_config_does_not_resolve() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_gh(bin_dir.path());
+    let work = offline_project(None, true);
+    let out = report_gh_yes(work.path(), bin_dir.path());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(stderr.starts_with("error[config-io]"), "{stderr}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!stderr.contains("private-config-sentinel"), "{stderr}");
+    assert!(!stdout.contains("private-config-sentinel"), "{stdout}");
+    assert!(!log.exists(), "gh ran");
+}
+
+/// The control of the test above: with the extended file present and offline off, the same
+/// project reaches `gh issue create`, so the fake `gh` sees a call.
+#[cfg(unix)]
+#[test]
+fn the_binary_gh_yes_runs_gh_once_the_extended_config_resolves() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_gh(bin_dir.path());
+    let work = offline_project(Some("schema_version = 3\n"), false);
+    let out = report_gh_yes(work.path(), bin_dir.path());
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let calls = std::fs::read_to_string(log).unwrap();
+    assert!(
+        calls.lines().any(|call| call.starts_with("issue create ")),
+        "{calls}"
+    );
+}
+
+/// `report` reads `[network] offline` from a config that resolves, through its `extends`
+/// chain too: a resolved offline config refuses the network step, and runs no `gh`.
+#[cfg(unix)]
+#[test]
+fn the_binary_gh_yes_honours_offline_from_a_config_that_resolves() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_gh(bin_dir.path());
+    let work = offline_project(Some("schema_version = 3\n"), true);
+    let out = report_gh_yes(work.path(), bin_dir.path());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(stderr.starts_with("error[offline-network-needed]"), "{stderr}");
+    assert!(!log.exists(), "gh ran");
+}
+
 #[test]
 fn an_unknown_category_is_a_usage_error() {
     slopvac()
