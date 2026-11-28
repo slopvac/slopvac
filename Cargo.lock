@@ -2846,6 +2846,7 @@ dependencies = [
 name = "slopvac-sanitize"
 version = "0.0.0"
 dependencies = [
+ "rstest",
  "serde_json",
 ]
 

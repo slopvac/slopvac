@@ -569,6 +569,26 @@ mod tests {
         }
     }
 
+    #[rstest::rstest]
+    #[case::ampersand("a&b", "a&amp;b")]
+    #[case::less_than("a<b", "a&lt;b")]
+    #[case::greater_than("a>b", "a&gt;b")]
+    #[case::quotes_stay(r#"say "hi" and 'bye'"#, r#"say "hi" and 'bye'"#)]
+    #[case::non_ascii_stays(
+        "caf\u{e9} \u{2014} \u{fc} \u{65e5}\u{672c}",
+        "caf\u{e9} \u{2014} \u{fc} \u{65e5}\u{672c}"
+    )]
+    #[case::mixed(
+        r#"<a href="x">Tom & 'Jerry'</a>"#,
+        r#"&lt;a href="x"&gt;Tom &amp; 'Jerry'&lt;/a&gt;"#
+    )]
+    fn html_text_writes_only_markup_characters_as_references(
+        #[case] input: &str,
+        #[case] want: &str,
+    ) {
+        assert_eq!(html_text(input), want);
+    }
+
     #[test]
     fn structured_keeps_json_markup_for_the_serialiser() {
         assert_eq!(
