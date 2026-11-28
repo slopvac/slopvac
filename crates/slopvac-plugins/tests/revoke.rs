@@ -1448,10 +1448,7 @@ fn chain_texts(err: &dyn std::error::Error) -> Vec<String> {
     "rotation refused: the signed statement is invalid: not a version 1 rotation statement"
 )]
 #[case::malformed_new_key(
-    rotation_with(
-        "RWQgs2tDrY1ip2l9SfL958lf2hmUP8UvS/k8OgururPoo9yB2P0Sidyx",
-        "LEAKME"
-    ),
+    rotation_with("RWQgs2tDrY1ip2l9SfL958lf2hmUP8UvS/k8OgururPoo9yB2P0Sidyx", "LEAKME"),
     "rotation refused: the signed statement is invalid: newKey is not a minisign public key"
 )]
 fn a_statement_that_is_not_a_rotation_is_refused_with_a_fixed_cause(

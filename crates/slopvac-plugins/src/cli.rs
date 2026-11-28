@@ -1073,7 +1073,9 @@ fn run_untrust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8,
                 },
             )
         })?;
-        store.forget(&digest).map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
+        store
+            .forget(&digest)
+            .map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
     }
     say(out, &CliText::Untrusted { id: line(id) })?;
     Ok(0)
