@@ -19,6 +19,7 @@ use crate::lock::{
     read_project_lock,
 };
 use crate::messages::cli::{CliText, Redacted, Reported, RunError};
+use crate::messages::trust::TrustPhrase;
 use crate::oci::Digest;
 use crate::pyenv::{EnvStore, PythonRuntime};
 use crate::revoke::{RevocationError, RevocationNotice, Revocations};
@@ -1064,12 +1065,13 @@ fn run_untrust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8,
         return Err(RunError::NotTrusted { id: line(id) });
     }
     for hash in hashes {
-        let digest = Digest::parse(&hash).map_err(|e| {
+        // The parser's text quotes the hash from the file, so the refusal keeps a fixed reason.
+        let digest = Digest::parse(&hash).map_err(|_| {
             store_failed(
                 &runner.dirs.project_root,
                 &TrustError::Corrupt {
                     path: runner.dirs.state_dir.join("trust.json"),
-                    why: e.to_string(),
+                    why: TrustPhrase::StoreRecordHash.as_static().into(),
                 },
             )
         })?;

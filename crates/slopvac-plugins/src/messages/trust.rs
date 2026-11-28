@@ -414,6 +414,10 @@ pub(crate) enum TrustPhrase {
     #[code("plugins-trust-phrase-store-pin-key")]
     #[text("a key pin holds a key that is not a minisign public key")]
     StorePinKey,
+    /// A trust record whose hash is not a content hash.
+    #[code("plugins-trust-phrase-store-record-hash")]
+    #[text("a trust record holds a hash that is not a content hash")]
+    StoreRecordHash,
     /// A key file that cannot be opened or read.
     #[code("plugins-trust-phrase-key-file-unreadable")]
     #[text("the file cannot be read")]
@@ -1843,6 +1847,10 @@ mod tests {
             (
                 TrustPhrase::StorePinKey,
                 "a key pin holds a key that is not a minisign public key",
+            ),
+            (
+                TrustPhrase::StoreRecordHash,
+                "a trust record holds a hash that is not a content hash",
             ),
             (TrustPhrase::KeyFileUnreadable, "the file cannot be read"),
             (TrustPhrase::KeyFileOverCap, "it holds more than 4 KiB"),

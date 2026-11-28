@@ -546,6 +546,7 @@ pub(crate) fn is_fixed_store_reason(why: &str) -> bool {
         TrustPhrase::StoreSchema,
         TrustPhrase::StorePinNoHost,
         TrustPhrase::StorePinDuplicate,
+        TrustPhrase::StoreRecordHash,
     ]
     .iter()
     .any(|p| p.as_static() == why)

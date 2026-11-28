@@ -1499,6 +1499,7 @@ plugins-trust-phrase-store-over-cap text
 plugins-trust-phrase-store-pin-duplicate text
 plugins-trust-phrase-store-pin-key text
 plugins-trust-phrase-store-pin-no-host text
+plugins-trust-phrase-store-record-hash text
 plugins-trust-phrase-store-schema text
 plugins-trust-phrase-sync-key text
 plugins-trust-phrase-sync-store text
