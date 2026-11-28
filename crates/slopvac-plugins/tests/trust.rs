@@ -1386,6 +1386,34 @@ mod unix_only {
         }
     }
 
+    /// A tree whose parent loses search permission after the hash pass has no location: the
+    /// `canonicalize` failure is refused by its kind alone, with no path in any rendering.
+    #[test]
+    fn a_tree_that_cannot_be_canonicalised_is_refused_without_a_path() {
+        let s = Scratch::new("u-canon");
+        let parent = s.dir("locked");
+        let vp = install_in(&parent, "1.0.0", "");
+        let spec = spec_for(&vp, decl());
+        let g = gate(&s, &vp);
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o000)).unwrap();
+        let err = g.state(&vp, &spec).unwrap_err();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            matches!(
+                err,
+                TrustError::TreeUnresolved(std::io::ErrorKind::PermissionDenied)
+            ),
+            "{err:?}"
+        );
+        let shown = format!("{}\n{err:?}", chain_text(&err));
+        assert!(!shown.contains(&s.0.display().to_string()), "{shown}");
+        assert!(!shown.contains("locked"), "{shown}");
+        assert_eq!(
+            err.to_string(),
+            "resolving the plugin tree: permission denied"
+        );
+    }
+
     /// A store path that is not UTF-8 gives the tree no location to hash. Spawn and trust
     /// both refuse it as a spawn failure, and nothing they report names the path.
     #[cfg(target_os = "linux")]

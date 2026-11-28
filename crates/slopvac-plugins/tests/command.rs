@@ -1326,6 +1326,67 @@ impl PluginLoader for FailingLoader {
     }
 }
 
+/// A loader whose tree loses search permission on its parent once it is loaded, so the trust
+/// gate cannot resolve the tree's location.
+#[cfg(unix)]
+struct UnresolvableTreeLoader {
+    inner: TreeLoader,
+    parent: PathBuf,
+}
+
+#[cfg(unix)]
+impl UnresolvableTreeLoader {
+    fn new(base: &Path) -> Self {
+        let parent = base.join("locked");
+        Self {
+            inner: TreeLoader::new(&parent, "fake"),
+            parent,
+        }
+    }
+
+    fn set_mode(&self, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&self.parent, fs::Permissions::from_mode(mode)).unwrap();
+    }
+}
+
+#[cfg(unix)]
+impl PluginLoader for &UnresolvableTreeLoader {
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        self.set_mode(0o755);
+        let loaded = self.inner.load(locked)?;
+        self.set_mode(0o000);
+        Ok(loaded)
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn trust_reports_a_tree_without_a_location_as_a_trust_input_failure() {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    let loader = UnresolvableTreeLoader::new(f.base.path());
+    let ran = f.run(&["trust", "fake"], false, |s| s.loader(&loader));
+    let status = f.run(&["status"], false, |s| s.loader(&loader));
+    loader.set_mode(0o755);
+    let err = ran.result.unwrap_err();
+    assert_eq!(err.code(), "plugins-trust-inputs-failed");
+    let shown = format!("{}\n{err:?}", names_in_chain(&err));
+    assert!(
+        !shown.contains(&f.base.path().display().to_string()),
+        "{shown}"
+    );
+    assert_eq!(
+        err.to_string(),
+        "resolving the plugin tree: permission denied"
+    );
+    assert_eq!(
+        status.out,
+        "fake 1.0.0 (code): not installed; run `slopvac plugins sync`; \
+         trust state unknown: resolving the plugin tree: permission denied\n"
+    );
+}
+
 #[test]
 fn loader_text_is_never_echoed_into_the_failure() {
     let f = Fixture::new();
