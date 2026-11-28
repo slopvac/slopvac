@@ -1616,7 +1616,10 @@ fn rotate_through_fifos(
 ) {
     let revocations = r.cache(revoked);
     let (list_path, store_path) = (revocations.cache_file(), r.path("trust.json"));
-    let (list, store) = (fs::read(&list_path).unwrap(), fs::read(&store_path).unwrap());
+    let (list, store) = (
+        fs::read(&list_path).unwrap(),
+        fs::read(&store_path).unwrap(),
+    );
     for path in [&list_path, &store_path] {
         fs::remove_file(path).unwrap();
         let made = std::process::Command::new("mkfifo")
@@ -1636,7 +1639,10 @@ fn rotate_through_fifos(
         let cache_at_list = held_by_another(state, "revocations.lock");
         writer.write_all(&list).unwrap();
         drop(writer);
-        let mut writer = fs::OpenOptions::new().write(true).open(&store_path).unwrap();
+        let mut writer = fs::OpenOptions::new()
+            .write(true)
+            .open(&store_path)
+            .unwrap();
         let cache_at_store = held_by_another(state, "revocations.lock");
         writer.write_all(&store).unwrap();
         drop(writer);

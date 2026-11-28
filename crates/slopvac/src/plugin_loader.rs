@@ -76,11 +76,12 @@ impl<'a> InstalledPlugins<'a> {
         let SourceKind::Oci(text) = locked.source.kind() else {
             return Ok(None);
         };
-        let reference = Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).map_err(
-            |_| SyncedError::NotInstalled {
-                id: locked.id.to_string(),
-            },
-        )?;
+        let reference =
+            Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).map_err(|_| {
+                SyncedError::NotInstalled {
+                    id: locked.id.to_string(),
+                }
+            })?;
         let namespace = reference.repository.split('/').next().unwrap_or_default();
         Ok(self
             .policy

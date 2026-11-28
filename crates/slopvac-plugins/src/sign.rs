@@ -813,16 +813,27 @@ pub struct RotationProof<'a> {
 /// [`MAX_ROTATION_BYTES`], of version 1 and type [`ROTATION_TYPE`], with a minisign `newKey`.
 /// The cause keeps no text of the statement.
 pub fn rotation_new_key(statement: &[u8]) -> Result<PublicKey, RotationCause> {
-    let st: RotationStatement =
-        parse_canonical(statement, MAX_ROTATION_BYTES).map_err(|e| match e {
-            SignError::StatementTooLarge => RotationCause::TooLarge,
-            SignError::NotCanonical(_) => RotationCause::NotCanonical,
-            _ => RotationCause::NotRotation,
-        })?;
+    let st = parse_rotation(statement)?;
     if st.schema_version != 1 || st.kind != ROTATION_TYPE {
         return Err(RotationCause::NotRotation);
     }
     PublicKey::from_base64(&st.new_key).map_err(|_| RotationCause::NewKeyForm)
+}
+
+/// The `newKey` of a statement that parses, with any failure kept as a [`RotationCause`], so the
+/// parser's text never reaches an error. The version and the type are left to
+/// [`verify_rotation`].
+pub(crate) fn rotation_statement_key(statement: &[u8]) -> Result<PublicKey, RotationCause> {
+    let st = parse_rotation(statement)?;
+    PublicKey::from_base64(&st.new_key).map_err(|_| RotationCause::NewKeyForm)
+}
+
+fn parse_rotation(statement: &[u8]) -> Result<RotationStatement, RotationCause> {
+    parse_canonical(statement, MAX_ROTATION_BYTES).map_err(|e| match e {
+        SignError::StatementTooLarge => RotationCause::TooLarge,
+        SignError::NotCanonical(_) => RotationCause::NotCanonical,
+        _ => RotationCause::NotRotation,
+    })
 }
 
 /// Verify a rotation for `namespace` against the key pinned for it.
