@@ -858,7 +858,7 @@ pub(crate) enum PyenvPhrase {
     /// The note that index claims are unverified.
     #[code("plugins-index-search-unverified")]
     #[text(
-        "unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`"
+        "unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins pin <namespace> <fingerprint> --key <file>`"
     )]
     SearchUnverified,
 }
