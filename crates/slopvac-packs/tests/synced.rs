@@ -820,6 +820,20 @@ fn a_code_plugin_trusted_at_its_tree_hash_loads_its_rules() {
 }
 
 #[test]
+fn trust_for_one_installation_does_not_cover_the_same_content_at_another_root() {
+    let mut first = World::new();
+    let trusted_root = first.install(&code_plugin(&["a"]));
+    let mut second = World::new();
+    let other_root = second.install(&code_plugin(&["a"]));
+    assert_ne!(trusted_root, other_root);
+    let record = Recorded(vec![("acme", tree_hash(&trusted_root).unwrap())]);
+
+    let err = second.load_trusting(&["acme"], &record).unwrap_err();
+
+    assert!(refused_for_trust(&err, Trust::Changed), "{err:?}");
+}
+
+#[test]
 fn a_data_plugin_loads_with_no_trust_recorded() {
     let mut w = World::new();
     w.install(&Spec::new("acme").rules(&["a"]));
