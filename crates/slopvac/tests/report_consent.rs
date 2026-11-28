@@ -350,3 +350,34 @@ fn the_ci_refusal_comes_before_the_project_policy_is_read() {
     );
     assert_eq!(fs::read_dir(state.path()).unwrap().count(), 0);
 }
+
+/// Puts a directory's mode back when it drops, so the temporary directory can be cleaned up.
+struct RestoreMode(PathBuf, u32);
+
+impl Drop for RestoreMode {
+    fn drop(&mut self) {
+        let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(self.1));
+    }
+}
+
+#[test]
+fn a_failed_write_leaves_the_existing_record_and_its_mode_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let bytes = br#"{"schema":1,"consent":"off","recorded":5,"unattended":[]}"#;
+    stage(dir.path(), bytes);
+    let state = dir.path().join("slopvac");
+    fs::write(state.join("reporting.json.lock"), b"").unwrap();
+    fs::set_permissions(record_path(dir.path()), fs::Permissions::from_mode(0o644)).unwrap();
+    // Searchable but not writable: the guard opens and the record reads, but no file can be staged.
+    fs::set_permissions(&state, fs::Permissions::from_mode(0o500)).unwrap();
+    let _restore = RestoreMode(state, 0o700);
+    let out = consent(dir.path(), "on");
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(stderr(&out).contains("error[report-state-failed]"));
+    assert_eq!(fs::read(record_path(dir.path())).unwrap(), bytes);
+    let mode = fs::metadata(record_path(dir.path()))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o644);
+}

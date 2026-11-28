@@ -67,6 +67,19 @@ fn builder_options_apply() {
 }
 
 #[test]
+fn a_forced_mode_replaces_the_wider_mode_of_an_existing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("f");
+    std::fs::write(&path, b"old").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let opts = WriteOptions::new().forced_mode(0o600);
+    write_atomic(&root(&dir), Path::new("f"), b"new", opts).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), b"new");
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+}
+
+#[test]
 fn write_errors_keep_the_path_out_of_their_text_and_reach_it_through_path() {
     let dir = tempfile::tempdir().unwrap();
     let rel = Path::new("secret-name/f");

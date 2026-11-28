@@ -69,6 +69,10 @@ pub struct WriteOptions {
     /// Permission bits for a file that does not exist yet. `None` keeps the owner-only `0o600`
     /// of the temporary file. An existing file keeps its own permissions either way.
     pub new_file_mode: Option<u32>,
+    /// Permission bits for the written file, whatever mode the file it replaces has. `None`
+    /// leaves the rule of `new_file_mode` and the existing file in place. The mode is set on
+    /// the staged file before the rename, so the file being replaced is never touched.
+    pub forced_mode: Option<u32>,
     /// Create missing parent directories first.
     pub create_parents: bool,
 }
@@ -79,6 +83,7 @@ impl WriteOptions {
     pub const fn new() -> Self {
         Self {
             new_file_mode: None,
+            forced_mode: None,
             create_parents: false,
         }
     }
@@ -87,6 +92,14 @@ impl WriteOptions {
     #[must_use]
     pub const fn new_file_mode(mut self, mode: u32) -> Self {
         self.new_file_mode = Some(mode);
+        self
+    }
+
+    /// Force the permission bits of the written file, even when the file it replaces has other
+    /// bits. The mode applies to the staged file only, before the rename.
+    #[must_use]
+    pub const fn forced_mode(mut self, mode: u32) -> Self {
+        self.forced_mode = Some(mode);
         self
     }
 
