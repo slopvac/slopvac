@@ -61,6 +61,38 @@ EXEMPT = re.compile(r"exempt (?P<kind>glob|test-module)")
 TOTAL = re.compile(r"^# total (?P<category>\S+) (?P<count>\d+)\s*$")
 
 
+# The cfg predicates that put an item under test. The rule exempts an item only when its
+# `#[cfg(...)]` predicate, read as boolean logic, is false whenever `test` is false: `test`,
+# `all(...)` with any argument that requires `test`, and `any(...)` whose every argument does.
+# `not(...)` never counts, and neither does `cfg_attr`. A regex cannot recurse, so this builds
+# the pattern to a fixed nesting (REQUIRE_DEPTH levels of all/any, ARGUMENT_DEPTH levels inside
+# an argument that is no `test`). A deeper predicate is not exempt, which is the safe side.
+REQUIRE_DEPTH = 2
+ARGUMENT_DEPTH = 2
+
+
+def _argument(depth: int) -> str:
+    if depth == 0:
+        return r"[^(),]+"
+    inner = _argument(depth - 1)
+    return rf"[^(),]+(?:\(\s*{inner}(?:,{inner})*\s*\))?"
+
+
+def _requires_test(depth: int) -> str:
+    if depth == 0:
+        return r"\s*test\s*"
+    inner = _requires_test(depth - 1)
+    other = _argument(ARGUMENT_DEPTH)
+    conj = rf"\s*all\(\s*(?:{other},)*{inner}(?:,{other})*\s*\)\s*"
+    disj = rf"\s*any\(\s*{inner}(?:,{inner})*\s*\)\s*"
+    return rf"(?:\s*test\s*|{conj}|{disj})"
+
+
+def cfg_test_regex() -> str:
+    """The regex the rule uses on an attribute to tell a test-only `#[cfg(...)]`."""
+    return rf"^#\[cfg\({_requires_test(REQUIRE_DEPTH)}\)\s*\]$"
+
+
 class Entry(NamedTuple):
     path: str
     category: str
@@ -185,20 +217,63 @@ def file_problems(rule: Rule, found: Counter[str]) -> list[str]:
 
 
 def declares_test_module(root: Path, path: str) -> bool:
-    """Whether the parent of ``path`` declares it as ``#[cfg(test)] mod name;``."""
+    """Whether the parent of ``path`` declares it as ``#[cfg(test)] mod name;``.
+
+    The parent is parsed with ast-grep, so a commented-out attribute does not count: the
+    declaration must be a `mod_item` with no body that follows a test-only `cfg` attribute,
+    with only attributes and comments between them.
+    """
     file = Path(path)
-    name = file.stem
-    folder = file.parent
-    parents = [folder.with_suffix(".rs"), folder / "mod.rs", folder / "lib.rs", folder / "main.rs"]
     if file.name in {"mod.rs", "lib.rs", "main.rs"}:
         return False
-    declaration = re.compile(
-        rf"#\[cfg\((all\()?([^()]*,\s*)?test\b[,)][^\n]*\n(\s*(#\[[^\n]*\]|//[^\n]*)\n)*"
-        rf"\s*(pub(\([^)]*\))? )?mod {re.escape(name)};"
-    )
+    folder = file.parent
+    parents = [folder.with_suffix(".rs"), folder / "mod.rs", folder / "lib.rs", folder / "main.rs"]
+    rule = {
+        "id": "test-module-declaration",
+        "language": "rust",
+        "rule": {
+            "kind": "mod_item",
+            "has": {
+                "field": "name",
+                "kind": "identifier",
+                "regex": f"^{re.escape(file.stem)}$",
+            },
+            "not": {"has": {"field": "body", "kind": "declaration_list"}},
+            "follows": {
+                "kind": "attribute_item",
+                "regex": cfg_test_regex(),
+                "stopBy": {
+                    "not": {
+                        "any": [
+                            {"kind": "attribute_item"},
+                            {"kind": "line_comment"},
+                            {"kind": "block_comment"},
+                        ]
+                    }
+                },
+            },
+        },
+    }
     for parent in parents:
-        candidate = root / parent
-        if candidate.is_file() and declaration.search(candidate.read_text()):
+        if not (root / parent).is_file():
+            continue
+        done = subprocess.run(
+            [
+                "ast-grep",
+                "scan",
+                "--inline-rules",
+                json.dumps(rule),
+                "--json=compact",
+                parent.as_posix(),
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if done.returncode not in (0, 1):
+            raise RuntimeError(f"ast-grep exited {done.returncode}: {done.stderr.strip()}")
+        if done.stdout.strip() and json.loads(done.stdout):
             return True
     return False
 
@@ -332,7 +407,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("root", nargs="?", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--base", help="compare the allow list with the rule file at this ref")
     parser.add_argument("--labels", help="JSON list of the pull request's label names")
+    parser.add_argument(
+        "--print-cfg-regex", action="store_true", help="print the cfg(test) regex of the rule"
+    )
     args = parser.parse_args(argv[1:])
+    if args.print_cfg_regex:
+        print(cfg_test_regex())
+        return 0
     try:
         errors = check(args.root, args.base, args.labels)
     except RuntimeError as error:

@@ -59,7 +59,46 @@ valid:
     #[allow(dead_code)]
     const X: &str = r#"{"a b":1}"#;
   - 'fn f(o: &mut String, c: char) { let _ = write!(o, "{{ \"{c}\" }}"); }'
+  - |
+    #[cfg(all(any(unix, windows), test))]
+    mod tests {
+        fn t() { json!(1); }
+    }
+  - |
+    #[cfg(any(test, all(test, unix)))]
+    fn t() { json!(1); }
+  - |
+    #[cfg(test)]
+    // a line comment
+    fn t() { json!(1); }
+  - |
+    #[cfg(test)]
+    /* a block comment */
+    mod tests {
+        fn t() { json!(1); }
+    }
+  - |
+    #[cfg(test)]
+    /* a block comment */
+    #[allow(dead_code)]
+    // a line comment
+    const X: &str = r#"{"a":1}"#;
 invalid:
+  - |
+    #[cfg(any(test, unix))]
+    fn f() { json!(1); }
+  - |
+    #[cfg(all(any(test, unix), unix))]
+    fn f() { json!(1); }
+  - |
+    #[cfg(all(not(test), unix))]
+    fn f() { json!(1); }
+  - |
+    #[cfg(test)]
+    mod tests {}
+    /* a block comment */
+    fn f() { json!(1); }
+  - 'fn f() { let v = vec![json /* x */ !(1)]; }'
   - 'use serde_json::json as j;'
   - 'use serde_json::{json as j, Value};'
   - 'use serde_json::*;'

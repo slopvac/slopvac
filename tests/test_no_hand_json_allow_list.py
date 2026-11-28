@@ -7,6 +7,7 @@ REQUIRE_AST_GREP=1, so there a missing binary fails the test instead of skipping
 from __future__ import annotations
 
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -163,16 +164,35 @@ def test_a_glob_outside_the_fixed_set_is_rejected() -> None:
     assert any("not one of the fixed test globs" in e for e in gate.file_problems(rule, Counter()))
 
 
-def test_an_exempt_test_module_must_be_declared_under_cfg_test(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("parent", "declared"),
+    [
+        pytest.param("#[cfg(test)]\nmod tests;\n", True, id="cfg-test"),
+        pytest.param(
+            "#[cfg(test)]\n// note\n#[allow(x)]\n/* note */\nmod tests;\n", True, id="comments-between"
+        ),
+        pytest.param("#[cfg(all(unix, test))]\npub mod tests;\n", True, id="all-test"),
+        pytest.param("mod tests;\n", False, id="no-attribute"),
+        pytest.param("// #[cfg(test)]\nmod tests;\n", False, id="line-comment-attribute"),
+        pytest.param("/* #[cfg(test)] */\nmod tests;\n", False, id="block-comment-attribute"),
+        pytest.param("/*\n#[cfg(test)]\n*/\nmod tests;\n", False, id="multiline-block-comment"),
+        pytest.param("#[cfg(not(test))]\nmod tests;\n", False, id="not-test"),
+        pytest.param("#[cfg(any(test, unix))]\nmod tests;\n", False, id="any-test-or-unix"),
+        pytest.param('#[cfg_attr(feature = "x", cfg(test))]\nmod tests;\n', False, id="cfg-attr"),
+        pytest.param("#[cfg(test)]\nmod other;\nmod tests;\n", False, id="attribute-on-another-module"),
+        pytest.param("#[cfg(test)]\nmod tests { fn f() {} }\n", False, id="inline-body"),
+    ],
+)
+def test_an_exempt_test_module_must_be_declared_under_cfg_test(
+    ast_grep: None, tmp_path: Path, parent: str, declared: bool
+) -> None:
     src = tmp_path / "crates" / "a" / "src"
     src.mkdir(parents=True)
-    (src / "lib.rs").write_text("#[cfg(test)]\nmod declared;\nmod open;\n")
-    assert gate.declares_test_module(tmp_path, "crates/a/src/declared.rs")
-    assert not gate.declares_test_module(tmp_path, "crates/a/src/open.rs")
-    assert not gate.declares_test_module(tmp_path, "crates/a/src/missing.rs")
+    (src / "lib.rs").write_text(parent)
+    assert gate.declares_test_module(tmp_path, "crates/a/src/tests.rs") is declared
 
 
-def test_a_tests_rs_file_must_be_a_cfg_test_module(tmp_path: Path) -> None:
+def test_a_tests_rs_file_must_be_a_cfg_test_module(ast_grep: None, tmp_path: Path) -> None:
     src = tmp_path / "crates" / "a" / "src"
     src.mkdir(parents=True)
     (src / "lib.rs").write_text("mod tests;\n")
@@ -362,3 +382,100 @@ def test_the_command_line_reads_the_labels_it_is_given(ast_grep: None, tmp_path:
     assert run() == 1
     assert run("--labels", json.dumps(["no-hand-json-growth"])) == 0
     assert run("--labels", json.dumps(["other"])) == 1
+
+
+# --- the cfg(test) regex of the rule ---------------------------------------------------------
+
+
+def predicates(depth: int) -> list[tuple]:
+    """Every cfg predicate over three atoms with all/any/not of one or two arguments."""
+    atoms: list[tuple] = [("atom", "test"), ("atom", "unix"), ("atom", 'feature = "x"')]
+    levels = [atoms]
+    for _ in range(depth):
+        seen = [p for level in levels for p in level]
+        made: list[tuple] = [("not", (p,)) for p in seen]
+        for op in ("all", "any"):
+            for p in seen:
+                made.append((op, (p,)))
+                made.extend((op, (p, q)) for q in seen)
+        levels.append(made)
+    return [p for level in levels for p in level]
+
+
+def render(p: tuple) -> str:
+    if p[0] == "atom":
+        return p[1]
+    return f"{p[0]}({', '.join(render(a) for a in p[1])})"
+
+
+def requires_by_rule(p: tuple) -> bool:
+    """The rule's reading: `test`; all() with a requiring argument; any() of only such."""
+    if p[0] == "atom":
+        return p[1] == "test"
+    if p[0] == "all":
+        return any(requires_by_rule(a) for a in p[1])
+    if p[0] == "any":
+        return all(requires_by_rule(a) for a in p[1])
+    return False
+
+
+def holds(p: tuple, env: dict[str, bool]) -> bool:
+    if p[0] == "atom":
+        return env[p[1]]
+    values = [holds(a, env) for a in p[1]]
+    if p[0] == "not":
+        return not values[0]
+    return all(values) if p[0] == "all" else any(values)
+
+
+def false_whenever_test_is_false(p: tuple) -> bool:
+    return not any(
+        holds(p, {"test": False, "unix": unix, 'feature = "x"': feature})
+        for unix in (False, True)
+        for feature in (False, True)
+    )
+
+
+CFG = re.compile(gate.cfg_test_regex())
+PREDICATES = predicates(2)
+
+
+def test_the_regex_matches_the_predicates_that_require_test() -> None:
+    wrong = [
+        render(p)
+        for p in PREDICATES
+        if bool(CFG.match(f"#[cfg({render(p)})]")) != requires_by_rule(p)
+    ]
+    assert wrong == []
+
+
+def test_every_predicate_the_regex_exempts_is_false_whenever_test_is_false() -> None:
+    unsound = [
+        render(p)
+        for p in PREDICATES
+        if CFG.match(f"#[cfg({render(p)})]") and not false_whenever_test_is_false(p)
+    ]
+    assert unsound == []
+
+
+@pytest.mark.parametrize(
+    ("attribute", "exempt"),
+    [
+        ("#[cfg(all(any(unix, windows), test))]", True),
+        ("#[cfg( all( unix , test ) )]", True),
+        ("#[cfg(any(test, all(test, unix)))]", True),
+        ("#[cfg(any(test, unix))]", False),
+        ("#[cfg(all(any(test, unix), unix))]", False),
+        ("#[cfg(not(test))]", False),
+        ('#[cfg_attr(feature = "x", cfg(test))]', False),
+        ("#[cfg(testing)]", False),
+        ('#[cfg(feature = "test")]', False),
+    ],
+)
+def test_named_predicates(attribute: str, exempt: bool) -> None:
+    assert bool(CFG.match(attribute)) is exempt
+
+
+def test_the_rule_file_carries_the_generated_regex_at_both_exemption_sites() -> None:
+    found = re.findall(r"regex: '(\^#\\\[cfg.*)'$", REAL, flags=re.MULTILINE)
+    assert found == [gate.cfg_test_regex()] * 2
