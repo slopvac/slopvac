@@ -5,12 +5,19 @@ test inside a `mod conformance { ... }` block carries the doc line `/// Conforma
 row IDs come from the section 4 table itself, so a new row needs a marked test at once, and a
 marker that names an ID the table does not have is stale.
 
+A marker counts only on a runnable test: a `#[test]` or `#[rstest]` function with no `#[ignore]`.
+A test limited with `#[cfg(...)]` counts only when the cfg admits Linux, the OS of the gate: a
+`target_os = "linux"` or `unix` cfg does, and any other `target_os = "..."`, `windows` or `macos`
+cfg does not. Other cfg conditions, such as features, are not read. So a row whose only marked
+tests are limited to another OS has no covered test, and the check fails.
+
 The checks that read the repository and the checks of the checker itself (on trees built in
 `tmp_path`) share one function, `check`.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,6 +37,10 @@ _MARKER = re.compile(r"^\s*///\s*Conformance:(?P<rest>.*)$")
 _ID = re.compile(r"[A-Z]+[0-9]+")
 _FN = re.compile(r"^(?P<indent>\s*)(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(?P<name>\w+)")
 _MODULE = "mod conformance {"
+_RUNNABLE = re.compile(r"#\[(?:rstest(?:::rstest)?|test)\b")
+_IGNORED = re.compile(r"#\[ignore\b")
+_CFG_OS = re.compile(r'#\[cfg\(\s*target_os\s*=\s*"(?P<os>\w+)"\s*\)\]')
+_CFG_FAMILY = re.compile(r"#\[cfg\(\s*(?P<family>unix|windows)\s*\)\]")
 
 
 def _family(row: str) -> str:
@@ -46,6 +57,14 @@ def table_rows(policies: Path) -> list[str]:
     return _ROW.findall(rest[: end.start()] if end else rest)
 
 
+def _admits_linux(attrs: str) -> bool:
+    """False when a `cfg` on the test limits it to an OS other than Linux."""
+    for found in _CFG_OS.finditer(attrs):
+        if found["os"] != "linux":
+            return False
+    return all(f["family"] == "unix" for f in _CFG_FAMILY.finditer(attrs))
+
+
 @dataclass(frozen=True)
 class Marked:
     path: Path
@@ -53,6 +72,12 @@ class Marked:
     test: str
     ids: tuple[str, ...]
     inside: bool
+    runnable: bool = True
+    on_linux: bool = True
+
+    @property
+    def counts(self) -> bool:
+        return self.inside and self.runnable and self.on_linux
 
 
 def _module_span(lines: list[str]) -> tuple[int, int] | None:
@@ -85,7 +110,11 @@ def markers(root: Path) -> list[Marked]:
                         and span[0] < j < span[1]
                         and fn["indent"] == "    "
                     )
-                    found.append(Marked(path, j + 1, fn["name"], ids, inside))
+                    attrs = "\n".join(lines[i + 1 : j])
+                    runnable = bool(_RUNNABLE.search(attrs)) and not _IGNORED.search(attrs)
+                    found.append(
+                        Marked(path, j + 1, fn["name"], ids, inside, runnable, _admits_linux(attrs))
+                    )
                     break
             else:
                 found.append(Marked(path, i + 1, "<no test follows>", ids, False))
@@ -97,12 +126,14 @@ class Problems:
     rows_without_a_test: list[str] = field(default_factory=list)
     markers_naming_an_unknown_row: list[str] = field(default_factory=list)
     tests_outside_the_module: list[str] = field(default_factory=list)
+    table_without_gated_rows: bool = False
 
     def any(self) -> bool:
         return bool(
             self.rows_without_a_test
             or self.markers_naming_an_unknown_row
             or self.tests_outside_the_module
+            or self.table_without_gated_rows
         )
 
 
@@ -111,7 +142,8 @@ def check(root: Path, families: frozenset[str] = GATED_FAMILIES) -> Problems:
     rows = table_rows(root / "docs/contract/policies.md")
     found = markers(root)
     problems = Problems()
-    covered = {i for m in found if m.inside for i in m.ids}
+    covered = {i for m in found if m.counts for i in m.ids}
+    problems.table_without_gated_rows = not any(_family(r) in families for r in rows)
     for row in rows:
         if _family(row) in families and row not in covered:
             problems.rows_without_a_test.append(row)
@@ -127,7 +159,14 @@ def check(root: Path, families: frozenset[str] = GATED_FAMILIES) -> Problems:
 
 # --- the repository ---------------------------------------------------------------------------
 
-_REAL_ROWS = [r for r in table_rows(REPO / "docs/contract/policies.md") if _family(r) in GATED_FAMILIES]
+_REAL_ROWS = [
+    r for r in table_rows(REPO / "docs/contract/policies.md") if _family(r) in GATED_FAMILIES
+]
+
+
+def test_the_table_parsed_into_gated_rows() -> None:
+    assert _REAL_ROWS, "the section 4 table gave no N rows"
+    assert not check(REPO).table_without_gated_rows
 
 
 @pytest.mark.parametrize("row", _REAL_ROWS)
@@ -143,6 +182,21 @@ def test_every_marker_names_a_row_of_the_table() -> None:
 
 def test_every_marked_test_sits_in_the_conformance_module() -> None:
     assert check(REPO).tests_outside_the_module == []
+
+
+@pytest.mark.skipif(
+    not os.environ.get("SLOPVAC_CONFORMANCE_LIST"),
+    reason="set SLOPVAC_CONFORMANCE_LIST to the output of `cargo nextest list` for the gate filter",
+)
+def test_every_counted_test_is_in_the_nextest_list_of_the_gate() -> None:
+    """The pytest reads the source; nextest knows what the gate runs. They must agree."""
+    listed = Path(os.environ["SLOPVAC_CONFORMANCE_LIST"]).read_text(encoding="utf-8")
+    missing = [
+        f"{m.path.relative_to(REPO)}:{m.line} {m.test}"
+        for m in markers(REPO)
+        if m.counts and f"conformance::{m.test}" not in listed
+    ]
+    assert missing == []
 
 
 # --- the checker, on trees built here ---------------------------------------------------------
