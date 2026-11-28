@@ -1936,10 +1936,9 @@ mod unix_only {
         }
     }
 
-    /// Build on a wrapper interpreter inside the project, load the environment back from
-    /// disk through a store opened with `open_as`, retarget the interpreter, and return every
-    /// text of the full and quick check errors.
-    fn retargeted_texts(s: &Scratch, root: &Path, open_as: &Path) -> Vec<String> {
+    /// Build on a wrapper interpreter at `interp/python` under `s`, with a store opened on
+    /// `project`, and load the environment back from disk through that store.
+    fn loaded_on_wrapper(s: &Scratch, project: &Path) -> (ManagedEnv, PathBuf) {
         let w = s.dir("interp/python");
         write_exec(
             &w,
@@ -1954,48 +1953,111 @@ mod unix_only {
                 ..Fake::real()
             },
         );
-        EnvStore::open(s.dir("envs"), root)
+        let store = EnvStore::open(s.dir("envs"), project);
+        store
             .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
             .unwrap();
-        let env = EnvStore::open(s.dir("envs"), open_as)
+        let env = store
             .load(&vp.tree, "3.12")
             .unwrap()
             .expect("the built environment is on disk");
+        (env, w)
+    }
+
+    /// Point `w` at a new interpreter, `interp/python-other`.
+    fn retarget(s: &Scratch, w: &Path) {
         let other = s.dir("interp/python-other");
         write_exec(&other, "#!/bin/sh\n# other\n");
-        fs::remove_file(&w).unwrap();
-        std::os::unix::fs::symlink(&other, &w).unwrap();
-        let mut texts = chain_texts(&env.verify_full().unwrap_err());
-        texts.extend(chain_texts(&env.check_quick().unwrap_err()));
-        texts
+        fs::remove_file(w).unwrap();
+        std::os::unix::fs::symlink(&other, w).unwrap();
+    }
+
+    /// The full and the quick check each refuse with exactly this change, and the error has no
+    /// source to carry another text.
+    fn assert_changed(env: &ManagedEnv, path: &str, why: &str) {
+        for err in [env.verify_full().unwrap_err(), env.check_quick().unwrap_err()] {
+            assert_eq!(
+                err.to_string(),
+                format!(
+                    "the Python environment changed: `{path}` {why}; \
+                     rebuild it and run `slopvac plugins trust`"
+                )
+            );
+            assert_eq!(
+                format!("{err:?}"),
+                format!("Changed {{ path: {path:?}, why: {why:?} }}")
+            );
+            assert!(std::error::Error::source(&err).is_none(), "{err:?}");
+        }
+    }
+
+    /// A project root the scratch directory holds, and an alias that points at it.
+    fn alias_to(s: &Scratch, target: &Path) -> PathBuf {
+        let alias = s.dir("alias");
+        std::os::unix::fs::symlink(target, &alias).unwrap();
+        alias
     }
 
     #[rstest::rstest]
-    #[case::reloaded_from_disk("plain")]
-    #[case::aliased_project_root("alias")]
-    fn a_retargeted_interpreter_shows_under_the_project_root(#[case] kind: &str) {
-        let s = Scratch::new(&format!("u-interp-retarget-{kind}"));
+    #[case::reloaded_from_disk(false)]
+    #[case::aliased_project_root(true)]
+    fn a_retargeted_interpreter_shows_under_the_project_root(#[case] aliased: bool) {
+        let s = Scratch::new(&format!("u-interp-retarget-{aliased}"));
         let root = fs::canonicalize(&s.0).unwrap();
-        let alias = root.join("alias");
-        std::os::unix::fs::symlink(&root, &alias).unwrap();
-        let open_as = if kind == "alias" { &alias } else { &root };
-        let texts = retargeted_texts(&s, &root, open_as);
-        let mentions: Vec<&String> = texts
-            .iter()
-            .filter(|t| t.contains("python-other"))
-            .collect();
-        assert!(!mentions.is_empty(), "{texts:?}");
-        assert!(
-            texts
-                .iter()
-                .any(|t| t.contains("`interp/python-other` is not the interpreter")),
-            "{texts:?}"
+        let project = if aliased {
+            alias_to(&s, &root)
+        } else {
+            root.clone()
+        };
+        let (env, w) = loaded_on_wrapper(&s, &project);
+        retarget(&s, &w);
+        assert_changed(
+            &env,
+            "interp/python-other",
+            "is not the interpreter the build recorded",
         );
-        for shown in mentions {
-            assert!(shown.contains("interp/python-other"), "{shown}");
-            assert!(!shown.contains("<external>"), "{shown}");
-            assert!(!shown.contains(&s.0.display().to_string()), "{shown}");
-        }
+    }
+
+    #[rstest::rstest]
+    #[case::plain_root(false)]
+    #[case::aliased_project_root(true)]
+    fn a_changed_recorded_interpreter_shows_under_the_project_root(#[case] aliased: bool) {
+        let s = Scratch::new(&format!("u-interp-recorded-{aliased}"));
+        let root = fs::canonicalize(&s.0).unwrap();
+        let project = if aliased {
+            alias_to(&s, &root)
+        } else {
+            root.clone()
+        };
+        let (env, w) = loaded_on_wrapper(&s, &project);
+        write_exec(
+            &w,
+            &format!(
+                "#!/bin/sh\n# upgraded\nexec '{}' \"$@\"\n",
+                python().display()
+            ),
+        );
+        assert_changed(&env, "interp/python", "changed size or modification time");
+    }
+
+    #[test]
+    fn an_alias_redirected_after_load_does_not_widen_the_project() {
+        let s = Scratch::new("u-interp-redirected");
+        let root = fs::canonicalize(&s.0).unwrap();
+        let project = s.dir("project");
+        fs::create_dir_all(&project).unwrap();
+        let alias = alias_to(&s, &project);
+        let (env, w) = loaded_on_wrapper(&s, &alias);
+        // The interpreter lies outside the project the store resolved when it opened. The alias
+        // now points at a directory that holds it.
+        fs::remove_file(&alias).unwrap();
+        std::os::unix::fs::symlink(&root, &alias).unwrap();
+        retarget(&s, &w);
+        assert_changed(
+            &env,
+            "<external>/python-other",
+            "is not the interpreter the build recorded",
+        );
     }
 
     #[test]
