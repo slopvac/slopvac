@@ -283,14 +283,12 @@ fn parse(bytes: &[u8]) -> Result<Record, StateProblem> {
 }
 
 /// Whether the record at `name` still holds exactly the bytes that were validated.
-fn unchanged(dir: &Dir, name: &OsStr, seen: Option<&[u8]>) -> std::io::Result<bool> {
-    Ok(
-        match slopvac_fs::read_capped_regular_in(dir, Path::new(name), MAX_RECORD_BYTES) {
-            Ok(now) => seen == Some(now.as_slice()),
-            Err(e) if e.input_kind() == Some(InputKind::NotFound) => seen.is_none(),
-            Err(_) => false,
-        },
-    )
+fn unchanged(dir: &Dir, name: &OsStr, seen: Option<&[u8]>) -> bool {
+    match slopvac_fs::read_capped_regular_in(dir, Path::new(name), MAX_RECORD_BYTES) {
+        Ok(now) => seen == Some(now.as_slice()),
+        Err(e) if e.input_kind() == Some(InputKind::NotFound) => seen.is_none(),
+        Err(_) => false,
+    }
 }
 
 /// The record in one state directory.
@@ -370,7 +368,7 @@ impl Store {
             name,
             &bytes,
             WriteOptions::new().new_file_mode(0o600),
-            |d, file| unchanged(d, file, seen.as_deref()),
+            |d, file| Ok(unchanged(d, file, seen.as_deref())),
         )
         .map_err(|e| match e {
             slopvac_fs::Error::Precondition { .. } => StateProblem::Changed,
