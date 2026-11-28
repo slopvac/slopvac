@@ -2191,3 +2191,78 @@ mod config_key_case {
         assert!(err.to_string().contains("conflicting"), "{err}");
     }
 }
+// ---- registry parse failures never echo the registry's text ---------------------------
+
+/// A path, URL user-info and a token-like string, as a hostile registry could place them in
+/// a field the parser then quotes back.
+const MARKER: &str = "/home/someone/private-dir ://user:hunter2@host ghp_AbC123Token";
+
+fn chain(err: &OciError) -> String {
+    use std::error::Error as _;
+    let mut text = err.to_string();
+    let mut next = err.source();
+    while let Some(e) = next {
+        text.push('\n');
+        text.push_str(&e.to_string());
+        next = e.source();
+    }
+    text
+}
+
+fn assert_no_marker(text: &str) {
+    for part in ["/home/someone", "private-dir", "hunter2", "ghp_AbC123Token"] {
+        assert!(!text.contains(part), "{part} leaked: {text}");
+    }
+}
+
+const WRONG_SHAPE: &str = "a field is missing or has the wrong type or form";
+
+#[rstest::rstest]
+#[case::wrong_type(json!({ "tags": MARKER }).to_string().into_bytes(), WRONG_SHAPE)]
+#[case::not_json(format!("{MARKER} not json").into_bytes(), "the body is not valid JSON")]
+#[case::truncated(format!("{{\"tags\": [\"{MARKER}").into_bytes(), "the JSON ends early")]
+fn a_malformed_tag_list_reports_a_safe_reason_and_never_the_body(
+    #[case] body: Vec<u8>,
+    #[case] reason: &str,
+) {
+    let server = Server::start(move |_| Response::new(200).body(body.clone()));
+    let err = anonymous_client()
+        .list_tags(&reference(&server, "a/b:1"))
+        .unwrap_err();
+    assert_no_marker(&chain(&err));
+    assert_eq!(
+        err.to_string(),
+        format!("invalid OCI input: tag list: {reason}")
+    );
+}
+
+#[rstest::rstest]
+#[case::manifest(MEDIA_MANIFEST, "manifest")]
+#[case::index(MEDIA_INDEX, "index")]
+fn a_malformed_manifest_or_index_reports_a_safe_reason_and_never_the_body(
+    #[case] media_type: &str,
+    #[case] what: &str,
+) {
+    use slopvac_plugins::oci::Fetched;
+    let body = json!({
+        "schemaVersion": 2,
+        "config": { "mediaType": MARKER, "digest": MARKER, "size": MARKER },
+        "layers": MARKER, "manifests": MARKER,
+    })
+    .to_string();
+    let fetched = Fetched {
+        digest: Digest::of(body.as_bytes()),
+        media_type: media_type.into(),
+        body: body.into_bytes(),
+    };
+    let err = if media_type == MEDIA_MANIFEST {
+        fetched.manifest().unwrap_err()
+    } else {
+        fetched.index().unwrap_err()
+    };
+    assert_no_marker(&chain(&err));
+    assert_eq!(
+        err.to_string(),
+        format!("invalid OCI input: {what}: {WRONG_SHAPE}")
+    );
+}

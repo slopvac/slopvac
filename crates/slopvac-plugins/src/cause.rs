@@ -12,6 +12,7 @@ use slopvac_messages::{Catalog, Entry, render};
 
 use crate::lock::LockDiff;
 use crate::messages::cli::Reported;
+use crate::messages::host::HostMessage;
 use crate::messages::sync::{cache_tampered, cache_unreadable, config_drift, update_busy};
 use crate::revoke::RevocationError;
 use crate::sync::SyncError;
@@ -68,6 +69,14 @@ fn spawn_code(e: &TrustError) -> Option<&'static str> {
         TrustError::KeyMissing { .. } => Some("trust-key-missing"),
         TrustError::KeyMismatch => Some("trust-key-mismatch"),
         TrustError::KeyUnusable { .. } => Some("trust-key-unusable"),
+        // `plugins trust` verifies the tree and the environment before it records anything, and
+        // the spawn gate reports the same two failures as a hash mismatch.
+        TrustError::Tree(_) | TrustError::PythonEnv(_) => Some(
+            HostMessage::HashMismatch {
+                plugin: String::new(),
+            }
+            .code(),
+        ),
         _ => None,
     }
 }
@@ -129,7 +138,8 @@ pub(crate) fn update(root: &Path, e: &UpdateError) -> Reported {
 
 /// A trust store failure: the reported failure when it has a code, else the sentence alone.
 /// A refused program or environment, and an unusable trust key, report the code of the spawn
-/// path. A failure of the store itself has no code of its own and reports `plugins-store-failed`.
+/// path, and a tree or environment that no longer matches reports `plugin-hash-mismatch`. A
+/// failure of the store itself has no code of its own and reports `plugins-store-failed`.
 pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
     let text = match e {
         TrustError::Revocation(inner) => return Ok(revocation(inner)),

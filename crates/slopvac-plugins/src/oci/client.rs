@@ -77,7 +77,7 @@ impl Fetched {
         serde_json::from_slice(&self.body).map_err(|e| {
             OciError::Invalid(
                 crate::messages::transport::TransportText::OciManifest {
-                    detail: e.to_string(),
+                    detail: crate::messages::transport::json_failure(&e).to_owned(),
                 }
                 .to_string(),
             )
@@ -95,7 +95,7 @@ impl Fetched {
         serde_json::from_slice(&self.body).map_err(|e| {
             OciError::Invalid(
                 crate::messages::transport::TransportText::OciIndex {
-                    detail: e.to_string(),
+                    detail: crate::messages::transport::json_failure(&e).to_owned(),
                 }
                 .to_string(),
             )
@@ -853,7 +853,7 @@ impl Client {
             let page: Tags = serde_json::from_slice(&body).map_err(|e| {
                 OciError::Invalid(
                     crate::messages::transport::TransportText::OciTagList {
-                        detail: e.to_string(),
+                        detail: crate::messages::transport::json_failure(&e).to_owned(),
                     }
                     .to_string(),
                 )

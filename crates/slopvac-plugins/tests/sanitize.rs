@@ -254,7 +254,7 @@ fn a_planted_link_in_a_store_with_a_hostile_path_is_escaped_once() {
 }
 
 #[test]
-fn a_digest_in_a_manifest_is_escaped_once_in_the_parse_error() {
+fn a_digest_in_a_manifest_never_reaches_the_parse_error() {
     use slopvac_plugins::oci::{Digest, Fetched};
     let body = r#"{"schemaVersion":2,"config":{"mediaType":"x","digest":"bad\u202e\\##[","size":1},"layers":[]}"#;
     let fetched = Fetched {
@@ -263,11 +263,9 @@ fn a_digest_in_a_manifest_is_escaped_once_in_the_parse_error() {
         body: body.as_bytes().to_vec(),
     };
     let msg = fetched.manifest().unwrap_err().to_string();
-    assert!(
-        msg.starts_with(
-            "invalid OCI input: manifest: digest `bad\\u{202e}\\\\\\u{23}#[` is not sha256"
-        ),
-        "{msg}"
+    assert_eq!(
+        msg,
+        "invalid OCI input: manifest: a field is missing or has the wrong type or form"
     );
 }
 
