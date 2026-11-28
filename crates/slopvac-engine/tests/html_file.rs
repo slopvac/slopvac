@@ -1,14 +1,6 @@
 //! A standalone HTML file, read as 2.x reads it (`_parse_html`): the visible text of each source
 //! line is one paragraph, code and hidden elements give no prose, a position is exact, and a fix
 //! never edits markup.
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unwrap_used,
-    reason = "test code: a panic is a failed test"
-)]
-#![allow(missing_docs, reason = "test crate: nothing public to document")]
-
 mod common;
 
 use common::{engine, matched, places, rule, tokens};
@@ -23,6 +15,7 @@ fn leverage() -> Engine {
     engine(&[tokens("dull", "leverage", &json!({}))])
 }
 
+#[expect(clippy::unwrap_used, reason = "test helper: a panic is a failed test")]
 fn lint(text: &str) -> Document {
     leverage().lint(&Input::html("page.html", text)).unwrap()
 }
@@ -42,6 +35,7 @@ fn spans(doc: &Document) -> Vec<(usize, usize)> {
 
 /// The text of `html` after a fix of every finding of a substitution of `from` to `to`, with
 /// the rule fields `extra`.
+#[expect(clippy::unwrap_used, reason = "test helper: a panic is a failed test")]
 fn fixed(html: &str, from: &str, to: &str, extra: &Value) -> String {
     let engine = engine(&[rule(
         "swap",
@@ -89,6 +83,13 @@ fn a_hidden_element_adds_no_words(#[case] html: &str) {
     // Only `Hello.` is prose.
     let doc = lint(html);
     assert_eq!((doc.words, doc.findings.len()), (1, 0));
+}
+
+#[test]
+fn pre_content_gives_no_paragraph() {
+    // Two lines of `<pre>` and one of prose: only the prose line is a paragraph.
+    let doc = lint("<pre>one\ntwo</pre>\n<p>Hello.</p>\n");
+    assert_eq!(doc.paragraphs, 1);
 }
 
 #[test]
@@ -191,6 +192,26 @@ fn a_tag_or_comment_between_words_separates_them_as_in_2x(
     assert_eq!(lint(html).words, words);
 }
 
+#[rstest]
+// `<p>` is 3 bytes and `one` ends at 6.
+#[case::tag_between_words("<p>one<b>two</b></p>\n", (3, 12))]
+#[case::comment_between_words("<p>one<!--c-->two</p>\n", (3, 17))]
+#[case::space_before_the_tag("<p>one <b>two</b></p>\n", (3, 13))]
+#[case::space_after_the_tag("<p>one<b> two</b></p>\n", (3, 13))]
+fn a_tag_adds_a_space_only_between_two_non_space_characters(
+    #[case] html: &str,
+    #[case] span: (usize, usize),
+) {
+    // The pattern needs exactly one space: a second, synthetic one would break the match.
+    let engine = engine(&[rule(
+        "pair",
+        &json!({"kind": "pattern", "pattern": "one two"}),
+        &json!({}),
+    )]);
+    let doc = engine.lint(&Input::html("page.html", html)).unwrap();
+    assert_eq!(spans(&doc), vec![span]);
+}
+
 #[test]
 fn a_word_between_inline_tags_is_matched_as_a_whole_word() {
     // 2.x reads `Use leverage now.`. The match starts after `<p>Use<b>` (9 bytes) and ends
@@ -232,8 +253,24 @@ fn a_prose_fix_changes_the_text_and_leaves_the_markup() {
     "<p>Mail delta@example.com about d.</p>\n"
 )]
 #[case::markdown_link_syntax_is_prose("<p>[label](delta) text</p>\n", "<p>[label](d) text</p>\n")]
+#[case::quoted_value_after_an_apostrophe_in_a_comment(
+    "<!-- don't --><p title='a > delta'>delta</p>\n",
+    "<!-- don't --><p title='a > delta'>d</p>\n"
+)]
 fn a_raw_scope_fix_never_rewrites_a_tag_or_an_address(#[case] html: &str, #[case] want: &str) {
     assert_eq!(fixed(html, "delta", "d", &json!({"scope": "raw"})), want);
+}
+
+/// Scaling guard for the address scan of a fix. An unbroken run of 500,000 `@` signs took
+/// a quadratic scan, minutes at this size; a linear one takes well under a second. A
+/// regression shows as a test that nextest ends for running too long. No assertion reads a
+/// clock.
+#[test]
+fn a_fix_next_to_a_long_run_of_at_signs_finishes() {
+    let run = "a@".repeat(500_000);
+    let html = format!("<p>delta {run}</p>\n");
+    let want = format!("<p>d {run}</p>\n");
+    assert_eq!(fixed(&html, "delta", "d", &json!({})), want);
 }
 
 #[test]
@@ -263,8 +300,8 @@ fn a_file_over_the_work_budget_is_a_parse_error() {
     );
 }
 
-/// Pieces of HTML the property test joins: words, markup, entities, line ends and text in
-/// several byte widths.
+/// Pieces of HTML the property test joins: words, markup, entities, line ends and text of
+/// one to three bytes a character.
 const PIECES: [&str; 22] = [
     "leverage",
     "word",
@@ -310,10 +347,14 @@ proptest! {
 
     #[test]
     fn every_finding_span_is_inside_the_source_on_character_boundaries(
-        pieces in prop::collection::vec(prop::sample::select(&PIECES[..]), 0..24),
+        before in prop::collection::vec(prop::sample::select(&PIECES[..]), 0..12),
+        after in prop::collection::vec(prop::sample::select(&PIECES[..]), 0..12),
     ) {
-        let html = pieces.concat();
+        // Every piece is whole markup, so a spaced `leverage` between two runs of them is
+        // always visible prose: each case has at least one finding to check.
+        let html = format!("{} leverage {}", before.concat(), after.concat());
         let doc = lint(&html);
+        prop_assert!(!doc.findings.is_empty(), "{html:?}");
         for f in &doc.findings {
             let extent = f.extent.as_ref().expect("a token finding has a range");
             let (start, end) = (extent.span.start(), extent.span.end());
