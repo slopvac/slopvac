@@ -810,7 +810,8 @@ pub struct RotationProof<'a> {
 ///
 /// # Errors
 /// A [`RotationCause`] when the statement is not a canonical rotation statement of at most
-/// [`MAX_ROTATION_BYTES`] with a minisign `newKey`. The cause keeps no text of the statement.
+/// [`MAX_ROTATION_BYTES`], of version 1 and type [`ROTATION_TYPE`], with a minisign `newKey`.
+/// The cause keeps no text of the statement.
 pub fn rotation_new_key(statement: &[u8]) -> Result<PublicKey, RotationCause> {
     let st: RotationStatement =
         parse_canonical(statement, MAX_ROTATION_BYTES).map_err(|e| match e {
@@ -818,6 +819,9 @@ pub fn rotation_new_key(statement: &[u8]) -> Result<PublicKey, RotationCause> {
             SignError::NotCanonical(_) => RotationCause::NotCanonical,
             _ => RotationCause::NotRotation,
         })?;
+    if st.schema_version != 1 || st.kind != ROTATION_TYPE {
+        return Err(RotationCause::NotRotation);
+    }
     PublicKey::from_base64(&st.new_key).map_err(|_| RotationCause::NewKeyForm)
 }
 

@@ -72,11 +72,13 @@ const SCHEMA_VERSION: u32 = 2;
 #[derive(Debug, Error)]
 pub enum TrustError {
     /// The store file is unreadable or invalid. The run exits 2; it is never treated as empty.
-    #[error("{}", messages::store_damaged(.path, .why))]
+    /// The text names the file as `<external>/<file name>`, because the store is in the state
+    /// directory, outside every project (policies section 1.7).
+    #[error("{}", messages::store_damaged(&external_name(.path), .why))]
     Corrupt {
         /// The file.
         path: PathBuf,
-        /// What is wrong.
+        /// What is wrong, as a fixed phrase that quotes nothing from the file.
         why: String,
     },
     /// A file system operation failed.
@@ -493,6 +495,12 @@ fn strip_extension_keys(v: &mut serde_json::Value) {
     }
 }
 
+/// `path` as `<external>/<file name>`.
+fn external_name(path: &Path) -> PathBuf {
+    let name = path.file_name().map_or(Path::new(FILE_NAME), Path::new);
+    Path::new(slopvac_fs::EXTERNAL).join(name)
+}
+
 fn parse_store_file(raw: &[u8], path: &Path) -> Result<StoreFile, TrustError> {
     let corrupt = |why: String| TrustError::Corrupt {
         path: path.to_owned(),
@@ -501,8 +509,9 @@ fn parse_store_file(raw: &[u8], path: &Path) -> Result<StoreFile, TrustError> {
     if raw.len() as u64 > MAX_STORE_BYTES {
         return Err(corrupt(TrustPhrase::StoreOverCap.as_static().into()));
     }
-    let mut value: serde_json::Value =
-        serde_json::from_slice(raw).map_err(|e| corrupt(e.to_string()))?;
+    // The parser's text can quote the file, so a failure keeps a fixed phrase only.
+    let invalid = |_| corrupt(TrustPhrase::StoreInvalid.as_static().into());
+    let mut value: serde_json::Value = serde_json::from_slice(raw).map_err(invalid)?;
     strip_extension_keys(&mut value);
     // Only version 2 is a trust store. Any other version, and a pin without a registry host,
     // is a damaged store: nothing is migrated and nothing is read as a pin on every host.
@@ -519,7 +528,14 @@ fn parse_store_file(raw: &[u8], path: &Path) -> Result<StoreFile, TrustError> {
     if no_host {
         return Err(corrupt(TrustPhrase::StorePinNoHost.as_static().into()));
     }
-    serde_json::from_value(value).map_err(|e| corrupt(e.to_string()))
+    let file: StoreFile = serde_json::from_value(value).map_err(invalid)?;
+    // Two pins for one pair, such as `ghcr.io` and `ghcr.io:443`, would let two keys sign for
+    // it, and a rotation would replace only one of them.
+    let mut scopes = std::collections::BTreeSet::new();
+    if !file.pins.iter().all(|p| scopes.insert(p.scope())) {
+        return Err(corrupt(TrustPhrase::StorePinDuplicate.as_static().into()));
+    }
+    Ok(file)
 }
 
 /// Whether `why`, the reason of a [`TrustError::Corrupt`], is one of the store reader's fixed
@@ -529,6 +545,7 @@ pub(crate) fn is_fixed_store_reason(why: &str) -> bool {
         TrustPhrase::StoreOverCap,
         TrustPhrase::StoreSchema,
         TrustPhrase::StorePinNoHost,
+        TrustPhrase::StorePinDuplicate,
     ]
     .iter()
     .any(|p| p.as_static() == why)
@@ -711,15 +728,13 @@ impl TrustStore {
         f: impl FnOnce(&mut StoreFile) -> Result<T, TrustError>,
     ) -> Result<T, TrustError> {
         let mut file = self.read()?;
-        let before = serde_json::to_vec_pretty(&file).map_err(|e| TrustError::Corrupt {
+        let encode = |_| TrustError::Corrupt {
             path: self.path(),
-            why: e.to_string(),
-        })?;
+            why: TrustPhrase::StoreInvalid.as_static().into(),
+        };
+        let before = serde_json::to_vec_pretty(&file).map_err(encode)?;
         let out = f(&mut file)?;
-        let bytes = serde_json::to_vec_pretty(&file).map_err(|e| TrustError::Corrupt {
-            path: self.path(),
-            why: e.to_string(),
-        })?;
+        let bytes = serde_json::to_vec_pretty(&file).map_err(encode)?;
         if bytes == before && self.path().exists() {
             // Nothing changed: the file is not rewritten, so a version 1 file keeps its form.
             return Ok(out);
@@ -979,9 +994,9 @@ impl TrustStore {
                     namespace: namespace.to_owned(),
                 });
             };
-            let pinned = PublicKey::from_base64(&slot.key).map_err(|e| TrustError::Corrupt {
+            let pinned = PublicKey::from_base64(&slot.key).map_err(|_| TrustError::Corrupt {
                 path: path.clone(),
-                why: e.to_string(),
+                why: TrustPhrase::StorePinKey.as_static().into(),
             })?;
             let st = verify_rotation(proof, namespace, &pinned, slot.not_before.as_deref())
                 .map_err(TrustError::Rotation)?;
@@ -1017,9 +1032,9 @@ impl TrustStore {
                     namespace: p.namespace,
                 });
             }
-            let key = PublicKey::from_base64(&p.key).map_err(|e| TrustError::Corrupt {
+            let key = PublicKey::from_base64(&p.key).map_err(|_| TrustError::Corrupt {
                 path: self.path(),
-                why: e.to_string(),
+                why: TrustPhrase::StorePinKey.as_static().into(),
             })?;
             map.entry(p.scope()).or_default().push(key);
         }

@@ -66,16 +66,26 @@ impl<'a> InstalledPlugins<'a> {
 
     /// The fingerprint of the key that signed `locked`: the key that sync's verification
     /// selected for the registry and namespace of its OCI source. Only an OCI source is signed.
-    fn fingerprint(&self, locked: &LockedPack) -> Option<String> {
-        let key_id = locked.signature.as_ref()?.key_id.as_str();
-        let SourceKind::Oci(text) = locked.source.kind() else {
-            return None;
+    ///
+    /// A signed entry whose source does not parse is refused as not installed: sync parses the
+    /// same source before it fetches or verifies anything, so it installed no tree for it.
+    fn fingerprint(&self, locked: &LockedPack) -> Result<Option<String>, LoadRefusal> {
+        let Some(signature) = locked.signature.as_ref() else {
+            return Ok(None);
         };
-        let reference = Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).ok()?;
+        let SourceKind::Oci(text) = locked.source.kind() else {
+            return Ok(None);
+        };
+        let reference = Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).map_err(
+            |_| SyncedError::NotInstalled {
+                id: locked.id.to_string(),
+            },
+        )?;
         let namespace = reference.repository.split('/').next().unwrap_or_default();
-        self.policy
-            .signing_key(&reference.registry, namespace, key_id)
-            .map(PublicKey::fingerprint)
+        Ok(self
+            .policy
+            .signing_key(&reference.registry, namespace, signature.key_id.as_str())
+            .map(PublicKey::fingerprint))
     }
 
     /// The directory sync left for `locked` and the tree hash the lock pins for it. A path
@@ -144,7 +154,7 @@ impl<'a> InstalledPlugins<'a> {
             return Err(SyncedError::Tampered { id: name }.into());
         }
         let mut context = CodePluginContext::new(expected, PLUGIN_PATH);
-        if let Some(fingerprint) = self.fingerprint(locked) {
+        if let Some(fingerprint) = self.fingerprint(locked)? {
             context = context.with_key_fingerprint(fingerprint);
         }
         Ok(load_code_plugin(
