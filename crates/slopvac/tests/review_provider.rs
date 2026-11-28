@@ -11,6 +11,8 @@
 )]
 
 use rstest::rstest;
+use serde::Deserialize;
+use serde_json::value::RawValue;
 use serde_json::{Value, json};
 use snapbox::cmd::{Command, cargo_bin};
 use std::fs;
@@ -23,6 +25,13 @@ const FAKE: &str = include_str!("fixtures/review_provider.py");
 const REWRITE: (&str, &str) = (
     "# Cache\n\nThe cache holds 10 entries. It evicts the oldest entry first.\n",
     "# Cache\n\nThe cache holds 20 entries. It evicts the least recently used entry first. Reads refresh an entry.\n",
+);
+
+/// A rewrite whose text JSON must escape: quotes, a backslash, a tab and text outside ASCII.
+const ESCAPED: (&str, &str) = (
+    "# Cache\n\nThe cache holds 10 entries. It evicts the oldest entry first.\n",
+    "# Caf\u{e9}\n\nThe cache holds \"20\" entries\tin C:\\cache \u{2014} na\u{ef}ve. It evicts the \
+     least recently used entry first. Reads refresh an entry.\n",
 );
 
 /// One literal changes in a longer text, so an `update` review sends the changed passage.
@@ -175,6 +184,15 @@ impl World {
             .unwrap_or_default()
             .lines()
             .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+
+    /// The body of each `provider/complete` request, the bytes the plugin received.
+    fn raw_requests(&self) -> Vec<String> {
+        fs::read_to_string(self.logs().join("requests.raw"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
             .collect()
     }
 
@@ -497,12 +515,64 @@ fn the_reviewer_model_flag_wins_over_the_config(
     assert_eq!(plan(&out)["reviewer_model"], sent);
 }
 
+/// The JSON text of each value of a request, as written: in the plan that `--dry-run` prints,
+/// or in the params the plugin received. Unknown members fail the read, so neither side holds a
+/// value the other lacks (the params add only the hook id).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRequest<'a> {
+    #[serde(borrow)]
+    task: &'a RawValue,
+    #[serde(borrow)]
+    model: &'a RawValue,
+    #[serde(borrow)]
+    items: Vec<RawItem<'a>>,
+    /// The hook id, which only the params hold.
+    #[serde(rename = "provider", default)]
+    _provider: Option<serde::de::IgnoredAny>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawItem<'a> {
+    #[serde(borrow)]
+    id: &'a RawValue,
+    #[serde(borrow)]
+    instruction: &'a RawValue,
+    #[serde(borrow)]
+    text: &'a RawValue,
+}
+
+#[derive(Deserialize)]
+struct RawPlan<'a> {
+    #[serde(borrow)]
+    request: RawRequest<'a>,
+}
+
+impl RawRequest<'_> {
+    /// Each value's JSON text, named by its place in the request.
+    fn values(&self) -> Vec<(String, &str)> {
+        let mut values = vec![
+            ("task".to_owned(), self.task.get()),
+            ("model".to_owned(), self.model.get()),
+        ];
+        for (n, item) in self.items.iter().enumerate() {
+            values.push((format!("items[{n}].id"), item.id.get()));
+            values.push((format!("items[{n}].instruction"), item.instruction.get()));
+            values.push((format!("items[{n}].text"), item.text.get()));
+        }
+        values
+    }
+}
+
 /// TM-19: the `task`, `model` and `items` the provider receives equal the `request` in the
-/// `--dry-run` plan of the same project. The test compares the values as they are, with no
-/// rebuilding of either side.
+/// `--dry-run` plan of the same project. The test compares the JSON text of every value as
+/// written on each side: the plan on stdout and the request body the plugin received. Only the
+/// whitespace between values differs, because the plan is indented.
 #[rstest]
 #[case::update(UPDATE, "update")]
 #[case::rewrite(REWRITE, "rewrite")]
+#[case::escaped_text(ESCAPED, "rewrite")]
 fn the_provider_receives_the_request_that_a_dry_run_prints(
     #[case] docs: (&str, &str),
     #[case] task: &str,
@@ -511,19 +581,28 @@ fn the_provider_receives_the_request_that_a_dry_run_prints(
     world.trust();
     let dry = world.review(&["--type", task, "--dry-run"]);
     assert_eq!(dry.status.code(), Some(0), "{}", stderr(&dry));
-    let dry = plan(&dry);
-    let request = &dry["request"];
-    assert!(request.is_object(), "the dry run prints a request: {dry}");
+    assert!(
+        plan(&dry)["request"].is_object(),
+        "the dry run prints a request: {}",
+        String::from_utf8_lossy(&dry.stdout)
+    );
 
     let live = world.review(&["--type", task]);
 
     assert_eq!(live.status.code(), Some(0), "{}", stderr(&live));
-    let requests = world.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0]["task"], request["task"]);
-    assert_eq!(requests[0]["model"], request["model"]);
-    assert_eq!(requests[0]["items"], request["items"]);
-    assert_eq!(plan(&live)["request"], *request);
+    let printed: RawPlan<'_> = serde_json::from_slice(&dry.stdout).expect("the dry-run plan");
+    let bodies = world.raw_requests();
+    assert_eq!(bodies.len(), 1);
+    let body: RawBody<'_> = serde_json::from_str(&bodies[0]).expect("the request body");
+    assert_eq!(body.params.values(), printed.request.values());
+    assert_eq!(plan(&live)["request"], plan(&dry)["request"]);
+}
+
+/// A request message as the plugin received it.
+#[derive(Deserialize)]
+struct RawBody<'a> {
+    #[serde(borrow)]
+    params: RawRequest<'a>,
 }
 
 /// A dry run with no reviewer model still prints the request a call would send, without a

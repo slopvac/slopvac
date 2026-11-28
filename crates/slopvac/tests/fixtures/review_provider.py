@@ -3,7 +3,8 @@
 Usage: review_provider.py LOG_DIR
 
 Each start appends a line to LOG_DIR/spawns, so a test can count spawns. The params of every
-`provider/complete` request are appended to LOG_DIR/requests as one JSON line. How the plugin
+`provider/complete` request are appended to LOG_DIR/requests as one JSON line, and the body of
+the request, the bytes as received, to LOG_DIR/requests.raw as one line. How the plugin
 answers comes from LOG_DIR/script.json, which the test writes before each run:
 
 - "order": "reverse" answers the items in reverse order.
@@ -51,7 +52,9 @@ def read_msg():
         name, _, value = line.partition(b":")
         if name.lower() == b"content-length":
             length = int(value)
-    return json.loads(inp.read(length))
+    global last_body
+    last_body = inp.read(length)
+    return json.loads(last_body)
 
 
 def send(obj):
@@ -128,6 +131,8 @@ while True:
         params = msg["params"]
         with open(os.path.join(log_dir, "requests"), "a") as f:
             f.write(json.dumps(params) + "\n")
+        with open(os.path.join(log_dir, "requests.raw"), "ab") as f:
+            f.write(last_body + b"\n")
         s = script()
         if "request_error" in s:
             send({"jsonrpc": "2.0", "id": id_, "error": rpc_error(s["request_error"])})
