@@ -356,7 +356,22 @@ struct RestoreMode(PathBuf, u32);
 
 impl Drop for RestoreMode {
     fn drop(&mut self) {
-        let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(self.1));
+        if let Err(e) = fs::set_permissions(&self.0, fs::Permissions::from_mode(self.1)) {
+            // A failed restore leaves a directory that cannot be cleaned up, so it must fail
+            // the test. A second panic during unwinding would abort the process and hide the
+            // first failure, so in that case the error goes to stderr instead.
+            if std::thread::panicking() {
+                #[expect(
+                    clippy::print_stderr,
+                    reason = "test code: the only way to report without a second panic"
+                )]
+                {
+                    eprintln!("could not restore the directory mode: {:?}", e.kind());
+                }
+            } else {
+                panic!("could not restore the directory mode: {:?}", e.kind());
+            }
+        }
     }
 }
 
