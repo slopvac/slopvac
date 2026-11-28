@@ -1077,7 +1077,7 @@ def test_a_change_to_the_generated_rules_reference_alone_runs_its_drift_check():
 
 # --- the prime prose gate --------------------------------------------------
 
-GATE_SCRIPT = "scripts/ci/gate_prime_prose.sh"
+PRIME_GATE_SCRIPT = "scripts/ci/gate_prime_prose.sh"
 
 
 def gate_location() -> tuple[str, dict]:
@@ -1087,9 +1087,10 @@ def gate_location() -> tuple[str, dict]:
         if not uses.startswith("./.github/workflows/"):
             continue
         for called in load(uses.rsplit("/", 1)[1])["jobs"].values():
-            if any(GATE_SCRIPT in s.get("run", "") for s in called.get("steps", [])):
+            steps = called.get("steps", [])
+            if any(PRIME_GATE_SCRIPT in s.get("run", "") for s in steps):
                 return name, called
-    pytest.fail(f"no workflow called from test.yml runs {GATE_SCRIPT}")
+    pytest.fail(f"no workflow called from test.yml runs {PRIME_GATE_SCRIPT}")
 
 
 @pytest.mark.parametrize(
@@ -1116,7 +1117,7 @@ def gate_location() -> tuple[str, dict]:
         "Cargo.lock",
         "rust-toolchain.toml",
         # The script and the fixture config.
-        GATE_SCRIPT,
+        PRIME_GATE_SCRIPT,
         ".github/action-fixtures/slopvac-v3.toml",
     ],
 )
@@ -1129,7 +1130,7 @@ def test_every_input_of_the_rendered_prime_text_runs_the_prime_gate(path):
     "path",
     [
         # Each changes the gate or what it renders, so its coverage tests must run too.
-        GATE_SCRIPT,
+        PRIME_GATE_SCRIPT,
         "tests/test_prime_prose_gate.py",
         "crates/slopvac-agents/topics/review.md.j2",
         "crates/slopvac/src/owners.rs",
@@ -1147,7 +1148,9 @@ def test_every_input_of_the_prime_gate_runs_its_coverage_tests(path):
 def test_the_3x_job_runs_the_gate_with_the_binary_it_built():
     _, job = gate_location()
     steps = job["steps"]
-    gate = next(i for i, s in enumerate(steps) if GATE_SCRIPT in s.get("run", ""))
+    gate = next(
+        i for i, s in enumerate(steps) if PRIME_GATE_SCRIPT in s.get("run", "")
+    )
     # The step that builds the binary is the one that runs `cargo build -p slopvac`.
     builds = [
         i
@@ -1160,6 +1163,6 @@ def test_the_3x_job_runs_the_gate_with_the_binary_it_built():
     run = steps[gate]["run"]
     assert '"$SLOPVAC_BIN"' in run
     assert job["env"]["SLOPVAC_BIN"].endswith("/target/debug/slopvac")
-    assert (ROOT / GATE_SCRIPT).is_file()
+    assert (ROOT / PRIME_GATE_SCRIPT).is_file()
     assert (ROOT / ".github/action-fixtures/slopvac-v3.toml").is_file()
     assert ".github/action-fixtures/slopvac-v3.toml" in run
