@@ -19,6 +19,7 @@ import copy
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from urllib.parse import unquote
@@ -153,6 +154,137 @@ def test_the_gate_step_exits_with_the_binary_exit_code(tmp_path, code) -> None:
 def test_a_swallowing_script_lets_exit_2_pass(tmp_path, mutate) -> None:
     script = _step(_mutated(mutate), GATE)["run"]
     assert _run_gate(script, tmp_path, 2) != 2
+
+
+def _run_two(script: str, tmp_path: Path, docs: int, config: int) -> int:
+    """Run a step against a stub that exits `config` in code-comments mode, else `docs`."""
+    stub = tmp_path / "target" / "debug" / "slopvac"
+    stub.parent.mkdir(parents=True)
+    stub.write_text(
+        "#!/bin/sh\n"
+        'for arg in "$@"; do\n'
+        f'  if [ "$arg" = "--mode" ]; then exit {config}; fi\n'
+        "done\n"
+        f"exit {docs}\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return subprocess.run(
+        ["bash", "-c", script], cwd=tmp_path, check=False, capture_output=True
+    ).returncode
+
+
+@pytest.mark.parametrize(
+    ("docs", "config", "expected"),
+    [
+        pytest.param(0, 0, 0, id="both-pass"),
+        pytest.param(0, 1, 1, id="config-failed"),
+        pytest.param(1, 0, 1, id="docs-failed"),
+        pytest.param(0, 2, 2, id="config-incomplete"),
+        pytest.param(2, 0, 2, id="docs-incomplete"),
+        pytest.param(1, 2, 2, id="docs-failed-config-incomplete"),
+        pytest.param(2, 1, 2, id="docs-incomplete-config-failed"),
+    ],
+)
+def test_the_gate_step_exits_with_the_higher_of_the_two_runs(
+    tmp_path, docs, config, expected
+) -> None:
+    script = _step(_prose_job(), GATE)["run"]
+    assert _run_two(script, tmp_path, docs, config) == expected
+
+
+def test_the_gate_step_runs_the_starter_config_in_code_comments_mode() -> None:
+    script = re.sub(r"\\\n\s*", " ", _step(_prose_job(), GATE)["run"])
+    assert (
+        "target/debug/slopvac lint --mode code-comments "
+        "crates/slopvac/templates/slopvac.toml"
+    ) in script
+
+
+# ---- the findings export -----------------------------------------------------------
+
+SARIF_DOCS = '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"docs"}},"results":[]}]}'
+SARIF_CONFIG = (
+    '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"config"}},"results":[]}]}'
+)
+
+
+def _run_export(
+    tmp_path: Path, docs: tuple[int, str], config: tuple[int, str]
+) -> subprocess.CompletedProcess:
+    """Run the export step against a stub that writes the given report and exit code."""
+    stub = tmp_path / "target" / "debug" / "slopvac"
+    stub.parent.mkdir(parents=True)
+    stub.write_text(
+        "#!/bin/sh\n"
+        "out=\n"
+        "code=$DOCS_CODE\n"
+        "body=$DOCS_SARIF\n"
+        'while [ "$#" -gt 0 ]; do\n'
+        '  case $1 in\n'
+        "    --out) out=$2; shift ;;\n"
+        '    --mode) code=$CONFIG_CODE; body=$CONFIG_SARIF ;;\n'
+        "  esac\n"
+        "  shift\n"
+        "done\n"
+        'if [ -n "$body" ]; then printf %s "$body" > "$out"; fi\n'
+        'exit "$code"\n',
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PR_NUMBER": "7",
+        "DOCS_CODE": str(docs[0]),
+        "DOCS_SARIF": docs[1],
+        "CONFIG_CODE": str(config[0]),
+        "CONFIG_SARIF": config[1],
+    }
+    script = _step(_prose_job(), EXPORT)["run"]
+    return subprocess.run(
+        ["bash", "-c", script], cwd=tmp_path, env=env, check=False, capture_output=True
+    )
+
+
+def _merged_runs(tmp_path: Path) -> list[str]:
+    merged = json.loads((tmp_path / "reviewdog-out" / "findings.sarif").read_text("utf-8"))
+    assert merged["version"] == "2.1.0"
+    return [run["tool"]["driver"]["name"] for run in merged["runs"]]
+
+
+needs_jq = pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+
+
+@needs_jq
+@pytest.mark.parametrize(
+    ("docs", "config", "expected"),
+    [
+        pytest.param((1, SARIF_DOCS), (1, SARIF_CONFIG), ["docs", "config"], id="both"),
+        pytest.param((0, SARIF_DOCS), (0, SARIF_CONFIG), ["docs", "config"], id="both-clean"),
+        pytest.param((1, SARIF_DOCS), (2, ""), ["docs"], id="config-missing"),
+        pytest.param((2, ""), (1, SARIF_CONFIG), ["config"], id="docs-missing"),
+        pytest.param((1, SARIF_DOCS), (0, ""), ["docs"], id="config-empty"),
+    ],
+)
+def test_the_export_merges_the_reports_that_exist(
+    tmp_path, docs, config, expected
+) -> None:
+    result = _run_export(tmp_path, docs, config)
+    assert result.returncode == 0, result.stderr.decode()
+    assert _merged_runs(tmp_path) == expected
+
+
+@needs_jq
+def test_the_export_step_passes_when_no_report_was_written(tmp_path) -> None:
+    result = _run_export(tmp_path, (2, ""), (2, ""))
+    assert result.returncode == 0, result.stderr.decode()
+    assert not (tmp_path / "reviewdog-out" / "findings.sarif").exists()
+
+
+@needs_jq
+def test_a_report_that_jq_cannot_read_fails_the_export_step(tmp_path) -> None:
+    result = _run_export(tmp_path, (1, "not json"), (1, SARIF_CONFIG))
+    assert result.returncode != 0
 
 
 def _paths_after(script: str) -> tuple[str, ...]:

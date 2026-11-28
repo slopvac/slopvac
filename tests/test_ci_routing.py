@@ -321,6 +321,12 @@ def test_docs_and_python_changes_skip_the_rust_legs(paths, expected):
     assert {job: evaluate(JOBS[job]["if"], outputs) for job in HEAVY} == expected
 
 
+def test_a_starter_config_only_change_routes_to_the_docs_gate():
+    # The prose job gates the starter config's comments, and it runs only when `docs` is set.
+    paths = ["crates/slopvac/templates/slopvac.toml"]
+    assert "docs" in classes_of(paths)
+
+
 def test_the_generated_codes_file_routes_to_rust_and_the_docs_site():
     # `slopvac-schemas check` regenerates the file in the Rust job, and the site reads it.
     path = "docs/reference/plugin-protocol-codes.json"
