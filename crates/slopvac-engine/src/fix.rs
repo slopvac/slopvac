@@ -25,8 +25,8 @@
 //!
 //! In a standalone HTML file only the content of a text node is fixed. Tags, attributes,
 //! comments, the doctype, CDATA, hidden and code elements, the markup inside white space that
-//! the parse collapses, and the addresses in the decoded text are protected. An edit may
-//! replace a character reference whole but may not cut one. The engine writes the
+//! the parse collapses, and the addresses in the decoded text are protected. An edit that
+//! touches a character reference must replace all of it. The engine writes the
 //! replacement of an HTML edit as text, with `&`, `<` and `>` as character references. A
 //! file with text that HTML does not decode (`<xmp>`, `<plaintext>`, `<iframe>`,
 //! `<noembed>`, `<noframes>` or CDATA) gets no replacement that needs one.
@@ -275,7 +275,7 @@ fn has_undecoded_text(source: &str) -> bool {
 struct Guard {
     /// Ranges in `(start, end)` order, where no range starts before the one before it ends.
     spans: Vec<Span>,
-    /// Ranges an edit may replace whole but may not start or end inside, in the same order.
+    /// Ranges that an edit must replace whole or leave alone, in the same order.
     atoms: Vec<Span>,
 }
 

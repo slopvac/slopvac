@@ -84,8 +84,7 @@ pub(crate) fn destinations(source: &str, body_start: usize) -> Vec<Span> {
 pub(crate) struct HtmlProtection {
     /// Bytes that no edit may cover.
     pub(crate) spans: Vec<Span>,
-    /// Character references in the text. An edit may replace one whole, but may not start or
-    /// end inside one.
+    /// Character references in the text. An edit that touches one must replace all of it.
     pub(crate) atoms: Vec<Span>,
 }
 
