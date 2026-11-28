@@ -8,13 +8,13 @@ use std::fmt::Write as _;
 
 use clap::ArgMatches;
 use serde::Serialize;
-use serde_json::{Value, json};
-use slopvac_model::{GenreId, SchemaVersion};
+use slopvac_model::GenreId;
 use slopvac_report::RenderOptions;
 use slopvac_rules::{Example, LoadedCategory, LoadedRule, Match, MatchKind};
 
 use crate::errors::CliError;
 use crate::exit;
+use crate::inspect_output::{ExplainOutput, RuleOutput, RulesOutput};
 use crate::lint_settings::category_of;
 use crate::rule_catalog::Catalog;
 use crate::severity::{Effective, Severities};
@@ -49,12 +49,12 @@ fn kind_name(kind: MatchKind) -> &'static str {
         .map_or("unknown", |(name, _)| *name)
 }
 
-/// The serde name of a plain enum value such as a severity.
+/// The serde name of a plain enum value such as a severity: a lowercase or kebab-case word,
+/// so the JSON string needs no escapes.
 fn word<T: Serialize>(value: &T) -> String {
-    match serde_json::to_value(value) {
-        Ok(Value::String(s)) => s,
-        _ => String::new(),
-    }
+    serde_json::to_string(value)
+        .map(|quoted| quoted.trim_matches('"').to_owned())
+        .unwrap_or_default()
 }
 
 /// The part of a message a reader sees: slots read as `<name>`, not `{name}`.
@@ -255,41 +255,8 @@ fn rules_text(picked: &[(&LoadedCategory, &LoadedRule)], sev: &Severities) -> St
     out
 }
 
-fn rule_json(category: &LoadedCategory, rule: &LoadedRule, sev: &Severities) -> Value {
-    let mut value = serde_json::to_value(rule.rule()).unwrap_or(Value::Null);
-    if let Value::Object(map) = &mut value {
-        map.insert("id".into(), json!(rule.id().as_str()));
-        map.insert("category".into(), json!(category.id().as_str()));
-        map.insert("plugin".into(), json!(rule.id().pack()));
-        map.insert("kind".into(), json!(kind_name(rule.kind())));
-        let eff = effective(sev, rule);
-        map.insert("effective_severity".into(), json!(eff.level));
-        if let Some(from) = eff.from {
-            map.insert("severity_from".into(), json!(from));
-        }
-        if let Some(url) = url_of(rule) {
-            map.insert("url".into(), json!(url));
-        }
-    }
-    value
-}
-
-/// The listing entry of every category, each naming the plugin that ships it.
-fn category_entries(set: &Catalog) -> Vec<Value> {
-    set.sets()
-        .iter()
-        .flat_map(|plugin| plugin.categories().iter().map(move |c| (plugin.pack(), c)))
-        .map(|(plugin, c)| {
-            json!({
-                "id": c.id().as_str(),
-                "plugin": plugin.as_str(),
-                "title": c.title().as_str(),
-                "description": c.description().as_str(),
-                "weight": c.weight(),
-                "recommended_for": c.recommended_for().iter().map(GenreId::as_str).collect::<Vec<_>>(),
-            })
-        })
-        .collect()
+fn rule_output<'a>(rule: &'a LoadedRule, sev: &Severities) -> RuleOutput<'a> {
+    RuleOutput::new(rule, &effective(sev, rule), url_of(rule))
 }
 
 fn rules_json(
@@ -297,30 +264,8 @@ fn rules_json(
     picked: &[(&LoadedCategory, &LoadedRule)],
     sev: &Severities,
 ) -> String {
-    let categories = category_entries(set);
-    let rules: Vec<Value> = picked.iter().map(|(c, r)| rule_json(c, r, sev)).collect();
-    // The plugins that own the listed rules, in catalogue order. `plugin` names the first of
-    // them; `plugins` and the `plugin` of each entry are the complete answer.
-    let mut plugins: Vec<&str> = Vec::new();
-    for (_, rule) in picked {
-        if !plugins.contains(&rule.id().pack()) {
-            plugins.push(rule.id().pack());
-        }
-    }
-    let payload = json!({
-        "schema_version": SchemaVersion::VALUE,
-        "plugin": plugins.first().copied().unwrap_or("core"),
-        "plugins": plugins,
-        "categories": categories,
-        "rules": rules,
-    });
-    pretty(&payload)
-}
-
-fn pretty(value: &Value) -> String {
-    let mut text = serde_json::to_string_pretty(value).unwrap_or_default();
-    text.push('\n');
-    text
+    let rules = picked.iter().map(|(_, r)| rule_output(r, sev)).collect();
+    RulesOutput::new(set, rules).render()
 }
 
 fn rules_md(picked: &[(&LoadedCategory, &LoadedRule)], sev: &Severities) -> String {
@@ -515,21 +460,8 @@ fn explain_in(
             format!("unknown rule: {id}.{hint}"),
         ));
     };
-    let category = set
-        .categories()
-        .find(|c| c.rules().iter().any(|r| r.id() == rule.id()))
-        .expect("a rule has a category");
     let text = match format_of(m) {
-        "json" => {
-            let mut value = rule_json(category, rule, sev);
-            if let Value::Object(map) = &mut value {
-                map.insert("schema_version".into(), json!(SchemaVersion::VALUE));
-                if let Some(s) = suppression(rule) {
-                    map.insert("suppression".into(), json!(s));
-                }
-            }
-            pretty(&value)
-        }
+        "json" => ExplainOutput::new(rule_output(rule, sev), suppression(rule)).render(),
         "md" => format!(
             "{DISABLE}\n{}\n{ENABLE}\n",
             rule_block(rule, sev).join("\n")
@@ -608,6 +540,7 @@ fn explain_text(rule: &LoadedRule, sev: &Severities) -> String {
 mod tests {
     use super::*;
     use crate::rule_catalog::catalog_of;
+    use serde_json::{Value, json};
     use slopvac_model::PackId;
     use slopvac_rules::{CompileOptions, RuleSet};
     use std::path::PathBuf;

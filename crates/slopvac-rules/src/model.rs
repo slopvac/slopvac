@@ -945,8 +945,9 @@ fn default_text_type() -> slopvac_text::TextType {
     slopvac_text::TextType::Any
 }
 
-/// The schema of `text_type`, shared as `$defs/TextType`.
-struct TextTypeSchema;
+/// The schema of `text_type`, shared as `$defs/TextType`. A type that embeds a rule's members
+/// in another document names it with `#[schemars(with = "TextTypeSchema")]`.
+pub struct TextTypeSchema;
 
 impl JsonSchema for TextTypeSchema {
     fn schema_name() -> std::borrow::Cow<'static, str> {
@@ -963,8 +964,11 @@ impl JsonSchema for TextTypeSchema {
     }
 }
 
-/// A judgement rule is a suggestion and declares no exceptions or cases.
-fn judgement_constraints() -> serde_json::Value {
+/// The `allOf` condition of a rule: a judgement rule is a suggestion and declares no
+/// exceptions or cases. A document that embeds a rule's members states it again with
+/// `extend("allOf" = [judgement_constraints()])`.
+#[must_use]
+pub fn judgement_constraints() -> serde_json::Value {
     if_then(
         &serde_json::json!({
             "properties": {"match": {"properties": {"kind": {"const": "judgement"}}, "required": ["kind"]}},
