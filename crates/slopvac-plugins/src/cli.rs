@@ -1087,6 +1087,7 @@ fn run_untrust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8,
                 &TrustError::Corrupt {
                     path: runner.dirs.state_dir.join("trust.json"),
                     why: TrustPhrase::StoreRecordHash.as_static().into(),
+                    not_json: false,
                 },
             )
         })?;

@@ -124,7 +124,11 @@ pub(crate) fn update(root: &Path, e: &UpdateError) -> Reported {
 pub(crate) fn store(root: &Path, e: &TrustError) -> Result<Reported, String> {
     let text = match e {
         TrustError::Revocation(inner) => return Ok(revocation(inner)),
-        TrustError::Corrupt { path, why } if is_fixed_store_reason(why) => {
+        TrustError::Corrupt {
+            path,
+            why,
+            not_json: false,
+        } if is_fixed_store_reason(why) => {
             store_damaged(Path::new(&under(path, root)), why)
         }
         TrustError::NotAHash(_)
@@ -235,6 +239,7 @@ mod tests {
         let e = TrustError::Corrupt {
             path: "/x/trust.json".into(),
             why: "w".to_owned(),
+            not_json: false,
         };
         assert_eq!(
             store(Path::new("/project"), &e).unwrap_err(),

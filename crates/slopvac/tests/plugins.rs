@@ -196,15 +196,25 @@ fn fresh_key() -> String {
         .to_base64()
 }
 
+/// A kind of damage to a trust store that is not a parse failure.
+#[derive(Debug, Clone, Copy)]
+enum Damage {
+    OverCap,
+    PinDuplicate,
+    UnknownField,
+    PinKey,
+    RecordHash,
+}
+
 /// A damaged store of each kind. The damaged field holds `LEAKME-SECRET-123` where the kind has
 /// a field of its own.
-fn damaged_store(kind: &str) -> String {
+fn damaged_store(kind: Damage) -> String {
     let store = |records: &str, pins: &str| {
         format!("{{\"schema_version\":2,\"records\":[{records}],\"pins\":[{pins}]}}")
     };
     match kind {
-        "over_cap" => format!("{}{}", store("", ""), " ".repeat(8 << 20)),
-        "pin_duplicate" => store(
+        Damage::OverCap => format!("{}{}", store("", ""), " ".repeat(8 << 20)),
+        Damage::PinDuplicate => store(
             "",
             &format!(
                 "{},{}",
@@ -212,17 +222,16 @@ fn damaged_store(kind: &str) -> String {
                 pin_json("ghcr.io:443", &fresh_key())
             ),
         ),
-        "unknown_field" => {
+        Damage::UnknownField => {
             "{\"schema_version\":2,\"records\":[],\"pins\":[],\"LEAKME-SECRET-123\":1}".to_owned()
         }
-        "pin_key" => store("", &pin_json("ghcr.io", "LEAKME-SECRET-123")),
-        "record_hash" => store(
+        Damage::PinKey => store("", &pin_json("ghcr.io", "LEAKME-SECRET-123")),
+        Damage::RecordHash => store(
             "{\"hash\":\"sha256:LEAKME-SECRET-123\",\"name\":\"fmt\",\"version\":null,\"source\":\"test\",\
              \"key_fingerprint\":null,\"declaration\":{\"network\":false,\"hooks\":[],\
              \"required_features\":[],\"optional_features\":[]},\"recorded_at\":\"2026-11-01T00:00:00Z\"}",
             "",
         ),
-        other => panic!("no damaged store of kind {other}"),
     }
 }
 
@@ -230,25 +239,25 @@ fn damaged_store(kind: &str) -> String {
 /// no part of the file reaches the output. The file is kept as it is. A schema version this
 /// build does not read and a pin with no registry host are covered by the two tests above.
 #[rstest::rstest]
-#[case::over_cap("over_cap", &["status"], "larger than 8 MiB")]
+#[case::over_cap(Damage::OverCap, &["status"], "larger than 8 MiB")]
 #[case::pin_duplicate(
-    "pin_duplicate",
+    Damage::PinDuplicate,
     &["status"],
     "two key pins name the same registry host and namespace"
 )]
-#[case::unknown_field("unknown_field", &["status"], "it does not hold a valid trust store")]
+#[case::unknown_field(Damage::UnknownField, &["status"], "it does not hold a valid trust store")]
 #[case::pin_key(
-    "pin_key",
+    Damage::PinKey,
     &["status"],
     "a key pin holds a key that is not a minisign public key"
 )]
 #[case::record_hash(
-    "record_hash",
+    Damage::RecordHash,
     &["untrust", "fmt"],
     "a trust record holds a hash that is not a content hash"
 )]
 fn a_damaged_store_is_named_with_its_fixed_phrase_and_quotes_nothing(
-    #[case] kind: &str,
+    #[case] kind: Damage,
     #[case] command: &[&str],
     #[case] phrase: &str,
 ) {
