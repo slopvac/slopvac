@@ -17,7 +17,8 @@ use rstest::rstest;
 use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
-    ArtifactFault, Budget, Limits, LoadedPack, PackError, Packs, Reference, Source, SourceError,
+    ArtifactFault, Budget, Limits, LoadedPack, PackError, Packs, Reference, RuleFault, Source,
+    SourceError,
     SyncedError, TooLargePart, Trust, TrustQuery, TrustQueryError, TrustSubject, core_source,
     load_synced, load_synced_within,
 };
@@ -896,7 +897,48 @@ fn trust_for_one_installation_does_not_cover_the_same_content_at_another_root() 
 
     let err = second.load_trusting(&["acme"], &record).unwrap_err();
 
-    assert!(refused_for_trust(&err, Trust::Changed), "{err:?}");
+    assert!(refused_for_trust(&err, Trust::Untrusted), "{err:?}");
+    assert_eq!(err.code(), Some("plugin-untrusted"));
+}
+
+/// A trust query that trusts every installation and keeps the manifest bytes of each subject.
+#[derive(Default)]
+struct SeenManifests(std::cell::RefCell<Vec<Vec<u8>>>);
+
+impl TrustQuery for SeenManifests {
+    fn trust(&self, subject: &TrustSubject<'_>) -> Result<Trust, TrustQueryError> {
+        self.0.borrow_mut().push(subject.manifest_bytes.to_vec());
+        Ok(Trust::Trusted)
+    }
+}
+
+#[test]
+fn the_trust_query_sees_the_manifest_bytes_the_hash_covered_not_the_ones_on_disk() {
+    let mut w = World::new();
+    let spec = code_plugin(&["a"]);
+    let captured = spec.manifest();
+    w.install(&spec);
+    // After the manifest is hashed, the file on disk changes. A load that opened it a second
+    // time would hand the query the changed bytes.
+    let mut swap = |rel: &str, path: &Path| {
+        if rel == "slopvac-plugin.toml" {
+            fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
+            fs::write(path, format!("{captured}# changed\n")).unwrap();
+        }
+    };
+    let seen = SeenManifests::default();
+
+    slopvac_packs::load_synced_observed(
+        &ids(&["acme"]),
+        &w.lock(),
+        &w.store(),
+        &seen,
+        &mut Budget::default(),
+        &mut swap,
+    )
+    .unwrap();
+
+    assert_eq!(seen.0.into_inner(), [captured.into_bytes()]);
 }
 
 fn refused_for_store_failure(err: &SyncedError) -> bool {
@@ -971,7 +1013,14 @@ fn an_unparseable_rule_file_in_a_trusted_code_plugin_is_a_file_error() {
 
     let err = w.load_trusting(&["acme"], &record).unwrap_err();
 
-    assert!(matches!(err, SyncedError::Pack(_)), "{err:?}");
+    match err {
+        SyncedError::Pack(PackError::Rules { problems }) => {
+            assert_eq!(problems.len(), 1, "{problems:?}");
+            assert_eq!(problems[0].file, "categories/c.json");
+            assert!(matches!(problems[0].fault, RuleFault::Parse), "{problems:?}");
+        }
+        other => panic!("{other:?}"),
+    }
 }
 
 #[rstest]

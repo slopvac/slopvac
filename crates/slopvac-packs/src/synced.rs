@@ -171,23 +171,28 @@ pub struct TrustSubject<'a> {
     pub root: &'a Path,
     /// The tree hash that the load verified the root against.
     pub tree: &'a TreeHash,
-    /// The manifest, parsed from the bytes that the verified hash covers.
+    /// The bytes of `slopvac-plugin.toml` that the integrity pass captured under that hash.
+    pub manifest_bytes: &'a [u8],
+    /// The manifest, parsed from `manifest_bytes`.
     pub manifest: &'a Manifest,
 }
 
 impl<'a> TrustSubject<'a> {
-    /// The installation of `locked` at `root`, verified against `tree`, with its `manifest`.
+    /// The installation of `locked` at `root`, verified against `tree`, with the captured
+    /// `manifest_bytes` and the `manifest` parsed from them.
     #[must_use]
     pub const fn new(
         locked: &'a LockedPack,
         root: &'a Path,
         tree: &'a TreeHash,
+        manifest_bytes: &'a [u8],
         manifest: &'a Manifest,
     ) -> Self {
         Self {
             locked,
             root,
             tree,
+            manifest_bytes,
             manifest,
         }
     }
@@ -195,6 +200,12 @@ impl<'a> TrustSubject<'a> {
 
 /// Answers the trust state of each code plugin that a load reaches. A load asks only about
 /// code plugins, and a data plugin needs no answer.
+///
+/// The subject holds what the load verified: the lock entry, the root, the tree hash and the
+/// manifest bytes, from which an implementation can rebuild the plugin's launch spec without
+/// opening the tree again. The launch context that a trust hash also covers, such as the
+/// child environment, `PATH` and the publisher fingerprint, belongs to the implementation. It
+/// must come from the same context that recorded trust, or a trusted plugin reads as untrusted.
 pub trait TrustQuery {
     /// The trust state of the installation `subject`.
     ///
@@ -516,9 +527,14 @@ fn load_inner(
         // budget charge, but not before the integrity pass reads the files from disk. An
         // unreadable file in an untrusted plugin reports `StoreUnreadable`, because the install
         // is damaged whatever its trust state.
+        // STUB(wip): the red step reads the manifest from disk a second time.
+        let on_disk = std::fs::read(tree.dir.join(crate::MANIFEST_FILE)).unwrap_or_default();
         let pack = LoadedPack::load_checked(&MemorySource::new(files), origin, budget, |m| {
             check_manifest(&locked, m)?;
-            check_trust(&TrustSubject::new(&locked, &tree.dir, &tree.hash, m), trust)
+            check_trust(
+                &TrustSubject::new(&locked, &tree.dir, &tree.hash, &on_disk, m),
+                trust,
+            )
         })?;
         check_requirements(&pack, &loaded)?;
         loaded.push(pack);
