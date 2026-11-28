@@ -80,8 +80,8 @@ impl Reference {
     /// [`OciError::Invalid`] for any malformed part.
     pub fn parse(s: &str) -> Result<Self, OciError> {
         let (registry, repository, target) = Self::parse_parts(s)?;
-        let target = target
-            .ok_or_else(|| Self::invalid(s, TransportPhrase::OciTargetRequired.as_static()))?;
+        let target =
+            target.ok_or_else(|| Self::invalid(TransportPhrase::OciTargetRequired.as_static()))?;
         Ok(Self {
             registry,
             repository,
@@ -89,10 +89,11 @@ impl Reference {
         })
     }
 
-    fn invalid(s: &str, why: &str) -> OciError {
+    /// A refusal that names the reason only. The reference can carry a credential, so the
+    /// error never repeats it (policies.md, section 1.7).
+    fn invalid(why: &str) -> OciError {
         OciError::Invalid(
             TransportText::OciReference {
-                reference: s.to_owned(),
                 reason: why.to_owned(),
             }
             .to_string(),
@@ -109,9 +110,13 @@ impl Reference {
     ///
     /// [`parse`]: Self::parse
     pub(crate) fn parse_parts(s: &str) -> Result<(String, String, Option<Target>), OciError> {
-        let bad = |why: &str| Self::invalid(s, why);
+        let bad = Self::invalid;
         let (rest, digest) = match s.split_once('@') {
-            Some((r, d)) => (r, Some(Digest::parse(d)?)),
+            Some((r, d)) => {
+                let digest =
+                    Digest::parse(d).map_err(|_| bad(TransportPhrase::OciBadDigest.as_static()))?;
+                (r, Some(digest))
+            }
             None => (s, None),
         };
         let (registry, path) = rest

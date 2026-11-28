@@ -1071,6 +1071,7 @@ plugins-notice-line text
 plugins-oci-archive text
 plugins-oci-auth-base64 text
 plugins-oci-auth-colon text
+plugins-oci-bad-digest text
 plugins-oci-bad-host text
 plugins-oci-bad-redirect text
 plugins-oci-bad-repository text
