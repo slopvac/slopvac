@@ -2,7 +2,9 @@
 
 Usage: review_provider.py LOG_DIR
 
-Each start appends a line to LOG_DIR/spawns, so a test can count spawns. The params of every
+Each start appends a line to LOG_DIR/spawns, so a test can count spawns, and one JSON line to
+LOG_DIR/limits with the soft and hard values of the CPU, core file, open file and file size
+limits it runs under (null for unlimited). The params of every
 `provider/complete` request are appended to LOG_DIR/requests as one JSON line, and the body of
 the request, the bytes as received, to LOG_DIR/requests.raw as one line. How the plugin
 answers comes from LOG_DIR/script.json, which the test writes before each run:
@@ -32,6 +34,7 @@ answers comes from LOG_DIR/script.json, which the test writes before each run:
 
 import json
 import os
+import resource
 import sys
 
 log_dir = sys.argv[1]
@@ -40,6 +43,20 @@ out = sys.stdout.buffer
 
 with open(os.path.join(log_dir, "spawns"), "a") as f:
     f.write("spawn\n")
+
+
+def limit(which):
+    return [None if v == resource.RLIM_INFINITY else v for v in resource.getrlimit(which)]
+
+
+with open(os.path.join(log_dir, "limits"), "a") as f:
+    limits = {
+        "cpu": limit(resource.RLIMIT_CPU),
+        "core": limit(resource.RLIMIT_CORE),
+        "nofile": limit(resource.RLIMIT_NOFILE),
+        "fsize": limit(resource.RLIMIT_FSIZE),
+    }
+    f.write(json.dumps(limits) + "\n")
 
 
 def script():
