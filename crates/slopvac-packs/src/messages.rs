@@ -148,6 +148,15 @@ pub(crate) enum PackMessage {
         "the command of plugin `{id}` must be a relative path inside the plugin, with no leading dash"
     )]
     LoaderCommandUnsafe { id: String },
+    /// The trust store could not answer for a code plugin. The error reports the code of a
+    /// trust store failure.
+    #[code("plugin-trust-unchecked")]
+    #[text("plugin `{id}` cannot be checked against the trust store, so nothing from it loads")]
+    TrustUnchecked { id: String },
+    /// The trust store could not be read.
+    #[code("plugin-trust-store-unreadable")]
+    #[text("the trust store cannot be read")]
+    TrustStoreUnreadable,
 }
 
 fn claims_text(claims: &[(QualifiedName, Provenance)]) -> String {

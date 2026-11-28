@@ -18,31 +18,97 @@ use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
     ArtifactFault, Budget, Limits, LoadedPack, PackError, Packs, Reference, Source, SourceError,
-    SyncedError, TooLargePart, Trust, TrustQuery, core_source, load_synced, load_synced_within,
+    SyncedError, TooLargePart, Trust, TrustQuery, TrustQueryError, TrustSubject, core_source,
+    load_synced, load_synced_within,
 };
 use slopvac_plugins::extract::{TreeHash, tree_hash};
-use slopvac_plugins::lock::{Lockfile, PackId as LockPackId};
+use slopvac_plugins::lock::Lockfile;
 use slopvac_plugins::sync::Store;
 use slopvac_rules::PackBudget;
 
 const MIB: usize = 1024 * 1024;
 
-/// A trust store double: the tree hash recorded as trusted for each plugin id. A plugin with
-/// no record is untrusted, and one recorded at another hash changed after trust.
-struct Recorded(Vec<(&'static str, TreeHash)>);
+mod trust_conformance;
 
-impl TrustQuery for Recorded {
-    fn trust(&self, id: &LockPackId, tree: &TreeHash) -> Trust {
-        match self.0.iter().find(|(known, _)| *known == id.as_str()) {
-            None => Trust::Untrusted,
-            Some((_, hash)) if hash == tree => Trust::Trusted,
-            Some(_) => Trust::Changed,
+/// A trust store double: the installation recorded as trusted for each plugin id, as its root
+/// and tree hash. A plugin with no record is untrusted, and one recorded at another root or
+/// hash changed after trust, as the spawn gate reports a moved tree. A failing store answers
+/// nothing.
+struct Recorded {
+    records: Vec<(String, PathBuf, TreeHash)>,
+    fails: bool,
+}
+
+impl Recorded {
+    const fn none() -> Self {
+        Self {
+            records: Vec::new(),
+            fails: false,
+        }
+    }
+
+    fn trusting(id: &str, root: &Path, tree: TreeHash) -> Self {
+        Self {
+            records: vec![(id.to_owned(), root.to_owned(), tree)],
+            fails: false,
+        }
+    }
+
+    const fn failing() -> Self {
+        Self {
+            records: Vec::new(),
+            fails: true,
         }
     }
 }
 
+impl TrustQuery for Recorded {
+    fn trust(&self, subject: &TrustSubject<'_>) -> Result<Trust, TrustQueryError> {
+        if self.fails {
+            return Err(TrustQueryError::StoreUnreadable);
+        }
+        let id = subject.locked.id.as_str();
+        Ok(match self.records.iter().find(|(known, ..)| known == id) {
+            None => Trust::Untrusted,
+            Some((_, root, tree)) if root == subject.root && tree == subject.tree => Trust::Trusted,
+            Some(_) => Trust::Changed,
+        })
+    }
+}
+
+/// [`Recorded`] as a store the shared trust cases can fill.
+struct RecordedStore;
+
+impl trust_conformance::TrustStore for RecordedStore {
+    fn trusting(&self, trusted: &[TrustSubject<'_>]) -> Box<dyn TrustQuery> {
+        Box::new(Recorded {
+            records: trusted
+                .iter()
+                .map(|s| (s.locked.id.to_string(), s.root.to_owned(), s.tree.clone()))
+                .collect(),
+            fails: false,
+        })
+    }
+
+    fn failing(&self) -> Box<dyn TrustQuery> {
+        Box::new(Recorded::failing())
+    }
+}
+
+#[rstest]
+#[case::trusted(trust_conformance::trusted)]
+#[case::untrusted(trust_conformance::untrusted)]
+#[case::changed(trust_conformance::changed)]
+#[case::another_root(trust_conformance::another_root)]
+#[case::store_error(trust_conformance::store_error)]
+fn the_recorded_double_answers_the_shared_trust_cases(
+    #[case] case: fn(&dyn trust_conformance::TrustStore),
+) {
+    case(&RecordedStore);
+}
+
 /// No trust recorded for any plugin. A load of data plugins asks for none.
-const NO_TRUST: &Recorded = &Recorded(Vec::new());
+const NO_TRUST: &Recorded = &Recorded::none();
 
 /// One pack to install: its manifest values and extra files.
 struct Spec {
@@ -722,11 +788,11 @@ fn other_hash() -> TreeHash {
     TreeHash::parse(&format!("sha256:{}", "0".repeat(64))).unwrap()
 }
 
-/// What the trust store records for `acme` in each refusal case.
-fn untrusted_record(trust: Trust) -> Recorded {
+/// What the trust store records for `acme`, installed at `root`, in each refusal case.
+fn untrusted_record(trust: Trust, root: &Path) -> Recorded {
     match trust {
-        Trust::Untrusted => Recorded(Vec::new()),
-        Trust::Changed => Recorded(vec![("acme", other_hash())]),
+        Trust::Untrusted => Recorded::none(),
+        Trust::Changed => Recorded::trusting("acme", root, other_hash()),
         other => panic!("{other:?} is not a refusal"),
     }
 }
@@ -747,13 +813,13 @@ fn a_code_plugin_without_trust_for_its_tree_contributes_no_rule(
     #[case] code: &str,
 ) {
     let mut w = World::new();
-    w.install(&code_plugin(&["a"]));
+    let root = w.install(&code_plugin(&["a"]));
 
     let err = Packs::with_synced(
         &ids(&["acme"]),
         &w.lock(),
         &w.store(),
-        &untrusted_record(trust),
+        &untrusted_record(trust, &root),
         &[],
     )
     .unwrap_err();
@@ -768,10 +834,10 @@ fn a_code_plugin_without_trust_for_its_tree_contributes_no_rule(
 fn a_code_plugin_without_trust_is_refused_before_any_file_compiles(#[case] trust: Trust) {
     // The pattern does not compile. A load that compiled the files first would report that.
     let mut w = World::new();
-    w.install(&code_plugin(&["("]));
+    let root = w.install(&code_plugin(&["("]));
 
     let err = w
-        .load_trusting(&["acme"], &untrusted_record(trust))
+        .load_trusting(&["acme"], &untrusted_record(trust, &root))
         .unwrap_err();
 
     assert!(refused_for_trust(&err, trust), "{err:?}");
@@ -787,10 +853,10 @@ fn a_code_plugin_without_trust_charges_nothing_to_the_run_budget(
     #[case] fit: fn(&Spec, &mut Limits),
 ) {
     let mut w = World::new();
-    w.install(&code_plugin(&["a"]));
+    let root = w.install(&code_plugin(&["a"]));
     let next = Spec::new("next").rules(&["b"]);
     w.install(&next);
-    let record = untrusted_record(trust);
+    let record = untrusted_record(trust, &root);
     // The run budget holds `next` alone, so any charge for `acme` leaves too little for it.
     let mut budget = Budget::new(small(|l| fit(&next, l)));
 
@@ -806,7 +872,7 @@ fn a_code_plugin_without_trust_charges_nothing_to_the_run_budget(
 fn a_code_plugin_trusted_at_its_tree_hash_loads_its_rules() {
     let mut w = World::new();
     let tree = w.install(&code_plugin(&["a", "b"]));
-    let record = Recorded(vec![("acme", tree_hash(&tree).unwrap())]);
+    let record = Recorded::trusting("acme", &tree, tree_hash(&tree).unwrap());
 
     let sets = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &record, &[])
         .unwrap()
@@ -826,11 +892,100 @@ fn trust_for_one_installation_does_not_cover_the_same_content_at_another_root() 
     let mut second = World::new();
     let other_root = second.install(&code_plugin(&["a"]));
     assert_ne!(trusted_root, other_root);
-    let record = Recorded(vec![("acme", tree_hash(&trusted_root).unwrap())]);
+    let record = Recorded::trusting("acme", &trusted_root, tree_hash(&trusted_root).unwrap());
 
     let err = second.load_trusting(&["acme"], &record).unwrap_err();
 
     assert!(refused_for_trust(&err, Trust::Changed), "{err:?}");
+}
+
+fn refused_for_store_failure(err: &SyncedError) -> bool {
+    matches!(
+        err,
+        SyncedError::TrustUnchecked {
+            id,
+            source: TrustQueryError::StoreUnreadable,
+        } if id == "acme"
+    )
+}
+
+#[test]
+fn a_trust_store_that_cannot_answer_stops_the_load_before_any_file_compiles() {
+    // The pattern does not compile. A load that compiled the files first would report that.
+    let mut w = World::new();
+    w.install(&code_plugin(&["("]));
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &Recorded::failing(), &[])
+        .unwrap_err();
+
+    assert!(refused_for_store_failure(&err), "{err:?}");
+    assert_eq!(err.code(), Some("plugins-store-failed"));
+}
+
+#[rstest]
+#[case::rules(|_: &Spec, l: &mut Limits| l.run_rules = 1)]
+#[case::bytes(|next: &Spec, l: &mut Limits| l.run_bytes = bytes_of(next))]
+fn a_trust_store_that_cannot_answer_charges_nothing_to_the_run_budget(
+    #[case] fit: fn(&Spec, &mut Limits),
+) {
+    let mut w = World::new();
+    w.install(&code_plugin(&["a"]));
+    let next = Spec::new("next").rules(&["b"]);
+    w.install(&next);
+    let failing = Recorded::failing();
+    // The run budget holds `next` alone, so any charge for `acme` leaves too little for it.
+    let mut budget = Budget::new(small(|l| fit(&next, l)));
+
+    let refused = load_synced_within(
+        &ids(&["acme"]),
+        &w.lock(),
+        &w.store(),
+        &failing,
+        &mut budget,
+    );
+    let loaded = load_synced_within(
+        &ids(&["next"]),
+        &w.lock(),
+        &w.store(),
+        &failing,
+        &mut budget,
+    );
+
+    let err = refused.unwrap_err();
+    assert!(refused_for_store_failure(&err), "{err:?}");
+    assert_eq!(loaded_ids(&loaded.unwrap()), ["next"]);
+}
+
+/// A code plugin `acme` whose category file is not JSON.
+fn code_plugin_with_unparseable_rules() -> Spec {
+    let mut spec = code_plugin(&[]);
+    spec.files = vec![("categories/c.json", "{ not json".to_owned())];
+    spec
+}
+
+#[test]
+fn an_unparseable_rule_file_in_a_trusted_code_plugin_is_a_file_error() {
+    let mut w = World::new();
+    let root = w.install(&code_plugin_with_unparseable_rules());
+    let record = Recorded::trusting("acme", &root, tree_hash(&root).unwrap());
+
+    let err = w.load_trusting(&["acme"], &record).unwrap_err();
+
+    assert!(matches!(err, SyncedError::Pack(_)), "{err:?}");
+}
+
+#[rstest]
+#[case::untrusted(Trust::Untrusted)]
+#[case::changed_after_trust(Trust::Changed)]
+fn a_code_plugin_without_trust_is_refused_before_its_rule_file_parses(#[case] trust: Trust) {
+    let mut w = World::new();
+    let root = w.install(&code_plugin_with_unparseable_rules());
+
+    let err = w
+        .load_trusting(&["acme"], &untrusted_record(trust, &root))
+        .unwrap_err();
+
+    assert!(refused_for_trust(&err, trust), "{err:?}");
 }
 
 #[test]
@@ -1318,6 +1473,7 @@ fn a_budget_refusal_exposes_its_budget_name_and_limit(
 #[case::unmet(SyncedError::RequirementUnmet { id: "a".into(), needs: "b".into(), requirement: ">=1".into() }, Some("plugin-requirement-unmet"))]
 #[case::untrusted(SyncedError::Untrusted { id: "a".into() }, Some("plugin-untrusted"))]
 #[case::changed_after_trust(SyncedError::ChangedAfterTrust { id: "a".into() }, Some("plugin-hash-mismatch"))]
+#[case::trust_unchecked(SyncedError::TrustUnchecked { id: "a".into(), source: TrustQueryError::StoreUnreadable }, Some("plugins-store-failed"))]
 fn every_error_reports_its_catalog_code(#[case] error: SyncedError, #[case] code: Option<&str>) {
     assert_eq!(error.code(), code);
 }

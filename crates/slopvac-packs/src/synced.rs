@@ -3,19 +3,18 @@
 //! The config decides which plugins load (threat model X6). The lock pins each one. The load
 //! derives the trusted tree hash from the lock and the cached archive (`Store::verified_tree`),
 //! hashes the installed tree again and compares the two before the loader reads a file.
-//! A code plugin loads only when the caller's [`TrustQuery`] records trust for that verified
-//! hash. Until then none of its files is read past the manifest, compiled or charged.
+//! A code plugin loads only when the caller's [`TrustQuery`] trusts that installation. The
+//! trust check runs before any parsing past the manifest, compiling, registering or budget
+//! charge, but not before the integrity pass reads the files from disk.
 //! A plugin the lock lacks, a tree that is absent or differs from its digest, an extension API
 //! this build does not implement, a code plugin without trust and a `requires` loop each stop
 //! the run.
 
 use std::collections::HashSet;
-#[cfg(feature = "test-support")]
 use std::path::Path;
 
 use semver::Version;
 use slopvac_model::{ApiVersion, PackId};
-use slopvac_plugins::PluginError;
 #[cfg(feature = "test-support")]
 use slopvac_plugins::extract::tree_hash_capturing_files_observed;
 use slopvac_plugins::extract::{
@@ -24,6 +23,7 @@ use slopvac_plugins::extract::{
 use slopvac_plugins::lock::{LockedPack, Lockfile, PackId as LockPackId, PackKind as LockKind};
 use slopvac_plugins::sign::RESERVED_ID;
 use slopvac_plugins::sync::{Store, SyncError};
+use slopvac_plugins::{PluginError, RunError};
 
 use crate::messages::PackMessage;
 use crate::source::MemorySource;
@@ -126,6 +126,16 @@ pub enum SyncedError {
         /// The plugin id.
         id: String,
     },
+    /// The trust store could not answer for a code plugin, so none of its files load. A store
+    /// failure is not a missing approval. The run exits 2.
+    #[error("{}", PackMessage::TrustUnchecked { id: String::from(.id) })]
+    TrustUnchecked {
+        /// The plugin id.
+        id: String,
+        /// Why the store could not answer.
+        #[source]
+        source: TrustQueryError,
+    },
 }
 
 /// The trust state of a code plugin's installed tree, as the caller's trust store records it.
@@ -140,12 +150,57 @@ pub enum Trust {
     Changed,
 }
 
+/// Why a trust store gave no answer. It carries no path, because the store's own errors can
+/// name one outside the project.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum TrustQueryError {
+    /// The trust store could not be read.
+    #[error("{}", PackMessage::TrustStoreUnreadable)]
+    StoreUnreadable,
+}
+
+/// The installation that a trust answer is about. A load fills it after it has verified the
+/// tree against the lock, from what it holds, so the answer needs no second read of the tree.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct TrustSubject<'a> {
+    /// The lock entry of the plugin.
+    pub locked: &'a LockedPack,
+    /// The installed root: the extracted tree directory that the load read.
+    pub root: &'a Path,
+    /// The tree hash that the load verified the root against.
+    pub tree: &'a TreeHash,
+    /// The manifest, parsed from the bytes that the verified hash covers.
+    pub manifest: &'a Manifest,
+}
+
+impl<'a> TrustSubject<'a> {
+    /// The installation of `locked` at `root`, verified against `tree`, with its `manifest`.
+    #[must_use]
+    pub const fn new(
+        locked: &'a LockedPack,
+        root: &'a Path,
+        tree: &'a TreeHash,
+        manifest: &'a Manifest,
+    ) -> Self {
+        Self {
+            locked,
+            root,
+            tree,
+            manifest,
+        }
+    }
+}
+
 /// Answers the trust state of each code plugin that a load reaches. A load asks only about
-/// code plugins, after it has verified the tree against the lock, and passes the hash it
-/// verified. A data plugin needs no answer.
+/// code plugins, and a data plugin needs no answer.
 pub trait TrustQuery {
-    /// The trust state of plugin `id`, whose installed tree hashes to `tree`.
-    fn trust(&self, id: &LockPackId, tree: &TreeHash) -> Trust;
+    /// The trust state of the installation `subject`.
+    ///
+    /// # Errors
+    /// [`TrustQueryError`] when the store cannot answer. The load then refuses the plugin.
+    fn trust(&self, subject: &TrustSubject<'_>) -> Result<Trust, TrustQueryError>;
 }
 
 impl SyncedError {
@@ -185,12 +240,15 @@ impl SyncedError {
             Self::ChangedAfterTrust { id } => {
                 return host_code(&PluginError::HashMismatch(id.clone()));
             }
+            // A store that cannot answer reports the code of a trust store failure.
+            Self::TrustUnchecked { .. } => RunError::setup_failed(String::new()).code(),
         })
     }
 }
 
 /// The code of a plugin host refusal, read from the host's message catalog, so the trust
 /// refusals of a load report the same code as the host's and no code is written twice.
+// Follow-up: switch to a typed accessor once `slopvac-plugins` publishes one for these codes.
 fn host_code(refusal: &PluginError) -> Option<&'static str> {
     let code = refusal.slopvac_code();
     slopvac_plugins::message_entries()
@@ -273,21 +331,18 @@ fn check_manifest(locked: &LockedPack, manifest: &Manifest) -> Result<(), Synced
     Ok(())
 }
 
-/// Refuse a code plugin unless `trust` records its verified tree hash. A data plugin needs no
-/// answer. Run after [`check_manifest`], so the manifest kind agrees with the lock kind.
-fn check_trust(
-    locked: &LockedPack,
-    tree: &TreeHash,
-    trust: &dyn TrustQuery,
-) -> Result<(), SyncedError> {
-    if locked.kind == LockKind::Data {
+/// Refuse a code plugin unless `trust` trusts the installation `subject`. A data plugin needs
+/// no answer. Run after [`check_manifest`], so the manifest kind agrees with the lock kind.
+fn check_trust(subject: &TrustSubject<'_>, trust: &dyn TrustQuery) -> Result<(), SyncedError> {
+    if subject.locked.kind == LockKind::Data {
         return Ok(());
     }
-    let id = locked.id.to_string();
-    match trust.trust(&locked.id, tree) {
-        Trust::Trusted => Ok(()),
-        Trust::Untrusted => Err(SyncedError::Untrusted { id }),
-        Trust::Changed => Err(SyncedError::ChangedAfterTrust { id }),
+    let id = subject.locked.id.to_string();
+    match trust.trust(subject) {
+        Ok(Trust::Trusted) => Ok(()),
+        Ok(Trust::Untrusted) => Err(SyncedError::Untrusted { id }),
+        Ok(Trust::Changed) => Err(SyncedError::ChangedAfterTrust { id }),
+        Err(source) => Err(SyncedError::TrustUnchecked { id, source }),
     }
 }
 
@@ -456,12 +511,14 @@ fn load_inner(
             LockKind::Code => Source::Plugin,
         };
         // The integrity pass above has read every file once. From the captured bytes,
-        // `check_manifest` compares the manifest with the lock, and `check_trust` refuses a code
-        // plugin whose tree is not trusted, before the load reads any other file, compiles
-        // anything or charges the budget.
+        // `check_manifest` compares the manifest with the lock, and then `check_trust` runs. The
+        // trust check runs before any parsing past the manifest, compiling, registering or
+        // budget charge, but not before the integrity pass reads the files from disk. An
+        // unreadable file in an untrusted plugin reports `StoreUnreadable`, because the install
+        // is damaged whatever its trust state.
         let pack = LoadedPack::load_checked(&MemorySource::new(files), origin, budget, |m| {
             check_manifest(&locked, m)?;
-            check_trust(&locked, &tree.hash, trust)
+            check_trust(&TrustSubject::new(&locked, &tree.dir, &tree.hash, m), trust)
         })?;
         check_requirements(&pack, &loaded)?;
         loaded.push(pack);
