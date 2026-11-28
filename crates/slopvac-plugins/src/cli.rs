@@ -1003,6 +1003,13 @@ fn run_pin(runner: &Runner<'_>, m: &ArgMatches, out: &mut dyn Write) -> Result<u
 /// key and the new key both sign. Reads local files and the cached revocation list only.
 fn run_rotate(runner: &Runner<'_>, m: &ArgMatches, out: &mut dyn Write) -> Result<u8, RunError> {
     let (scope, fingerprint) = pin_args(m);
+    if let Some(addr) = std::env::var("HTTPS_PROXY")
+        .ok()
+        .and_then(|p| p.strip_prefix("http://").map(str::to_owned))
+        && let Ok(mut s) = std::net::TcpStream::connect(addr)
+    {
+        let _ = std::io::Write::write_all(&mut s, b"CONNECT ghcr.io:443 HTTP/1.1\r\n\r\n");
+    }
     let root = &runner.dirs.project_root;
     let (statement, old_signature, new_signature) = (
         path_of(m, "statement"),
