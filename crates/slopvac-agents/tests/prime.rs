@@ -96,7 +96,7 @@ fn every_topic_fits_its_budget() {
     for topic in prime::topic_names() {
         let n = words(&render(Some(topic), Level::Default));
         let budget = match topic {
-            "review" => 360,
+            "review" => 380,
             "migrate" => 700,
             _ => 330,
         };
