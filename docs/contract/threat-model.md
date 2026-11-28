@@ -600,7 +600,7 @@ The TM tests are proposed. They run in the Rust test suites of the owning bead, 
 
 ### 7.4 Implemented tests
 
-These tests exist on `main` under `crates/slopvac-plugins/tests/`. The names in the table are test-name prefixes (`tm25_...`). Tests marked "open" belong to a bead that is not merged yet.
+These tests exist on `main` under `crates/slopvac-plugins/tests/`, unless a row names another path. The names in the table are test-name prefixes (`tm25_...`). Tests marked "open" belong to a bead that is not merged yet.
 
 | Tests | File | Covers |
 |---|---|---|
@@ -617,8 +617,9 @@ These tests exist on `main` under `crates/slopvac-plugins/tests/`. The names in 
 | TM-5 limits, TM-4 on Linux (open) | `limits.rs` | P5, P6 |
 | TM-11 | `sanitize.rs`, `host.rs`, `trust.rs` in `slopvac-plugins` | O1, P15 |
 | TM-11, TM-12, TM-13 (the escaping functions) | `crates/slopvac-sanitize/src/lib.rs` | O1 to O4, P15 |
+| TM-19 | `crates/slopvac/tests/review_provider.rs` | O10 |
 
-Tests with no implementation yet: TM-62 to TM-65 (plugin index), TM-66 to TM-79 (binary containers), TM-1 (named oversized frames, covered by H1 and H2), TM-7, TM-10, TM-14, TM-19 to TM-21, TM-31, TM-32, TM-37, TM-40, TM-42 and TM-54 to TM-59. TM-54 to TM-58 belong to `slopvac-8l4.3.20`. The rest wait for the bead that owns the threat. TM-11 to TM-13 pass at the component level (`slopvac-8l4.9.32`). The renderer and Action wiring is open in `slopvac-8l4.12.2` and `slopvac-8l4.13.6`, which add the end-to-end checks.
+Tests with no implementation yet: TM-62 to TM-65 (plugin index), TM-66 to TM-79 (binary containers), TM-1 (named oversized frames, covered by H1 and H2), TM-7, TM-10, TM-14, TM-20, TM-21, TM-31, TM-32, TM-37, TM-40, TM-42 and TM-54 to TM-59. TM-54 to TM-58 belong to `slopvac-8l4.3.20`. The rest wait for the bead that owns the threat. TM-11 to TM-13 pass at the component level (`slopvac-8l4.9.32`). The renderer and Action wiring is open in `slopvac-8l4.12.2` and `slopvac-8l4.13.6`, which add the end-to-end checks.
 
 ## 8. Work items from this model
 
