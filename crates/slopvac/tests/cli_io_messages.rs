@@ -1,4 +1,9 @@
 //! The CLI's input and output messages: each is registered, locked and worded as published.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 
 use slopvac_cli::messages::catalogs;
 use slopvac_messages::{Entry, Kind};
