@@ -914,3 +914,1270 @@ pointer = "/allOf/4/then/allOf/0/not"
 kind = "constraint-added"
 reason = "Output schema: the review plan states that `request` is absent when `uses_provider` is false. The condition narrows what slopvac writes and loosens nothing a reader relies on. Approved in https://github.com/slopvac/slopvac/pull/793#issuecomment-7235778377."
 approved_by = "contract (8l4.2), #793"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/categories/items/$ref(rules-output.schema.json#/$defs/CategoryOutput)/properties/weight/default"
+kind = "unverified"
+reason = "Not provable by schema_compat. The 8l4.12.88 equivalence review checked it by hand: same accepted set."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/type"
+kind = "type-narrowed"
+reason = "Generated schema: `type: object` moved from `RuleBody` to each definition, with no nullability gained. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/id"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/name"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/message"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/severity"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/scope"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/text_type"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/match"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/ai_signal"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/ai_signal_source"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/citation"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/category"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/plugin"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/kind"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/required/effective_severity"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/additionalProperties"
+kind = "additional-properties-narrowed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/id"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/name"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/message"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/match"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/citation"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/fix"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/scope"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/text_type"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/ai_signal"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/ai_signal_source"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/allowlist"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/applies_to"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/cases"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/contexts"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/examples"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/exceptions"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/exclude_blocks"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/severity"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/category"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/plugin"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/kind"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/effective_severity"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/severity_from"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/url"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/if"
+kind = "if-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/then/properties/cases"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/then/properties/exceptions"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/properties/rules/items/$ref(rules-output.schema.json#/$defs/RuleOutput)/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/then/properties/severity"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/CategoryOutput/properties/weight/default"
+kind = "unverified"
+reason = "Not provable by schema_compat. The 8l4.12.88 equivalence review checked it by hand: same accepted set."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleBody"
+kind = "def-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/$ref"
+kind = "constraint-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/additionalProperties"
+kind = "constraint-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf"
+kind = "constraint-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/patternProperties"
+kind = "constraint-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/properties"
+kind = "constraint-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/type"
+kind = "type-narrowed"
+reason = "Generated schema: `type: object` moved from `RuleBody` to each definition, with no nullability gained. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/id"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/name"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/message"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/severity"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/scope"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/text_type"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/match"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/ai_signal"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/ai_signal_source"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/citation"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/category"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/plugin"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/kind"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/required/effective_severity"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/additionalProperties"
+kind = "additional-properties-narrowed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/unevaluatedProperties"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/id"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/name"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/message"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/match"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/citation"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/fix"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/scope"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/text_type"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/ai_signal"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/ai_signal_source"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/allowlist"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/applies_to"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/cases"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/contexts"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/examples"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/exceptions"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/exclude_blocks"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/severity"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/category"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/plugin"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/kind"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/effective_severity"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/severity_from"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/url"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/if"
+kind = "if-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/then/properties/cases"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/then/properties/exceptions"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/then/properties/severity"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/type"
+kind = "type-widened"
+reason = "Generated schema: `type: object` moved from `RuleBody` to each definition, with no nullability gained. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/ai_signal"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/ai_signal_source"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/category"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/citation"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/effective_severity"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/id"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/kind"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/match"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/message"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/name"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/plugin"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/scope"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/severity"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/RuleOutput/allOf/0/required/text_type"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/$ref"
+kind = "constraint-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/additionalProperties"
+kind = "constraint-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf"
+kind = "constraint-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/patternProperties"
+kind = "constraint-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/properties"
+kind = "constraint-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/type"
+kind = "type-narrowed"
+reason = "Generated schema: `type: object` moved from `RuleBody` to each definition, with no nullability gained. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/id"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/name"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/message"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/severity"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/scope"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/text_type"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/match"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/ai_signal"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/ai_signal_source"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/citation"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/category"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/plugin"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/kind"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/effective_severity"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/required/schema_version"
+kind = "required-added"
+reason = "Generated schema: a required field moved out of `allOf` into the definition. It was already required. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/additionalProperties"
+kind = "additional-properties-narrowed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/unevaluatedProperties"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/id"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/name"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/message"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/match"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/citation"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/fix"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/scope"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/text_type"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/ai_signal"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/ai_signal_source"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/allowlist"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/applies_to"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/cases"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/contexts"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/examples"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/exceptions"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/exclude_blocks"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/severity"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/category"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/plugin"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/kind"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/effective_severity"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/severity_from"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/properties/url"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/if"
+kind = "if-changed"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/then/properties/cases"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/then/properties/exceptions"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/$ref(rules-output.schema.json#/$defs/RuleBody)/allOf/0/then/properties/severity"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/type"
+kind = "type-widened"
+reason = "Generated schema: `type: object` moved from `RuleBody` to each definition, with no nullability gained. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/ai_signal"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/ai_signal_source"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/category"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/citation"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/effective_severity"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/id"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/kind"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/match"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/message"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/name"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/plugin"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/scope"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/severity"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/0/required/text_type"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/1/required/schema_version"
+kind = "constraint-loosened"
+reason = "Generated schema: `unevaluatedProperties` closure became an equivalent `additionalProperties` closure, or a constraint moved with its property. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/1/properties/schema_version"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "rules-output.schema.json"
+pointer = "/$defs/ExplainOutput/allOf/1/properties/suppression"
+kind = "property-removed"
+reason = "Generated schema: `RuleBody` folded into each definition that used it. Same accepted set (8l4.12.88 equivalence review)."
+approved_by = "contract owner (8l4.2)"
