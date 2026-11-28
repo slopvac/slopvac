@@ -1520,6 +1520,58 @@ fn k20_a_rotation_needs_a_cached_list_that_revokes_neither_key(
     assert_eq!(r.pinned_id(), OLD_KEY_ID);
 }
 
+/// Whether another holder has the trust store lock now.
+fn trust_store_locked(state: &Path) -> bool {
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .open(state.join("trust.lock"));
+    match file.map(|f| f.try_lock()) {
+        Ok(Ok(())) => false,
+        Ok(Err(fs::TryLockError::WouldBlock)) => true,
+        Ok(Err(fs::TryLockError::Error(e))) => panic!("{e}"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => panic!("{e}"),
+    }
+}
+
+/// A sync that caches a list revoking the old key while a rotation waits must stop that
+/// rotation: the rotation reads the list under the trust store lock and the cache lock, so it
+/// cannot install the new key against an older list.
+///
+/// The test holds the cache lock, as a refresh does, and starts the rotation. It waits until
+/// the rotation has touched the revocation source and then either finished or taken the trust
+/// store lock. Only then does it cache the revoking list and release the cache lock. A
+/// rotation that read the cache before it took the locks has already read the old list.
+#[test]
+fn k20_a_list_cached_while_the_rotation_waits_for_the_lock_refuses_it() {
+    let r = Rotation::new(&key(OLD_PUB));
+    r.cache(&[]);
+    let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let watched = r
+        .revocations()
+        .with_access_counter_for_tests(std::sync::Arc::clone(&counter));
+    let held = r.revocations().lock().unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    let result = std::thread::scope(|scope| {
+        let rotation = scope.spawn(|| r.rotate(&new_fp(), &watched));
+        while counter.load(std::sync::atomic::Ordering::SeqCst) == 0
+            || !(rotation.is_finished() || trust_store_locked(r.state.path()))
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the rotation never ran"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        r.cache(&[OLD_KEY_ID]);
+        drop(held);
+        rotation.join().unwrap()
+    });
+    let err = result.unwrap_err();
+    assert_eq!(err.code(), Some("rotation-key-revoked"), "{err:?}");
+    assert_eq!(r.pinned_id(), OLD_KEY_ID);
+}
+
 #[test]
 fn k20_a_damaged_revocation_cache_refuses_the_rotation() {
     let r = Rotation::new(&key(OLD_PUB));
