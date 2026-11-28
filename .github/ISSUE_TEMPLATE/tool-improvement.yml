@@ -74,6 +74,8 @@ body:
       label: "Command"
       description: "The exact command or commands you ran. Pipe the sample into `slopvac lint --stdin`. Do not include paths or file names."
       render: "shell"
+    validations:
+      required: false
   - type: textarea
     id: what-to-change
     attributes:
