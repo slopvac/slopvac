@@ -1584,10 +1584,10 @@ mod kind_tests {
     }
 
     #[rstest]
-    #[case::html(FileKind::Html)]
-    #[case::text(FileKind::Text)]
-    fn html_and_text_stay_unsupported(#[case] kind: FileKind) {
-        assert!(kind_of_file(&kind, "a").is_err());
+    #[case::html(FileKind::Html, Kind::Html)]
+    #[case::text(FileKind::Text, Kind::Markdown)]
+    fn html_reads_as_html_and_text_as_markdown(#[case] kind: FileKind, #[case] want: Kind) {
+        assert_eq!(kind_of_file(&kind, "a"), Ok(want));
     }
 
     #[rstest]
@@ -1599,6 +1599,8 @@ mod kind_tests {
     )]
     #[case::unknown("code-comments", "no-such-language", None)]
     #[case::markdown("prose", "markdown", Some(Kind::Markdown))]
+    #[case::html("prose", "html", Some(Kind::Html))]
+    #[case::text("prose", "text", Some(Kind::Markdown))]
     #[case::prose_python("prose", "python", None)]
     fn stdin_kind_follows_mode_and_language(
         #[case] mode: &'static str,
