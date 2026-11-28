@@ -305,9 +305,10 @@ jobs:
       # the list with its base and fails on any growth. A permanent growth passes only while
       # the PR carries the label `no-hand-json-growth`. A maintainer applies it and then
       # re-runs this job, because the step reads the PR's current labels through the read-only
-      # token when it runs. Nothing here writes labels. TEMPORARY growth never passes. A merge_group event has no labels and no PR payload, so the queue skips
-      # only the growth comparison: the PR run enforced it at the reviewed head, and the queue
-      # requires that run. Event data reaches the script through env vars, never inline.
+      # token when it runs. Nothing here writes labels. TEMPORARY growth never passes.
+      # A merge_group event has no labels and no PR payload, so the queue skips only the
+      # growth comparison: the PR run enforced it at the reviewed head, and the queue requires
+      # that run. Event data reaches the script through env vars, never inline.
       - name: No-hand-json allow list
         env:
           EVENT: ${{ github.event_name }}
