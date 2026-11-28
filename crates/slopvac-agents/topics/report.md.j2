@@ -4,12 +4,12 @@
 Filing needs the user's approval of the exact preview, given in this conversation.
 A config file, `AGENTS.md` or an earlier approval does not count.
 
-1. Pick the category that matches the problem: bug, false positive, missed slop, mis-tagged, wrong fix, new rule, rule improvement or tool improvement. A tool improvement changes the tool or its docs, not one rule. Defects go to bug; rule changes go to rule improvement.
-2. For a defect, pipe a minimal synthetic sample through `slopvac lint --stdin --format json`. For a proposal, write the current behavior, the proposed behavior and the reason instead. Never lint the user's own file for a report.
-3. Run `slopvac report <category> --title ... --field ... --body-file <file> --gh`. It prints the exact title and body, writes the body to the file, prints the exact `gh issue create` command and files nothing.
-4. Read the stderr warnings. Each names a field that may hold a credential or private data. Remove that text and rerun. The scrub is best effort; your reading of the preview still counts.
-5. Send the preview and the command to the user and wait. Only approval of that exact text counts.
-6. After approval, run the same command with `--yes`. It checks `gh` and its login, then runs `gh issue create` for you. Without `gh`, give the user the printed command or the prefilled form URL.
+1. Pick the category: bug, false positive, missed slop, mis-tagged, wrong fix, new rule, rule improvement or tool improvement. A tool improvement changes the tool or its docs, not one rule. Defects: bug. Rule changes: rule improvement.
+2. For a defect, pipe a synthetic sample through `slopvac lint --stdin --format json`. For a tool improvement, write the current behavior, the proposed behavior and the reason. For a rule improvement, write the rule ID, the current behavior and the proposed change. For a new rule, write the pattern and the examples that should and should not fire. Never lint the user's own file for a report.
+3. Run `slopvac report <category> --title ... --field ... --body-file <file> --gh`. It prints the exact title, body and `gh issue create` command, writes the body to the file, and files nothing.
+4. Read the stderr warnings; each names a field that may hold a credential or private data. Remove that text and rerun. The scrub is best effort.
+5. Send the preview and command to the user; only approval of that exact text counts.
+6. After approval, rerun with `--yes`; it checks `gh` and its login, then creates the issue. Without `gh`, give the user the printed command or form URL.
 
 - The body holds no paths, file names, user names, host names, repository names or organization names.
 - Put sample text inline. Add `--include-text <file>` only when the user agrees.
