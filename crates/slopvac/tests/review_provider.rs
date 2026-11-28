@@ -324,7 +324,9 @@ mod conformance {
     fn an_item_error_stops_the_review_with_the_code_of_the_first_failed_item() {
         let world = World::new(
             REWRITE,
-            &config("provider = \"provider\"\nmodel = \"same-model\"\nauthor_model = \"same-model\"\n"),
+            &config(
+                "provider = \"provider\"\nmodel = \"same-model\"\nauthor_model = \"same-model\"\n",
+            ),
         );
         world.trust();
         world.script(&json!({"order": "reverse", "errors": {"2": -32603, "1": -32006}}));
@@ -529,7 +531,9 @@ mod conformance {
         #[case] refusal: Option<&str>,
         #[case] lift: Lift,
     ) {
-        assert_one_gate_keeps_the_provider_from_starting(docs, &config, setup, flags, refusal, &lift);
+        assert_one_gate_keeps_the_provider_from_starting(
+            docs, &config, setup, flags, refusal, &lift,
+        );
     }
 
     /// A plugin that declares no provider hook is not a model provider, and it never starts. The
@@ -758,7 +762,9 @@ mod conformance {
     fn a_reviewer_on_the_author_model_gets_a_pre_call_notice_and_the_review_passes() {
         let world = World::new(
             REWRITE,
-            &config("provider = \"provider\"\nmodel = \"same-model\"\nauthor_model = \"same-model\"\n"),
+            &config(
+                "provider = \"provider\"\nmodel = \"same-model\"\nauthor_model = \"same-model\"\n",
+            ),
         );
         world.trust();
 
