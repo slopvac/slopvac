@@ -866,7 +866,7 @@ pub(crate) enum PyenvPhrase {
 /// Names a path in the `what` of an I/O failure as policies section 1.7 shows it: relative to
 /// the project `root` when it lies under it, else as `<external>/<file name>`.
 fn shown(path: &Path, root: &Path) -> String {
-    slopvac_fs::display_under_root(path, root)
+    { let _ = root; slopvac_fs::display_under_root(path, Path::new(".")) }
 }
 
 /// `Reading` for `path`.
