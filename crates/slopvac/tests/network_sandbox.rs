@@ -79,8 +79,8 @@ mod conformance {
     #[case::rules(&["rules"], 0, "chat-leakage")]
     #[case::explain(&["explain", "core:ai-residue.chat-leakage"], 0, "chat-leakage")]
     #[case::prime(&["prime"], 0, "slopvac")]
-    // `reference` answers `command-not-wired` until it is wired. Change this case then.
-    #[case::reference(&["reference"], 2, "")]
+    // `reference` is not here: it exits 2 with `command-not-wired` on any input, with or without
+    // a network, so no assertion on it can tell network use apart. Add it when it is wired.
     #[case::claims(&["claims", "b.md", "--original", "a.md"], 0, "\"change\": \"changed\"")]
     fn a_command_with_no_network_path_finishes_with_no_route_out(
         #[case] args: &[&str],
