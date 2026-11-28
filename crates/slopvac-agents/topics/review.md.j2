@@ -3,7 +3,7 @@
 
 Before you hand off prose, review it. Someone other than the author checks the change.
 {% if review_depth == "self" %}
-Depth: `self`. You review the change yourself; no separate reviewer pass runs.
+Depth: `self`. You review the change yourself. No separate reviewer pass runs.
 {% elif review_depth == "adversary" %}
 Depth: `adversary`. Complete the adversary loop: rounds with a new reviewer each, until a round reports no finding you accept.
 {% endif %}
@@ -51,7 +51,7 @@ Run `slopvac prime review --type <type>` for the steps of one type.
 ## Scope
 
 - Fact checking covers changed claims and lost-fact candidates. Nothing else is in scope.
-- You can add up to 5 checks, plus half the required checks rounded up, without asking.
+- Do not ask before you add up to 5 checks, plus half the required checks rounded up.
 - Above that, ask the user to confirm the exact scope. Then rerun with `--scope-approved`.
 
 ## Reviewer
