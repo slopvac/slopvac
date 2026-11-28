@@ -72,27 +72,49 @@ rule:
             has:
               kind: string_literal
               regex: '[A-Za-z]{2,}[:,.]? +[A-Za-z{]'
-    # The message argument (the second one) of `CliError::new(code, message)` and
-    # `CliError::escaping(code, raw)`, as a literal or a `format!` call. The code argument
-    # is not checked, and a message from a catalog render is not a literal.
+    # The message argument (the second one, not counting comments) of
+    # `CliError::new(code, message)` and `CliError::escaping(code, raw)`. The code argument
+    # is not checked, and a message from a catalog render is not a literal. `Self::new` and
+    # `Self::escaping` count only inside `impl CliError`.
     - all:
         - kind: call_expression
         - has:
             field: function
             kind: scoped_identifier
-            regex: ^(\w+::)*CliError::(new|escaping)$
+            all:
+              - has:
+                  field: name
+                  regex: ^(new|escaping)$
+              - has:
+                  field: path
+                  any:
+                    - kind: identifier
+                      regex: ^CliError$
+                    - kind: scoped_identifier
+                      has:
+                        field: name
+                        regex: ^CliError$
+                    - all:
+                        - kind: identifier
+                          regex: ^Self$
+                        - inside:
+                            kind: impl_item
+                            has:
+                              field: type
+                              regex: ^CliError$
+                            stopBy: end
         - has:
             field: arguments
             has:
               all:
-                - nthChild: 2
-                - any:
-                    - kind: string_literal
-                    - all:
-                        - kind: macro_invocation
-                        - has:
-                            field: macro
-                            regex: ^format$
+                - nthChild:
+                    position: 2
+                    ofRule:
+                      not:
+                        any:
+                          - kind: line_comment
+                          - kind: block_comment
+                - matches: cli-message
   not:
     inside:
       kind: mod_item
@@ -101,3 +123,43 @@ rule:
         regex: cfg\(test\)
         stopBy: neighbor
       stopBy: end
+# A literal message: a string, `concat!` or `format!`, alone or wrapped in a reference, a
+# pair of parentheses, `.to_string()`, `.to_owned()`, `.into()` or `String::from`.
+utils:
+  cli-message:
+    any:
+      - kind: string_literal
+      - kind: raw_string_literal
+      - kind: macro_invocation
+        has:
+          field: macro
+          regex: ^(format|concat)$
+      - kind: parenthesized_expression
+        has:
+          matches: cli-message
+      - kind: reference_expression
+        has:
+          field: value
+          matches: cli-message
+      - kind: call_expression
+        all:
+          - has:
+              field: function
+              kind: field_expression
+              all:
+                - has:
+                    field: field
+                    regex: ^(to_string|to_owned|into)$
+                - has:
+                    field: value
+                    matches: cli-message
+      - kind: call_expression
+        all:
+          - has:
+              field: function
+              kind: scoped_identifier
+              regex: ^String::from$
+          - has:
+              field: arguments
+              has:
+                matches: cli-message
