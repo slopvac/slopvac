@@ -397,8 +397,8 @@ fn plugins(
     out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     let cwd = std::env::current_dir().map_err(|e| plugins_setup_failed(&e.kind().to_string()))?;
-    let presets = slopvac_styles::StylePresets(slopvac_styles::BuiltinSource);
-    let config = slopvac_config::Discovery::new(&presets)
+    let presets = crate::lint_settings::presets();
+    let config = slopvac_config::Discovery::new(presets)
         .nearest(&cwd)
         .map_err(|e| crate::engine::config_error(&e, &cwd))?;
     with_plugin_runner(offline, env, &cwd, config.as_deref(), |runner, _| {
@@ -1003,8 +1003,8 @@ mod plugin_dir_tests {
             ),
         )
         .unwrap();
-        let presets = slopvac_styles::StylePresets(slopvac_styles::BuiltinSource);
-        let config = slopvac_config::Discovery::new(&presets)
+        let presets = crate::lint_settings::presets();
+        let config = slopvac_config::Discovery::new(presets)
             .nearest(&a)
             .unwrap()
             .expect("project A's config");

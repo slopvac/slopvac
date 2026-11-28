@@ -1,0 +1,66 @@
+{
+  "schema_version": 3,
+  "slopvac_version": "3.0.0",
+  "inputs": [
+    {
+      "path": "reference/e.md",
+      "config_root": ".",
+      "config_sources": [
+        {
+          "layer": "core"
+        },
+        {
+          "layer": "project",
+          "file": "slopvac.toml"
+        }
+      ],
+      "profile": "strict",
+      "genre": {
+        "id": "reference",
+        "source": "detected"
+      },
+      "settings": [
+        {
+          "key": "locale",
+          "value": "en-GB",
+          "source": {
+            "layer": "front-matter",
+            "file": "reference/e.md",
+            "line": 4,
+            "column": 3
+          },
+          "replaced": []
+        },
+        {
+          "key": "profile.name",
+          "value": "strict",
+          "source": {
+            "layer": "genre",
+            "file": "plugin:core/genres/reference.yaml",
+            "line": 4,
+            "column": 1
+          },
+          "replaced": [
+            {
+              "value": "normal",
+              "source": {
+                "layer": "core"
+              }
+            }
+          ]
+        }
+      ],
+      "rules": {
+        "total": 120,
+        "configured": {
+          "error": 0,
+          "warning": 0,
+          "suggestion": 0,
+          "off": 0
+        }
+      },
+      "configured_rules": [],
+      "front_matter_resolved": true
+    }
+  ]
+}

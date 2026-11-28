@@ -260,3 +260,70 @@ fn a_warning_that_part_of_the_check_did_not_run_fails_the_lint() {
     assert!(message.contains("rule-style-not-implemented"), "{message}");
     assert_eq!(Error::Lint(message).code(), "migrate-lint-failed");
 }
+
+/// A [`slopvac_migrate::Configure`] double that gives every document per-document genres and
+/// the declared genre `genre`, as the CLI does for a document whose `slopvac:` block names one.
+struct Declaring(Option<&'static str>);
+
+impl slopvac_migrate::Configure for Declaring {
+    fn load<'a>(
+        &'a self,
+        _dir: &Path,
+        _config: Option<&str>,
+    ) -> Result<slopvac_migrate::SettingsOf<'a>, Error> {
+        let declared = self.0.map(str::to_owned);
+        Ok(Box::new(move |_, _| {
+            let mut settings = slopvac_engine::Settings::new(
+                slopvac_model::NonEmptyString::new("normal").unwrap(),
+                slopvac_model::GenreResult {
+                    id: slopvac_model::GenreId::new("consumer").unwrap(),
+                    source: slopvac_model::GenreSource::Default,
+                    reasons: Vec::new(),
+                },
+            );
+            settings.genre_assignments = Some(Vec::new());
+            Ok(slopvac_migrate::DocumentSettings::new(settings)
+                .with_declared_genre(declared.clone()))
+        }))
+    }
+}
+
+/// The document is linted under the genre that its settings say it declares. The genre
+/// `change-comms` turns the history rule off, and the default genre `consumer` keeps it at
+/// `warning`.
+#[rstest::rstest]
+#[case::declared_change_comms(Some("change-comms"), 0)]
+#[case::no_declaration(None, 1)]
+fn the_lint_uses_the_genre_the_settings_declare(
+    #[case] declared: Option<&'static str>,
+    #[case] expected: usize,
+) {
+    let history = json!({
+        "id": "history-internal-reference", "name": "n", "message": "Found {match}.",
+        "severity": "warning",
+        "match": {"kind": "tokens", "tokens": ["leverage"]},
+        "citation": {"source": "s"}
+    });
+    let category = json!({
+        "schema_version": 3, "id": "docs-discipline", "title": "t", "description": "d",
+        "rules": [history]
+    });
+    let set = RuleSet::from_sources(
+        &PackId::new("core").unwrap(),
+        [(PathBuf::from("docs-discipline.json"), category.to_string())],
+        &CompileOptions::default(),
+    )
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "doc.md", "We leverage it.\n");
+
+    let findings = EngineLinter::new(vec![set], Box::new(Declaring(declared)))
+        .lint(dir.path(), Phase::After, &[])
+        .unwrap();
+
+    let count = findings
+        .iter()
+        .find(|f| f.rule == "core:docs-discipline.history-internal-reference")
+        .map_or(0, |f| f.count);
+    assert_eq!(count, expected, "{findings:?}");
+}

@@ -17,7 +17,7 @@ use slopvac_rules::{LoadedRule, MatchKind};
 use slopvac_styles::BuiltinSource;
 
 use crate::errors::CliError;
-use crate::lint_settings::ShippedStyles;
+use crate::lint_settings;
 use crate::redact;
 use crate::rule_catalog::Catalog;
 
@@ -126,7 +126,7 @@ impl Severities {
     /// that does not ship, and the config error code for a file that is refused.
     pub fn load(m: &ArgMatches) -> Result<Self, CliError> {
         let cwd = std::env::current_dir().unwrap_or_default();
-        let presets = ShippedStyles::new();
+        let presets = lint_settings::presets();
         let config = if let Some(path) = m.get_one::<std::path::PathBuf>("config") {
             let shown = redact::shown_path(path, &cwd);
             if !path.is_file() {
@@ -136,12 +136,12 @@ impl Severities {
                 ));
             }
             Some(
-                load_labeled(path, &shown, &presets)
+                load_labeled(path, &shown, presets)
                     .map(Arc::new)
                     .map_err(|e| config_error(&e, &cwd))?,
             )
         } else {
-            Discovery::new(&presets)
+            Discovery::new(presets)
                 .nearest(&cwd)
                 .map_err(|e| config_error(&e, &cwd))?
         };
@@ -173,7 +173,7 @@ impl Severities {
     #[must_use]
     fn from_config(config: &LoadedConfig) -> Self {
         let inputs = Inputs {
-            presets: &ShippedStyles::new(),
+            presets: lint_settings::presets(),
             front_matter: &[],
             directives: &[],
             cli: &[],
@@ -288,7 +288,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, format!("schema_version = 3\n{body}")).expect("write");
-        let config = slopvac_config::load(&path, &ShippedStyles::new()).expect("the config loads");
+        let config =
+            slopvac_config::load(&path, lint_settings::presets()).expect("the config loads");
         Severities::from_config(&config).for_catalog(rules)
     }
 

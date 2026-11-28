@@ -1,0 +1,80 @@
+{
+  "schema_version": 3,
+  "slopvac_version": "3.0.0",
+  "inputs": [
+    {
+      "path": "docs/a.md",
+      "config_root": ".",
+      "config_sources": [
+        {
+          "layer": "core"
+        },
+        {
+          "layer": "project",
+          "file": "slopvac.toml"
+        }
+      ],
+      "profile": "normal",
+      "genre": {
+        "id": "how-to",
+        "source": "explicit"
+      },
+      "settings": [
+        {
+          "key": "locale",
+          "value": "en-GB",
+          "source": {
+            "layer": "front-matter",
+            "file": "docs/a.md",
+            "line": 4,
+            "column": 3
+          },
+          "replaced": [
+            {
+              "value": "en-US",
+              "source": {
+                "layer": "project",
+                "file": "slopvac.toml",
+                "line": 2,
+                "column": 1
+              }
+            }
+          ]
+        },
+        {
+          "key": "thresholds.min_score",
+          "value": 60,
+          "source": {
+            "layer": "directive",
+            "file": "docs/a.md",
+            "line": 9,
+            "column": 15
+          },
+          "replaced": []
+        }
+      ],
+      "rules": {
+        "total": 120,
+        "configured": {
+          "error": 0,
+          "warning": 1,
+          "suggestion": 0,
+          "off": 0
+        }
+      },
+      "configured_rules": [
+        {
+          "id": "core:prose-craft.sentence-length",
+          "level": "warning",
+          "source": {
+            "layer": "front-matter",
+            "file": "docs/a.md",
+            "line": 7,
+            "column": 5
+          }
+        }
+      ],
+      "front_matter_resolved": true
+    }
+  ]
+}

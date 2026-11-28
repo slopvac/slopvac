@@ -28,6 +28,10 @@ The order comes from the plan, section "Layer order". Environment switches (`SLO
 
 **2.x behavior.** The chain had three layers: the profile, the top-level tables, and each matching `[[overrides]]` block in file order (`config.py`, module docstring and `resolve_for`). Front matter, genres, styles and `extends` did not exist.
 
+#### 1.1.1 Inline directives
+
+A `slopvac:` comment in a document sets fields for that document, in the `directive` layer. White space after `slopvac:` is optional, so `<!-- slopvac:locale=en-GB -->` sets `locale`. A comment whose body is exactly `slopvac:begin` or `slopvac:end` is a steering marker, not a directive.
+
 ### 1.2 Merge rules
 
 **3.0 requirement.** A higher layer patches a lower one field by field.
@@ -84,6 +88,8 @@ Every resolved value carries a `ConfigSource` (`common.schema.json#/$defs/Config
 `slopvac lint --explain-config <targets>` prints how the settings of each input resolve, then exits. It lints nothing: no report, no gate and no summary. It prints text by default and JSON with `--format json`.
 
 - It writes to standard output and exits 0. A target that cannot be read is reported on standard error as for a lint run, the exit code is 2, and the input is left out of the output.
+- An input can name a genre that no layer registers, in its `slopvac:` block or an inline directive. Standard error reports it with the code `config-invalid-value`, as for a lint run, and the exit code is 2. A lint run skips that input, so the output leaves it out. The other inputs keep their records.
+- An input whose `slopvac:` block or inline directives have any other error is reported on standard error as for a lint run, and the exit code is 2. The block or the directives that hold the error contribute nothing, and the input keeps its record.
 - A config that cannot be loaded stops the run before any input resolves. The exit code is 2 and standard error holds `error[<code>]: <message>` with the code of the failure. In the text form standard output stays empty. With `--format json`, standard output holds what `slopvac lint --format json` prints for the same failure: the lint report (`lint-report`) with no documents and one warning notice that carries the same code. One case differs. Before any command runs, the update policy check reads the nearest `slopvac.toml` at or above the working directory. It stops on a file that cannot be read at all, such as one that is not valid UTF-8, whether the file is in the working directory or above it. The code is `config-unreadable`, or `update-policy-too-large` for a file over its size cap, and the exit code is 2. Standard error holds `error[<code>]: <file>: <reason>`, with the file shown as `slopvac.toml`, a path below the working directory or `<external>/slopvac.toml`. Standard output stays empty in both formats, as for `lint`.
 - `--explain-config` with a `--format` other than `text` or `json` fails before any file is read, with the code `explain-config-format-unsupported` and exit 2.
 - `--explain-config` with `--min-score`, `--max-per-100-words`, `--locale`, `--category`, `--disable`, `--out`, `--open` or `--verbose` fails the same way, with the code `explain-config-option-unsupported` and exit 2, in both formats. It does not show the command-line layer yet, and the refusal keeps it from ignoring those options.
@@ -91,24 +97,24 @@ Every resolved value carries a `ConfigSource` (`common.schema.json#/$defs/Config
 Both forms keep these guarantees:
 
 - One record per input, in argument order. A record is headed by the input's path as the report shows it (policies.md, section 1.7), or `<stdin>` for standard input.
+- Each input resolves as a lint run of the same input resolves it: with its own `slopvac:` block, its inline directives and its genre. The record holds the settings that lint applies to that input.
 - The config root is `.` for the working directory, the path relative to the working directory for a directory below it, and `<external>/<name>` for any other directory (policies.md, section 1.7). The root and the path metadata (the input path, the config files and the origins) never carry an absolute path.
-- Values are printed as configured, except that a value that is a URL is printed without its user-info, query and fragment.
+- Values are printed as configured, except that a value that is a URL is printed without its user-info, query and fragment. This includes the values that the `slopvac:` block and inline directives set.
 - Each resolved key comes with its final value and origin, and the values it replaced follow, highest layer first. The keys appear in the order of their key paths, compared segment by segment, and the order does not depend on the input. A key that names a rule or a category is grouped under the catalogue entry it names, so the spellings of one rule are one key.
-- The origin of a `core` value has no file.
-- Until front matter takes part in resolution, the output says so.
+- The origin of a `core` value has no file. The origin of a value from the `slopvac:` block or an inline directive names the input as the record's heading does, with the line and column of the key in the document.
 
-The text form prints each record as a block, with a blank line between blocks. Below the heading, a block lists `config root: <root>` and one `config file: <file> (<layer>)` line for each file of the config stack. Every field, the heading included, is escaped as one line, so a file name or a value cannot inject a control sequence or a line break. Then comes each resolved key as `<key> = <value>  [<layer> <file>:<line>:<column>]`, and each value the key replaced follows on an indented line `replaced <value>  [<origin>]`. A block ends with the line `front matter overrides are not shown`.
+The text form prints each record as a block, with a blank line between blocks. Below the heading, a block lists `config root: <root>` and one `config file: <file> (<layer>)` line for each file of the config stack. Every field, the heading included, is escaped as one line, so a file name or a value cannot inject a control sequence or a line break. Then comes each resolved key as `<key> = <value>  [<layer> <file>:<line>:<column>]`, and each value the key replaced follows on an indented line `replaced <value>  [<origin>]`.
 
 The JSON form is the document of `explain-config.schema.json`:
 
 - The root has `schema_version` (3), `slopvac_version` and `inputs`, an array with one record for each input that resolved.
 - A record has `path`, `config_root`, `config_sources`, `profile`, `genre`, `settings`, `rules`, `configured_rules` and `front_matter_resolved`.
 - `config_sources` lists the built-in defaults and then each config file, as the lint report lists them for a document.
-- `genre` is the genre that the config sets, with `explicit` or `default` as its source. A genre that detection picks reads the document, so it is not resolved here. The lint report carries it.
-- Each entry of `settings` has `key`, `value`, `source` and `replaced`, an array of `value` and `source` pairs, highest layer first. A value keeps the JSON type that the config gave it.
+- `genre` is the genre whose settings the record holds. Its `id` and `source` equal the `genre` of the lint report for the same input. The source is `explicit` when a layer names the genre: a config file, a `[[genres]]` block, the `slopvac:` block or an inline directive. It is `detected` when genre detection chose the genre, and `default` otherwise.
+- Each entry of `settings` has `key`, `value`, `source` and `replaced`, an array of `value` and `source` pairs, highest layer first. A value keeps the JSON type that the config or the document gave it.
 - An origin is `layer`, `file`, `line` and `column`, as in section 1.4. An origin with no file leaves out the `file` key, and no key is ever `null`. A config file outside the config root, such as an `extends` target above it, shows as `<external>/<file name>` in `config_sources` and in every origin, never with `..`. The `layer` enum and the level enum of `configured_rules` carry `"x-slopvac-extensible": true`, because the command-line layer is not shown yet and a later release adds it.
 - `rules.total` is the number of rules in the catalogue. `rules.configured` counts the rules that a layer gave a level, by `error`, `warning`, `suggestion` and `off`. A rule that no layer names keeps the level of its definition and its genre, and no count includes it. `configured_rules` lists those rules, sorted by id, each with `id`, `level` and `source`. Every id is a qualified id: `core:<category>.<rule>` or `<plugin>:<category>.<rule>`. The level is the one `lint` applies, after the profile's `severity_shift`.
-- `front_matter_resolved` is `false` until front matter takes part in resolution. Once it does, the record gains only the key names that front matter sets and their source locations, never the values.
+- `front_matter_resolved` is `true` when the input's `slopvac:` block and inline directives took part in resolution. It is `false` when `[frontmatter] enabled = false` turns both off.
 
 ## 2. Nearest config
 
@@ -146,6 +152,7 @@ The block is the mapping under the `slopvac:` key of a document's front matter. 
 - `[frontmatter] allow` in the project config sets which fields take effect. The default is `genre`, `locale` and `terms`. A field outside the list is an error: `config-frontmatter-field-denied`. Slopvac reports it every time.
 - The default list lets a document weaken its own gate without a project opt-in, the same way an inline `slopvac-allow` comment does. A document that picks a lenient genre, or lists `terms.allow` words, changes what it is held to. A stricter project removes `genre` from the list. For example, `allow = ["locale", "terms"]` makes a `genre` field in any document an error, and the genre comes from the `[[genres]]` blocks or from detection.
 - The `genre` field changes the genre only. Contexts that a `[[genres]]` block or the config assigns to a file are additive, so a document cannot remove them by naming another genre. The report lists both the front matter reason and the path reason.
+- A `genre` field or `genre` directive that names a genre that no layer registers is an error with the code `config-invalid-value`. `lint` reports it, skips that document, lints the other documents and exits 2. The message names the place that sets the genre and never names the genre.
 - `[frontmatter] enabled = false` makes `slopvac:` ordinary data. Slopvac neither reads nor validates it.
 - Keys outside `slopvac:` are the document's own and are never checked.
 - Keys that start with `x-` are ignored inside the block.

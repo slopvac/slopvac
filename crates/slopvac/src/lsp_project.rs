@@ -29,15 +29,18 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use slopvac_config::frontmatter::Policy;
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
+use slopvac_engine::{Engine, Input};
 use slopvac_lsp::{
     Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
 };
-use slopvac_model::{ConfigSource, Notice, RuleId};
-use slopvac_styles::{BuiltinSource, StylePresets};
+use slopvac_model::{BomMode, ConfigSource, GenreResult, Notice, RuleId};
 
-use crate::engine::{config_error, declared_genre, read_block_under, rel_text, settings_for};
+use crate::engine::{
+    config_error, declared_genre, probe_settings, read_block_under, rel_text, rst_roots,
+    settings_for,
+};
 use crate::errors::CliError;
-use crate::lint_settings::{self, Located, Overrides};
+use crate::lint_settings::{self, DocumentLayers, Located, Overrides};
 use crate::lint_terms;
 use crate::rule_catalog::Catalog;
 
@@ -102,13 +105,20 @@ impl<K: Eq + Hash, V> Bounded<K, V> {
     }
 }
 
+/// What a probe engine is built for: a config root and the RST roots of the buffer.
+type ProbeKey = (PathBuf, Vec<PathBuf>);
+
 /// What a successful load of the project holds.
 struct Ready {
     catalog: Catalog,
     /// The nearest config of each directory, as `slopvac lint` finds it.
     configs: Bounded<PathBuf, Option<Arc<LoadedConfig>>>,
-    /// One engine for each distinct settings set.
+    /// One engine for each distinct settings set and set of RST roots.
     engines: Bounded<String, Arc<EngineLinter>>,
+    /// One engine for each config root and set of RST roots, built from the settings before
+    /// any genre layer. It reads a buffer and chooses its genre, which the settings of the
+    /// buffer then follow.
+    probes: Box<Bounded<ProbeKey, Arc<EngineLinter>>>,
     /// The warnings shown so far, so a config that several directories share warns once.
     notified: HashSet<(String, String)>,
     /// Warnings from configs that linting found, not yet handed to the server.
@@ -199,8 +209,7 @@ pub(crate) fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
 
 /// The nearest config of `dir`, found again from disk.
 fn nearest(dir: &Path) -> Result<Option<Arc<LoadedConfig>>, ConfigError> {
-    let presets = StylePresets(BuiltinSource);
-    Discovery::new(&presets).nearest(dir)
+    Discovery::new(lint_settings::presets()).nearest(dir)
 }
 
 /// The text of the config file at `path` and the byte offset of `source` in it. `None` when
@@ -328,13 +337,13 @@ impl Project {
             catalog,
             configs: Bounded::new(MAX_CONFIGS),
             engines: Bounded::new(MAX_ENGINES),
+            probes: Box::new(Bounded::new(MAX_CONFIGS)),
             notified: notices.iter().map(notice_key).collect(),
             pending: Vec::new(),
         };
         ready.configs.insert(self.root.clone(), config);
         let mut notices = notices;
-        let presets = StylePresets(BuiltinSource);
-        let discovery = Discovery::new(&presets);
+        let discovery = Discovery::new(lint_settings::presets());
         for dir in active.iter().filter(|dir| **dir != self.root) {
             let found = match discovery.nearest(dir) {
                 Ok(found) => found,
@@ -469,6 +478,29 @@ impl Project {
         (path.to_path_buf(), self.root.clone())
     }
 
+    /// The directories an RST interpreter is never taken from, for the buffer at `path`, which
+    /// `locate` placed in `dir`: the directory the server runs in, `dir` and the repository
+    /// root above it, as `slopvac lint` sets them for a file, and the directory that holds
+    /// `path` as it was opened, with every repository above it. A buffer opened through a
+    /// symlink has a repository on each side of the link, and each one outside the server's
+    /// directory is untrusted code: a `python` it ships on `PATH` must not run. A link in a
+    /// directory of the path can itself look like a repository, so the opened side counts
+    /// every `.git` above it, not only the nearest.
+    fn rst_roots(&self, path: &Path, dir: &Path) -> Vec<PathBuf> {
+        let mut starts = vec![dir.to_path_buf()];
+        if let Some(parent) = path.parent() {
+            let opened = self.root.join(parent);
+            starts.extend(
+                opened
+                    .ancestors()
+                    .filter(|d| d.join(".git").exists())
+                    .map(Path::to_path_buf),
+            );
+            starts.push(opened);
+        }
+        rst_roots(&self.root, starts)
+    }
+
     /// The epoch of the loaded project, or why the project cannot lint.
     fn epoch(&self) -> Result<u64, LintError> {
         let loaded = self.loaded();
@@ -484,10 +516,76 @@ impl Project {
         self.resolve_settings(path, text, epoch)
     }
 
+    /// The genre that the engine of `config` chooses for the buffer at `path`, which the
+    /// settings of the buffer then follow. The probe engine reads the buffer with its own RST
+    /// adapter, which is the parse the lint of the buffer needs, under the buffer's `roots`.
+    fn detected_genre(
+        &self,
+        epoch: u64,
+        path: &str,
+        text: &str,
+        config: &LoadedConfig,
+        rel: &Path,
+        roots: &[PathBuf],
+    ) -> Option<GenreResult> {
+        let kind = slopvac_lsp::buffer_kind(path);
+        let probe = self.probe(epoch, config, rel, roots)?;
+        let relative = rel_text(rel);
+        let mut input = Input::new(path, text)
+            .with_kind(kind)
+            .with_bom(BomMode::Buffer)
+            .with_relative_path(&relative);
+        let declared = declared_genre(&read_block_under(text, path, Some(config)));
+        if let Some(genre) = &declared {
+            input = input.with_declared_genre(genre);
+        }
+        let engine = probe.engine();
+        let pre = engine.preparse(&input).ok()?;
+        engine.detect_genre(&input, &pre).ok().flatten()
+    }
+
+    /// The probe engine of `config`, built once for each config root, set of RST roots and
+    /// load.
+    fn probe(
+        &self,
+        epoch: u64,
+        config: &LoadedConfig,
+        rel: &Path,
+        roots: &[PathBuf],
+    ) -> Option<Arc<EngineLinter>> {
+        let key = (config.root.clone(), roots.to_vec());
+        // The probe shares the loaded catalogue: the settings and the rule-set handles are
+        // taken under the lock, and the engine is built outside it.
+        let (settings, sets) = {
+            let loaded = self.loaded();
+            match &loaded.state {
+                State::Ready(ready) => {
+                    if let Some(found) = ready.probes.get(&key) {
+                        return Some(Arc::clone(found));
+                    }
+                    let settings =
+                        probe_settings(&ready.catalog, config, rel, &Overrides::default()).ok()?;
+                    (settings, ready.catalog.shared_sets())
+                }
+                State::Failed(_) => return None,
+            }
+        };
+        let built = Engine::new_shared(sets, settings)
+            .ok()?
+            .with_project_roots(roots.to_vec());
+        let probe = Arc::new(EngineLinter::from_engine(built, HashMap::new()));
+        let mut loaded = self.current(epoch)?;
+        if let State::Ready(ready) = &mut loaded.state {
+            ready.probes.insert(key, Arc::clone(&probe));
+        }
+        Some(probe)
+    }
+
     fn resolve_settings(&self, path: &str, text: &str, epoch: u64) -> Result<Resolved, LintError> {
         let shown = |e: CliError| LintError(e.message);
         let file = Path::new(path);
         let (absolute, dir) = self.locate(file);
+        let roots = self.rst_roots(file, &dir);
         let config = self.config_in(&dir, epoch).map_err(shown)?;
         let none = LoadedConfig::without_files(self.root.clone());
         let (config_ref, rel) = match &config {
@@ -501,15 +599,29 @@ impl Project {
         };
         // The catalog stays in the shared state, so take what the settings need under the
         // lock and build the engine outside it.
+        // The buffer is read and its genre chosen before the lock: both take the lock
+        // themselves, and neither should hold it while it parses.
+        // The layers carry the path into their diagnostics and into the location of a
+        // refused value, so they get it relative to the root (policies.md, section 1.7).
+        let shown_path = slopvac_fs::display_under_root(file, &self.root);
+        let layers = DocumentLayers::read(text, &shown_path, config.as_deref())
+            .with_detected_genre(self.detected_genre(epoch, path, text, config_ref, &rel, &roots));
         let (settings, terms, key, cached, sets) = {
             let loaded = self.loaded();
             let ready = match &loaded.state {
                 State::Ready(ready) => ready,
                 State::Failed(why) => return Err(LintError(why.clone())),
             };
-            let (settings, terms, key) =
-                settings_for(&ready.catalog, config_ref, &rel, &Overrides::default())
-                    .map_err(shown)?;
+            let (settings, terms, key) = settings_for(
+                &ready.catalog,
+                config_ref,
+                &rel,
+                &Overrides::default(),
+                &layers,
+            )
+            .map_err(shown)?;
+            // The engine's RST adapter is told the roots, so they are part of its key.
+            let key = format!("{key}{roots:?}");
             let cached = ready.engines.get(&key).cloned();
             // The rule-set handles are cloned only when an engine is to be built.
             let sets = if cached.is_none() {
@@ -523,8 +635,9 @@ impl Project {
             engine
         } else {
             let reasons = slopvac_lsp::exception_names(sets.iter().map(Arc::as_ref));
-            let built =
-                lint_terms::build_engine(sets, settings, &terms, &self.root).map_err(shown)?;
+            let built = lint_terms::build_engine(sets, settings, &terms, &self.root)
+                .map_err(shown)?
+                .with_project_roots(roots);
             let engine = Arc::new(EngineLinter::from_engine(built, reasons));
             #[cfg(test)]
             self.paused_at(Stage::EngineBuilt);
@@ -693,6 +806,78 @@ mod tests {
             .findings
             .iter()
             .any(|f| f.rule_id.to_string() == LEXICON)
+    }
+
+    /// A buffer chooses the same genre whatever its kind: the probe engine reads a
+    /// reStructuredText buffer with its own adapter, as the lint of the buffer does. The path
+    /// `design/` is a weight 3 signal of `internal`, whose minimum score is 3.
+    #[rstest::rstest]
+    #[case::markdown("design/a.md")]
+    #[case::mdx("design/a.mdx")]
+    #[case::restructuredtext("design/a.rst")]
+    fn a_buffer_of_any_kind_gets_the_detected_genre(#[case] path: &str) {
+        let (_dir, root, server) = nested_project();
+        let project = Arc::clone(&server.linter.project);
+        let epoch = project.epoch().expect("a loaded project");
+        let config = LoadedConfig::without_files(root.clone());
+        let detected = project.detected_genre(
+            epoch,
+            path,
+            "# Notes\n\nText.\n",
+            &config,
+            Path::new(path),
+            std::slice::from_ref(&root),
+        );
+        assert_eq!(
+            detected.map(|g| g.id.as_str().to_owned()).as_deref(),
+            Some("internal")
+        );
+    }
+
+    /// An indented `# Changelog` is a heading only in MDX, where it scores the `change-comms`
+    /// heading signal (3, the minimum), and that genre turns the history rule off. The
+    /// extension decides the kind whatever its case, as discovery in `slopvac lint` reads it.
+    const MDX_CHANGELOG: &str =
+        "    # Changelog\n\nThe retry loop landed in commit 3f9a2c1 after the outage.\n";
+
+    #[test]
+    fn an_upper_case_mdx_buffer_gets_the_genre_of_mdx() {
+        let (_dir, root, server) = nested_project();
+        let project = Arc::clone(&server.linter.project);
+        let epoch = project.epoch().expect("a loaded project");
+        let config = LoadedConfig::without_files(root.clone());
+        let detected = project.detected_genre(
+            epoch,
+            "doc.MDX",
+            MDX_CHANGELOG,
+            &config,
+            Path::new("doc.MDX"),
+            std::slice::from_ref(&root),
+        );
+        assert_eq!(
+            detected.map(|g| g.id.as_str().to_owned()).as_deref(),
+            Some("change-comms")
+        );
+    }
+
+    #[test]
+    fn an_upper_case_mdx_buffer_lints_as_mdx() {
+        let (_dir, root, server) = nested_project();
+        let linted = server
+            .linter
+            .lint(&root.join("doc.MDX").display().to_string(), MDX_CHANGELOG)
+            .expect("linted");
+        let rules: Vec<String> = linted
+            .findings
+            .iter()
+            .map(|f| f.rule_id.to_string())
+            .collect();
+        assert!(
+            !rules
+                .iter()
+                .any(|r| r == "core:docs-discipline.history-internal-reference"),
+            "{rules:?}"
+        );
     }
 
     #[test]

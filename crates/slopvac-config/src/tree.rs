@@ -315,47 +315,101 @@ fn yaml_key(k: &MarkedYaml<'_>) -> String {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The bytes of the indexed text that a [`LineIndex`] has read through its text on this
+    /// thread, so a test can count the work of a lookup instead of timing it.
+    pub(crate) static TEXT_BYTES_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The text a [`LineIndex`] reads. Outside tests it is the plain `&str`.
+#[cfg(not(test))]
+type Text<'a> = &'a str;
+/// The text a [`LineIndex`] reads. In tests every read through it is counted.
+#[cfg(test)]
+type Text<'a> = counted::Text<'a>;
+
+#[cfg(test)]
+mod counted {
+    use std::ops::Range;
+
+    /// A `&str` that adds each byte read through it to [`super::TEXT_BYTES_READ`]. It counts
+    /// only reads through the `text` field of [`super::LineIndex`]. A rescan of another copy of
+    /// the text, or a rescan inside `frontmatter_spans::LineIndex`, is not counted.
+    #[derive(Debug, Clone, Copy)]
+    pub(crate) struct Text<'a>(&'a str);
+
+    impl<'a> From<&'a str> for Text<'a> {
+        fn from(text: &'a str) -> Self {
+            Self(text)
+        }
+    }
+
+    fn charge(bytes: usize) {
+        super::TEXT_BYTES_READ.with(|n| n.set(n.get() + bytes));
+    }
+
+    impl<'a> Text<'a> {
+        /// The length is known without reading the text, so it costs nothing.
+        pub(crate) fn len(self) -> usize {
+            self.0.len()
+        }
+
+        /// Reads the byte at `index`.
+        pub(crate) fn is_char_boundary(self, index: usize) -> bool {
+            charge(1);
+            self.0.is_char_boundary(index)
+        }
+
+        /// Returns the bytes of `range` and counts each of them as read. The count covers only
+        /// reads through the `text` field of `LineIndex`.
+        #[expect(
+            dead_code,
+            reason = "test-only: a rescan of `self.text` in `LineIndex` must read through this \
+                      counted path, and no code calls it today"
+        )]
+        pub(crate) fn get(self, range: Range<usize>) -> Option<&'a str> {
+            let slice = self.0.get(range);
+            charge(slice.map_or(0, str::len));
+            slice
+        }
+    }
+}
+
 /// Maps byte offsets to one-based lines and columns, as `docs/contract/positions.md` defines.
 ///
 /// A line ends at LF, CRLF or a CR that does not precede LF. Nothing else ends a line. A leading
 /// byte order mark is not part of line 1, so offsets 0 and 3 are both line 1, column 1.
+///
+/// It wraps [`frontmatter_spans::LineIndex`], the one home of line and column in the workspace,
+/// so a lookup costs a binary search and not a scan of the line.
 #[derive(Debug, Clone)]
 pub struct LineIndex<'a> {
-    text: &'a str,
-    starts: Vec<usize>,
+    text: Text<'a>,
+    index: frontmatter_spans::LineIndex<'a>,
 }
 
 impl<'a> LineIndex<'a> {
     /// Index `text`.
     #[must_use]
     pub fn new(text: &'a str) -> Self {
-        let bom = if text.starts_with('\u{feff}') {
-            '\u{feff}'.len_utf8()
-        } else {
-            0
-        };
-        let bytes = text.as_bytes();
-        let mut starts = vec![bom];
-        for (i, &b) in bytes.iter().enumerate() {
-            let ends_line = b == b'\n' || (b == b'\r' && bytes.get(i + 1) != Some(&b'\n'));
-            if ends_line {
-                starts.push(i + 1);
-            }
+        Self {
+            text: Text::from(text),
+            index: frontmatter_spans::LineIndex::new(text),
         }
-        Self { text, starts }
     }
 
-    /// One-based line and column of a byte offset. The column counts code points.
+    /// One-based line and column of a byte offset. The column counts code points. An offset
+    /// inside a character is column 1 of its line.
     #[must_use]
     pub fn line_col(&self, offset: usize) -> (usize, usize) {
-        let offset = offset.clamp(self.starts[0], self.text.len());
-        let line = self.starts.partition_point(|&s| s <= offset) - 1;
-        let start = self.starts[line];
-        let col = self
-            .text
-            .get(start..offset)
-            .map_or(0, |s| s.chars().count());
-        (line + 1, col + 1)
+        let at = self.index.line_col(offset);
+        let clamped = offset.min(self.text.len());
+        if self.text.is_char_boundary(clamped) {
+            (at.line, at.column)
+        } else {
+            (at.line, 1)
+        }
     }
 }
 

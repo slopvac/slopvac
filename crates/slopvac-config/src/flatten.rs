@@ -23,9 +23,20 @@ pub struct Origin<'a> {
 /// field by field.
 #[must_use]
 pub fn flatten(node: &Node, origin: Origin<'_>, skip: &[&str]) -> Vec<Setting> {
-    let lines = LineIndex::new(origin.text);
+    flatten_with(node, origin, skip, &LineIndex::new(origin.text))
+}
+
+/// [`flatten`] with a line index of `origin.text` that the caller built, so many trees of one
+/// document share one index.
+#[must_use]
+pub fn flatten_with(
+    node: &Node,
+    origin: Origin<'_>,
+    skip: &[&str],
+    lines: &LineIndex<'_>,
+) -> Vec<Setting> {
     let mut out = Vec::new();
-    walk(node, &mut Vec::new(), skip, origin, &lines, &mut out);
+    walk(node, &mut Vec::new(), skip, origin, lines, &mut out);
     out
 }
 
@@ -93,6 +104,33 @@ mod tests {
             },
             &["schema_version", "overrides", "genres", "extends"],
         )
+    }
+
+    /// Many keys on one line cost one lookup each, and a lookup reads at most one byte of the
+    /// text: the provenance of a key never rescans the line before it. 2 000 keys on one line
+    /// make 2 001 lookups (the keys and `t`). A lookup that rescanned the line prefix would
+    /// read about 2 000 x 15 000 bytes.
+    #[test]
+    fn many_keys_on_one_line_read_the_text_once_per_key() {
+        const KEYS: usize = 2_000;
+        let pairs: Vec<String> = (0..KEYS).map(|i| format!("k{i} = {i}")).collect();
+        let text = format!("t = {{ {} }}\n", pairs.join(", "));
+        crate::tree::TEXT_BYTES_READ.with(|n| n.set(0));
+        let s = settings(&text);
+        let read = crate::tree::TEXT_BYTES_READ.with(std::cell::Cell::get);
+        assert_eq!(s.len(), KEYS);
+        assert!(
+            read <= KEYS + 1,
+            "{read} bytes read for {} lookups",
+            KEYS + 1
+        );
+        // The last key sits at its byte offset on line 1: the text is ASCII.
+        let last = format!("k{}", KEYS - 1);
+        let column = text.find(&format!("{last} =")).unwrap() + 1;
+        assert_eq!(
+            find(&s, &["t", &last]).source.column,
+            NonZeroUsize::new(column)
+        );
     }
 
     fn find<'a>(s: &'a [Setting], path: &[&str]) -> &'a Setting {

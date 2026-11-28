@@ -7,7 +7,7 @@ use annotate_snippets::{AnnotationKind, Group, Level, Origin, Renderer, Snippet}
 
 use slopvac_messages::Catalog;
 
-use crate::messages::ConfigMessage;
+use crate::messages::{ConfigMessage, ConfigPhrase};
 use crate::tree::LineIndex;
 
 /// Stable identifier of a diagnostic, printed in brackets and matched by tests.
@@ -177,10 +177,25 @@ impl Diagnostic {
         })
     }
 
+    /// A fixed message for output that must not carry a value of the document. The message of
+    /// the diagnostic itself can quote the value it refused (policies 1.7), so a caller that
+    /// shows only the code and the span shows this text.
+    #[must_use]
+    pub fn redacted_message(&self) -> String {
+        ConfigPhrase::LabelNotValidHere.text()
+    }
+
     /// One-based line and column of the span start in `text`.
     #[must_use]
     pub fn location(&self, text: &str) -> (usize, usize) {
-        LineIndex::new(text).line_col(self.span.start)
+        self.location_in(&LineIndex::new(text))
+    }
+
+    /// One-based line and column of the span start, from a line index of the text built once
+    /// for all the diagnostics of a document.
+    #[must_use]
+    pub fn location_in(&self, lines: &LineIndex<'_>) -> (usize, usize) {
+        lines.line_col(self.span.start)
     }
 }
 

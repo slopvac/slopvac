@@ -847,6 +847,14 @@ pub(crate) enum EnginePhrase {
     #[code("engine-git-unreadable")]
     #[text("git output could not be read")]
     GitUnreadable,
+    /// `Engine::with_genres` was called for settings that choose one genre for the run.
+    #[code("engine-genres-need-assignments")]
+    #[text("per-document genres need genre assignments in the settings")]
+    GenresNeedAssignments,
+    /// A preparsed document was handed to the engine with another input.
+    #[code("engine-preparsed-mismatch")]
+    #[text("a preparsed document was read from other text or another kind of file")]
+    PreparsedMismatch,
 }
 
 impl EnginePhrase {

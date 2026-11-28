@@ -317,7 +317,7 @@ fn a_category_level_blocks_the_genre_for_its_own_plugin_only() -> Result<(), Box
         vec![plugin_set_of("alpha")?, plugin_set_of("beta")?],
         settings,
     )?
-    .with_genres(genre_for_two_plugins()?)
+    .with_genres(genre_for_two_plugins()?)?
     .lint(&Input::markdown("a.md", &source).with_declared_genre("internal"))?;
     let got: Vec<(&str, Severity)> = doc
         .findings

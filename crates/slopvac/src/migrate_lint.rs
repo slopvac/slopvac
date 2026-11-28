@@ -4,12 +4,12 @@
 use std::path::Path;
 
 use slopvac_config::LoadedConfig;
-use slopvac_migrate::{Configure, Error, SettingsOf};
-use slopvac_styles::{BuiltinSource, StylePresets};
+use slopvac_engine::{Engine, Input};
+use slopvac_migrate::{Configure, DocumentSettings, Error, SettingsOf};
 
-use crate::engine::{config_error, file_settings};
+use crate::engine::{block_errors, config_error, file_settings, probe_settings, rel_text};
 use crate::errors::CliError;
-use crate::lint_settings::{self, Overrides};
+use crate::lint_settings::{self, DocumentBlocks, DocumentLayers, Overrides};
 use crate::rule_catalog::Catalog;
 
 /// The file name of a 3.0 config.
@@ -45,16 +45,43 @@ impl Configure for MigrateConfigure {
                 &dir.join(CONFIG_NAME),
                 CONFIG_NAME,
                 text.to_owned(),
-                &StylePresets(BuiltinSource),
+                lint_settings::presets(),
             )
             .map_err(|e| lint_error(config_error(&e, dir)))?,
             None => LoadedConfig::without_files(dir.to_owned()),
         };
         // Unknown rule ids only warn in `slopvac lint`, so they do not stop the comparison.
         lint_settings::validate(&loaded, &self.rules).map_err(lint_error)?;
-        Ok(Box::new(move |rel| {
-            file_settings(&self.rules, &loaded, rel, &Overrides::default())
-                .map(|(settings, _)| settings)
+        // The genre of a document follows its content, and the settings follow the genre, so
+        // an engine over the settings before any genre layer reads each document first, as a
+        // lint run does. It shares the rule sets this resolver already loaded.
+        let settings = probe_settings(&self.rules, &loaded, Path::new(""), &Overrides::default())
+            .map_err(lint_error)?;
+        let probe = Engine::new_shared(self.rules.shared_sets(), settings)
+            .map_err(|e| Error::Lint(e.to_string()))?;
+        Ok(Box::new(move |rel, text| {
+            let shown = rel.display().to_string();
+            let blocks = DocumentBlocks::read(text, &shown, Some(&loaded));
+            // A block or directive that a lint run reports as an error stops the comparison,
+            // as a document that was not checked in full does.
+            if let Some(failure) = block_errors(&shown, text, &blocks).into_iter().next() {
+                return Err(Error::Lint(format!("{}: {}", failure.code, failure.raw)));
+            }
+            let relative = rel_text(rel);
+            let mut input = Input::new(&shown, text)
+                .with_kind(slopvac_lsp::buffer_kind(&shown))
+                .with_relative_path(&relative);
+            let declared = blocks.declared_genre();
+            if let Some(genre) = &declared {
+                input = input.with_declared_genre(genre);
+            }
+            let detected = probe
+                .preparse(&input)
+                .ok()
+                .and_then(|pre| probe.detect_genre(&input, &pre).ok().flatten());
+            let layers = DocumentLayers::from_blocks(&blocks).with_detected_genre(detected);
+            file_settings(&self.rules, &loaded, rel, &Overrides::default(), &layers)
+                .map(|(settings, _)| DocumentSettings::new(settings).with_declared_genre(declared))
                 .map_err(lint_error)
         }))
     }

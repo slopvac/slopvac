@@ -548,6 +548,19 @@ fn a_bad_front_matter_key_shows_with_its_validate_code_at_the_key() {
     client.finish().unwrap();
 }
 
+/// A diagnostic of the `slopvac:` block carries fixed text, never a value of the document
+/// (policies.md, section 1.7), as a directive diagnostic does.
+#[test]
+fn a_bad_front_matter_value_is_not_quoted_in_its_diagnostic() {
+    let mut client = client_with_real_checks();
+    let published = client.open("---\nslopvac:\n  v: 3\n  locale: SECRET-VALUE-42\n---\nBody.\n");
+    let diagnostics = published["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics.len(), 1, "{published}");
+    let message = diagnostics[0]["message"].as_str().unwrap();
+    assert!(!message.contains("SECRET-VALUE-42"), "{message}");
+    client.finish().unwrap();
+}
+
 #[test]
 fn the_engine_reports_a_misspelled_term_once_with_its_terms_code_at_the_term() {
     let mut client = client_with_real_checks();

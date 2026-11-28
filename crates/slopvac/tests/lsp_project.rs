@@ -31,10 +31,17 @@ struct Session {
 
 impl Session {
     fn start(dir: &Path) -> TestResult<Self> {
+        Self::start_with(dir, &[])
+    }
+
+    /// A session whose server runs with `envs` set.
+    fn start_with(dir: &Path, envs: &[(&str, &str)]) -> TestResult<Self> {
         let mut child = Command::new(env!("CARGO_BIN_EXE_slopvac"))
             .arg("lsp")
             .current_dir(dir)
+            .envs(envs.iter().copied())
             .env_remove("SLOPVAC_LOG")
+            .env_remove("SLOPVAC_RST_CONVERTER")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -698,5 +705,239 @@ fn a_broken_config_in_a_folder_with_no_open_document_does_not_fail_the_reload() 
     // Nothing is open under `sub`, so its config is not part of this reload.
     assert!(session.codes(&root, "top.md")?.iter().any(|c| c == LEXICON));
     session.finish()?;
+    Ok(())
+}
+
+/// An inline directive that `slopvac validate` reports is a diagnostic of the open buffer too.
+/// `<!-- slopvac: ` is 14 bytes, so the key starts at byte 14.
+#[test]
+fn a_bad_inline_directive_is_a_diagnostic_of_the_buffer() -> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start(&root)?;
+    session.open(
+        &root,
+        "a.md",
+        "<!-- slopvac: network.offline=true -->\n# T\n",
+    )?;
+    let codes = session.codes(&root, "a.md")?;
+    assert!(codes.iter().any(|c| c == "config-unknown-key"), "{codes:?}");
+    session.finish()?;
+    Ok(())
+}
+
+/// What a fake docutils driver prints for one RST document: a title and a paragraph, as the
+/// real driver reports them, with 1-based lines.
+fn rst_driver_output(title: &str, paragraph: &str) -> String {
+    json!({
+        "docutils": "0.21.2",
+        "nodes": [
+            {"tag": "title", "start": 1, "end": 1, "level": 1, "containers": [],
+             "pieces": [{"k": "t", "t": title}]},
+            {"tag": "paragraph", "start": 4, "end": 4, "containers": [],
+             "pieces": [{"k": "t", "t": paragraph}]},
+        ],
+    })
+    .to_string()
+}
+
+/// The genre of an RST buffer follows its content, as the genre of a Markdown buffer does. The
+/// interpreter is the first `python3` on `PATH`, outside the project, so the server finds it
+/// only when it knows the project roots.
+///
+/// The fake driver answers by the text it reads. `Release notes` is a heading signal of
+/// `change-comms` (weight 3, its minimum), which turns the history rule off. `Overview` is no
+/// signal, so the buffer stays `consumer`, where the rule is a warning. The two buffers have
+/// no path signal.
+#[cfg(unix)]
+#[test]
+fn an_rst_buffer_gets_the_genre_its_content_signals() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+    const SENTENCE: &str = "The retry loop landed in commit 3f9a2c1 after the outage.";
+    let tools = tempfile::tempdir()?;
+    let notes = tools.path().join("notes.json");
+    let overview = tools.path().join("overview.json");
+    fs::write(&notes, rst_driver_output("Release notes", SENTENCE))?;
+    fs::write(&overview, rst_driver_output("Overview", SENTENCE))?;
+    let driver = tools.path().join("python3");
+    fs::write(
+        &driver,
+        format!(
+            "#!/bin/sh\ninput=$(cat)\ncase \"$input\" in\n*'Release notes'*) cat '{}' ;;\n*) cat '{}' ;;\nesac\n",
+            notes.display(),
+            overview.display()
+        ),
+    )?;
+    fs::set_permissions(&driver, fs::Permissions::from_mode(0o755))?;
+    let path = format!("{}:/usr/bin:/bin", tools.path().canonicalize()?.display());
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start_with(&root, &[("PATH", &path)])?;
+    session.open(
+        &root,
+        "notes.rst",
+        &format!("Release notes\n=============\n\n{SENTENCE}\n"),
+    )?;
+    session.open(
+        &root,
+        "overview.rst",
+        &format!("Overview\n========\n\n{SENTENCE}\n"),
+    )?;
+    let signalled = session.codes(&root, "notes.rst")?;
+    let plain = session.codes(&root, "overview.rst")?;
+    session.finish()?;
+    // The plain buffer reports the rule, which shows the adapter ran; the other does not.
+    assert!(plain.iter().any(|c| c == HISTORY_RULE), "{plain:?}");
+    assert!(
+        !signalled.iter().any(|c| c == HISTORY_RULE),
+        "{signalled:?}"
+    );
+    Ok(())
+}
+
+/// A buffer from a repository outside the directory the server runs in is untrusted code, as
+/// a file of that repository is for `slopvac lint`: a `python3` the repository ships on `PATH`
+/// never runs, and the buffer reports `rst-converter-missing`. The fake `python3` leaves a
+/// marker file if it runs.
+#[cfg(unix)]
+#[test]
+fn an_rst_buffer_never_runs_a_python_from_its_own_repository() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+    let repo = tempfile::tempdir()?;
+    let repo_root = repo.path().canonicalize()?;
+    fs::create_dir(repo_root.join(".git"))?;
+    let bin = repo_root.join("bin");
+    fs::create_dir(&bin)?;
+    let marker = repo_root.join("executed");
+    // The search path is only the repository's `bin`, so no other interpreter is found, and
+    // the script names `touch` by its full path.
+    let script = format!("#!/bin/sh\n/usr/bin/touch '{}'\nexit 0\n", marker.display());
+    for name in ["python3", "python"] {
+        let tool = bin.join(name);
+        fs::write(&tool, &script)?;
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755))?;
+    }
+    let text = "Title\n=====\n\nText.\n";
+    fs::create_dir(repo_root.join("docs"))?;
+    fs::write(repo_root.join("docs/a.rst"), text)?;
+    let path = bin.display().to_string();
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start_with(&root, &[("PATH", &path)])?;
+    session.open(&repo_root, "docs/a.rst", text)?;
+    let codes = session.codes(&repo_root, "docs/a.rst")?;
+    session.finish()?;
+    assert!(!marker.exists(), "the repository's python3 was run");
+    assert!(
+        codes.iter().any(|c| c == "rst-converter-missing"),
+        "{codes:?}"
+    );
+    Ok(())
+}
+
+/// A buffer opened through a symlink has two repositories: the link's and the target's. Both
+/// are untrusted when they sit outside the server's directory, so a `python3` that the link's
+/// repository ships on `PATH` never runs, even though the config lookup follows the link to
+/// the target. The fake `python3` leaves a marker file if it runs.
+///
+/// The link is the file itself, or a directory of the link repository that points at the
+/// target repository's root, so the nearest `.git` above the opened path is the target's.
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::file_link("docs/a.rst")]
+#[case::directory_link_to_the_target_repository("sub/docs/a.rst")]
+fn an_rst_buffer_through_a_symlink_never_runs_a_python_from_the_link_repository(
+    #[case] opened: &str,
+) -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+    let link_repo = tempfile::tempdir()?;
+    let link_root = link_repo.path().canonicalize()?;
+    fs::create_dir(link_root.join(".git"))?;
+    let bin = link_root.join("bin");
+    fs::create_dir(&bin)?;
+    let marker = link_root.join("executed");
+    // The search path is only the link repository's `bin`, so no other interpreter is found,
+    // and the script names `touch` by its full path.
+    let script = format!("#!/bin/sh\n/usr/bin/touch '{}'\nexit 0\n", marker.display());
+    for name in ["python3", "python"] {
+        let tool = bin.join(name);
+        fs::write(&tool, &script)?;
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755))?;
+    }
+    let target_repo = tempfile::tempdir()?;
+    let target_root = target_repo.path().canonicalize()?;
+    fs::create_dir(target_root.join(".git"))?;
+    let text = "Title\n=====\n\nText.\n";
+    fs::create_dir(target_root.join("docs"))?;
+    fs::write(target_root.join("docs/a.rst"), text)?;
+    if opened == "docs/a.rst" {
+        fs::create_dir(link_root.join("docs"))?;
+        std::os::unix::fs::symlink(target_root.join("docs/a.rst"), link_root.join(opened))?;
+    } else {
+        std::os::unix::fs::symlink(&target_root, link_root.join("sub"))?;
+    }
+    let path = bin.display().to_string();
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start_with(&root, &[("PATH", &path)])?;
+    session.open(&link_root, opened, text)?;
+    let codes = session.codes(&link_root, opened)?;
+    session.finish()?;
+    assert!(!marker.exists(), "the link repository's python3 was run");
+    assert!(
+        codes.iter().any(|c| c == "rst-converter-missing"),
+        "{codes:?}"
+    );
+    Ok(())
+}
+
+/// A directive diagnostic carries the code and a fixed text, never the value of the document
+/// (policies, logging and redaction). `zz-ZZ` is no locale, so the check refuses it.
+#[test]
+fn a_directive_diagnostic_does_not_quote_the_value_it_refused() -> TestResult {
+    const VALUE: &str = "zz-ZZ-secretvalue";
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start(&root)?;
+    session.open(
+        &root,
+        "a.md",
+        &format!("<!-- slopvac: locale={VALUE} -->\n# T\n"),
+    )?;
+    let uri = uri_of(&root, "a.md");
+    let published = session.wait_for(|m| {
+        m["method"] == "textDocument/publishDiagnostics" && m["params"]["uri"] == uri
+    })?;
+    session.finish()?;
+    let diagnostics = published["params"]["diagnostics"].to_string();
+    assert!(
+        diagnostics.contains("config-invalid-value"),
+        "{diagnostics}"
+    );
+    assert!(!diagnostics.contains(VALUE), "{diagnostics}");
+    Ok(())
+}
+
+/// A buffer that names an unregistered genre is refused with the location of its `genre` key,
+/// shown relative to the project root and never as the absolute path the client sent
+/// (policies, logging and redaction). The key follows the 14 characters of `<!-- slopvac: `,
+/// at column 15.
+#[test]
+fn an_unregistered_genre_refusal_names_the_buffer_relative_to_the_root() -> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    fs::create_dir(root.join("docs"))?;
+    let mut session = Session::start(&root)?;
+    session.open(
+        &root,
+        "docs/a.md",
+        "<!-- slopvac: genre=zzsecretgenre -->\n# T\n",
+    )?;
+    let diagnostics = diagnostics_on(&session, &uri_of(&root, "docs/a.md"))?.to_string();
+    session.finish()?;
+    assert!(diagnostics.contains("docs/a.md:1:15"), "{diagnostics}");
+    let absolute = root.display().to_string();
+    assert!(!diagnostics.contains(&absolute), "{diagnostics}");
+    assert!(!diagnostics.contains("zzsecretgenre"), "{diagnostics}");
     Ok(())
 }

@@ -103,3 +103,20 @@ pub enum LintFixReason {
         detail: String,
     },
 }
+
+/// Why the settings of a document were refused.
+#[derive(Debug, Catalog)]
+pub enum LintSettingsText {
+    /// The `genre` key names no genre the registry holds. The text names where the key is,
+    /// never the value, which is document or config text.
+    #[code("lint-genre-unregistered")]
+    #[text("{location}: `genre` names no registered genre")]
+    GenreUnregistered {
+        /// Where the key is: `<file>:<line>:<column>`.
+        location: String,
+    },
+    /// [`LintSettingsText::GenreUnregistered`] for a value that no file holds.
+    #[code("lint-genre-unregistered-unplaced")]
+    #[text("`genre` names no registered genre")]
+    GenreUnregisteredUnplaced,
+}

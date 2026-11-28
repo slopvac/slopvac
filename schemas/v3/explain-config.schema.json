@@ -46,7 +46,7 @@
           "type": "string"
         },
         "source": {
-          "description": "`explicit` when a config layer sets the genre, `default` otherwise.",
+          "description": "`explicit` when a layer names the genre, `detected` when genre detection chose it, `default` otherwise.",
           "enum": [
             "explicit",
             "detected",
@@ -86,12 +86,12 @@
           "type": "array"
         },
         "front_matter_resolved": {
-          "description": "Whether front matter took part in resolution. False until it does. When it does, the document gains key names and their source locations, never values.",
+          "description": "Whether the input's front matter and inline directives took part in resolution. False when `[frontmatter] enabled = false` turns both off.",
           "type": "boolean"
         },
         "genre": {
           "$ref": "#/$defs/ExplainGenre",
-          "description": "The genre the config sets. The genre that detection picks reads the document, so it is not resolved here."
+          "description": "The genre whose settings the record holds, as the lint report names it for the same input."
         },
         "path": {
           "$ref": "#/$defs/ShownPath",
@@ -289,7 +289,7 @@
   "$id": "https://slopvac.github.io/slopvac/schemas/v3/explain-config.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The document that `slopvac lint --explain-config --format json` prints: for each input, the resolved config with the layer and location that set each value, the rules a layer gave a level and whether front matter took part. Paths are relative to the working directory, or `<external>/<name>` outside it (policies.md, section 1.7). It carries no document text and no front matter value. Semantics are specified in docs/contract/config.md, section 1.4.1.",
+  "description": "The document that `slopvac lint --explain-config --format json` prints: for each input, the resolved config with the layer and location that set each value, the rules a layer gave a level and whether the document's front matter and inline directives took part. Paths are relative to the working directory, or `<external>/<name>` outside it (policies.md, section 1.7). It carries no document text beyond the setting values that the front matter and inline directives set. Semantics are specified in docs/contract/config.md, section 1.4.1.",
   "patternProperties": {
     "^x-": true
   },

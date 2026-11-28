@@ -7,31 +7,39 @@
 //! styles share one layer stack, so the resolver decides every level. An unknown category name
 //! in the config is an error, and an unknown rule id is a warning notice.
 //!
-//! STUB(slopvac-8l4.12.29): the genre is the default `reference` unless config sets it, no
-//! genre chain or pack style is loaded, and `terms.blocklists` files are not read. The swap
-//! bead lists each gap.
+//! Styles, genre chains and pack configs come from the core pack ([`presets`]). A document's
+//! `slopvac:` front-matter block and its inline directives join the stack as the
+//! `front-matter` and `directive` layers ([`DocumentLayers`]), each value with its file, line
+//! and column. The engine chooses the genre of each document, so the genre in the settings
+//! only names the genre of a document that no detection reaches.
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::Value as Json;
+use slopvac_config::frontmatter::{Policy, Read as FrontMatterRead};
 use slopvac_config::{
     ConfigLevel, GroupedKey, LevelFrom, LoadedConfig, Resolved, Setting, describe,
 };
-use slopvac_config::{Inputs, PackFile, Presets, UnknownRule, unknown_rules};
+use slopvac_config::{Inputs, PackFile, PresetFailure, Presets, UnknownRule, unknown_rules};
 use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Level, Settings};
 use slopvac_model::{
     CategoryName, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, KebabName,
     NonEmptyString, Notice, NoticeLevel, RESERVED_ID, RuleId, Severity,
 };
+use slopvac_packs::Packs;
 use slopvac_rules::MatchKind;
-use slopvac_styles::{BuiltinSource, Style, StylePresets};
+use slopvac_styles::{BuiltinSource, Style};
 
 use crate::errors::CliError;
-use crate::lint_messages::LintOptionError;
+use crate::lint_messages::{LintOptionError, LintSettingsText};
 use crate::rule_catalog::Catalog;
+
+/// The genre of a document that no assignment, declaration or detection reaches, as the
+/// engine's genre registry defaults it.
+const DEFAULT_GENRE: &str = "consumer";
 
 /// What the command line adds on top of the files.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -253,7 +261,7 @@ pub fn validate_located(
         .flatten()
         .filter_map(Json::as_str)
     {
-        if legacy_name(name).is_none() && !BuiltinSource::names().any(|known| known == name) {
+        if presets().style(name).is_none() {
             return Err(Box::new(Located {
                 error: LintOptionError::UnknownStyle {
                     name: format!("{name:?}"),
@@ -331,20 +339,6 @@ fn legacy_name(listed: &str) -> Option<&'static Style> {
         .then(|| legacy_style(name))
 }
 
-/// The built-in style presets, plus the `core:legacy-<profile>` styles.
-pub(crate) struct ShippedStyles {
-    styles: StylePresets<BuiltinSource>,
-}
-
-impl ShippedStyles {
-    /// The styles and genres that ship with the binary.
-    pub(crate) fn new() -> Self {
-        Self {
-            styles: StylePresets(BuiltinSource),
-        }
-    }
-}
-
 /// Qualify the bare `categories` and `rules` keys of a shipped layer to the plugin `core`,
 /// which owns every shipped preset. A key written in a config file keeps its own spelling, so
 /// the two never meet: a bare key that two plugins share stays ambiguous for a file and is
@@ -364,11 +358,16 @@ fn qualified_to_core(layer: Vec<Setting>) -> Vec<Setting> {
         .collect()
 }
 
-impl Presets for ShippedStyles {
+/// The core pack's styles, genres and configs, plus the `core:legacy-<profile>` styles.
+struct ShippedPresets {
+    packs: Packs,
+}
+
+impl Presets for ShippedPresets {
     fn style(&self, name: &str) -> Option<Vec<Setting>> {
         match legacy_name(name) {
             Some(style) => Some(style.layer().to_vec()),
-            None => self.styles.style(name),
+            None => self.packs.style(name),
         }
         .map(qualified_to_core)
     }
@@ -381,7 +380,7 @@ impl Presets for ShippedStyles {
         for name in listed {
             if let Some(style) = legacy_name(name) {
                 if !run.is_empty() {
-                    layers.extend(self.styles.style_layers(&std::mem::take(&mut run)));
+                    layers.extend(self.packs.style_layers(&std::mem::take(&mut run)));
                 }
                 layers.push(style.layer().to_vec());
             } else {
@@ -389,13 +388,22 @@ impl Presets for ShippedStyles {
             }
         }
         if !run.is_empty() {
-            layers.extend(self.styles.style_layers(&run));
+            layers.extend(self.packs.style_layers(&run));
         }
         layers.into_iter().map(qualified_to_core).collect()
     }
 
+    fn check_styles(&self, listed: &[String]) -> Result<(), PresetFailure> {
+        let ordinary: Vec<String> = listed
+            .iter()
+            .filter(|n| legacy_name(n).is_none())
+            .cloned()
+            .collect();
+        self.packs.check_styles(&ordinary)
+    }
+
     fn genre_chain(&self, name: &str) -> Vec<Vec<Setting>> {
-        self.styles
+        self.packs
             .genre_chain(name)
             .into_iter()
             .map(qualified_to_core)
@@ -403,7 +411,144 @@ impl Presets for ShippedStyles {
     }
 
     fn pack_config(&self, name: &str) -> Option<PackFile> {
-        self.styles.pack_config(name)
+        self.packs.pack_config(name)
+    }
+}
+
+/// The presets every config load and resolution in the binary uses.
+#[must_use]
+pub fn presets() -> &'static (dyn Presets + Send + Sync) {
+    static PRESETS: OnceLock<ShippedPresets> = OnceLock::new();
+    PRESETS.get_or_init(|| ShippedPresets {
+        #[expect(
+            clippy::expect_used,
+            reason = "the core pack is compiled into the binary, so a failed load is a build defect"
+        )]
+        packs: Packs::core().expect("the embedded core pack loads"),
+    })
+}
+
+/// The genres a document can take: the registry that the engine chooses genres from.
+fn genre_registry() -> &'static slopvac_context::GenreRegistry {
+    static GENRES: OnceLock<slopvac_context::GenreRegistry> = OnceLock::new();
+    GENRES.get_or_init(|| {
+        #[expect(
+            clippy::expect_used,
+            reason = "the built-in genres are compiled into the binary, so a failed load is a build defect"
+        )]
+        slopvac_context::builtin_genres().expect("the built-in genres load")
+    })
+}
+
+/// Check that the genre that a layer of `resolved` names is one the registry holds, as the
+/// engine checks it before it lints the document. `slopvac lint`, `--explain-config`, the
+/// language server and `slopvac migrate` all build settings through [`build_with_origins`],
+/// which calls this, so each refuses the same genre.
+///
+/// # Errors
+/// `config-invalid-value` at the location of the `genre` key. The message names the
+/// location and never the value, which is document or config text (policies.md, section
+/// 1.7).
+pub(crate) fn check_genre(resolved: &Resolved) -> Result<(), CliError> {
+    let Some(name) = resolved.get(&["genre"]).and_then(Json::as_str) else {
+        return Ok(());
+    };
+    if genre_registry().spec(name).is_some() {
+        return Ok(());
+    }
+    let source = resolved.source(&["genre"]);
+    let text = match source.and_then(|s| Some((s.file.as_deref()?, s.line?, s.column?))) {
+        Some((file, line, column)) => {
+            slopvac_messages::render(&LintSettingsText::GenreUnregistered {
+                location: format!("{file}:{line}:{column}"),
+            })
+        }
+        None => slopvac_messages::render(&LintSettingsText::GenreUnregisteredUnplaced),
+    };
+    Err(CliError::escaping(
+        slopvac_config::Code::InvalidValue.as_str(),
+        &text,
+    ))
+}
+
+/// What the document's own `slopvac:` front-matter block and inline directives read as, with
+/// their diagnostics.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DocumentBlocks {
+    /// The `slopvac:` front-matter block.
+    pub front_matter: FrontMatterRead,
+    /// The inline directives.
+    pub directives: FrontMatterRead,
+}
+
+impl DocumentBlocks {
+    /// Read the document `text`, shown as `shown`, under the policy of `config` (the core
+    /// policy when no config applies).
+    #[must_use]
+    pub fn read(text: &str, shown: &str, config: Option<&LoadedConfig>) -> Self {
+        let policy = config.map_or_else(Policy::core, Policy::from_config);
+        Self {
+            front_matter: slopvac_config::frontmatter::read(text, shown, &policy),
+            directives: slopvac_config::directives::read(text, shown, &policy),
+        }
+    }
+
+    /// The genre the document declares for itself. An inline directive outranks the front
+    /// matter, as the layers do (docs/contract/config.md, section 1.1).
+    #[must_use]
+    pub fn declared_genre(&self) -> Option<String> {
+        [&self.directives, &self.front_matter]
+            .iter()
+            .find_map(|read| {
+                read.settings
+                    .iter()
+                    .rfind(|s| s.path == ["genre"])
+                    .and_then(|s| s.value.as_str().map(str::to_owned))
+            })
+    }
+}
+
+/// The settings a document carries itself: its `slopvac:` front-matter block and its inline
+/// directives, each already limited by the project's `[frontmatter] allow` list. A block with
+/// a diagnostic contributes nothing, and the run reports the diagnostic elsewhere.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DocumentLayers {
+    front_matter: Vec<Setting>,
+    directives: Vec<Setting>,
+    /// The genre that the engine chose for the document, with its source. When no layer names
+    /// a genre, it supplies the genre layer and the genre of the settings.
+    detected_genre: Option<GenreResult>,
+}
+
+impl DocumentLayers {
+    /// Read the layers of the document `text`, shown as `shown`, under the policy of `config`
+    /// (the core policy when no config applies).
+    #[must_use]
+    pub fn read(text: &str, shown: &str, config: Option<&LoadedConfig>) -> Self {
+        Self::from_blocks(&DocumentBlocks::read(text, shown, config))
+    }
+
+    /// The layers of blocks that were read already.
+    #[must_use]
+    pub fn from_blocks(blocks: &DocumentBlocks) -> Self {
+        Self {
+            front_matter: blocks.front_matter.settings.clone(),
+            directives: blocks.directives.settings.clone(),
+            detected_genre: None,
+        }
+    }
+
+    /// The same layers with the genre that the engine chose for the document.
+    #[must_use]
+    pub fn with_detected_genre(mut self, genre: Option<GenreResult>) -> Self {
+        self.detected_genre = genre;
+        self
+    }
+
+    /// The genre that the engine chose for the document, if it was asked.
+    #[must_use]
+    pub fn detected_genre(&self) -> Option<&GenreResult> {
+        self.detected_genre.as_ref()
     }
 }
 
@@ -484,18 +629,19 @@ fn identity_of(catalog: &Catalog, section: &str, key: &str) -> Option<String> {
     }
 }
 
-/// The merged settings of the file at `rel`.
+/// The merged settings of the file at `rel`, with the layers of its own document.
 #[must_use]
-pub fn resolve(config: &LoadedConfig, rel: &Path) -> Resolved {
-    config.resolve(
+pub fn resolve(config: &LoadedConfig, rel: &Path, layers: &DocumentLayers) -> Resolved {
+    config.resolve_detecting(
         rel,
         &Inputs {
-            presets: &ShippedStyles::new(),
-            front_matter: &[],
-            directives: &[],
+            presets: presets(),
+            front_matter: &layers.front_matter,
+            directives: &layers.directives,
             cli: &[],
             env: &[],
         },
+        layers.detected_genre.as_ref().map(|g| g.id.as_str()),
     )
 }
 
@@ -627,27 +773,47 @@ fn is_inherited(layer: ConfigLayer) -> bool {
 }
 
 /// The settings of a file before any category or rule is set: profile, genre, thresholds and
-/// the severity shift.
+/// the severity shift. A genre that a layer names is `explicit`. Otherwise the genre is the one
+/// the engine chose for the document, `detected` or `default` as it says, and without one the
+/// registry's default genre.
 fn base_settings(
     resolved: &Resolved,
+    detected: Option<&GenreResult>,
     sources: Vec<ConfigSource>,
     cli: &Overrides,
+    key: GenreKey,
 ) -> Result<Settings, CliError> {
     let profile = resolved
         .get(&["profile", "name"])
         .and_then(Json::as_str)
         .unwrap_or("normal");
-    let (genre, source) = match resolved.get(&["genre"]).and_then(Json::as_str) {
-        Some(name) => (name, GenreSource::Explicit),
-        None => ("reference", GenreSource::Default),
+    let named = match key {
+        GenreKey::Checked => resolved.get(&["genre"]).and_then(Json::as_str),
+        GenreKey::Ignored => None,
+    };
+    let genre = match (named, detected) {
+        (Some(name), _) => {
+            check_genre(resolved)?;
+            GenreResult {
+                id: GenreId::new(name).map_err(|e| internal("genre", e))?,
+                source: GenreSource::Explicit,
+                reasons: Vec::new(),
+            }
+        }
+        (None, Some(chosen)) => GenreResult {
+            id: chosen.id.clone(),
+            source: chosen.source,
+            reasons: Vec::new(),
+        },
+        (None, None) => GenreResult {
+            id: GenreId::new(DEFAULT_GENRE).map_err(|e| internal("genre", e))?,
+            source: GenreSource::Default,
+            reasons: Vec::new(),
+        },
     };
     let mut settings = Settings::new(
         NonEmptyString::new(profile).map_err(|e| internal("profile", e))?,
-        GenreResult {
-            id: GenreId::new(genre).map_err(|e| internal("genre", e))?,
-            source,
-            reasons: Vec::new(),
-        },
+        genre,
     );
     settings.config_sources = sources;
     apply_thresholds(&mut settings, profile, resolved, cli);
@@ -757,7 +923,7 @@ pub fn build(
     sources: Vec<ConfigSource>,
     cli: &Overrides,
 ) -> Result<Settings, CliError> {
-    build_with_origins(rules, resolved, sources, cli).map(|(settings, _)| settings)
+    build_with_origins(rules, resolved, None, sources, cli).map(|(settings, _)| settings)
 }
 
 /// [`build`], and the rules whose level a layer set, each with that layer. `--explain-config`
@@ -768,10 +934,45 @@ pub fn build(
 pub(crate) fn build_with_origins(
     rules: &Catalog,
     resolved: &Resolved,
+    detected: Option<&GenreResult>,
     sources: Vec<ConfigSource>,
     cli: &Overrides,
 ) -> Result<(Settings, Vec<RuleOrigin>), CliError> {
-    let mut settings = base_settings(resolved, sources, cli)?;
+    build_keyed(rules, resolved, detected, sources, cli, GenreKey::Checked)
+}
+
+/// The settings of the probe engine that reads the documents of a config and detects the
+/// genre of each. They come from one file's resolved config, and the genre that a layer names
+/// for that file is left out: it decides neither the parse nor the genres of the other
+/// documents, and each document's own settings still check it through [`build_with_origins`].
+///
+/// # Errors
+/// As [`build`].
+pub(crate) fn build_probe(
+    rules: &Catalog,
+    resolved: &Resolved,
+    sources: Vec<ConfigSource>,
+    cli: &Overrides,
+) -> Result<Settings, CliError> {
+    build_keyed(rules, resolved, None, sources, cli, GenreKey::Ignored).map(|(s, _)| s)
+}
+
+/// Whether the settings take the genre that a layer names, checked, or leave it out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GenreKey {
+    Checked,
+    Ignored,
+}
+
+fn build_keyed(
+    rules: &Catalog,
+    resolved: &Resolved,
+    detected: Option<&GenreResult>,
+    sources: Vec<ConfigSource>,
+    cli: &Overrides,
+    key: GenreKey,
+) -> Result<(Settings, Vec<RuleOrigin>), CliError> {
+    let mut settings = base_settings(resolved, detected, sources, cli, key)?;
     let mut origins = Vec::new();
 
     let shift = resolved
@@ -932,7 +1133,7 @@ pub(crate) mod tests {
         std::fs::write(&path, config).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
         validate(&loaded, rules)?;
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         build(rules, &resolved, Vec::new(), &Overrides::default())
     }
 
@@ -947,7 +1148,7 @@ pub(crate) mod tests {
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, config).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         explain(&resolved, rules)
             .into_iter()
             .map(|e| e.path)
@@ -995,8 +1196,8 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, config).expect("write config");
-        let loaded = load(&path, &ShippedStyles::new()).expect("the config loads");
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let loaded = load(&path, presets()).expect("the config loads");
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         explain(&resolved, rules)
     }
 
@@ -1081,7 +1282,7 @@ pub(crate) mod tests {
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, HEAD).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         build(rules, &resolved, Vec::new(), cli)
     }
 
@@ -1289,7 +1490,7 @@ pub(crate) mod tests {
         let text = format!("{HEAD}[rules]\n\"ste-practices.latin-abbreviation\" = \"error\"\n");
         std::fs::write(&path, text).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         let s = build(&rules, &resolved, Vec::new(), &Overrides::default()).unwrap();
         assert_eq!(level(&s, "core:ste-practices.latin-abbreviation"), None);
         assert_eq!(level(&s, "alpha:ste-practices.latin-abbreviation"), None);
@@ -1485,7 +1686,7 @@ pub(crate) mod tests {
         std::fs::write(&path, config).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
         validate(&loaded, &rules).expect("the config validates");
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         let settings = build(&rules, &resolved, Vec::new(), overrides).expect("settings");
         settings
             .named_rules
@@ -1543,5 +1744,26 @@ pub(crate) mod tests {
             ..Overrides::default()
         };
         assert_eq!(named(HEAD, &overrides), Vec::<String>::new());
+    }
+
+    #[test]
+    fn front_matter_and_directive_values_keep_their_file_line_and_column() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config = LoadedConfig::without_files(dir.path().to_path_buf());
+        let text = "---\nslopvac:\n  v: 3\n  terms:\n    allow: [zorblax]\n---\n\n<!-- slopvac: locale=en-GB -->\n";
+        let layers = DocumentLayers::read(text, "doc.md", Some(&config));
+        let resolved = resolve(&config, Path::new("doc.md"), &layers);
+        let at = |path: &[&str]| {
+            let s = resolved.source(path).expect("the key has a source");
+            (s.layer, s.file.clone(), s.line.map(std::num::NonZero::get))
+        };
+        assert_eq!(
+            at(&["terms", "allow"]),
+            (ConfigLayer::FrontMatter, Some("doc.md".to_owned()), Some(5))
+        );
+        assert_eq!(
+            at(&["locale"]),
+            (ConfigLayer::Directive, Some("doc.md".to_owned()), Some(8))
+        );
     }
 }

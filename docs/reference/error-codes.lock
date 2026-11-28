@@ -389,6 +389,7 @@ engine-gate-errors text
 engine-gate-incomplete text
 engine-gate-score text
 engine-gate-warnings text
+engine-genres-need-assignments text
 engine-git-error text
 engine-git-escape text
 engine-git-malformed text
@@ -416,6 +417,7 @@ engine-locale-unknown text
 engine-masked-comment-error text
 engine-not-utf8 text
 engine-path-error text
+engine-preparsed-mismatch text
 engine-range-character text
 engine-range-invalid text
 engine-range-outside text
@@ -494,6 +496,8 @@ lint-fix-reason-acl-check text
 lint-fix-reason-io text
 lint-fix-reason-not-utf8 text
 lint-fix-reason-root-changed text
+lint-genre-unregistered text
+lint-genre-unregistered-unplaced text
 lock-mismatch error
 lsp-action-allow text
 lsp-action-fix text

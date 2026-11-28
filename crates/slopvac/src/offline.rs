@@ -29,8 +29,14 @@ pub fn resolve(flag: bool, env: &dyn Env, config: Option<bool>) -> bool {
 /// across every layer (policies.md, 1.3; config.md, "Layer order"): a later `false` never wins.
 #[must_use]
 pub fn project(flag: bool, env: &dyn Env, config: Option<&slopvac_config::LoadedConfig>) -> bool {
-    let config =
-        config.map(|c| crate::lint_settings::resolve(c, std::path::Path::new(".")).is_offline());
+    let config = config.map(|c| {
+        crate::lint_settings::resolve(
+            c,
+            std::path::Path::new("."),
+            &crate::lint_settings::DocumentLayers::default(),
+        )
+        .is_offline()
+    });
     resolve(flag, env, config)
 }
 

@@ -11,7 +11,6 @@ use slopvac_agents::claims;
 use slopvac_agents::review::{self, ReviewEnv};
 use slopvac_agents::{AgentsError, prime, setup};
 use slopvac_config::Discovery;
-use slopvac_styles::{BuiltinSource, StylePresets};
 use slopvac_terms::TermsError;
 
 use crate::errors::CliError;
@@ -139,8 +138,8 @@ pub fn terms(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
 /// `slopvac genre`.
 pub fn genre(m: &ArgMatches, out: &mut dyn Write, err_out: &mut dyn Write) -> Result<u8, CliError> {
     let root = cwd();
-    let presets = StylePresets(BuiltinSource);
-    let discovery = Discovery::new(&presets);
+    let presets = crate::lint_settings::presets();
+    let discovery = Discovery::new(presets);
     // The front matter policy is the project's: the nearest config of the directory of the
     // resolved file, as `lint` finds it. A config that cannot be read stops the command.
     let config_failure = std::cell::RefCell::new(None);
@@ -210,8 +209,8 @@ pub fn genre(m: &ArgMatches, out: &mut dyn Write, err_out: &mut dyn Write) -> Re
 
 /// `slopvac validate`.
 pub fn validate(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
-    let presets = StylePresets(BuiltinSource);
-    slopvac_config::validate::run(m, &cwd(), &presets, out).map_err(|err| {
+    let presets = crate::lint_settings::presets();
+    slopvac_config::validate::run(m, &cwd(), presets, out).map_err(|err| {
         CliError::new(
             "output-failed",
             format!("cannot write output: {}", err.kind()),
@@ -252,8 +251,8 @@ pub fn review(
     err_out: &mut dyn Write,
 ) -> Result<u8, CliError> {
     let root = cwd();
-    let presets = StylePresets(BuiltinSource);
-    let config = Discovery::new(&presets)
+    let presets = crate::lint_settings::presets();
+    let config = Discovery::new(presets)
         .nearest(&root)
         .map_err(|e| engine::config_error(&e, &root))?;
     let value = |key: &str| {

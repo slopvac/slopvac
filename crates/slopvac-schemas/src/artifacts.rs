@@ -276,10 +276,11 @@ pub const ARTIFACTS: &[Artifact] = &[
         description: Some(
             "The document that `slopvac lint --explain-config --format json` prints: for each \
              input, the resolved config with the layer and location that set each value, the \
-             rules a layer gave a level and whether front matter took part. Paths are relative \
-             to the working directory, or `<external>/<name>` outside it (policies.md, section \
-             1.7). It carries no document text and no front matter value. Semantics are \
-             specified in docs/contract/config.md, section 1.4.1.",
+             rules a layer gave a level and whether the document's front matter and inline \
+             directives took part. Paths are relative to the working directory, or \
+             `<external>/<name>` outside it (policies.md, section 1.7). It carries no document \
+             text beyond the setting values that the front matter and inline directives set. \
+             Semantics are specified in docs/contract/config.md, section 1.4.1.",
         ),
         imports: &["common.schema.json"],
         inline: &[],
