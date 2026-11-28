@@ -57,6 +57,7 @@ mod conformance {
             .stdout(predicate::str::contains("--reviewer-model"));
     }
 
+    /// Conformance: N11
     #[test]
     fn a_dry_run_prints_the_plan_and_the_exact_payload_and_calls_no_provider() {
         let dir = project();
@@ -86,6 +87,7 @@ mod conformance {
             .stderr(predicate::str::contains("--dry-run"));
     }
 
+    /// Conformance: N2
     #[test]
     fn offline_mode_blocks_the_provider_call() {
         let dir = project();

@@ -95,6 +95,7 @@ mod conformance {
             .success();
     }
 
+    /// Conformance: N4
     #[test]
     fn sync_exits_0_when_the_lock_is_in_place() {
         let sandbox = Sandbox::new();
@@ -158,6 +159,8 @@ mod conformance {
 
     /// Offline mode from any source stops the run before the registry: the cache has no copy, so
     /// the failure is the offline one. A run that went online would fail another way.
+    ///
+    /// Conformance: N2
     #[rstest::rstest]
     #[case::flag(&["--offline", "plugins", "sync"], &[], None)]
     #[case::environment(&["plugins", "sync"], &[("SLOPVAC_OFFLINE", "1")], None)]
@@ -262,6 +265,8 @@ mod conformance {
 
     /// Sticky offline: the extended file turns it on, the project turns it off, and the run opens no
     /// connection at all, the revocation fetch included.
+    ///
+    /// Conformance: N3
     #[test]
     fn sticky_offline_opens_no_connection_when_a_later_layer_says_false() {
         let sandbox = Sandbox::new();
@@ -360,6 +365,7 @@ mod conformance {
             .success();
     }
 
+    /// Conformance: N7
     #[test]
     fn sync_in_ci_without_a_lock_exits_2() {
         let sandbox = Sandbox::new();
@@ -439,6 +445,8 @@ mod conformance {
     /// In CI, a configured source that names another source than the lock, or a locked version
     /// that the configured requirement does not allow, fails before any fetch. The line names the
     /// plugin, and the lockfile is unchanged.
+    ///
+    /// Conformance: N7
     #[rstest::rstest]
     #[case::other_repository(
         style_entry("oci://registry.invalid/acme/other", None),

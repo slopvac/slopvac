@@ -183,6 +183,7 @@ fn refs(v: &[String]) -> Vec<&str> {
 
 mod conformance {
     use super::*;
+    /// Conformance: N9
     #[test]
     fn a_plain_run_previews_and_prints_the_form_url_without_calling_gh() {
         let w = World::new();
@@ -261,6 +262,7 @@ mod conformance {
         assert_eq!(leftovers.len(), 1, "a temporary file was left behind");
     }
 
+    /// Conformance: N9
     #[test]
     fn gh_prints_the_exact_command_for_the_body_file_and_does_not_run_it() {
         let w = World::new();
@@ -294,6 +296,7 @@ mod conformance {
         );
     }
 
+    /// Conformance: N9
     #[test]
     fn gh_yes_creates_the_issue_from_the_previewed_title_and_body() {
         let w = World::new();
@@ -383,6 +386,7 @@ mod conformance {
         assert!(!w.stderr.borrow().contains("ghp_"));
     }
 
+    /// Conformance: N10
     #[test]
     fn paths_user_and_host_names_never_reach_the_preview_the_filed_issue_or_the_url() {
         let mut w = World::new();

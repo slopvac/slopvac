@@ -94,6 +94,7 @@ mod conformance {
         Ok(())
     }
 
+    /// Conformance: N6
     // `doctor` is left out: its report names the offline state this comparison turns on.
     #[rstest]
     #[case::lint(&["lint", "doc.md"])]
@@ -109,6 +110,7 @@ mod conformance {
         Ok(())
     }
 
+    /// Conformance: N5
     #[rstest]
     #[case::ci("CI", "true")]
     #[case::no_update_notifier("NO_UPDATE_NOTIFIER", "1")]
@@ -131,6 +133,7 @@ mod conformance {
         Ok(())
     }
 
+    /// Conformance: N5
     #[test]
     fn update_check_false_in_the_project_config_suppresses_the_notice() -> io::Result<()> {
         let fx = fixture()?;
@@ -145,6 +148,7 @@ mod conformance {
         Ok(())
     }
 
+    /// Conformance: N5
     #[rstest]
     #[case::lint(&["lint", "doc.md"])]
     #[case::doctor(&["doctor"])]
@@ -158,6 +162,7 @@ mod conformance {
         Ok(())
     }
 
+    /// Conformance: N5
     #[rstest]
     #[case::lint(&["lint", "doc.md"])]
     #[case::doctor(&["doctor"])]
