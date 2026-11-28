@@ -503,7 +503,7 @@ def test_the_rule_file_carries_the_generated_regex_at_both_exemption_sites() -> 
 # inside it), and block comments nest. The checker scans a copy with the marker neutralised.
 
 STRIPPED = gate.without_allow_list(REAL)
-FINDING = "crates/a/src/lib.rs: 1 finding(s) outside the allow list"
+NEW_FILE = "crates/a/src/lib.rs"
 
 # Each source is a new production file, off the allow list, that uses json!.
 FORMS = {
@@ -540,18 +540,21 @@ def tree_bytes(root: Path) -> dict[str, bytes]:
 
 
 def assert_the_gate_fails(tmp_path: Path, source: str) -> None:
-    """The scan of the checkout is blind to the file, and the checker still fails, end to end."""
+    """The scan of the checkout is blind to the file, and the checker still fails, end to end.
+
+    The assertions name the file and the exit status, never the wording of a message.
+    """
     root = scratch(tmp_path, rule_text([], {}), source)
     assert plain_scan(root) == Counter()
+    assert gate.neutralised_scan(root, "no-hand-json", STRIPPED) == Counter({NEW_FILE: 1})
     errors = gate.check(root)
-    assert len(errors) == 1
-    assert errors[0].startswith(FINDING)
+    assert [e for e in errors if NEW_FILE in e], errors
     script = ROOT / "scripts" / "ci" / "check_no_hand_json.py"
     done = subprocess.run(
         [sys.executable, str(script), str(root)], capture_output=True, text=True, check=False
     )
     assert done.returncode == 1
-    assert FINDING in done.stderr
+    assert NEW_FILE in done.stderr
 
 
 def test_a_new_production_file_with_a_suppress_all_directive_and_json_fails_the_gate(
@@ -602,8 +605,7 @@ def test_every_comment_form_of_a_file_level_suppression_fails_the_gate(
 ) -> None:
     root = scratch(tmp_path, rule_text([], {}), f"{opening}\n\nfn f() {{ json!(1); }}\n")
     errors = gate.check(root)
-    assert len(errors) == 1
-    assert errors[0].startswith(FINDING)
+    assert [e for e in errors if NEW_FILE in e], errors
 
 
 def test_a_next_line_suppression_of_this_rule_fails_the_gate(
@@ -611,8 +613,7 @@ def test_a_next_line_suppression_of_this_rule_fails_the_gate(
 ) -> None:
     source = "fn g() {}\n// ast-grep-ignore: no-hand-json\nfn f() { json!(1); }\n"
     errors = gate.check(scratch(tmp_path, rule_text([], {}), source))
-    assert len(errors) == 1
-    assert errors[0].startswith(FINDING)
+    assert [e for e in errors if NEW_FILE in e], errors
 
 
 @pytest.mark.parametrize(
