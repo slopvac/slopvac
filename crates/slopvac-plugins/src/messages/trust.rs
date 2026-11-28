@@ -6,12 +6,20 @@
 
 use std::path::Path;
 
+use slopvac_fs::display_under_root;
 use slopvac_messages::{Catalog, Entry};
 use slopvac_sanitize::line;
 
 /// `value` escaped for one line of output.
 fn esc(value: &str) -> String {
     line(value)
+}
+
+/// A program path as policies section 1.7 shows it. The tree, the store and a managed
+/// interpreter all live outside the project, so an absolute path shows as
+/// `<external>/<file name>`.
+fn shown(path: &Path) -> String {
+    display_under_root(path, Path::new("."))
 }
 
 /// The stable codes of the trust and revocation errors, one constant for each published code.
@@ -949,59 +957,41 @@ pub(crate) fn env_path_relative(dir: &Path) -> String {
 }
 
 pub(crate) fn program_not_absolute(path: &Path) -> String {
-    TrustText::ProgramNotAbsolute {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramNotAbsolute { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_dots(path: &Path) -> String {
-    TrustText::ProgramDots {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramDots { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_outside(path: &Path) -> String {
-    TrustText::ProgramOutside {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramOutside { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_not_plain(path: &Path) -> String {
-    TrustText::ProgramNotPlain {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramNotPlain { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_unreadable(path: &Path, cause: &str) -> String {
     TrustText::ProgramUnreadable {
-        path: path.display().to_string(),
+        path: shown(path),
         cause: cause.to_owned(),
     }
     .to_string()
 }
 
 pub(crate) fn program_symlink(path: &Path) -> String {
-    TrustText::ProgramSymlink {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramSymlink { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_not_file(path: &Path) -> String {
-    TrustText::ProgramNotFile {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramNotFile { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_not_managed(program: &Path, managed: &Path) -> String {
     TrustText::ProgramNotManaged {
-        program: program.display().to_string(),
-        managed: managed.display().to_string(),
+        program: shown(program),
+        managed: shown(managed),
     }
     .to_string()
 }

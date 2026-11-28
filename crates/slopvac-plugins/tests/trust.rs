@@ -460,6 +460,36 @@ fn tm6_a_program_that_is_not_a_file_of_the_tree_is_refused() {
     }
 }
 
+/// The error text and every `source()` below it, one per line.
+fn chain_text(err: &dyn std::error::Error) -> String {
+    let mut out = err.to_string();
+    let mut next = err.source();
+    while let Some(e) = next {
+        out.push('\n');
+        out.push_str(&e.to_string());
+        next = e.source();
+    }
+    out
+}
+
+#[rstest::rstest]
+#[case::at_spawn("spawn")]
+#[case::at_trust("trust")]
+fn a_missing_program_error_shows_no_store_path(#[case] step: &str) {
+    let s = Scratch::new(&format!("absent-{step}"));
+    let vp = install(&s, "1.0.0", "");
+    let g = gate(&s, &vp);
+    let mut spec = spec_for(&vp, decl());
+    spec.program = vp.root.join("absent");
+    let text = match step {
+        "spawn" => chain_text(&g.check(&spec).unwrap_err()),
+        _ => chain_text(&g.record_trust(&vp, &spec, NOW).unwrap_err()),
+    };
+    let store = s.0.display().to_string();
+    assert!(!text.contains(&store), "{text}");
+    assert!(text.contains("<external>/absent"), "{text}");
+}
+
 #[test]
 fn tm6_a_program_outside_the_tree_needs_an_explicit_allowlist_entry() {
     let s = Scratch::new("external");
