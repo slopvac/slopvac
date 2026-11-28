@@ -984,6 +984,58 @@ fn lsp_skips_the_preflight_on_a_broken_config() {
     assert!(!stderr.contains("error["), "{stderr}");
 }
 
+/// config.md section 2.2: while a terms file that the config names does not load, each open
+/// document shows one `lsp-lint-incomplete` diagnostic instead of findings, and the server
+/// keeps running.
+#[test]
+fn lsp_stays_up_on_a_broken_terms_file_and_lints_no_document() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::write(
+        root.join("slopvac.toml"),
+        "schema_version = 3\n\n[terms]\nfiles = [\"terms.toml\"]\n",
+    )
+    .unwrap();
+    fs::write(root.join("terms.toml"), "this is not [ toml\n").unwrap();
+    let doc_uri = file_uri(&root.join("doc.md"));
+    let mut lsp = LspChild::spawn(&root);
+
+    lsp.send(INITIALIZE);
+    let answered = lsp.next(|f| f["id"] == 1 && f.get("result").is_some());
+    let running = lsp.running();
+    assert!(
+        answered.is_some() && running,
+        "the server answers initialize and keeps running"
+    );
+    lsp.send(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#);
+    // Without the broken terms file, this text has a lexicon finding.
+    lsp.send(&format!(
+        r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"{doc_uri}","languageId":"markdown","version":1,"text":"We leverage it.\n"}}}}}}"#
+    ));
+    let published = lsp
+        .next(|f| diagnostics_for(f, &doc_uri).is_some())
+        .expect("diagnostics for the open document");
+    let items = diagnostics_for(&published, &doc_uri).unwrap();
+    assert_eq!(
+        items.len(),
+        1,
+        "the incomplete item, not findings: {items:?}"
+    );
+    assert_eq!(items[0]["code"], "lsp-lint-incomplete");
+
+    lsp.send(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#);
+    assert!(
+        lsp.next(|f| f["id"] == 2 && f.get("method").is_none())
+            .is_some(),
+        "the server answers shutdown"
+    );
+    assert!(lsp.running(), "the server waits for exit after shutdown");
+    lsp.send(r#"{"jsonrpc":"2.0","method":"exit"}"#);
+    let (code, stderr) = lsp.finish();
+    assert_eq!(code, Some(0), "{stderr}");
+    assert!(!stderr.contains("error["), "{stderr}");
+}
+
 #[rstest::rstest]
 #[case::not_utf8(NOT_UTF8.to_vec(), "error[config-io]: cannot read {file}: not valid UTF-8")]
 #[case::oversize(
