@@ -28,7 +28,11 @@ pub use ids::{
 };
 pub use messages::{message_entries, phrase_entries};
 pub use notice::{NoticeError, NoticeMessage, Result as NoticeResult};
-pub use notice_data::{BudgetNoticeData, NoticeData, RulesNoticeData, UnsupportedNoticeData};
+pub use notice_data::{
+    AuthorSource, BudgetNoticeData, ItemLocation, ItemRole, ModelMismatchNoticeData,
+    ModelSameNoticeData, NoticeData, PathBudgetNoticeData, RequestedSource, ReviewerSource,
+    RulesNoticeData, UnknownRuleNoticeData, UnsupportedNoticeData,
+};
 pub use origin::{
     Origin, OriginError, OriginLabel, OriginLocator, Result as OriginResult, SegmentId,
     SegmentRange,

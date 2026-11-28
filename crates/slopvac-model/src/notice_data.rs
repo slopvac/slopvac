@@ -4,12 +4,16 @@
 //! engine writes a type, so the keys and their value types are fixed in one place and the
 //! published `lint-report.schema.json` declares them per notice code.
 
-use schemars::JsonSchema;
+use std::num::NonZeroUsize;
+
+use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+use crate::NoticeError;
 use crate::report::Count;
-use crate::schema::if_then;
+use crate::schema::{absent_not_null, if_then};
+use crate::values::present;
 
 const RULE_KIND_NOT_IMPLEMENTED: &str = "rule-kind-not-implemented";
 const RULE_STYLE_NOT_IMPLEMENTED: &str = "rule-style-not-implemented";
@@ -18,6 +22,11 @@ const COMMENT_RULE_NAMED_NOT_RUN: &str = "comment-rule-named-not-run";
 const CASES_RULE_UNCHECKED: &str = "cases-rule-unchecked";
 const EXTRACT_UNSUPPORTED: &str = "extract-unsupported";
 const EXTRACT_BUDGET: &str = "extract-budget";
+const CONTEXT_BUDGET_EXCEEDED: &str = "context-budget-exceeded";
+const CONFIG_BUDGET_EXCEEDED: &str = "config-budget-exceeded";
+const CONFIG_UNKNOWN_RULE: &str = "config-unknown-rule";
+const REVIEW_MODEL_SAME: &str = "review-model-same";
+const REVIEW_MODEL_REPORTED_MISMATCH: &str = "review-model-reported-mismatch";
 
 /// Notice codes whose `data` is a [`RulesNoticeData`].
 const RULES_CODES: &[&str] = &[
@@ -33,6 +42,18 @@ const UNSUPPORTED_CODES: &[&str] = &[EXTRACT_UNSUPPORTED];
 
 /// Notice codes whose `data` is a [`BudgetNoticeData`].
 const BUDGET_CODES: &[&str] = &[EXTRACT_BUDGET];
+
+/// Notice codes whose `data` is a [`PathBudgetNoticeData`].
+const PATH_BUDGET_CODES: &[&str] = &[CONTEXT_BUDGET_EXCEEDED, CONFIG_BUDGET_EXCEEDED];
+
+/// Notice codes whose `data` is an [`UnknownRuleNoticeData`].
+const UNKNOWN_RULE_CODES: &[&str] = &[CONFIG_UNKNOWN_RULE];
+
+/// Notice codes whose `data` is a [`ModelSameNoticeData`].
+const MODEL_SAME_CODES: &[&str] = &[REVIEW_MODEL_SAME];
+
+/// Notice codes whose `data` is a [`ModelMismatchNoticeData`].
+const MODEL_MISMATCH_CODES: &[&str] = &[REVIEW_MODEL_REPORTED_MISMATCH];
 
 /// The rules a notice is about.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -63,6 +84,187 @@ pub struct BudgetNoticeData {
     pub limit: u64,
 }
 
+/// A budget that stopped work at a path, such as a document or a config file.
+///
+/// A sibling of [`BudgetNoticeData`]: an extraction budget never names a path, and a budget
+/// code that dropped its path must not match the schema.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[non_exhaustive]
+pub struct PathBudgetNoticeData {
+    /// Name of the budget that was passed. The list of names grows in 3.x.
+    pub budget: String,
+    /// Limit of the budget, in the unit that policies.md, section 1.9, gives for it.
+    #[schemars(with = "Count")]
+    pub limit: u64,
+    /// The document or config file at which the budget tripped, as the report shows it:
+    /// relative to the root, `<external>/<file name>` outside it, or `<stdin>`.
+    pub path: String,
+}
+
+/// A rule id that a config layer names and no rule has.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[non_exhaustive]
+pub struct UnknownRuleNoticeData {
+    /// The id as the config wrote it, qualified or bare.
+    pub rule: String,
+    /// One-based line of the key. Absent without a line.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[schemars(transform = absent_not_null)]
+    pub line: Option<NonZeroUsize>,
+    /// One-based column of the key. Absent without a column.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[schemars(transform = absent_not_null)]
+    pub column: Option<NonZeroUsize>,
+}
+
+/// What a review payload item is.
+///
+/// The review plan's payload items and the `items` of the review notices share this list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum ItemRole {
+    /// A sentence the revision changed.
+    Changed,
+    /// A sentence the revision added.
+    Added,
+    /// An original sentence the revision dropped.
+    Dropped,
+    /// The whole original document.
+    OriginalDocument,
+    /// The whole revised document.
+    RevisedDocument,
+}
+
+impl ItemRole {
+    /// Every role, in the order the schema lists them.
+    pub const ALL: [Self; 5] = [
+        Self::Changed,
+        Self::Added,
+        Self::Dropped,
+        Self::OriginalDocument,
+        Self::RevisedDocument,
+    ];
+
+    /// The name the role has on the wire.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Changed => "changed",
+            Self::Added => "added",
+            Self::Dropped => "dropped",
+            Self::OriginalDocument => "original_document",
+            Self::RevisedDocument => "revised_document",
+        }
+    }
+}
+
+/// Where a payload item sits, as a review notice names it under `items`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[non_exhaustive]
+pub struct ItemLocation {
+    /// The payload item's role.
+    pub role: ItemRole,
+    /// The payload item's one-based line: in the revision, except for `dropped` and
+    /// `original_document`, which sit in the original.
+    pub line: NonZeroUsize,
+}
+
+impl ItemLocation {
+    /// A location with its role and line.
+    #[must_use]
+    pub const fn new(role: ItemRole, line: NonZeroUsize) -> Self {
+        Self { role, line }
+    }
+}
+
+/// Where the author model of a review came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorSource {
+    /// The `--author-model` flag.
+    Flag,
+    /// The config.
+    Config,
+    /// No author model is set.
+    #[serde(rename = "none")]
+    Unset,
+}
+
+/// Where the reviewer model that matches the author came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewerSource {
+    /// The `--reviewer-model` flag.
+    Flag,
+    /// The config.
+    Config,
+    /// The model the provider declares.
+    Provider,
+    /// The model the provider reported for the items.
+    Reported,
+}
+
+/// Where the model a review asked for came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestedSource {
+    /// The `--reviewer-model` flag.
+    Flag,
+    /// The config.
+    Config,
+}
+
+/// A reviewer that is the author's model.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(transform = model_same_conditions)]
+#[non_exhaustive]
+pub struct ModelSameNoticeData {
+    /// The author model name.
+    pub author: String,
+    /// Where the author model came from.
+    pub author_source: AuthorSource,
+    /// The reviewer model name that matches the author.
+    pub reviewer: String,
+    /// Where the reviewer model came from.
+    pub reviewer_source: ReviewerSource,
+    /// The payload items the reported model covers. Present when `reviewer_source` is
+    /// `reported`, and absent otherwise.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[schemars(transform = absent_not_null, length(min = 1))]
+    pub items: Option<Vec<ItemLocation>>,
+}
+
+/// A reported model that is not the model the review asked for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[non_exhaustive]
+pub struct ModelMismatchNoticeData {
+    /// The reviewer model the review asked for.
+    pub requested: String,
+    /// Where the requested model came from.
+    pub requested_source: RequestedSource,
+    /// The model the provider reports.
+    pub reported: String,
+    /// The payload items the reported model covers.
+    #[schemars(length(min = 1))]
+    pub items: Vec<ItemLocation>,
+}
+
+/// `items` is required when the reviewer is the reported model, and absent otherwise.
+fn model_same_conditions(_schema: &mut Schema) {}
+
 /// The data of a typed notice code, with that code. Each constructor serves one code, so a
 /// code and a shape that do not match cannot be built. [`crate::Notice::from_catalog_data`]
 /// takes the notice code from here.
@@ -79,6 +281,10 @@ enum Shape {
     Rules(RulesNoticeData),
     Unsupported(UnsupportedNoticeData),
     Budget(BudgetNoticeData),
+    PathBudget(PathBudgetNoticeData),
+    UnknownRule(UnknownRuleNoticeData),
+    ModelSame(ModelSameNoticeData),
+    ModelMismatch(ModelMismatchNoticeData),
 }
 
 impl NoticeData {
@@ -169,6 +375,108 @@ impl NoticeData {
                 limit,
             }),
         }
+    }
+
+    /// Data for `context-budget-exceeded`: a document that passed a context budget. `path` is
+    /// the document as the report shows it.
+    #[must_use]
+    pub fn context_budget_exceeded(
+        budget: impl Into<String>,
+        limit: u64,
+        path: impl Into<String>,
+    ) -> Self {
+        Self::path_budget(CONTEXT_BUDGET_EXCEEDED, budget, limit, path)
+    }
+
+    /// Data for `config-budget-exceeded`: a config load that passed a budget. `path` is the
+    /// config file as the report shows it.
+    #[must_use]
+    pub fn config_budget_exceeded(
+        budget: impl Into<String>,
+        limit: u64,
+        path: impl Into<String>,
+    ) -> Self {
+        Self::path_budget(CONFIG_BUDGET_EXCEEDED, budget, limit, path)
+    }
+
+    fn path_budget(
+        code: &'static str,
+        budget: impl Into<String>,
+        limit: u64,
+        path: impl Into<String>,
+    ) -> Self {
+        Self {
+            code,
+            shape: Shape::PathBudget(PathBudgetNoticeData {
+                budget: budget.into(),
+                limit,
+                path: path.into(),
+            }),
+        }
+    }
+
+    /// Data for `config-unknown-rule`: a rule id that a config layer names and no rule has.
+    #[must_use]
+    pub fn config_unknown_rule(
+        rule: impl Into<String>,
+        line: Option<NonZeroUsize>,
+        column: Option<NonZeroUsize>,
+    ) -> Self {
+        Self {
+            code: CONFIG_UNKNOWN_RULE,
+            shape: Shape::UnknownRule(UnknownRuleNoticeData {
+                rule: rule.into(),
+                line,
+                column,
+            }),
+        }
+    }
+
+    /// Data for `review-model-same`: a reviewer that is the author's model. `items` lists
+    /// the payload items the reported model covers, and is empty unless `reviewer_source` is
+    /// [`ReviewerSource::Reported`], when it needs at least one.
+    ///
+    /// # Errors
+    /// [`NoticeError::DataShape`] when `items` and `reviewer_source` do not agree.
+    pub fn review_model_same(
+        author: impl Into<String>,
+        author_source: AuthorSource,
+        reviewer: impl Into<String>,
+        reviewer_source: ReviewerSource,
+        items: Vec<ItemLocation>,
+    ) -> Result<Self, NoticeError> {
+        Ok(Self {
+            code: REVIEW_MODEL_SAME,
+            shape: Shape::ModelSame(ModelSameNoticeData {
+                author: author.into(),
+                author_source,
+                reviewer: reviewer.into(),
+                reviewer_source,
+                items: (!items.is_empty()).then_some(items),
+            }),
+        })
+    }
+
+    /// Data for `review-model-reported-mismatch`: a reported model that is not the requested
+    /// one. `items` lists the payload items the reported model covers, at least one.
+    ///
+    /// # Errors
+    /// [`NoticeError::DataShape`] when `items` is empty.
+    pub fn review_model_reported_mismatch(
+        requested: impl Into<String>,
+        requested_source: RequestedSource,
+        reported: impl Into<String>,
+        items: Vec<ItemLocation>,
+    ) -> Result<Self, NoticeError> {
+        Ok(Self {
+            code: REVIEW_MODEL_REPORTED_MISMATCH,
+            shape: Shape::ModelMismatch(ModelMismatchNoticeData {
+                requested: requested.into(),
+                requested_source,
+                reported: reported.into(),
+                items,
+            }),
+        })
     }
 
     /// The notice code this data belongs to.
