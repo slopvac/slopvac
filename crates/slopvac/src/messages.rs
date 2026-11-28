@@ -51,6 +51,7 @@ pub static ALL: &[Registered] = &[
     ("lint options", lint_option_entries),
     ("lint fix", lint_fix_entries),
     ("lint fix reason", lint_fix_reason_entries),
+    ("init", crate::init::message_entries),
     ("self update", slopvac_update::error_entries),
     ("self update text", slopvac_update::text_entries),
     ("self update phrases", slopvac_update::phrase_entries),

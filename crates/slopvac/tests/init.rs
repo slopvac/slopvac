@@ -206,9 +206,9 @@ fn skip_agents_conflicts_with_harness_options() {
             .args(extra)
             .assert()
             .code(2)
-            .stderr(predicate::str::starts_with(
-                "error[usage]: --skip-agents writes no steering",
-            ));
+            .stderr(
+                "error[usage]: --skip-agents writes no steering; drop --harness and --no-skills.\n",
+            );
     }
     assert!(
         !dir.path().join("slopvac.toml").exists(),
@@ -247,9 +247,7 @@ fn a_directory_as_path_is_a_usage_error() {
         .args(["init", "--skip-agents", "--path", "conf"])
         .assert()
         .code(2)
-        .stderr(predicate::str::starts_with(
-            "error[usage]: --path conf is a directory.",
-        ));
+        .stderr("error[usage]: --path conf is a directory.\n");
 }
 
 #[test]
@@ -288,9 +286,9 @@ fn a_write_failure_is_an_incomplete_run_that_hides_the_path() {
         .expect("run");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(2));
-    assert!(
-        stderr.starts_with("error[output-failed]: <external>/slopvac.toml: cannot write"),
-        "{stderr}"
+    assert_eq!(
+        stderr,
+        "error[output-failed]: <external>/slopvac.toml: cannot write: entity already exists\n"
     );
     assert!(
         !stderr.contains(&target.path().display().to_string()),

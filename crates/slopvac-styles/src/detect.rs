@@ -12,6 +12,8 @@
 
 use std::path::Path;
 
+use slopvac_model::{Notice, NoticeLevel, NoticeMessage};
+
 use crate::messages::StyleMessage;
 use crate::source::BuiltinSource;
 
@@ -114,13 +116,20 @@ pub struct SkippedFile {
 }
 
 impl SkippedFile {
-    /// The info notice text. `label` is the file's root-relative display path.
+    /// The info notice, already valid, so a caller renders it with no fallible step.
+    ///
+    /// `label` is the file's root-relative display path.
     #[must_use]
-    pub fn message(&self, label: &str) -> String {
-        StyleMessage::DetectFileTooLarge {
+    #[expect(
+        clippy::expect_used,
+        reason = "StyleMessage is this crate's derived catalog: its code is kebab-case and its template is nonempty"
+    )]
+    pub fn notice(&self, label: &str) -> Notice {
+        let message = NoticeMessage::try_from_catalog(&StyleMessage::DetectFileTooLarge {
             label: label.to_owned(),
-        }
-        .to_string()
+        })
+        .expect("the style catalog supplies a valid notice message");
+        Notice::from_catalog(NoticeLevel::Info, message)
     }
 }
 

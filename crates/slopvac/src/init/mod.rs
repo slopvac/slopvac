@@ -15,8 +15,21 @@ use slopvac_agents::{harness, setup};
 use crate::errors::CliError;
 use crate::{exit, redact};
 
+mod messages;
 #[cfg(test)]
 mod template;
+
+use messages::InitText;
+
+/// The entries of the `init` message catalog, for the registry.
+#[must_use]
+pub fn message_entries() -> &'static [slopvac_messages::Entry] {
+    <InitText as slopvac_messages::Catalog>::entries()
+}
+
+fn text(message: &InitText) -> String {
+    slopvac_messages::render(message)
+}
 
 /// The checked-in starter config.
 pub const TEMPLATE: &str = include_str!("../../templates/slopvac.toml");
@@ -103,10 +116,25 @@ fn publish_with(
     }
 }
 
+/// Write one output line.
+fn say(out: &mut dyn Write, line: &str) -> Result<(), CliError> {
+    writeln!(out, "{line}").map_err(|err| {
+        CliError::new(
+            "output-failed",
+            text(&InitText::OutputFailed {
+                kind: err.kind().to_string(),
+            }),
+        )
+    })
+}
+
 fn io_error(path: &Path, err: &std::io::Error) -> CliError {
     CliError::new(
         "output-failed",
-        format!("{}: cannot write: {}", shown(path), err.kind()),
+        text(&InitText::WriteFailed {
+            path: shown(path),
+            kind: err.kind().to_string(),
+        }),
     )
 }
 
@@ -133,28 +161,17 @@ pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
     let no_skills = m.get_flag("no-skills");
     let skip_agents = m.get_flag("skip-agents");
     if skip_agents && (!harnesses.is_empty() || no_skills) {
-        return Err(CliError::new(
-            "usage",
-            "--skip-agents writes no steering; drop --harness and --no-skills.",
-        ));
+        return Err(CliError::new("usage", text(&InitText::SkipAgentsConflict)));
     }
-    let say = |out: &mut dyn Write, line: String| {
-        writeln!(out, "{line}").map_err(|err| {
-            CliError::new(
-                "output-failed",
-                format!("cannot write output: {}", err.kind()),
-            )
-        })
-    };
     if path.is_dir() {
         return Err(CliError::new(
             "usage",
-            format!("--path {} is a directory.", shown(&path)),
+            text(&InitText::DirectoryPath { path: shown(&path) }),
         ));
     }
     match publish(&path, TEMPLATE, m.get_flag("force")).map_err(|e| io_error(&path, &e))? {
-        Published::Wrote => say(out, format!("wrote {}", shown(&path)))?,
-        Published::Kept => say(out, format!("{} exists; keeping it.", shown(&path)))?,
+        Published::Wrote => say(out, &text(&InitText::Wrote { path: shown(&path) }))?,
+        Published::Kept => say(out, &text(&InitText::Kept { path: shown(&path) }))?,
     }
     let project = path
         .parent()
@@ -162,16 +179,19 @@ pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
     let detection = slopvac_styles::detect_house_styles(&project);
     for found in &detection.suggestions {
-        say(out, format!("house style: {}", found.describe()))?;
+        say(
+            out,
+            &text(&InitText::HouseStyle {
+                description: found.describe(),
+            }),
+        )?;
     }
     // Info notice, in the report text form `notice[<code>]: <message>`. Detection
     // never fails, so init still succeeds.
     for skipped in &detection.skipped {
         let label = slopvac_fs::display_under_root(&project.join(&skipped.file), &project);
-        say(
-            out,
-            format!("notice[{}]: {}", skipped.code, skipped.message(&label)),
-        )?;
+        let notice = slopvac_report::render_notice(&skipped.notice(&label));
+        say(out, &notice)?;
     }
     if !skip_agents {
         let mut chosen: Vec<String> = Vec::new();
@@ -183,7 +203,12 @@ pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
         if chosen.is_empty() {
             chosen.push(DEFAULT_HARNESS.to_owned());
         }
-        say(out, format!("harnesses: {}", chosen.join(", ")))?;
+        say(
+            out,
+            &text(&InitText::Harnesses {
+                names: chosen.join(", "),
+            }),
+        )?;
         let root = path
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
@@ -202,17 +227,49 @@ pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
             })
             .map_err(|err| crate::owners::agents_error(&err, &root))?;
             for line in outcome.lines {
-                say(out, redact::redact_root(&line, &root))?;
+                say(out, &redact::redact_root(&line, &root))?;
             }
         }
     }
-    say(out, "next: slopvac prime".to_owned())?;
+    say(out, &text(&InitText::Next))?;
     Ok(exit::PASS)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stream that fails every write, as a closed pipe does.
+    struct ClosedPipe;
+
+    impl Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_failed_write_to_the_output_stream_is_output_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("slopvac.toml");
+        let matches = crate::cli::command()
+            .try_get_matches_from(vec![
+                std::ffi::OsString::from("slopvac"),
+                "init".into(),
+                "--skip-agents".into(),
+                "--path".into(),
+                config.into_os_string(),
+            ])
+            .unwrap();
+        let (_, init) = matches.subcommand().unwrap();
+        let err = run(init, &mut ClosedPipe).unwrap_err();
+        assert_eq!(err.code, "output-failed");
+        assert_eq!(err.message, "cannot write output: broken pipe");
+    }
 
     #[test]
     fn a_file_that_appears_before_publishing_is_kept_not_replaced() {

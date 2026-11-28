@@ -43,6 +43,15 @@ claims-literal-added text
 claims-literal-removed text
 claims-negation-changed text
 claims-text-failed error
+cli-init-directory-path text
+cli-init-harnesses text
+cli-init-house-style text
+cli-init-kept text
+cli-init-next text
+cli-init-output-failed text
+cli-init-skip-agents-conflict text
+cli-init-write-failed text
+cli-init-wrote text
 cli-open-exited text
 cli-open-failed text
 cli-open-needs-html text
