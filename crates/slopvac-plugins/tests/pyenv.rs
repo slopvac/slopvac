@@ -2061,7 +2061,12 @@ mod unix_only {
         let project = s.dir("project");
         fs::create_dir_all(&project).unwrap();
         let (_, vp, w) = built_on_wrapper(&s, &root);
-        let alias = alias_to(&s, &if resolves { project } else { s.dir("not-there-yet") });
+        let target = if resolves {
+            project
+        } else {
+            s.dir("not-there-yet")
+        };
+        let alias = alias_to(&s, &target);
         let store = EnvStore::open(s.dir("envs"), &alias);
         fs::remove_file(&alias).unwrap();
         std::os::unix::fs::symlink(&root, &alias).unwrap();
