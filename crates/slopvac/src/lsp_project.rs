@@ -478,12 +478,27 @@ impl Project {
         (path.to_path_buf(), self.root.clone())
     }
 
-    /// The directories an RST interpreter is never taken from, for a buffer whose file sits
-    /// in `dir`: the directory the server runs in, `dir` and the repository root above `dir`,
-    /// as `slopvac lint` sets them for a file in `dir`. A repository outside the server's
-    /// directory is untrusted code, and a `python` it ships on `PATH` must not run.
-    fn rst_roots(&self, dir: &Path) -> Vec<PathBuf> {
-        rst_roots(&self.root, [dir.to_path_buf()])
+    /// The directories an RST interpreter is never taken from, for the buffer at `path`, which
+    /// `locate` placed in `dir`: the directory the server runs in, `dir` and the repository
+    /// root above it, as `slopvac lint` sets them for a file, and the directory that holds
+    /// `path` as it was opened, with every repository above it. A buffer opened through a
+    /// symlink has a repository on each side of the link, and each one outside the server's
+    /// directory is untrusted code: a `python` it ships on `PATH` must not run. A link in a
+    /// directory of the path can itself look like a repository, so the opened side counts
+    /// every `.git` above it, not only the nearest.
+    fn rst_roots(&self, path: &Path, dir: &Path) -> Vec<PathBuf> {
+        let mut starts = vec![dir.to_path_buf()];
+        if let Some(parent) = path.parent() {
+            let opened = self.root.join(parent);
+            starts.extend(
+                opened
+                    .ancestors()
+                    .filter(|d| d.join(".git").exists())
+                    .map(Path::to_path_buf),
+            );
+            starts.push(opened);
+        }
+        rst_roots(&self.root, starts)
     }
 
     /// The epoch of the loaded project, or why the project cannot lint.
@@ -576,7 +591,7 @@ impl Project {
         let shown = |e: CliError| LintError(e.message);
         let file = Path::new(path);
         let (absolute, dir) = self.locate(file);
-        let roots = self.rst_roots(&dir);
+        let roots = self.rst_roots(file, &dir);
         let config = self.config_in(&dir, epoch).map_err(shown)?;
         let none = LoadedConfig::without_files(self.root.clone());
         let (config_ref, rel) = match &config {
