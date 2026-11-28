@@ -2012,3 +2012,102 @@ fn a_forged_record_and_a_swapped_tree_do_not_load_a_data_plugin() {
     assert!(matches!(err, SyncedError::Tampered { .. }), "{err}");
     assert_eq!(err.code(), Some("plugin-tampered"));
 }
+
+/// The two fixed minisign public keys of the plugins test fixture.
+const KEY_A: &str = "RWRxKYFmhTOTlF4dZfQiksjUwa9hMA1yuN35jOIAQKIimPtv5bjRXTEY";
+const KEY_B: &str = "RWRRIIgHQg1gzQLcqtxsaLPEIESQOk6K95Uu4Hzms+lijW6eYTQpVaLv";
+
+fn key(b64: &str) -> slopvac_plugins::sign::PublicKey {
+    slopvac_plugins::sign::PublicKey::from_base64(b64).unwrap()
+}
+
+/// A policy that pins `keys` for `registry.example` and the namespace `acme`.
+fn pinned(keys: &[&str]) -> KeyPolicy {
+    KeyPolicy {
+        pinned: std::collections::BTreeMap::from([(
+            slopvac_plugins::sign::PinScope::new("registry.example", "acme"),
+            keys.iter().map(|k| key(k)).collect(),
+        )]),
+        ..KeyPolicy::default()
+    }
+}
+
+/// A data plugin `rulepack` with one rule, cached the way sync leaves an OCI entry signed by
+/// `KEY_A`: the manifest and its layer in the blobs, the tree under its hash, and a lock entry
+/// with the signature table.
+fn signed_world() -> (World, Lockfile) {
+    let w = World::new();
+    let spec = Spec::new("rulepack").rules(&["zorblax"]);
+    let tree = w.write_tree(&spec);
+    let archive = targz_of_dir(&tree);
+    let layer = slopvac_plugins::oci::Digest::of(&archive);
+    let manifest = format!(
+        "{{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\
+         \"config\":{{\"mediaType\":\"application/vnd.oci.empty.v1+json\",\"digest\":\"{}\",\"size\":2}},\
+         \"layers\":[{{\"mediaType\":\"application/vnd.slopvac.pack.layer.v1.tar+gzip\",\"digest\":\"{layer}\",\"size\":{}}}]}}",
+        slopvac_plugins::oci::Digest::of(b"{}"),
+        archive.len()
+    );
+    let manifest_digest = slopvac_plugins::oci::Digest::of(manifest.as_bytes());
+    let blobs = w.tmp.path().join("store/blobs");
+    fs::create_dir_all(&blobs).unwrap();
+    fs::write(blobs.join(layer.hex()), &archive).unwrap();
+    fs::write(blobs.join(manifest_digest.hex()), &manifest).unwrap();
+    let hash = tree_hash(&tree).unwrap();
+    let trees = w.tmp.path().join("store/trees");
+    fs::rename(&tree, trees.join(format!("tree-{}", hash.hex()))).unwrap();
+    let lock = Lockfile::parse(&format!(
+        "schema_version = 3\n[[plugins]]\nid = \"rulepack\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
+         slopvac_api = 1\nsource = \"oci://registry.example/acme/rulepack:1.0.0\"\n\
+         digest = \"{manifest_digest}\"\n[plugins.signature]\nkey_id = \"{}\"\n\
+         not_before = \"2026-11-01T00:00:00Z\"\n",
+        key(KEY_A).key_id()
+    ))
+    .unwrap();
+    (w, lock)
+}
+
+#[test]
+fn a_signed_data_plugin_loads_while_its_key_is_pinned_for_its_registry_and_namespace() {
+    let (w, lock) = signed_world();
+
+    let packs = load_synced(&ids(&["rulepack"]), &lock, &w.store(), &pinned(&[KEY_A])).unwrap();
+
+    let loaded: Vec<&str> = packs.iter().map(|p| p.manifest().id.as_str()).collect();
+    assert_eq!(loaded, ["rulepack"]);
+}
+
+/// A signed entry loads only while its key is pinned for its pair. With no key for the pair the
+/// next step is to pin one; with another key pinned, as after a rotation, it is to update.
+#[rstest]
+#[case::unpinned(
+    &[],
+    "is not pinned for namespace `acme`; pin it with `slopvac plugins pin acme <fingerprint> --key <file>`"
+)]
+#[case::rotated(
+    &[KEY_B],
+    "is not pinned for namespace `acme`, which pins another key; run `slopvac plugins update` for a release that key signs"
+)]
+fn a_signed_data_plugin_whose_key_is_not_pinned_is_refused_and_loads_nothing(
+    #[case] keys: &[&str],
+    #[case] next_step: &str,
+) {
+    let (w, lock) = signed_world();
+
+    let result = load_synced(&ids(&["rulepack"]), &lock, &w.store(), &pinned(keys));
+
+    let loaded: Vec<String> = result
+        .as_ref()
+        .map(|packs| packs.iter().map(|p| p.manifest().id.to_string()).collect())
+        .unwrap_or_default();
+    assert_eq!(loaded, Vec::<String>::new(), "nothing from the entry loads");
+    let err = result.unwrap_err();
+    assert_eq!(err.code(), Some("signature-invalid"));
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "plugin `rulepack`: signature check failed: key {} {next_step}",
+            key(KEY_A).key_id()
+        )
+    );
+}

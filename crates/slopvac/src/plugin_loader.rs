@@ -488,6 +488,83 @@ mod tests {
         );
     }
 
+    /// A code plugin cached the way sync leaves an OCI entry on `registry.example/acme`, with
+    /// a lock entry signed by `key_id`.
+    fn cache_signed_fmt(world: &World, key_id: &str) {
+        let archive = plugin_archive(PLUGIN_TOML);
+        let layer = Digest::of(&archive);
+        let manifest = format!(
+            "{{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\
+             \"config\":{{\"mediaType\":\"application/vnd.oci.empty.v1+json\",\"digest\":\"{}\",\"size\":2}},\
+             \"layers\":[{{\"mediaType\":\"application/vnd.slopvac.pack.layer.v1.tar+gzip\",\"digest\":\"{layer}\",\"size\":{}}}]}}",
+            Digest::of(b"{}"),
+            archive.len()
+        );
+        let manifest_digest = Digest::of(manifest.as_bytes());
+        let blobs = world.store().join("blobs");
+        fs::create_dir_all(&blobs).unwrap();
+        fs::write(blobs.join(layer.hex()), &archive).unwrap();
+        fs::write(blobs.join(manifest_digest.hex()), &manifest).unwrap();
+        let tree = extract(&archive, &world.dir.path().join("hash")).hash;
+        world.install_as(&archive, &tree);
+        fs::write(
+            world.lock_path(),
+            format!(
+                "schema_version = 3\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
+                 slopvac_api = 1\nsource = \"oci://registry.example/acme/fmt:1.0.0\"\n\
+                 digest = \"{manifest_digest}\"\n[plugins.signature]\nkey_id = \"{key_id}\"\n\
+                 not_before = \"2026-11-01T00:00:00Z\"\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    /// A signed code plugin loads only while its key is pinned for its registry and namespace.
+    /// With no key for the pair the next step is to pin one; with another key pinned, as after
+    /// a rotation, it is to update.
+    #[rstest]
+    #[case::unpinned(
+        false,
+        "is not pinned for namespace `acme`; pin it with `slopvac plugins pin acme <fingerprint> --key <file>`"
+    )]
+    #[case::rotated(
+        true,
+        "is not pinned for namespace `acme`, which pins another key; run `slopvac plugins update` for a release that key signs"
+    )]
+    fn a_signed_code_plugin_whose_key_is_not_pinned_is_refused(
+        #[case] other_key_pinned: bool,
+        #[case] next_step: &str,
+    ) {
+        let mut world = World::new();
+        let key = |pair: minisign::KeyPair| PublicKey::from_base64(&pair.pk.to_base64()).unwrap();
+        let signer = key(minisign::KeyPair::generate_unencrypted_keypair().unwrap());
+        if other_key_pinned {
+            let other = key(minisign::KeyPair::generate_unencrypted_keypair().unwrap());
+            world.policy.pinned = std::collections::BTreeMap::from([(
+                PinScope::new("registry.example", "acme"),
+                vec![other],
+            )]);
+        }
+        cache_signed_fmt(&world, &signer.key_id());
+
+        let result = world.loader().try_load(&world.fmt());
+
+        assert!(
+            result.is_err(),
+            "the plugin loads: {:?}",
+            result.map(|(p, _)| p.name)
+        );
+        let Err(refusal) = result else { return };
+        assert_eq!(refusal.code(), "signature-invalid");
+        assert_eq!(
+            refusal.to_string(),
+            format!(
+                "plugin `fmt`: signature check failed: key {} {next_step}",
+                signer.key_id()
+            )
+        );
+    }
+
     /// A signed entry whose OCI source does not parse names no registry or namespace, so the
     /// policy holds no key for it. Sync parses that source first and installs nothing for it.
     /// `try_load` returns `NotInstalled` for the entry, so a signed entry loads only with its
