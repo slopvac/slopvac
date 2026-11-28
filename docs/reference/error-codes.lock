@@ -389,6 +389,7 @@ engine-gate-errors text
 engine-gate-incomplete text
 engine-gate-score text
 engine-gate-warnings text
+engine-genres-need-assignments text
 engine-git-error text
 engine-git-escape text
 engine-git-malformed text

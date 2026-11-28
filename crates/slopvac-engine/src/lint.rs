@@ -954,7 +954,7 @@ impl Engine {
     pub fn with_genres(mut self, registry: GenreRegistry) -> Result<Self, EngineError> {
         if self.settings.genre_assignments.is_none() {
             return Err(EngineError::Internal(
-                "per-document genres need genre assignments in the settings".to_owned(),
+                crate::messages::EnginePhrase::GenresNeedAssignments.text(),
             ));
         }
         self.genres = Some(registry);
