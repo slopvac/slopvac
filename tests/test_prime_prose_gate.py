@@ -254,3 +254,33 @@ def test_a_missing_or_empty_output_directory_is_used(tmp_path, make_dir):
         out.mkdir()
     assert run_gate(gate, out).returncode == 0
     assert (out / "write-minimal.md").is_file()
+
+
+def test_a_symlink_with_a_trailing_slash_is_refused_and_its_target_stays_empty(tmp_path):
+    gate = stand_in(tmp_path)
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    assert run_gate(gate, Path(f"{link}/")).returncode == REFUSED
+    assert list(real.iterdir()) == []
+
+
+def test_a_directory_that_cannot_be_listed_is_refused_and_its_files_survive(tmp_path):
+    # The permission checks pass, so only the listing fails: `ls` is a stand-in that fails.
+    gate = stand_in(tmp_path)
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    ls = fake / "ls"
+    ls.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    ls.chmod(0o755)
+    out = tmp_path / "out"
+    out.mkdir()
+    victim = out / "write-minimal.md"
+    victim.write_text("keep", encoding="utf-8")
+    env = {"PATH": f"{fake}{os.pathsep}{os.environ['PATH']}"}
+    result = run_gate(gate, out, env)
+    assert result.returncode == REFUSED
+    assert "cannot list" in result.stderr
+    assert victim.read_text(encoding="utf-8") == "keep"
+    assert not (tmp_path / "lint-argv").exists()
