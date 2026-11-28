@@ -1645,6 +1645,38 @@ fn trust_names_the_code_beside_a_withheld_damaged_store() {
     assert_eq!(err.to_string(), STORE_WITHHELD);
 }
 
+/// A store this build does not read, a version 1 store or a version 2 store with a pin that
+/// names no registry host, is reported with the damaged-store text: the store's path under the
+/// project root (here outside it) and a fixed reason, never the parser's text.
+#[rstest::rstest]
+#[case::version_1(
+    r#"{"schema_version":1,"records":[],"pins":[]}"#,
+    "the trust store <external>/trust.json is damaged: unsupported schema_version"
+)]
+#[case::pin_without_a_host(
+    r#"{"schema_version":2,"records":[],"pins":[{"namespace":"acme","fingerprint":"LEAKME","key":"LEAKME","pinned_at":"2026-11-01T00:00:00Z"}]}"#,
+    "the trust store <external>/trust.json is damaged: a key pin names no registry host"
+)]
+fn trust_reports_a_store_it_does_not_read_with_the_damaged_store_text(
+    #[case] store: &str,
+    #[case] text: &str,
+) {
+    let f = Fixture::new();
+    f.write_lock(&[fake_code_entry()]);
+    fs::create_dir_all(f.state()).unwrap();
+    fs::write(f.state().join("trust.json"), store).unwrap();
+    let err = f
+        .run(&["trust", "fake"], false, with_loader(&f))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugins-store-failed");
+    assert_eq!(err.to_string(), text);
+    assert_eq!(
+        fs::read_to_string(f.state().join("trust.json")).unwrap(),
+        store
+    );
+}
+
 #[test]
 fn status_names_the_code_beside_a_withheld_damaged_store() {
     let f = Fixture::new();

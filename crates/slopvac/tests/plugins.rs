@@ -152,7 +152,7 @@ fn k23_a_pin_without_a_registry_host_is_a_damaged_store_that_stops_the_command(
     let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
     assert_eq!(
         stderr,
-        "error[plugins-store-failed]: plugins-store-failed: details are withheld because they can name paths outside the project\n"
+        "error[plugins-store-failed]: the trust store <external>/trust.json is damaged: a key pin names no registry host\n"
     );
     assert_eq!(fs::read_to_string(trust_file(&sandbox)).unwrap(), before);
 }
