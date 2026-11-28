@@ -149,7 +149,7 @@ These invocations skip the preflight:
 - `--version` and `-V` without `--json`
 - `completions`, `man` and `cli-reference`
 - `init`, `validate` and `migrate`, which create, check or convert a config
-- `lsp`, which resolves the config of each open document and keeps running while a config is broken
+- `lsp`, which resolves the config of each open document and keeps running while a config is broken, from startup on. It shows the failure as an error diagnostic on the config file, with the code that `lint` reports for the same failure, and reads the config again when that file changes.
 - `report`, so that a user with a broken config can still file a bug. A config fact that the report would include is marked as unavailable.
 
 `doctor` resolves the configuration but does not stop when that fails. It reports each file with a status (doctor.md, section 2.3) and exits 2 when one is not `ok`. While the configuration does not resolve, no update check starts.
