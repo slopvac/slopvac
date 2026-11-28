@@ -6,9 +6,12 @@
     reason = "test code: a panic is a failed test"
 )]
 
-use assert_cmd::Command;
+use std::path::Path;
+use std::time::Duration;
+
 use slopvac_cli::messages::catalogs;
 use slopvac_messages::{Entry, Kind};
+use snapbox::cmd::{Command, cargo_bin};
 
 /// The document cap, 64 MiB, written out here so a change to the shared constant is noticed.
 const CAP: usize = 64 * 1024 * 1024;
@@ -36,21 +39,37 @@ fn a_general_code_is_an_error_that_carries_the_detail_of_its_site(#[case] code: 
     assert_eq!((e.kind, e.template), (Kind::Error, "{detail}"));
 }
 
-fn slopvac() -> Command {
-    let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
-    cmd.env("SLOPVAC_NO_UPDATE_CHECK", "1").env("NO_COLOR", "1");
-    cmd
+fn slopvac(dir: &Path) -> Command {
+    Command::new(cargo_bin!("slopvac"))
+        .env("NO_COLOR", "1")
+        .env("SLOPVAC_NO_UPDATE_CHECK", "1")
+        .current_dir(dir)
+        .timeout(Duration::from_secs(60))
+}
+
+/// Run `cmd`, expect exit 2, and return (stdout, stderr).
+fn refused(cmd: Command) -> (String, String) {
+    let assert = cmd.assert().code(2);
+    let out = assert.get_output();
+    (
+        String::from_utf8(out.stdout.clone()).expect("utf8 stdout"),
+        String::from_utf8(out.stderr.clone()).expect("utf8 stderr"),
+    )
 }
 
 #[test]
 fn stdin_over_the_cap_is_refused_with_the_published_text() {
-    slopvac()
-        .args(["lint", "--stdin"])
-        .write_stdin(vec![b'a'; CAP + 1])
-        .assert()
-        .code(2)
-        .stdout("")
-        .stderr("error[document-too-large]: <stdin>: larger than the 64 MiB document limit\n");
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (stdout, stderr) = refused(
+        slopvac(dir.path())
+            .args(["lint", "--stdin"])
+            .stdin(vec![b'a'; CAP + 1]),
+    );
+    assert_eq!(stdout, "");
+    assert_eq!(
+        stderr,
+        "error[document-too-large]: <stdin>: larger than the 64 MiB document limit\n"
+    );
 }
 
 #[test]
@@ -58,11 +77,11 @@ fn an_out_path_that_is_a_directory_fails_with_the_published_text() {
     let dir = tempfile::tempdir().expect("temp dir");
     std::fs::create_dir(dir.path().join("report.txt")).expect("directory");
     std::fs::write(dir.path().join("doc.md"), "one two three\n").expect("document");
-    slopvac()
-        .current_dir(dir.path())
-        .args(["lint", "doc.md", "--out", "report.txt"])
-        .assert()
-        .code(2)
-        .stdout("")
-        .stderr("error[output-failed]: cannot write the report: is a directory\n");
+    let (stdout, stderr) =
+        refused(slopvac(dir.path()).args(["lint", "doc.md", "--out", "report.txt"]));
+    assert_eq!(stdout, "");
+    assert_eq!(
+        stderr,
+        "error[output-failed]: cannot write the report: is a directory\n"
+    );
 }
