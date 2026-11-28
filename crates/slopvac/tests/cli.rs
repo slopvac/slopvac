@@ -770,23 +770,218 @@ fn invocations_that_skip_the_preflight_run_on_a_broken_config(#[case] args: &[&s
     assert!(!stderr.contains("error["), "{args:?}: {stderr}");
 }
 
+/// A `slopvac lsp` child driven over piped stdio. Each frame it writes to stdout arrives on
+/// `frames` as JSON. Dropping it kills the child, so a failed assertion leaves no process.
+struct LspChild {
+    child: std::process::Child,
+    stdin: Option<std::process::ChildStdin>,
+    frames: std::sync::mpsc::Receiver<serde_json::Value>,
+    backlog: std::collections::VecDeque<serde_json::Value>,
+    stderr: Option<std::thread::JoinHandle<String>>,
+}
+
+/// How long the child gets to send an expected frame or to exit.
+const LSP_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+impl LspChild {
+    fn spawn(dir: &Path) -> Self {
+        use std::io::Read as _;
+        let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("slopvac"))
+            .arg("lsp")
+            .current_dir(dir)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn slopvac");
+        let stdin = child.stdin.take();
+        let mut stdout = std::io::BufReader::new(child.stdout.take().expect("piped stdout"));
+        let mut err = child.stderr.take().expect("piped stderr");
+        let (tx, frames) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            use std::io::BufRead as _;
+            // Ends when stdout closes, which disconnects `frames`.
+            while stdout.fill_buf().is_ok_and(|buf| !buf.is_empty()) {
+                let body = read_message(&mut stdout);
+                let value = serde_json::from_str(&body).expect("a JSON frame");
+                if tx.send(value).is_err() {
+                    break;
+                }
+            }
+        });
+        let stderr = std::thread::spawn(move || {
+            let mut text = String::new();
+            let _ = err.read_to_string(&mut text);
+            text
+        });
+        Self {
+            child,
+            stdin,
+            frames,
+            backlog: std::collections::VecDeque::new(),
+            stderr: Some(stderr),
+        }
+    }
+
+    fn send(&mut self, body: &str) {
+        use std::io::Write as _;
+        let stdin = self.stdin.as_mut().expect("stdin open");
+        stdin.write_all(frame(body).as_bytes()).expect("write");
+        stdin.flush().expect("flush");
+    }
+
+    /// The first frame that `wanted` accepts, in the order the child sent them. Frames it
+    /// skips stay for a later call, since the order of unrelated frames is not fixed. `None`
+    /// when stdout closed or [`LSP_WAIT`] passed first.
+    fn next(&mut self, wanted: impl Fn(&serde_json::Value) -> bool) -> Option<serde_json::Value> {
+        if let Some(at) = self.backlog.iter().position(&wanted) {
+            return self.backlog.remove(at);
+        }
+        let deadline = std::time::Instant::now() + LSP_WAIT;
+        loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            let frame = self.frames.recv_timeout(left).ok()?;
+            if wanted(&frame) {
+                return Some(frame);
+            }
+            self.backlog.push_back(frame);
+        }
+    }
+
+    fn running(&mut self) -> bool {
+        self.child.try_wait().expect("wait").is_none()
+    }
+
+    /// The exit code, waiting at most [`LSP_WAIT`], and what the child wrote to stderr.
+    fn finish(mut self) -> (Option<i32>, String) {
+        self.stdin = None;
+        let deadline = std::time::Instant::now() + LSP_WAIT;
+        let code = loop {
+            if let Some(status) = self.child.try_wait().expect("wait") {
+                break status.code();
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the server did not exit"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        let stderr = self.stderr.take().expect("stderr reader");
+        (code, stderr.join().expect("stderr reader"))
+    }
+}
+
+impl Drop for LspChild {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn file_uri(path: &Path) -> String {
+    format!("file://{}", path.display())
+}
+
+/// The `publishDiagnostics` frame for `uri`, when `frame` is one.
+fn diagnostics_for<'a>(
+    frame: &'a serde_json::Value,
+    uri: &str,
+) -> Option<&'a Vec<serde_json::Value>> {
+    (frame["method"] == "textDocument/publishDiagnostics" && frame["params"]["uri"] == uri)
+        .then(|| frame["params"]["diagnostics"].as_array())
+        .flatten()
+}
+
+/// config.md section 2.2: `lsp` keeps running while the project config is broken, from
+/// startup on. It shows the failure as an error diagnostic on the config file, with the code
+/// `lint` reports for it, and reads the config again when that file changes.
 #[test]
 fn lsp_skips_the_preflight_on_a_broken_config() {
     let dir = broken_project();
-    let input = [
-        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}"#,
-        r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#,
-        r#"{"jsonrpc":"2.0","method":"exit"}"#,
-    ]
-    .map(frame)
-    .concat();
-    slopvac()
-        .current_dir(dir.path())
-        .arg("lsp")
-        .write_stdin(input)
-        .timeout(std::time::Duration::from_secs(20))
-        .assert()
-        .code(0);
+    // The server's working directory is the project root, in its canonical form.
+    let root = fs::canonicalize(dir.path()).unwrap();
+    let config_uri = file_uri(&root.join("slopvac.toml"));
+    let doc_uri = file_uri(&root.join("doc.md"));
+    let mut lsp = LspChild::spawn(&root);
+
+    lsp.send(
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{"workspace":{"didChangeWatchedFiles":{"dynamicRegistration":true}}}}}"#,
+    );
+    let answered = lsp.next(|f| f["id"] == 1 && f.get("result").is_some());
+    let running = lsp.running();
+    assert!(
+        answered.is_some() && running,
+        "the server answers initialize and keeps running"
+    );
+    lsp.send(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#);
+
+    // The file holds bytes that are not UTF-8, which `lint` reports as `config-io`
+    // (policies.md, the config file row of the read-limit table).
+    let shown = lsp
+        .next(|f| diagnostics_for(f, &config_uri).is_some())
+        .expect("a diagnostic on the config file");
+    let shown = diagnostics_for(&shown, &config_uri).unwrap();
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert_eq!(shown[0]["code"], "config-io");
+    assert_eq!(shown[0]["severity"], 1, "an error");
+    assert_eq!(shown[0]["source"], "slopvac");
+
+    let watch = lsp
+        .next(|f| f["method"] == "client/registerCapability")
+        .expect("the config watch is registered");
+    let watchers = &watch["params"]["registrations"][0]["registerOptions"]["watchers"];
+    assert!(
+        watchers
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["globPattern"] == "**/slopvac.toml"),
+        "{watchers}"
+    );
+
+    lsp.send(&format!(
+        r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"{doc_uri}","languageId":"markdown","version":1,"text":"We leverage it.\n"}}}}}}"#
+    ));
+    let incomplete = lsp
+        .next(|f| diagnostics_for(f, &doc_uri).is_some())
+        .expect("diagnostics for the open document");
+    let items = diagnostics_for(&incomplete, &doc_uri).unwrap();
+    assert_eq!(
+        items.len(),
+        1,
+        "the incomplete item, not findings: {items:?}"
+    );
+    assert_eq!(items[0]["code"], "lsp-lint-incomplete");
+
+    fs::write(root.join("slopvac.toml"), "schema_version = 3\n").unwrap();
+    lsp.send(&format!(
+        r#"{{"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{{"changes":[{{"uri":"{config_uri}","type":2}}]}}}}"#
+    ));
+    assert!(
+        lsp.next(|f| diagnostics_for(f, &config_uri).is_some_and(Vec::is_empty))
+            .is_some(),
+        "the fixed config clears its diagnostic"
+    );
+    let linted = lsp.next(|f| {
+        diagnostics_for(f, &doc_uri).is_some_and(|items| {
+            items
+                .iter()
+                .any(|i| i["code"] == "core:prose-inflation.slop-lexicon")
+        })
+    });
+    assert!(linted.is_some(), "the document gets findings after the fix");
+
+    lsp.send(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#);
+    assert!(
+        lsp.next(|f| f["id"] == 2 && f.get("method").is_none())
+            .is_some(),
+        "the server answers shutdown"
+    );
+    assert!(lsp.running(), "the server waits for exit after shutdown");
+    lsp.send(r#"{"jsonrpc":"2.0","method":"exit"}"#);
+    let (code, stderr) = lsp.finish();
+    assert_eq!(code, Some(0), "{stderr}");
+    assert!(!stderr.contains("error["), "{stderr}");
 }
 
 #[rstest::rstest]
