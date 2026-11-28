@@ -400,6 +400,11 @@ pub fn text_entries() -> &'static [slopvac_messages::Entry] {
     <ReportText as Catalog>::entries()
 }
 
+/// The phrase as owned text.
+pub(super) fn phrase(phrase: ReportPhrase) -> String {
+    phrase.as_static().to_owned()
+}
+
 /// The text of `text`.
 pub(super) fn say(text: &ReportText) -> String {
     slopvac_messages::render(text)

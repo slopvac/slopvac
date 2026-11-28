@@ -158,9 +158,7 @@ pub fn command() -> Command {
         .arg_required_else_help(true)
         .subcommand(Command::new("on").about(ReportPhrase::ConsentOnAbout.as_static()))
         .subcommand(Command::new("off").about(ReportPhrase::ConsentOffAbout.as_static()))
-        .subcommand(
-            Command::new("show").about(ReportPhrase::ConsentShowAbout.as_static()),
-        )
+        .subcommand(Command::new("show").about(ReportPhrase::ConsentShowAbout.as_static()))
 }
 
 /// Whether the process runs in CI. `CI` counts with any value, the same test as the update

@@ -36,7 +36,9 @@ pub fn read_sample(path: &Path) -> Result<String, CliError> {
         // A FIFO with no writer would block an ordinary open.
         opts.custom_flags(i32::try_from(rustix::fs::OFlags::NONBLOCK.bits()).unwrap_or_default());
     }
-    let file = opts.open(path).map_err(|_| fail(ReportPhrase::SampleOpen))?;
+    let file = opts
+        .open(path)
+        .map_err(|_| fail(ReportPhrase::SampleOpen))?;
     if !file.metadata().is_ok_and(|m| m.is_file()) {
         return Err(fail(ReportPhrase::SampleNotRegular));
     }
