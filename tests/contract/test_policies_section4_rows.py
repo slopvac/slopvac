@@ -91,12 +91,24 @@ def _module_span(lines: list[str]) -> tuple[int, int] | None:
     return None
 
 
+def _scope_attrs(lines: list[str], span: tuple[int, int] | None) -> str:
+    """The `#![cfg(..)]` lines of the file and the `#[cfg(..)]` lines on `mod conformance`."""
+    found = [line for line in lines if line.startswith("#![cfg(")]
+    if span is not None:
+        k = span[0]
+        while k > 0 and lines[k - 1].startswith("#["):
+            k -= 1
+            found.append(lines[k])
+    return "\n".join(found).replace("#![", "#[")
+
+
 def markers(root: Path) -> list[Marked]:
     """Every `/// Conformance:` doc line under `root/crates/*/tests`, with the test it sits on."""
     found: list[Marked] = []
     for path in sorted(root.glob("crates/*/tests/**/*.rs")):
         lines = path.read_text(encoding="utf-8").split("\n")
         span = _module_span(lines)
+        scope_attrs = _scope_attrs(lines, span)
         for i, line in enumerate(lines):
             marker = _MARKER.match(line)
             if not marker:
@@ -111,9 +123,10 @@ def markers(root: Path) -> list[Marked]:
                         and fn["indent"] == "    "
                     )
                     attrs = "\n".join(lines[i + 1 : j])
+                    cfg_attrs = scope_attrs + "\n" + attrs
                     runnable = bool(_RUNNABLE.search(attrs)) and not _IGNORED.search(attrs)
                     found.append(
-                        Marked(path, j + 1, fn["name"], ids, inside, runnable, _admits_linux(attrs))
+                        Marked(path, j + 1, fn["name"], ids, inside, runnable, _admits_linux(cfg_attrs))
                     )
                     break
             else:
@@ -313,6 +326,27 @@ def test_a_test_limited_to_linux_counts(tmp_path: Path, os_name: str) -> None:
 def test_a_test_limited_to_another_os_does_not_count(tmp_path: Path, cfg: str) -> None:
     attrs = f"    #[cfg({cfg})]\n    #[test]\n"
     assert _one_test(attrs, tmp=tmp_path).rows_without_a_test == ["N1"]
+
+
+def _tree_with(tmp: Path, source: str) -> Problems:
+    return check(_tree(tmp, ["N1"], source))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        '#![cfg(target_os = "macos")]\n\nmod conformance {\n    /// Conformance: N1\n    #[test]\n    fn t() {}\n}\n',
+        '#[cfg(target_os = "macos")]\nmod conformance {\n    /// Conformance: N1\n    #[test]\n    fn t() {}\n}\n',
+    ],
+    ids=["file-level", "on-the-module"],
+)
+def test_a_module_limited_to_another_os_does_not_count(tmp_path: Path, source: str) -> None:
+    assert _tree_with(tmp_path, source).rows_without_a_test == ["N1"]
+
+
+def test_a_module_limited_to_linux_counts(tmp_path: Path) -> None:
+    source = '#![cfg(target_os = "linux")]\n\nmod conformance {\n    /// Conformance: N1\n    #[test]\n    fn t() {}\n}\n'
+    assert not _tree_with(tmp_path, source).any()
 
 
 # --- a table that did not parse ---------------------------------------------------------------
