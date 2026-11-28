@@ -276,6 +276,8 @@ impl FileCause {
 /// confined reader (policies section 1.9): the open does not block, so a FIFO with no writer is
 /// refused at once, and only a regular file is read.
 fn read_named(path: &Path, cap: u64) -> Result<String, FileCause> {
+    let followed = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let path = followed.as_path();
     slopvac_fs::read_capped_regular_to_string(path, cap, slopvac_fs::ReadOptions::new())
         .map_err(|e| FileCause::of(&e))
 }
