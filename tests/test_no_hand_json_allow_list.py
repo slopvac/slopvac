@@ -12,10 +12,12 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections import Counter
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts" / "ci"))
@@ -59,7 +61,7 @@ def scratch(tmp_path: Path, text: str, source: str) -> Path:
     (tmp_path / gate.RULE).write_text(text)
     src = tmp_path / "crates" / "a" / "src"
     src.mkdir(parents=True)
-    (src / "lib.rs").write_text(source)
+    (src / "lib.rs").write_bytes(source.encode())
     return tmp_path
 
 
@@ -495,73 +497,91 @@ def test_the_rule_file_carries_the_generated_regex_at_both_exemption_sites() -> 
 
 
 # --- suppression comments ---------------------------------------------------------------------
+#
+# ast-grep drops the findings that a comment holding `ast-grep-ignore` covers, and it reads the
+# comment its own way: a line comment runs to a line feed (a vertical tab or a bare CR stays
+# inside it), and block comments nest. The checker scans a copy with the marker neutralised.
+
+STRIPPED = gate.without_allow_list(REAL)
+FINDING = "crates/a/src/lib.rs: 1 finding(s) outside the allow list"
+
+# Each source is a new production file, off the allow list, that uses json!.
+FORMS = {
+    "suppress-all": "// ast-grep-ignore\n\nfn f() { json!(1); }\n",
+    "vertical-tab": "// ast-grep-ignore: user-text-literal\x0b, no-hand-json\nfn f() { json!(1); }\n",
+    "bare-cr": "// ast-grep-ignore: user-text-literal\r, no-hand-json\nfn f() { json!(1); }\n",
+    "nested-block": (
+        "/* /* ast-grep-ignore: user-text-literal */\n , no-hand-json */\nfn f() { json!(1); }\n"
+    ),
+}
 
 
-@pytest.mark.parametrize(
-    ("line", "refused"),
-    [
-        # A directive with no rule list hides every rule, in each comment form.
-        ("// ast-grep-ignore", True),
-        ("//ast-grep-ignore", True),
-        ("//! ast-grep-ignore", True),
-        ("/// ast-grep-ignore", True),
-        ("/* ast-grep-ignore */", True),
-        ("/*! ast-grep-ignore */", True),
-        ("fn f() { json!(1); } // ast-grep-ignore", True),
-        ("// ast-grep-ignore:", True),
-        # A list that names this rule, anywhere in it.
-        ("// ast-grep-ignore: no-hand-json", True),
-        ("// ast-grep-ignore:no-hand-json", True),
-        ("// ast-grep-ignore : no-hand-json", True),
-        ("// ast-grep-ignore: user-text-literal, no-hand-json", True),
-        ("// ast-grep-ignore: no-hand-json,user-text-literal", True),
-        ("/* ast-grep-ignore: no-hand-json */", True),
-        # Anything that cannot be classified fails closed.
-        ("// ast-grep-ignore: user-text-literal because it is a machine format", True),
-        ("// ast-grep-ignore: user-text-literal no-hand-json", True),
-        ("// ast-grep-ignore user-text-literal", True),
-        ("// AST-GREP-IGNORE", True),
-        ('let s = "ast-grep-ignore: user-text-literal";', True),
-        ("// ast-grep-ignore: a // ast-grep-ignore", True),
-        ("/* ast-grep-ignore: user-text-literal", True),
-        # A list of other rules is legal, with or without space before the colon.
-        ("// ast-grep-ignore: user-text-literal", False),
-        ("    // ast-grep-ignore: user-text-literal", False),
-        ("// ast-grep-ignore : user-text-literal", False),
-        ("// ast-grep-ignore: user-text-literal, derive-without-catalog", False),
-        ("/* ast-grep-ignore: user-text-literal */", False),
-        ("println!(\"x\"); // ast-grep-ignore: user-text-literal", False),
-        ("// ast-grep-ignore: no-hand-json-v2", False),
-        ("// ast-grep-ignore: my_rule", False),
-        ("// a plain comment", False),
-        ("fn f() { json!(1); }", False),
-    ],
-)
-def test_only_a_list_of_other_rules_is_a_legal_suppression(line: str, refused: bool) -> None:
-    assert (gate.suppression_problem(line) is not None) is refused
+def plain_scan(root: Path) -> Counter[str]:
+    """What a scan of the checkout reports: the suppression comments apply."""
+    rule = root / "plain-rule.yml"
+    rule.write_text(STRIPPED)
+    done = subprocess.run(
+        ["ast-grep", "scan", "--rule", "plain-rule.yml", "--json=compact"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    rule.unlink()
+    return Counter(item["file"] for item in json.loads(done.stdout)) if done.stdout.strip() else Counter()
 
 
-# A new production file, off the allow list, that opens with a suppress-all directive and
-# uses json!. On ast-grep 0.51.3 a scan of this file finds nothing at all, neither the macro
-# nor the comment, so the checker has to read the text itself.
-SUPPRESS_ALL_FIRST = "// ast-grep-ignore\n\nfn f() {{ json!(1); }}\nfn g() {{ json!(2); }}\n"
+def tree_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and ".git" not in path.parts
+    }
 
 
-def test_a_new_production_file_with_a_suppress_all_directive_and_json_fails_the_gate(
-    ast_grep: None, tmp_path: Path
-) -> None:
-    root = scratch(tmp_path, rule_text([], {}), SUPPRESS_ALL_FIRST.format())
-    # ast-grep alone sees nothing, which is the hole.
-    assert gate.scan(root, gate.without_allow_list((root / gate.RULE).read_text())) == Counter()
+def assert_the_gate_fails(tmp_path: Path, source: str) -> None:
+    """The scan of the checkout is blind to the file, and the checker still fails, end to end."""
+    root = scratch(tmp_path, rule_text([], {}), source)
+    assert plain_scan(root) == Counter()
     errors = gate.check(root)
     assert len(errors) == 1
-    assert errors[0].startswith("crates/a/src/lib.rs:1: suppression with no rule list")
+    assert errors[0].startswith(FINDING)
     script = ROOT / "scripts" / "ci" / "check_no_hand_json.py"
     done = subprocess.run(
         [sys.executable, str(script), str(root)], capture_output=True, text=True, check=False
     )
     assert done.returncode == 1
-    assert "crates/a/src/lib.rs:1" in done.stderr
+    assert FINDING in done.stderr
+
+
+def test_a_new_production_file_with_a_suppress_all_directive_and_json_fails_the_gate(
+    ast_grep: None, tmp_path: Path
+) -> None:
+    assert_the_gate_fails(tmp_path, FORMS["suppress-all"])
+
+
+def test_a_vertical_tab_in_a_suppression_comment_does_not_hide_the_rule(
+    ast_grep: None, tmp_path: Path
+) -> None:
+    assert_the_gate_fails(tmp_path, FORMS["vertical-tab"])
+
+
+def test_a_bare_cr_in_a_suppression_comment_does_not_hide_the_rule(
+    ast_grep: None, tmp_path: Path
+) -> None:
+    assert_the_gate_fails(tmp_path, FORMS["bare-cr"])
+
+
+def test_a_nested_block_comment_does_not_hide_the_rule(ast_grep: None, tmp_path: Path) -> None:
+    assert_the_gate_fails(tmp_path, FORMS["nested-block"])
+
+
+@pytest.mark.parametrize("form", FORMS)
+def test_the_marker_is_neutral_in_the_copy(ast_grep: None, tmp_path: Path, form: str) -> None:
+    root = scratch(tmp_path, rule_text([], {}), FORMS[form])
+    assert plain_scan(root) == Counter()
+    found = gate.neutralised_scan(root, "no-hand-json", STRIPPED)
+    assert found == Counter({"crates/a/src/lib.rs": 1})
 
 
 @pytest.mark.parametrize(
@@ -573,15 +593,17 @@ def test_a_new_production_file_with_a_suppress_all_directive_and_json_fails_the_
         "/* ast-grep-ignore */",
         "/*! ast-grep-ignore */",
         "// ast-grep-ignore: no-hand-json",
+        "// ast-grep-ignore : no-hand-json",
+        "// ast-grep-ignore:no-hand-json",
     ],
 )
 def test_every_comment_form_of_a_file_level_suppression_fails_the_gate(
     ast_grep: None, tmp_path: Path, opening: str
 ) -> None:
-    source = f"{opening}\n\nfn f() {{ json!(1); }}\n"
-    errors = gate.check(scratch(tmp_path, rule_text([], {}), source))
+    root = scratch(tmp_path, rule_text([], {}), f"{opening}\n\nfn f() {{ json!(1); }}\n")
+    errors = gate.check(root)
     assert len(errors) == 1
-    assert errors[0].startswith("crates/a/src/lib.rs:1: ")
+    assert errors[0].startswith(FINDING)
 
 
 def test_a_next_line_suppression_of_this_rule_fails_the_gate(
@@ -590,7 +612,7 @@ def test_a_next_line_suppression_of_this_rule_fails_the_gate(
     source = "fn g() {}\n// ast-grep-ignore: no-hand-json\nfn f() { json!(1); }\n"
     errors = gate.check(scratch(tmp_path, rule_text([], {}), source))
     assert len(errors) == 1
-    assert errors[0].startswith("crates/a/src/lib.rs:2: suppression of this rule")
+    assert errors[0].startswith(FINDING)
 
 
 @pytest.mark.parametrize(
@@ -611,10 +633,99 @@ def test_a_suppression_of_another_rule_does_not_hide_a_json_finding(
     ast_grep: None, tmp_path: Path
 ) -> None:
     # `ast-grep-ignore : user-text-literal` names another rule, so the finding below still
-    # counts: with no allow-list entry the file must report it.
+    # counts against the pinned entry.
     text = rule_text([entry("digest-input", 1)], {"digest-input": 1})
     source = "// ast-grep-ignore : user-text-literal\nfn f() { json!(1); }\n"
     assert gate.check(scratch(tmp_path, text, source)) == []
+
+
+# --- the neutralised copy ---------------------------------------------------------------------
+
+
+def test_the_copy_differs_from_the_source_only_at_the_markers(tmp_path: Path) -> None:
+    # Every byte but the marker stays: CRLF, a bare CR, VT, a NUL, and bytes that are not UTF-8.
+    source = (
+        b"//! ast-grep-ignore\r\n"
+        b"fn f() {} // AST-Grep-Ignore: a\x0b, b\r"
+        b"/* ast-grep-ignore */ \xff\xfe\x00 ast-grep-ignoreast-grep-ignore\n"
+        b"no marker here, nor ast-grep-ignor or ast_grep_ignore\n"
+    )
+    expected = (
+        b"//! ast-grep-inert_\r\n"
+        b"fn f() {} // ast-grep-inert_: a\x0b, b\r"
+        b"/* ast-grep-inert_ */ \xff\xfe\x00 ast-grep-inert_ast-grep-inert_\n"
+        b"no marker here, nor ast-grep-ignor or ast_grep_ignore\n"
+    )
+    root = tmp_path / "checkout"
+    (root / "crates" / "a" / "src" / "deep").mkdir(parents=True)
+    (root / "crates" / "a" / "src" / "deep" / "m.rs").write_bytes(source)
+    (root / "crates" / "a" / "src" / "plain.rs").write_bytes(b"fn p() {}\n")
+    (root / "crates" / "a" / "src" / "notes.txt").write_bytes(b"ast-grep-ignore\n")
+    (root / "sgconfig.yml").write_bytes(b"ruleDirs:\n  - ast-grep/rules\n")
+    before = tree_bytes(root)
+    copy = tmp_path / "copy"
+    gate.copy_neutralised(root, copy, "no-hand-json", "id: no-hand-json\n")
+    assert tree_bytes(root) == before
+    assert tree_bytes(copy) == {
+        "crates/a/src/deep/m.rs": expected,
+        "crates/a/src/plain.rs": b"fn p() {}\n",
+        "sgconfig.yml": b"ruleDirs:\n  - ast-grep/rules\n",
+        "ast-grep/rules/no-hand-json.yml": b"id: no-hand-json\n",
+    }
+
+
+@pytest.mark.parametrize("runs", ["passing", "failing"])
+def test_the_checkout_is_untouched_after_a_run(
+    ast_grep: None, tmp_path: Path, runs: str
+) -> None:
+    pinned = rule_text([entry("digest-input", 1)], {"digest-input": 1})
+    if runs == "passing":
+        root = scratch(tmp_path, pinned, "fn f() { json!(1); }\n")
+    else:
+        root = scratch(tmp_path, rule_text([], {}), FORMS["vertical-tab"])
+    before = tree_bytes(root)
+    errors = gate.check(root)
+    assert (errors == []) is (runs == "passing")
+    assert tree_bytes(root) == before
+
+
+def test_the_copy_is_removed_also_when_the_scan_fails(
+    ast_grep: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scratch_dir = tmp_path / "tmp"
+    scratch_dir.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(scratch_dir))
+    root = scratch(tmp_path / "checkout", rule_text([], {}), "fn f() {}\n")
+    assert gate.neutralised_scan(root, "no-hand-json", STRIPPED) == Counter()
+    assert list(scratch_dir.iterdir()) == []
+    with pytest.raises(RuntimeError):
+        gate.neutralised_scan(root, "no-hand-json", "id: [unclosed")
+    assert list(scratch_dir.iterdir()) == []
+
+
+def test_the_copy_holds_the_files_the_real_scan_reads(ast_grep: None, tmp_path: Path) -> None:
+    """ast-grep's own list of the files it applied the rule to equals the files copied.
+
+    The rule here has no `ignores`, so the list is every file its `files` glob reaches.
+    """
+    data = yaml.safe_load(REAL)
+    del data["ignores"]
+    open_rule = tmp_path / "open-rule.yml"
+    open_rule.write_text(yaml.safe_dump(data))
+    done = subprocess.run(
+        ["ast-grep", "scan", "--rule", str(open_rule), "--inspect", "entity", "--json=compact"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    applied = {
+        line.split("|")[2].split(":")[0]
+        for line in done.stderr.splitlines()
+        if line.startswith("sg: entity|file|") and "appliedRuleCount=1" in line
+    }
+    assert applied
+    assert applied == {path.as_posix() for path in gate.scanned_sources(ROOT)}
 
 
 # --- the ignores that ast-grep reads ----------------------------------------------------------

@@ -18,11 +18,12 @@ compares what it finds with the list:
 * a TEMPORARY category names a bead as ``TEMPORARY(slopvac-...)``;
 * the ``ignores`` list that a YAML parser loads from the file equals the annotated entries, in
   order, so a sequence written in another style cannot add an entry;
-* no source line in crates/*/src suppresses this rule: ``// ast-grep-ignore`` with no rule list
-  hides every rule, and ``// ast-grep-ignore: no-hand-json`` hides this one. The check reads
-  the text of every .rs file, because ast-grep's own scans honour the directive they look for
-  (ast-grep 0.51.3 has no switch to turn that off). A suppression that names only other rules,
-  as the message-registry rule allows, stays legal. A marker that cannot be classified fails.
+* no finding sits outside the allow list. The rule runs on a copy of the sources in which every
+  `ast-grep-ignore` marker is neutralised, so a suppression comment, in any form or position,
+  cannot hide a finding from this check. (ast-grep 0.51.3 has no switch to turn suppression
+  off, and a text classifier of comments misses forms such as a vertical tab or a bare CR inside
+  a line comment, and nested block comments.) Another rule's suppression stays legal in the
+  checkout, because only the copy is neutralised.
 
 Growth check (``--base <ref>``). The file checks alone compare the file with itself, so raising
 a pin along with a new ``json!`` would pass. With a base, the check reads the rule file at that
@@ -263,6 +264,12 @@ def file_problems(rule: Rule, found: Counter[str]) -> list[str]:
                 f"total {category}: declared {rule.totals.get(category)}, entries sum to "
                 f"{sums[category]}"
             )
+    for path in sorted(found):
+        if path not in seen:
+            errors.append(
+                f"{path}: {found[path]} finding(s) outside the allow list; build the JSON from a "
+                "typed model, or get contract sign-off for an allow-list entry"
+            )
     for glob in rule.globs:
         if glob not in EXEMPT_GLOBS:
             errors.append(f"{glob}: not one of the fixed test globs {sorted(EXEMPT_GLOBS)}")
@@ -396,66 +403,72 @@ def has_label(labels_json: str | None) -> bool:
     return isinstance(names, list) and LABEL in names
 
 
-SUPPRESSION = re.compile(r"ast-grep-ignore", re.IGNORECASE)
-# What follows the marker in a directive that is safe to leave: a colon and a list of rule ids,
-# up to the end of the line (or of a one-line block comment).
-LEGAL_TAIL = re.compile(r"\s*:\s*(?P<ids>[A-Za-z0-9_-]+(?:\s*,\s*[A-Za-z0-9_-]+)*)\s*(?:\*/)?\s*")
-COMMENT_START = re.compile(r"//|/\*")
+# ast-grep honours a comment that holds `ast-grep-ignore` (above a line, at its end, or at the
+# top of a file) and drops the findings it covers, so a scan that wants every finding must not
+# see the marker. ast-grep 0.51.3 matches the lowercase spelling only, and has no switch to turn
+# suppression off. The scan therefore runs on a copy in which every occurrence of the marker, in
+# any casing, is replaced by text of the same length that ast-grep does not know. Neutralising
+# more than ast-grep reads is safe, because the copy is used for this scan alone. The bytes are
+# replaced in place, so everything else (CR, VT, nested comments, non-UTF-8 bytes) stays as
+# written, and the file names stay the same.
+MARKER = re.compile(rb"ast-grep-ignore", re.IGNORECASE)
+INERT = b"ast-grep-inert_"
+assert len(INERT) == len(b"ast-grep-ignore")  # noqa: S101 - a constant check at import
 
 
-def suppression_problem(line: str) -> str | None:
-    """Explain why a source line may hide a no-hand-json finding, or return None.
+def neutralise(data: bytes) -> bytes:
+    """Replace every occurrence of the suppression marker, keeping all other bytes."""
+    return MARKER.sub(INERT, data)
 
-    ast-grep honours ``ast-grep-ignore`` (every rule) and ``ast-grep-ignore: a, b`` (the named
-    rules), and a directive can reach the next line, the same line, or more (a directive at the
-    top of a file hid its own comment from a scan of comments). So this check does not ask
-    ast-grep: it reads the text. A marker passes only inside a comment, followed by a colon and
-    a list of rule ids that does not name this rule, as in ``// ast-grep-ignore: other-rule``.
-    Whitespace before the colon is the same list form to ast-grep, and is accepted. Anything
-    else fails, because it cannot be classified.
+
+def scanned_sources(root: Path) -> list[Path]:
+    """The Rust files the rule scans, relative to ``root`` (its ``files`` glob, rust only)."""
+    return sorted(
+        path.relative_to(root) for path in root.glob("crates/*/src/**/*.rs") if path.is_file()
+    )
+
+
+def copy_neutralised(root: Path, dest: Path, rule_id: str, rule_text: str) -> None:
+    """Copy what a scan of ``rule_id`` reads into ``dest``, with the marker neutralised.
+
+    That is the sources, sgconfig.yml and the one rule file, at the same relative paths, so the
+    rule's own ``ignores`` and ``files`` globs apply as they do in the checkout. Nothing is
+    written under ``root``.
     """
-    for found in SUPPRESSION.finditer(line):
-        starts = list(COMMENT_START.finditer(line[: found.start()]))
-        if not starts:
-            return "ast-grep-ignore outside a comment"
-        tail = LEGAL_TAIL.fullmatch(line[found.end() :])
-        if tail is None:
-            return "suppression with no rule list, or one that cannot be classified"
-        # A block comment must close on this line, or the ids could run on into the next one.
-        if starts[-1][0] == "/*" and not line.rstrip().endswith("*/"):
-            return "suppression in a block comment that does not close on its line"
-        if "no-hand-json" in re.split(r"\s*,\s*", tail["ids"]):
-            return "suppression of this rule"
-    return None
+    for relative in scanned_sources(root):
+        target = dest / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(neutralise((root / relative).read_bytes()))
+    config = root / "sgconfig.yml"
+    if config.is_file():
+        (dest / "sgconfig.yml").write_bytes(config.read_bytes())
+    rule = dest / "ast-grep" / "rules" / f"{rule_id}.yml"
+    rule.parent.mkdir(parents=True, exist_ok=True)
+    rule.write_text(rule_text, encoding="utf-8")
 
 
-def suppression_problems(root: Path) -> list[str]:
-    """List every ``ast-grep-ignore`` in crates/*/src that is not a list of other rules."""
-    errors: list[str] = []
-    for path in sorted(root.glob("crates/*/src/**/*.rs")):
-        relative = path.relative_to(root).as_posix()
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            errors.append(f"{relative}: not UTF-8, so its suppression comments cannot be read")
-            continue
-        for number, line in enumerate(text.splitlines(), start=1):
-            if (why := suppression_problem(line)) is not None:
-                errors.append(
-                    f"{relative}:{number}: {why}; it can hide findings of this rule. Name only "
-                    "other rules or remove it"
-                )
-    return errors
+def neutralised_scan(root: Path, rule_id: str, rule_text: str | None = None) -> Counter[str]:
+    """Run one rule over a neutralised copy of the sources and count its findings by file.
 
-
-def scan(root: Path, rule_text: str) -> Counter[str]:
-    """Run the rule from ``root`` and count its findings by file."""
-    with tempfile.TemporaryDirectory() as tmp:
-        rule = Path(tmp) / "no-hand-json.yml"
-        rule.write_text(rule_text)
+    Built for any rule id, so the same scan can later guard `user-text-literal` against
+    suppression comments (slopvac-8l4.21.25). Only no-hand-json is wired today. The copy lives
+    in a temporary directory that is removed afterwards, also on an error. Paths in the result
+    are relative to ``root``, as in the checkout.
+    """
+    if rule_text is None:
+        rule_text = (root / "ast-grep" / "rules" / f"{rule_id}.yml").read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory(prefix=f"{rule_id}-") as tmp:
+        copy = Path(tmp)
+        copy_neutralised(root, copy, rule_id, rule_text)
         done = subprocess.run(
-            ["ast-grep", "scan", "--rule", str(rule), "--json=compact"],
-            cwd=root,
+            [
+                "ast-grep",
+                "scan",
+                "--rule",
+                f"ast-grep/rules/{rule_id}.yml",
+                "--json=compact",
+            ],
+            cwd=copy,
             capture_output=True,
             text=True,
             check=False,
@@ -496,10 +509,9 @@ def check(root: Path, base: str | None = None, labels: str | None = None) -> lis
     errors = (
         list(rule.errors)
         if rule.errors
-        else file_problems(rule, scan(root, without_allow_list(text)))
+        else file_problems(rule, neutralised_scan(root, "no-hand-json", without_allow_list(text)))
     )
     errors += exempt_problems(root, rule)
-    errors += suppression_problems(root)
     if base is not None:
         before = base_text(root, base)
         if before is not None:
