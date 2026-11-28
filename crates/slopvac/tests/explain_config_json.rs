@@ -617,6 +617,45 @@ fn explain_config_names_the_genre_that_lint_reports_for_the_input(
     assert_eq!(explained["source"], linted["source"], "{doc}\n{report}");
 }
 
+/// A genre id that is well formed and names no registered genre. It must never be echoed.
+const UNREGISTERED: &str = "zzsecretgenre";
+
+/// A document that names a genre no registry holds is refused, by lint and by explain alike,
+/// with `config-invalid-value` at its key. The refusal never carries the value, neither on
+/// stderr nor in the report, and the other document of the run is still read.
+#[rstest]
+#[case::front_matter("---\nslopvac:\n  v: 3\n  genre: zzsecretgenre\n---\n# Title\n\nText.\n")]
+#[case::directive("<!-- slopvac: genre=zzsecretgenre -->\n# Title\n\nText.\n")]
+fn an_unregistered_genre_is_refused_by_lint_and_explain_without_its_value(#[case] text: &str) {
+    let dir = project_with("schema_version = 3\n");
+    fs::write(dir.path().join("a.md"), text).expect("write document");
+
+    let (code, stdout, stderr) = outcome(dir.path(), &["lint", "--format", "json", "."]);
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains("error[config-invalid-value]"), "{stderr}");
+    assert!(!stderr.contains(UNREGISTERED), "{stderr}");
+    assert!(!stdout.contains(UNREGISTERED), "{stdout}");
+    let report: Value = serde_json::from_str(&stdout).expect("a lint report");
+    let paths: Vec<&Value> = report["documents"]
+        .as_array()
+        .expect("documents")
+        .iter()
+        .map(|d| &d["path"])
+        .collect();
+    assert_eq!(paths, [&json!("docs/a.md")], "{report}");
+
+    let (code, stdout, stderr) = outcome(
+        dir.path(),
+        &["lint", "--explain-config", "--format", "json", "."],
+    );
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains("error[config-invalid-value]"), "{stderr}");
+    assert!(!stderr.contains(UNREGISTERED), "{stderr}");
+    assert!(!stdout.contains(UNREGISTERED), "{stdout}");
+    let doc: Value = serde_json::from_str(&stdout).expect("one JSON document");
+    assert_eq!(only_input(&doc)["path"], json!("docs/a.md"), "{doc}");
+}
+
 /// With `[frontmatter] enabled = false` the document takes no part in resolution: the record
 /// says so, and no origin is the `slopvac:` block or a directive.
 #[test]
