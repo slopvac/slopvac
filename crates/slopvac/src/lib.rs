@@ -9,6 +9,7 @@
 )]
 
 pub mod cli;
+mod cli_messages;
 pub mod color;
 pub mod doctor;
 pub mod engine;

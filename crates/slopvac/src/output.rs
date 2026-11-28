@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 use clap::{ArgMatches, parser::ValueSource};
 use slopvac_report::{Format, render};
 
+use crate::cli_messages::IoMessage;
 use crate::engine::RunOutcome;
 use crate::errors::CliError;
 
@@ -32,9 +33,7 @@ impl Opener for SystemOpener {
         } else if cfg!(target_os = "linux") {
             "xdg-open"
         } else {
-            return Err(std::io::Error::other(
-                "no opener is known for this platform",
-            ));
+            return Err(std::io::Error::other(IoMessage::OpenNoOpener.text()));
         };
         let status = Command::new(program)
             .arg(path)
@@ -45,9 +44,13 @@ impl Opener for SystemOpener {
         if status.success() {
             Ok(())
         } else {
-            Err(std::io::Error::other(format!(
-                "{program} exited with {status}"
-            )))
+            Err(std::io::Error::other(
+                IoMessage::OpenExited {
+                    program: program.to_owned(),
+                    status: status.to_string(),
+                }
+                .text(),
+            ))
         }
     }
 }
@@ -110,18 +113,14 @@ pub fn deliver_with(
     let open = m.get_flag("open");
     let format = chosen_format(m);
     if open && format != Format::Html {
-        return Err(CliError::new(
-            "usage",
-            "--open shows an HTML report; drop --format or use --format html.",
-        ));
+        return Err(IoMessage::usage(&IoMessage::OpenNeedsHtml));
     }
     let rendered = render(format, &outcome.report, &outcome.sources)
-        .map_err(|err| CliError::new("render-failed", err.to_string()))?;
+        .map_err(|err| IoMessage::render_failed(err.to_string()))?;
     let failed = |err: std::io::Error| {
-        CliError::new(
-            "output-failed",
-            format!("cannot write the report: {}", err.kind()),
-        )
+        IoMessage::output_failed(&IoMessage::ReportWriteFailed {
+            kind: err.kind().to_string(),
+        })
     };
     let target = match m.get_one::<PathBuf>("out") {
         Some(path) => Some(path.clone()),
@@ -133,6 +132,8 @@ pub fn deliver_with(
         return out.flush().map_err(failed);
     };
     write_file(&path, &rendered).map_err(failed)?;
+    // The fixed output line that scripts read, not a message.
+    // ast-grep-ignore: user-text-literal
     writeln!(out, "report: {}", path.display()).map_err(failed)?;
     out.flush().map_err(failed)?;
     if open {
@@ -145,9 +146,12 @@ pub fn deliver_with(
 /// already written, so the run's outcome does not change.
 fn show(path: &Path, opener: &dyn Opener, ci: bool, err_out: &mut dyn std::io::Write) {
     if ci {
-        let _ = writeln!(err_out, "not opening the report: CI is set.");
+        let _ = writeln!(err_out, "{}", IoMessage::OpenSkippedCi.text());
     } else if let Err(err) = opener.open(&absolute(path)) {
-        let _ = writeln!(err_out, "warning: could not open the report: {err}");
+        let warning = IoMessage::OpenFailed {
+            detail: err.to_string(),
+        };
+        let _ = writeln!(err_out, "{}", warning.text());
     }
 }
 
