@@ -446,7 +446,7 @@ fn assert_lifting_the_gate_starts_it_once(world: &World, flags: &[&str], lift: &
     None,
     Lift::Flags(&["--reviewer-model", "reviewer-model"])
 )]
-fn each_gate_alone_keeps_the_provider_from_starting(
+fn n11_n12_each_gate_alone_keeps_the_provider_from_starting(
     #[case] docs: (&str, &str),
     #[case] config: String,
     #[case] setup: Setup,
@@ -489,7 +489,7 @@ fn a_plugin_without_a_provider_hook_never_starts() {
 
 /// `lint` leaves a configured provider idle (policies.md N11).
 #[test]
-fn lint_leaves_a_configured_provider_idle() {
+fn n11_lint_leaves_a_configured_provider_idle() {
     let world = World::new(REWRITE, &configured());
     world.trust();
 
@@ -585,7 +585,7 @@ impl RawRequest<'_> {
 /// must equal the plan's `request` as one whole value, so a missing, extra or reordered item
 /// or member fails. The JSON text of every value must also match byte for byte on both sides,
 /// the plan on stdout and the request body. Only the whitespace between values differs,
-/// because the plan is indented.
+/// because the plan is indented. It is also the "prints the payload" half of policies.md N11.
 #[rstest]
 #[case::update(UPDATE, "update")]
 #[case::rewrite(REWRITE, "rewrite")]
