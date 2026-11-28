@@ -658,12 +658,9 @@ impl EnvStore {
     #[must_use]
     pub fn open(root: impl Into<PathBuf>, project: impl Into<PathBuf>) -> Self {
         let project = project.into();
-        let canonical_project = match fs::canonicalize(&project) {
-            Ok(resolved) => Some(resolved),
-            // No OS error is kept: its text can name a path outside the project (policies
-            // section 1.7). Interpreter paths then show as `<external>/<file name>`.
-            Err(_) => None,
-        };
+        // The failure keeps no OS error, because its text can name a path outside the project
+        // (policies section 1.7). Interpreter paths then show as `<external>/<file name>`.
+        let canonical_project = fs::canonicalize(&project).map_or_else(|_| None, Some);
         Self {
             root: root.into(),
             canonical_project,
