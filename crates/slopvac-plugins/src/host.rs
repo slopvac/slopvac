@@ -227,6 +227,14 @@ pub struct HostConfig {
     /// Test seam for the start of the shutdown drain; production code never sets it.
     #[doc(hidden)]
     pub drain_hook: Option<DrainHook>,
+    /// Test seam: called by [`Plugin::shutdown`] just before it registers the
+    /// `shutdown` request; production code never sets it.
+    #[doc(hidden)]
+    pub shutdown_request_hook: Option<DrainHook>,
+    /// Test seam: called once an end of the stream or of the process during
+    /// shutdown has failed the waiting requests; production code never sets it.
+    #[doc(hidden)]
+    pub release_hook: Option<DrainHook>,
 }
 
 impl Default for HostConfig {
@@ -249,6 +257,8 @@ impl Default for HostConfig {
             limits_pause: Duration::ZERO,
             stderr_read_hook: None,
             drain_hook: None,
+            shutdown_request_hook: None,
+            release_hook: None,
         }
     }
 }
@@ -341,6 +351,8 @@ struct Shared {
     budget: Arc<RunBudget>,
     stderr_read_hook: Option<ReadHook>,
     drain_hook: Option<DrainHook>,
+    shutdown_request_hook: Option<DrainHook>,
+    release_hook: Option<DrainHook>,
     exit_timeout: Duration,
     stream: Activity,
 }
@@ -413,6 +425,9 @@ impl Shared {
                 Instant::now(),
                 Err(PluginError::Usage(HostPhrase::ShutDown.as_static().into())),
             ));
+        }
+        if let Some(hook) = &self.release_hook {
+            (hook.0)();
         }
     }
 
@@ -1305,6 +1320,9 @@ impl Plugin {
         // The plugin's output or process ended before it answered `shutdown`.
         let mut left_unanswered = false;
         if refused.is_none() {
+            if let Some(hook) = &shared.shutdown_request_hook {
+                (hook.0)();
+            }
             match self
                 .conn
                 .request::<()>(method::SHUTDOWN, None, self.timeouts.shutdown, false)
@@ -1591,6 +1609,8 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         budget: Arc::clone(&cfg.budget),
         stderr_read_hook: cfg.stderr_read_hook.clone(),
         drain_hook: cfg.drain_hook.clone(),
+        shutdown_request_hook: cfg.shutdown_request_hook.clone(),
+        release_hook: cfg.release_hook.clone(),
         exit_timeout: cfg.timeouts.exit,
         stream: Activity::new(),
     });

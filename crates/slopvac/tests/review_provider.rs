@@ -250,9 +250,21 @@ fn a_complete_reply_becomes_the_report_in_payload_order() {
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert_eq!(
         plan(&out)["report"],
-        "### Item 1 (original_document, line 1)\n\nfirst\n\n### Item 2 (revised_document, line 1)\n"
+        format!(
+            "{}\n\n### Item 1 (original_document, line 1)\n\nfirst\n\n### Item 2 (revised_document, line 1)\n",
+            untrusted_line()
+        )
     );
     assert_eq!(world.spawns(), 1);
+}
+
+/// The registry text that marks a report as untrusted provider output, as the catalog holds it.
+fn untrusted_line() -> String {
+    let entry = slopvac_agents::message_entries()
+        .iter()
+        .find(|e| e.code == "review-report-untrusted");
+    assert!(entry.is_some(), "the agents catalog holds review-report-untrusted");
+    entry.map(|e| e.template.to_owned()).unwrap_or_default()
 }
 
 /// A result that plugin-protocol.md section 5.3 refuses is `review-provider-reply-invalid`.
@@ -973,4 +985,109 @@ fn an_answer_with_a_crlf_ending_leaves_no_escaped_carriage_return() {
     let report = plan["report"].as_str().expect("a report");
     assert!(report.contains("first answer"), "{report}");
     assert!(!report.contains("\\u{d}"), "{report}");
+}
+
+/// The plan's `report` starts with the untrusted marker from the catalog and a blank line, then
+/// the first item's heading, and the plan gains no field for it (threat model TM-21).
+#[test]
+fn the_report_starts_with_the_untrusted_marker_and_the_plan_gains_no_field() {
+    let world = World::new(REWRITE, &configured());
+    world.trust();
+
+    let out = world.review(&[]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let plan = plan(&out);
+    let report = plan["report"].as_str().unwrap_or_default();
+    let start = format!("{}\n\n### Item 1 (", untrusted_line());
+    assert!(report.starts_with(&start), "{report:?}");
+    let mut keys: Vec<&str> = plan
+        .as_object()
+        .map(|o| o.keys().map(String::as_str).collect())
+        .unwrap_or_default();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "notices",
+            "payload",
+            "reason",
+            "report",
+            "request",
+            "review_type",
+            "reviewer_model",
+            "reviewer_model_checked",
+            "schema_version",
+            "scope",
+            "stats",
+            "uses_provider",
+        ],
+        "{plan}"
+    );
+}
+
+/// With trace logging on, the provider's standard error reaches the log as a length only, so
+/// a provider cannot echo the document into the log (policies.md section 1.7).
+#[test]
+fn the_providers_standard_error_reaches_the_log_as_a_length_only() {
+    let world = World::new(REWRITE, &configured());
+    world.trust();
+    world.script(&json!({"stderr": "PLUGIN-SECRET-MESSAGE"}));
+
+    let out = world
+        .slopvac()
+        .args(["review", "new.md", "--original", "old.md"])
+        .env("SLOPVAC_LOG", "trace")
+        .output()
+        .expect("run");
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let err = stderr(&out);
+    assert!(!err.contains("PLUGIN-SECRET-MESSAGE"), "{err}");
+    assert!(
+        err.lines()
+            .any(|l| l.contains("DEBUG") && l.contains("bytes=21")),
+        "the line is logged by its length:\n{err}"
+    );
+}
+
+/// An `offline` inherited through `extends` keeps a trusted provider unstarted.
+#[test]
+fn an_offline_setting_inherited_through_extends_starts_no_provider() {
+    let world = World::new(
+        REWRITE,
+        "schema_version = 3\nextends = [\"base.toml\"]\n\n[review]\n\
+         provider = \"provider\"\nmodel = \"reviewer-model\"\n",
+    );
+    fs::write(
+        world.project().join("base.toml"),
+        "schema_version = 3\n\n[network]\noffline = true\n",
+    )
+    .unwrap();
+    world.trust();
+
+    let out = world.review(&[]);
+
+    assert_refused(&out, "offline-network-needed");
+    assert_eq!(world.spawns(), 0, "the plugin started");
+}
+
+/// A reported model whose name holds a backslash shows it escaped once in the notice text.
+#[test]
+fn a_reported_model_with_a_backslash_is_escaped_once_in_the_notice() {
+    let world = World::new(REWRITE, &configured());
+    world.trust();
+    world.script(&json!({"models": {"1": "vendor\\model"}}));
+
+    let out = world.review(&[]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let plan = plan(&out);
+    let list = notices(&plan);
+    let message = notice(&list, "review-model-reported-mismatch")["message"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(message.contains(r#""vendor\\model""#), "{message}");
+    assert!(!message.contains(r"vendor\\\\model"), "{message}");
 }

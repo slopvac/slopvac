@@ -26,6 +26,8 @@ answers comes from LOG_DIR/script.json, which the test writes before each run:
   "required_feature" lists PLUGIN-SECRET-FEATURE as a required feature.
 - "complete": how `provider/complete` fails. "exit" writes PLUGIN-SECRET-MESSAGE to standard
   error and leaves; "duplicate_key" repeats the key PLUGIN-SECRET-KEY in an entry.
+- "stderr": a line written to standard error before the answer to `provider/complete`, which
+  the plugin then sends as usual.
 """
 
 import json
@@ -172,6 +174,9 @@ while True:
         with open(os.path.join(log_dir, "requests.raw"), "ab") as f:
             f.write(last_body + b"\n")
         s = script()
+        if "stderr" in s:
+            sys.stderr.write(s["stderr"] + "\n")
+            sys.stderr.flush()
         if s.get("complete") == "exit":
             leave_with_secret()
         elif s.get("complete") == "duplicate_key":

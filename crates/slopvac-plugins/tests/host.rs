@@ -1554,3 +1554,48 @@ fn tm2b_a_reader_that_outlasts_the_drain_wait_makes_the_shutdown_unclean() {
     assert!(out.accounting_incomplete, "{out:?}");
     assert!(!out.clean(), "{out:?}");
 }
+
+/// The plugin ends after `shutdown` began and before the host registers its `shutdown`
+/// request. The ordering is fixed: the request waits until the end has failed the waiting
+/// requests. The request still sees the end, so the shutdown reports an exit, not a timeout.
+#[test]
+fn an_end_before_the_shutdown_request_registers_is_reported_as_an_exit() {
+    use std::sync::atomic::{AtomicI32, Ordering};
+
+    let dir = scratch("end-before-shutdown");
+    let pidfile = dir.join("pids");
+    let (released_tx, released) = crossbeam_channel::bounded::<()>(2);
+    let group = Arc::new(AtomicI32::new(0));
+    let mut c = cfg();
+    c.release_hook = Some(DrainHook::new(move || {
+        let _ = released_tx.try_send(());
+    }));
+    let target = Arc::clone(&group);
+    c.shutdown_request_hook = Some(DrainHook::new(move || {
+        let id = target.load(Ordering::SeqCst);
+        let _ = std::process::Command::new("kill")
+            .args(["-9", "--", &format!("-{id}")])
+            .status();
+        assert!(
+            released.recv_timeout(NO_HANG).is_ok(),
+            "the end never failed the waiting requests"
+        );
+    }));
+    let p = Plugin::start(
+        &spec_with("ok", &json!({}), Some(&pidfile), decl()),
+        &c,
+        &Allow,
+    )
+    .unwrap();
+    // The fixture writes its process group before it answers `initialize`.
+    let leader = std::fs::read_to_string(pidfile.with_extension("leader")).unwrap();
+    group.store(leader.trim().parse().unwrap(), Ordering::SeqCst);
+
+    let down = p.shutdown();
+
+    assert_eq!(
+        down.refused.as_ref().map(PluginError::slopvac_code),
+        Some("plugin-exited"),
+        "{down:?}"
+    );
+}

@@ -335,6 +335,47 @@ mod tests {
         }
     }
 
+    /// A writer that counts its calls and refuses each one.
+    #[derive(Default)]
+    struct Counting(usize);
+
+    impl Write for Counting {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            self.0 += 1;
+            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn warning(code: &str) -> slopvac_model::Notice {
+        slopvac_model::Notice::from_catalog(
+            slopvac_model::NoticeLevel::Warning,
+            slopvac_model::NoticeMessage::new(
+                slopvac_model::KebabName::new(code).unwrap(),
+                slopvac_model::NonEmptyString::new("a notice").unwrap(),
+            ),
+        )
+    }
+
+    /// The first notice that cannot be written ends the notices: the stream is broken, and the
+    /// review error is still the result.
+    #[test]
+    fn a_failed_notice_write_ends_the_notices_and_keeps_the_error() {
+        let stopped = review::Stopped::new(
+            AgentsError::new_coded("review-provider-missing", "no provider"),
+            vec![warning("review-model-unchecked"), warning("review-model-same")],
+        );
+        let mut err_out = Counting::default();
+
+        let error = stopped_error(&stopped, &mut err_out, Path::new("proj"));
+
+        assert_eq!(error.code, "review-provider-missing");
+        assert_eq!(err_out.0, 1, "writes after the first failed one");
+    }
+
     /// A stopped review whose notices cannot be written still reports its own error.
     #[test]
     fn a_notice_that_cannot_be_written_leaves_the_review_error() {

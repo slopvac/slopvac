@@ -1163,3 +1163,18 @@ fn a_provider_that_declares_and_reports_the_author_model_adds_one_notice_per_pha
     );
     Ok(())
 }
+
+/// A stopped review exposes its failure as the error source.
+#[test]
+fn a_stopped_review_gives_its_failure_as_the_source() {
+    let stopped = slopvac_agents::review::Stopped::new(
+        AgentsError::new_coded("review-provider-missing", "no provider"),
+        Vec::new(),
+    );
+
+    let source = std::error::Error::source(&stopped)
+        .and_then(|s| s.downcast_ref::<AgentsError>())
+        .map(AgentsError::code);
+
+    assert_eq!(source, Some("review-provider-missing"));
+}
