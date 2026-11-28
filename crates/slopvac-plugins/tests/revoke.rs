@@ -1578,18 +1578,13 @@ fn k20_a_rotation_needs_a_cached_list_that_revokes_neither_key(
     assert_eq!(r.pinned_id(), OLD_KEY_ID);
 }
 
-/// Whether another holder has the trust store lock now.
+/// Whether another holder has the trust store lock now. A lock file that cannot be opened or
+/// tried reads as not locked, so the caller's deadline reports the failure.
 fn trust_store_locked(state: &Path) -> bool {
-    let file = fs::OpenOptions::new()
+    fs::OpenOptions::new()
         .write(true)
-        .open(state.join("trust.lock"));
-    match file.map(|f| f.try_lock()) {
-        Ok(Ok(())) => false,
-        Ok(Err(fs::TryLockError::WouldBlock)) => true,
-        Ok(Err(fs::TryLockError::Error(e))) => panic!("{e}"),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-        Err(e) => panic!("{e}"),
-    }
+        .open(state.join("trust.lock"))
+        .is_ok_and(|f| matches!(f.try_lock(), Err(fs::TryLockError::WouldBlock)))
 }
 
 /// A sync that caches a list revoking the old key while a rotation waits must stop that
