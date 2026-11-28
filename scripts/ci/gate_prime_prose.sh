@@ -20,7 +20,6 @@
 #                 review_depth self / subagent /      review-<type>-<depth>
 #                   adversary
 #                 level != minimal (verdict block)    review-auto-subagent-minimal and the rest
-#                 review_approval auto                not reachable: `prime` never sets it
 set -euo pipefail
 # Never overwrite a file that exists: a write into the output directory fails instead.
 set -o noclobber

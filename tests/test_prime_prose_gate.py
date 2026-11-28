@@ -51,9 +51,6 @@ CONDITIONS = {
         'review_type == "mechanical"': "review-mechanical-*",
         'review_type == "update"': "review-update-*",
         'level != "minimal"': "review-* and review-auto-subagent-minimal",
-        # `prime` never sets `review_approval`. Only the library API does, so no CLI
-        # render shows its `auto` branch.
-        'review_approval == "auto"': "not reachable from the CLI",
     },
 }
 
