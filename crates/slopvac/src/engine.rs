@@ -218,14 +218,14 @@ pub(crate) fn budget_data_of(
 /// The engine kind for a discovered file, or why there is none.
 ///
 /// A source file or a TOML file is read as comments. `file_name` picks the dialect, such as
-/// `.tsx`. A plain text file is read as Markdown, as 2.x reads it.
+/// `.tsx`.
 fn kind_of_file(kind: &FileKind, file_name: &str) -> Result<Kind, &'static str> {
     match kind {
-        FileKind::Markdown => Ok(Kind::Markdown),
+        // Plain text is read as Markdown, as 2.x reads it.
+        FileKind::Markdown | FileKind::Text => Ok(Kind::Markdown),
         FileKind::Mdx => Ok(Kind::Mdx),
         FileKind::Rst => Ok(Kind::Rst),
         FileKind::Html => Ok(Kind::Html),
-        FileKind::Text => Ok(Kind::Markdown),
         FileKind::Toml => Ok(Kind::Comments(Language::Toml)),
         FileKind::Source(name) => Language::from_name(name)
             .map(|language| Kind::Comments(language.refine(file_name)))
@@ -252,12 +252,11 @@ fn kind_of_language(plan: &StdinPlan) -> Result<Kind, &'static str> {
             .ok_or("this language has no engine parser yet");
     }
     match plan.language.as_str() {
-        "markdown" => Ok(Kind::Markdown),
+        // Plain text is read as Markdown, as 2.x reads it.
+        "markdown" | "text" => Ok(Kind::Markdown),
         "mdx" => Ok(Kind::Mdx),
         "rst" => Ok(Kind::Rst),
         "html" => Ok(Kind::Html),
-        // Plain text is read as Markdown, as 2.x reads it.
-        "text" => Ok(Kind::Markdown),
         _ => Err("this language has no engine parser yet"),
     }
 }
