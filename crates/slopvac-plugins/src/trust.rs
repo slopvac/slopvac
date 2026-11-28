@@ -858,7 +858,9 @@ impl TrustStore {
         };
         let text = read_named(file, MAX_KEY_FILE_BYTES).map_err(invalid)?;
         // The parse error can quote the file, so only its kind is kept.
-        let key = PublicKey::from_pub_file(&text).map_err(|_| invalid(FileCause::NoKey))?;
+        // SCRATCH: the parse failure is kept as another kind.
+        let key = PublicKey::from_pub_file(&text)
+            .map_err(|_| invalid(FileCause::Read(slopvac_fs::InputKind::Io)))?;
         check_fingerprint(fingerprint, &key)?;
         self.pin_key(scope, &key, now)
     }
