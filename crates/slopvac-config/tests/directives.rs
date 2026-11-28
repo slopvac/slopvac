@@ -747,7 +747,7 @@ fn a_steering_marker_with_extra_text_is_not_exempt() {
     let doc = "<!-- slopvac:begin foo -->\n";
     assert_eq!(find(doc, "doc.md").len(), 1);
     let read = read(doc, "doc.md", &default_policy());
-    assert!(!read.diagnostics.is_empty());
+    assert_ne!(read.diagnostics, Vec::new());
 }
 
 /// The message of a refusal at `cap`.

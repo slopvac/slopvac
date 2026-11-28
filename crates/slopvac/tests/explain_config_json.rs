@@ -101,7 +101,7 @@ fn explain_config_prints_the_config_and_each_setting_of_a_file_as_json() {
     assert_eq!(input["profile"], json!("normal"), "{doc}");
     assert_eq!(
         input["genre"],
-        json!({"id": "reference", "source": "default"}),
+        json!({"id": "consumer", "source": "default"}),
         "{doc}"
     );
     assert_eq!(input["front_matter_resolved"], json!(true), "{doc}");
@@ -285,9 +285,15 @@ fn explain_config_lists_each_rule_a_layer_set_with_its_qualified_id_level_and_or
     );
     let doc = explained(dir.path(), &["a.md"]);
     let input = only_input(&doc);
+    // `a.md` has the default genre `consumer`, and its genre file is a layer too.
     assert_eq!(
         input["configured_rules"],
         json!([
+            {
+                "id": "core:docs-discipline.history-internal-reference",
+                "level": "warning",
+                "source": {"layer": "genre", "file": "plugin:core/genres/consumer.yaml", "line": 12, "column": 3},
+            },
             {
                 "id": "core:prose-craft.first-person-plural",
                 "level": "off",
@@ -305,20 +311,30 @@ fn explain_config_lists_each_rule_a_layer_set_with_its_qualified_id_level_and_or
     assert!(rules["total"].as_u64().is_some_and(|n| n > 2), "{doc}");
     assert_eq!(
         rules["configured"],
-        json!({"error": 1, "warning": 0, "suggestion": 0, "off": 1}),
+        json!({"error": 1, "warning": 1, "suggestion": 0, "off": 1}),
         "{doc}"
     );
 }
 
+/// A config that names no rule configures none: the one configured rule of `a.md` comes from
+/// the genre file of its default genre `consumer`.
 #[test]
 fn explain_config_lists_no_configured_rule_for_a_config_that_names_none() {
     let dir = project();
     let doc = explained(dir.path(), &["a.md"]);
     let input = only_input(&doc);
-    assert_eq!(input["configured_rules"], json!([]), "{doc}");
+    assert_eq!(
+        input["configured_rules"],
+        json!([{
+            "id": "core:docs-discipline.history-internal-reference",
+            "level": "warning",
+            "source": {"layer": "genre", "file": "plugin:core/genres/consumer.yaml", "line": 12, "column": 3},
+        }]),
+        "{doc}"
+    );
     assert_eq!(
         input["rules"]["configured"],
-        json!({"error": 0, "warning": 0, "suggestion": 0, "off": 0}),
+        json!({"error": 0, "warning": 1, "suggestion": 0, "off": 0}),
         "{doc}"
     );
 }

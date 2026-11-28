@@ -695,12 +695,12 @@ mod tests {
 
     #[test]
     fn the_scan_of_source_comments_stops_at_the_first_marker_past_the_cap() {
-        // `// slopvac:` and a newline are 13 bytes, so 100 000 lines make 1 300 000 bytes and
-        // the cap is 1024 + 40 625 = 41 649 units.
+        // `// slopvac:` and a newline are 12 bytes, so 100 000 lines make 1 200 000 bytes and
+        // the cap is 1024 + 37 500 = 38 524 units.
         let doc = "// slopvac:\n".repeat(100_000);
         let mut budget = Budget::for_document(&doc);
         assert!(locate(&doc, "a.rs", &mut budget).is_err());
-        assert_eq!((budget.cap, budget.spent), (41_649, 41_650));
+        assert_eq!((budget.cap, budget.spent), (38_524, 38_525));
     }
 
     #[test]
