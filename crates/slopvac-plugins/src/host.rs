@@ -1302,6 +1302,8 @@ impl Plugin {
         // A plugin that a failure already ended is not asked; that failure is the reason.
         let mut acknowledged = false;
         let mut refused = self.conn.dead();
+        // The plugin's output or process ended before it answered `shutdown`.
+        let mut left_unanswered = false;
         if refused.is_none() {
             match self
                 .conn
@@ -1313,6 +1315,9 @@ impl Plugin {
                         HostPhrase::ShutdownNotNull.as_static().to_owned(),
                     ));
                 }
+                // While shutting down, an end of the stream or of the process fails the
+                // waiting request with a usage error, so the plugin left without an answer.
+                Err(PluginError::Usage(_)) => left_unanswered = true,
                 Err(e) => refused = Some(e),
             }
             if acknowledged {
@@ -1346,6 +1351,16 @@ impl Plugin {
             Some(PluginError::ProtocolViolation(m)) => Some(m.clone()),
             _ => None,
         };
+        if left_unanswered {
+            refused = Some(PluginError::Exited {
+                plugin: shared.name.clone(),
+                status: shared
+                    .group
+                    .status()
+                    .unwrap_or_else(|| HostPhrase::StatusUnknown.as_static().into()),
+                stderr: shared.stderr_tail(),
+            });
+        }
         Shutdown {
             accounting_incomplete: !(stderr_drained && stdout_drained),
             violation,

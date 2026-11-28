@@ -216,9 +216,9 @@ mod tests {
         let error = provider.load_failure(&refusal);
 
         assert_eq!(error.code(), refusal.code());
-        let cause = std::error::Error::source(&error)
-            .and_then(|s| s.downcast_ref::<LoadCause>())
-            .expect("a typed load cause");
+        let cause = std::error::Error::source(&error).and_then(|s| s.downcast_ref::<LoadCause>());
+        assert!(cause.is_some(), "no typed load cause: {error:?}");
+        let cause = cause.unwrap();
         assert_eq!(cause.code(), refusal.code());
         assert_eq!(cause.to_string(), error.to_string());
     }
