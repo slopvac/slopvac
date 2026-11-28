@@ -1,0 +1,92 @@
+id: no-hand-json
+language: rust
+severity: error
+message: Build JSON output from a typed model, not with `json!` or a JSON string.
+note: >-
+  Derive `Serialize` and `JsonSchema` on a type and serialise it. Write schema fragments
+  with `schemars::json_schema!`. Tests, benches, examples and `cfg(test)` code are exempt. A
+  permitted use goes in this file's allow list under its category, with contract sign-off.
+files:
+  - crates/*/src/**
+# The ignore list has two parts. Entries with no annotation are exempt test code. Entries
+# with a `# allow <category> <count>` annotation are the allow list: `<count>` is the number
+# of findings the rule reports in that file when the entry is absent. A finding is a macro call
+# or an attribute, so a `json!` nested in another adds none.
+# scripts/ci/check_no_hand_json.py reads this file, so the list has one source. It fails when
+# an allow-listed file has no finding left, when a count differs from the actual number, and
+# when a category total differs from its `# total` line. The list can only shrink: delete an
+# entry (or lower its count) in the same change that removes the sites.
+#
+# total schema-generation 50
+# total config-leaf 12
+# total digest-input 6
+# total validator-fragment 2
+# total TEMPORARY(slopvac-8l4.12.88) 11
+# total TEMPORARY(slopvac-8l4.3.85) 3
+ignores:
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/examples/**"
+  # Out-of-line test modules: `#[cfg(test)] mod x;` in the parent, which this rule cannot see.
+  - "**/tests.rs"
+  - crates/slopvac-plugins/src/protocol_corpus.rs
+  - crates/slopvac-config/src/schema/patterns.rs
+  # Schema generation: transforms, conditions and fragments of a generated schema.
+  - crates/slopvac-agents/src/schema.rs # allow schema-generation 3
+  - crates/slopvac-config/src/wire.rs # allow schema-generation 4
+  - crates/slopvac-model/src/notice_data.rs # allow schema-generation 2
+  - crates/slopvac-model/src/report.rs # allow schema-generation 1
+  - crates/slopvac-model/src/schema.rs # allow schema-generation 3
+  - crates/slopvac-packs/src/manifest.rs # allow schema-generation 21
+  - crates/slopvac-plugins/src/protocol/schema.rs # allow schema-generation 7
+  - crates/slopvac-rules/src/model.rs # allow schema-generation 3
+  - crates/slopvac-rules/src/schema.rs # allow schema-generation 3
+  - crates/slopvac-schemas/src/plugin_files.rs # allow schema-generation 2
+  - crates/slopvac-terms/src/wire.rs # allow schema-generation 1
+  # Config value-tree leaves that resolution stores or compares.
+  - crates/slopvac-config/src/resolve.rs # allow config-leaf 4
+  - crates/slopvac-packs/src/genre_layer.rs # allow config-leaf 8
+  # Canonical input of a digest, never written out.
+  - crates/slopvac-plugins/src/pyenv/listing.rs # allow digest-input 1
+  - crates/slopvac-plugins/src/pyenv/mod.rs # allow digest-input 4
+  - crates/slopvac-plugins/src/trust.rs # allow digest-input 1
+  # A schema fragment handed to a validator.
+  - crates/slopvac/src/init/template.rs # allow validator-fragment 2
+  # TEMPORARY(slopvac-8l4.3.85): the locale category is built as rule-file JSON.
+  - crates/slopvac-engine/src/locale.rs # allow TEMPORARY(slopvac-8l4.3.85) 3
+  # TEMPORARY(slopvac-8l4.12.88): the inspect output is built with json!.
+  - crates/slopvac/src/inspect.rs # allow TEMPORARY(slopvac-8l4.12.88) 11
+rule:
+  any:
+    - all:
+        - kind: macro_invocation
+        - has:
+            field: macro
+            regex: (^|::)json$
+    # `json!` inside an attribute such as `#[schemars(extend(...))]` is a token tree, not a
+    # macro invocation, so the attribute is matched as a whole.
+    - all:
+        - kind: attribute_item
+        - regex: '(^|[^A-Za-z0-9_])json!'
+    - all:
+        - any:
+            - kind: string_literal
+            - kind: raw_string_literal
+        # `{` or a format string's `{{`, then a quoted key and a colon.
+        - regex: '\{\{?\s*\\?"[A-Za-z_$][A-Za-z0-9_$-]*\\?"\s*:'
+  not:
+    inside:
+      any:
+        - kind: mod_item
+        - kind: function_item
+        - kind: impl_item
+      follows:
+        kind: attribute_item
+        # `cfg(test)` and `cfg(all(test, unix))`, but not `cfg(not(test))`.
+        regex: 'cfg\((all\()?([^()]*,\s*)?test\b[,)]'
+        stopBy:
+          not:
+            any:
+              - kind: attribute_item
+              - kind: line_comment
+      stopBy: end

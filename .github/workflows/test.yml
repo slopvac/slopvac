@@ -299,6 +299,8 @@ jobs:
         run: |
           ast-grep test
           ast-grep scan
+          # The no-hand-json allow list can only shrink: a stale entry or count fails.
+          python3 scripts/ci/check_no_hand_json.py
 
       # The fuzz crate is outside the workspace (cargo-fuzz needs nightly), so build it
       # here to keep the target compiling.

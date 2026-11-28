@@ -1,0 +1,57 @@
+id: no-hand-json
+valid:
+  - |
+    #[schemars(extend("allOf" = [&json_schema!({"a": 1})]))]
+    struct S;
+  - 'fn f() -> Schema { json_schema!({"type": "string"}) }'
+  - |
+    #[cfg(test)]
+    mod tests {
+        fn t() { json!({"a": 1}); }
+    }
+  - |
+    #[cfg(test)]
+    #[allow(clippy::unwrap_used, reason = "test")]
+    mod tests {
+        fn t() { json!(1); }
+    }
+  - |
+    #[cfg(test)]
+    fn helper() -> Value { json!({"a": 1}) }
+  - 'fn f(o: &mut String, c: char) { let _ = write!(o, "{{ \"{c}\" }}"); }'
+  - 'const OPEN: &str = "{{";'
+  - 'fn f() -> Value { Value::from(64) }'
+  - |
+    fn f() {
+        // json!({"a": 1}) in a comment
+    }
+  - |
+    /// Builds {"a": 1} from the type.
+    fn f() {}
+  - |
+    #[cfg(all(test, unix))]
+    mod tests {
+        fn t() { json!(1); }
+    }
+invalid:
+  - |
+    #[schemars(extend("allOf" = [&json!({"a": 1})]))]
+    struct S;
+  - |
+    #[cfg(not(test))]
+    mod m {
+        fn t() { json!(1); }
+    }
+  - 'fn f() -> Value { json!({"a": 1}) }'
+  - 'fn f() -> Value { serde_json::json!([1, 2]) }'
+  - 'fn f(o: &mut String) { let _ = write!(o, "{{\"code\":\"{c}\"}}"); }'
+  - 'fn f() -> String { format!(r#"{{"tag":"p","n":{n}}}"#) }'
+  - 'const S: &str = r#"{"id":7,"jsonrpc":"2.0"}"#;'
+  - |
+    #[cfg(test)]
+    mod tests {}
+    fn f() -> Value { json!(1) }
+  - |
+    #[allow(dead_code)]
+    fn f() -> Value { json!(1) }
+  - 'fn f() -> Value { json!({"a": json!(1)}) }'

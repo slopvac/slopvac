@@ -61,6 +61,7 @@ rust:
   # Message-registry checks (ast-grep rules) and the append-only code lock.
   - 'ast-grep/**'
   - 'sgconfig.yml'
+  - 'scripts/ci/check_no_hand_json.py'
   - 'docs/reference/error-codes.lock'
   # Generated from the plugin host's code table. `slopvac-schemas check` compares it.
   - 'docs/reference/plugin-protocol-codes.json'

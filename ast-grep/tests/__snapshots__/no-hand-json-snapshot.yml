@@ -1,0 +1,86 @@
+id: no-hand-json
+snapshots:
+  "#[allow(dead_code)]\nfn f() -> Value { json!(1) }\n":
+    labels:
+    - source: json!(1)
+      style: primary
+      start: 38
+      end: 46
+    - source: json
+      style: secondary
+      start: 38
+      end: 42
+  "#[cfg(not(test))]\nmod m {\n    fn t() { json!(1); }\n}\n":
+    labels:
+    - source: json!(1)
+      style: primary
+      start: 39
+      end: 47
+    - source: json
+      style: secondary
+      start: 39
+      end: 43
+  "#[cfg(test)]\nmod tests {}\nfn f() -> Value { json!(1) }\n":
+    labels:
+    - source: json!(1)
+      style: primary
+      start: 44
+      end: 52
+    - source: json
+      style: secondary
+      start: 44
+      end: 48
+  "#[schemars(extend(\"allOf\" = [&json!({\"a\": 1})]))]\nstruct S;\n":
+    labels:
+    - source: "#[schemars(extend(\"allOf\" = [&json!({\"a\": 1})]))]"
+      style: primary
+      start: 0
+      end: 49
+  "const S: &str = r#\"{\"id\":7,\"jsonrpc\":\"2.0\"}\"#;":
+    labels:
+    - source: r#"{"id":7,"jsonrpc":"2.0"}"#
+      style: primary
+      start: 16
+      end: 45
+  "fn f() -> String { format!(r#\"{{\"tag\":\"p\",\"n\":{n}}}\"#) }":
+    labels:
+    - source: r#"{{"tag":"p","n":{n}}}"#
+      style: primary
+      start: 27
+      end: 53
+  "fn f() -> Value { json!({\"a\": 1}) }":
+    labels:
+    - source: "json!({\"a\": 1})"
+      style: primary
+      start: 18
+      end: 33
+    - source: json
+      style: secondary
+      start: 18
+      end: 22
+  "fn f() -> Value { json!({\"a\": json!(1)}) }":
+    labels:
+    - source: "json!({\"a\": json!(1)})"
+      style: primary
+      start: 18
+      end: 40
+    - source: json
+      style: secondary
+      start: 18
+      end: 22
+  "fn f() -> Value { serde_json::json!([1, 2]) }":
+    labels:
+    - source: serde_json::json!([1, 2])
+      style: primary
+      start: 18
+      end: 43
+    - source: serde_json::json
+      style: secondary
+      start: 18
+      end: 34
+  "fn f(o: &mut String) { let _ = write!(o, \"{{\\\"code\\\":\\\"{c}\\\"}}\"); }":
+    labels:
+    - source: "\"{{\\\"code\\\":\\\"{c}\\\"}}\""
+      style: primary
+      start: 41
+      end: 63
