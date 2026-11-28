@@ -1512,6 +1512,53 @@ fn trust_of_a_registry_plugin_with_a_swapped_signature_file_exits_2_and_changes_
     assert_eq!(trust_records(&sandbox), 0);
 }
 
+/// `fmt` signed by `key` on `registry.example/acme`, with its manifest, layer, statement and
+/// signature in the cache and its lock entry. The tree is not installed.
+fn cache_signed_fmt(sandbox: &Sandbox, key: &signed_fixture::Key) -> signed_fixture::Published {
+    let p = signed_fixture::publish(
+        key,
+        "acme",
+        "fmt",
+        "1.0.0",
+        SIGNED_NOT_BEFORE,
+        &[
+            ("bin/fmt", b""),
+            ("slopvac-plugin.toml", PLUGIN_MANIFEST.as_bytes()),
+        ],
+    );
+    p.cache_into(&plugin_store(sandbox));
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"oci://{SIGNED_REGISTRY}/acme/fmt:1.0.0\"\ndigest = \"{}\"\n\n\
+         [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{SIGNED_NOT_BEFORE}\"\n",
+        p.digest, p.key_id
+    ));
+    p
+}
+
+/// A tree that sync never installed is the input `trust` cannot load, also when the signing key
+/// has no pin and the cached signature files are intact: the missing tree is reported, not the
+/// key.
+#[test]
+fn trust_of_an_unpinned_signed_plugin_with_no_installed_tree_reports_the_missing_tree() {
+    let sandbox = Sandbox::new();
+    cache_signed_fmt(&sandbox, &signed_fixture::Key::primary());
+
+    let out = sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2);
+
+    assert_eq!(
+        String::from_utf8(out.get_output().stderr.clone()).unwrap(),
+        "error[plugins-trust-inputs-failed]: cannot load `fmt` to record trust: \
+         plugins-trust-inputs-failed: details are withheld because they can name paths outside \
+         the project\n"
+    );
+    assert_eq!(trust_records(&sandbox), 0);
+}
+
 /// Every file in `dir`, by name, with its bytes.
 fn cached_files(dir: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
     fs::read_dir(dir)
