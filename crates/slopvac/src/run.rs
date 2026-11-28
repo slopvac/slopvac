@@ -86,7 +86,9 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString>,
 {
-    main_with_io(args, env, out, &mut std::io::stderr().lock())
+    // Not a held lock: a log event from another thread, such as a plugin's standard error
+    // reader, would wait on it until the run ends.
+    main_with_io(args, env, out, &mut std::io::stderr())
 }
 
 /// Like [`main_with`], with both output streams supplied by the caller.
