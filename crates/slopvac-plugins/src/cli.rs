@@ -915,7 +915,7 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
     if load.is_err()
         && let Err(e @ SyncError::Sign { .. }) = pinned_signer(pack, runner.policy)
     {
-        verify_cached()?;
+        // SCRATCH BREAK: the cached signature check is skipped here.
         return Err(RunError::Failed {
             source: cause::sync(&runner.dirs.project_root, &e),
         });
