@@ -159,11 +159,8 @@ fn k23_a_pin_without_a_registry_host_is_a_damaged_store_that_stops_the_command(
 
 /// The store of [`write_hostless_pin`] as version 1, the form before pins named a host.
 fn write_version_1_pin(sandbox: &Sandbox) -> String {
-    let text = write_hostless_pin(sandbox).replacen(
-        "\"schema_version\":2",
-        "\"schema_version\":1",
-        1,
-    );
+    let text =
+        write_hostless_pin(sandbox).replacen("\"schema_version\":2", "\"schema_version\":1", 1);
     fs::write(trust_file(sandbox), &text).unwrap();
     text
 }
@@ -1512,7 +1509,7 @@ fn a_key_pinned_with_plugins_pin_verifies_a_signed_sync() {
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .filter(|n| n.starts_with("tree-"))
         .collect();
-    assert_eq!(trees, [expected.clone()]);
+    assert_eq!(trees, std::slice::from_ref(&expected));
     assert_eq!(
         snapshot(&trees_dir.join(&expected)),
         std::collections::BTreeMap::from([
@@ -1549,7 +1546,14 @@ fn pin_text_in(sandbox: &Sandbox, namespace: &str, b64: &str, fingerprint: &str,
     fs::write(&file, format!("untrusted comment: test key\n{b64}\n")).unwrap();
     sandbox
         .slopvac()
-        .args(["--offline", "plugins", "pin", namespace, fingerprint, "--key"])
+        .args([
+            "--offline",
+            "plugins",
+            "pin",
+            namespace,
+            fingerprint,
+            "--key",
+        ])
         .arg(&file)
         .args(["--registry", registry])
         .assert()

@@ -402,6 +402,18 @@ pub(crate) enum TrustPhrase {
     #[code("plugins-trust-phrase-store-pin-no-host")]
     #[text("a key pin names no registry host")]
     StorePinNoHost,
+    /// A store with two key pins for one pair of registry host and namespace.
+    #[code("plugins-trust-phrase-store-pin-duplicate")]
+    #[text("two key pins name the same registry host and namespace")]
+    StorePinDuplicate,
+    /// A store file that is not JSON or does not have the shape of a trust store.
+    #[code("plugins-trust-phrase-store-invalid")]
+    #[text("it does not hold a valid trust store")]
+    StoreInvalid,
+    /// A key pin whose key is not a minisign public key.
+    #[code("plugins-trust-phrase-store-pin-key")]
+    #[text("a key pin holds a key that is not a minisign public key")]
+    StorePinKey,
     /// A key file that cannot be opened or read.
     #[code("plugins-trust-phrase-key-file-unreadable")]
     #[text("the file cannot be read")]
@@ -1819,6 +1831,18 @@ mod tests {
             (
                 TrustPhrase::StorePinNoHost,
                 "a key pin names no registry host",
+            ),
+            (
+                TrustPhrase::StorePinDuplicate,
+                "two key pins name the same registry host and namespace",
+            ),
+            (
+                TrustPhrase::StoreInvalid,
+                "it does not hold a valid trust store",
+            ),
+            (
+                TrustPhrase::StorePinKey,
+                "a key pin holds a key that is not a minisign public key",
             ),
             (TrustPhrase::KeyFileUnreadable, "the file cannot be read"),
             (TrustPhrase::KeyFileOverCap, "it holds more than 4 KiB"),
