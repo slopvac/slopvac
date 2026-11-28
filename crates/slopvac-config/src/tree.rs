@@ -319,43 +319,36 @@ fn yaml_key(k: &MarkedYaml<'_>) -> String {
 ///
 /// A line ends at LF, CRLF or a CR that does not precede LF. Nothing else ends a line. A leading
 /// byte order mark is not part of line 1, so offsets 0 and 3 are both line 1, column 1.
+///
+/// It wraps [`frontmatter_spans::LineIndex`], the one home of line and column in the workspace,
+/// so a lookup costs a binary search and not a scan of the line.
 #[derive(Debug, Clone)]
 pub struct LineIndex<'a> {
     text: &'a str,
-    starts: Vec<usize>,
+    index: frontmatter_spans::LineIndex<'a>,
 }
 
 impl<'a> LineIndex<'a> {
     /// Index `text`.
     #[must_use]
     pub fn new(text: &'a str) -> Self {
-        let bom = if text.starts_with('\u{feff}') {
-            '\u{feff}'.len_utf8()
-        } else {
-            0
-        };
-        let bytes = text.as_bytes();
-        let mut starts = vec![bom];
-        for (i, &b) in bytes.iter().enumerate() {
-            let ends_line = b == b'\n' || (b == b'\r' && bytes.get(i + 1) != Some(&b'\n'));
-            if ends_line {
-                starts.push(i + 1);
-            }
+        Self {
+            text,
+            index: frontmatter_spans::LineIndex::new(text),
         }
-        Self { text, starts }
     }
 
-    /// One-based line and column of a byte offset. The column counts code points.
+    /// One-based line and column of a byte offset. The column counts code points. An offset
+    /// inside a character is column 1 of its line.
     #[must_use]
     pub fn line_col(&self, offset: usize) -> (usize, usize) {
-        let offset = offset.clamp(self.starts[0], self.text.len());
-        let line = self.starts.partition_point(|&s| s <= offset) - 1;
-        let start = self.starts[line];
-        let col = self
-            .text
-            .get(start..offset)
-            .map_or(0, |s| s.chars().count());
-        (line + 1, col + 1)
+        let at = self.index.line_col(offset);
+        let clamped = offset.min(self.text.len());
+        if self.text.is_char_boundary(clamped) {
+            (at.line, at.column)
+        } else {
+            (at.line, 1)
+        }
     }
 }
 
