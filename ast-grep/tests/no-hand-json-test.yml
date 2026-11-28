@@ -33,7 +33,58 @@ valid:
     mod tests {
         fn t() { json!(1); }
     }
+  - 'use serde_json::json;'
+  - 'use serde_json::{json, Value};'
+  - 'use serde_json::Value;'
+  - 'fn f() { let v = vec![json_schema!(1)]; }'
+  - 'fn f() { let s = "json!"; }'
+  - |
+    #[cfg(test)]
+    fn t() { let v = vec![json!(1)]; }
+  - |
+    #[cfg(test)]
+    const X: &str = "{\"a\":1}";
+  - |
+    #[cfg(test)]
+    #[derive(Debug)]
+    struct S { v: Value }
+  - |
+    #[cfg(test)]
+    #[schemars(extend("allOf" = [&json!({"a": 1})]))]
+    struct S;
+  - |
+    // a comment between
+    #[cfg(test)]
+    // another comment
+    #[allow(dead_code)]
+    const X: &str = r#"{"a b":1}"#;
+  - 'fn f(o: &mut String, c: char) { let _ = write!(o, "{{ \"{c}\" }}"); }'
 invalid:
+  - 'use serde_json::json as j;'
+  - 'use serde_json::{json as j, Value};'
+  - 'use serde_json::*;'
+  - 'fn f() { let v = vec![json!(1)]; }'
+  - 'fn f() { let s = format!("{}", json!(1)); }'
+  - 'fn f() { let v = vec![serde_json::json!(1)]; }'
+  - 'const S: &str = r#"{"1a":1}"#;'
+  - 'const S: &str = r#"{"a b": 1}"#;'
+  - 'const S: &str = "[{\"a-b c\":1}]";'
+  - 'fn f() -> String { format!("{{\"2x\":{n}}}") }'
+  - |
+    #[cfg_attr(feature = "x", cfg(test))]
+    mod m {
+        fn f() { json!(1); }
+    }
+  - |
+    #[cfg(any(test, feature = "x"))]
+    fn f() { json!(1); }
+  - |
+    #[cfg(test)]
+    mod tests {}
+    const S: &str = r#"{"a":1}"#;
+  - |
+    #[cfg(not(test))]
+    const S: &str = r#"{"a":1}"#;
   - |
     #[schemars(extend("allOf" = [&json!({"a": 1})]))]
     struct S;

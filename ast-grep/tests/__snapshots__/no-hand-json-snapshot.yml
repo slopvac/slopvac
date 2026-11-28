@@ -10,6 +10,22 @@ snapshots:
       style: secondary
       start: 38
       end: 42
+  "#[cfg(any(test, feature = \"x\"))]\nfn f() { json!(1); }\n":
+    labels:
+    - source: json!(1)
+      style: primary
+      start: 42
+      end: 50
+    - source: json
+      style: secondary
+      start: 42
+      end: 46
+  "#[cfg(not(test))]\nconst S: &str = r#\"{\"a\":1}\"#;\n":
+    labels:
+    - source: r#"{"a":1}"#
+      style: primary
+      start: 34
+      end: 46
   "#[cfg(not(test))]\nmod m {\n    fn t() { json!(1); }\n}\n":
     labels:
     - source: json!(1)
@@ -20,6 +36,12 @@ snapshots:
       style: secondary
       start: 39
       end: 43
+  "#[cfg(test)]\nmod tests {}\nconst S: &str = r#\"{\"a\":1}\"#;\n":
+    labels:
+    - source: r#"{"a":1}"#
+      style: primary
+      start: 42
+      end: 54
   "#[cfg(test)]\nmod tests {}\nfn f() -> Value { json!(1) }\n":
     labels:
     - source: json!(1)
@@ -30,18 +52,52 @@ snapshots:
       style: secondary
       start: 44
       end: 48
+  "#[cfg_attr(feature = \"x\", cfg(test))]\nmod m {\n    fn f() { json!(1); }\n}\n":
+    labels:
+    - source: json!(1)
+      style: primary
+      start: 59
+      end: 67
+    - source: json
+      style: secondary
+      start: 59
+      end: 63
   "#[schemars(extend(\"allOf\" = [&json!({\"a\": 1})]))]\nstruct S;\n":
     labels:
     - source: "#[schemars(extend(\"allOf\" = [&json!({\"a\": 1})]))]"
       style: primary
       start: 0
       end: 49
+  "const S: &str = \"[{\\\"a-b c\\\":1}]\";":
+    labels:
+    - source: "\"[{\\\"a-b c\\\":1}]\""
+      style: primary
+      start: 16
+      end: 33
+  "const S: &str = r#\"{\"1a\":1}\"#;":
+    labels:
+    - source: r#"{"1a":1}"#
+      style: primary
+      start: 16
+      end: 29
+  "const S: &str = r#\"{\"a b\": 1}\"#;":
+    labels:
+    - source: "r#\"{\"a b\": 1}\"#"
+      style: primary
+      start: 16
+      end: 31
   "const S: &str = r#\"{\"id\":7,\"jsonrpc\":\"2.0\"}\"#;":
     labels:
     - source: r#"{"id":7,"jsonrpc":"2.0"}"#
       style: primary
       start: 16
       end: 45
+  "fn f() -> String { format!(\"{{\\\"2x\\\":{n}}}\") }":
+    labels:
+    - source: "\"{{\\\"2x\\\":{n}}}\""
+      style: primary
+      start: 27
+      end: 43
   "fn f() -> String { format!(r#\"{{\"tag\":\"p\",\"n\":{n}}}\"#) }":
     labels:
     - source: r#"{{"tag":"p","n":{n}}}"#
@@ -78,9 +134,69 @@ snapshots:
       style: secondary
       start: 18
       end: 34
+  "fn f() { let s = format!(\"{}\", json!(1)); }":
+    labels:
+    - source: json
+      style: primary
+      start: 31
+      end: 35
+    - source: ("{}", json!(1))
+      style: secondary
+      start: 24
+      end: 40
+    - source: "!"
+      style: secondary
+      start: 35
+      end: 36
+  "fn f() { let v = vec![json!(1)]; }":
+    labels:
+    - source: json
+      style: primary
+      start: 22
+      end: 26
+    - source: "[json!(1)]"
+      style: secondary
+      start: 21
+      end: 31
+    - source: "!"
+      style: secondary
+      start: 26
+      end: 27
+  "fn f() { let v = vec![serde_json::json!(1)]; }":
+    labels:
+    - source: json
+      style: primary
+      start: 34
+      end: 38
+    - source: "[serde_json::json!(1)]"
+      style: secondary
+      start: 21
+      end: 43
+    - source: "!"
+      style: secondary
+      start: 38
+      end: 39
   "fn f(o: &mut String) { let _ = write!(o, \"{{\\\"code\\\":\\\"{c}\\\"}}\"); }":
     labels:
     - source: "\"{{\\\"code\\\":\\\"{c}\\\"}}\""
       style: primary
       start: 41
       end: 63
+  "use serde_json::*;":
+    labels:
+    - source: use serde_json::*;
+      style: primary
+      start: 0
+      end: 18
+  "use serde_json::json as j;":
+    labels:
+    - source: use serde_json::json as j;
+      style: primary
+      start: 0
+      end: 26
+  "use serde_json::{json as j, Value};":
+    labels:
+    - source: use serde_json::{json as j, Value};
+      style: primary
+      start: 0
+      end: 35
