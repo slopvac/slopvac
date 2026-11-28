@@ -422,6 +422,102 @@ fn a_trust_record_does_not_cover_the_same_tree_at_another_location() {
     assert!(matches!(err, PluginError::Untrusted(_)), "{err:?}");
 }
 
+/// The trust hash a version 2 gate computed, built by hand for a plugin with no environment:
+/// canonical JSON (sorted keys, no spaces) under `"v":2`, with no location.
+fn v2_hash(
+    name: &str,
+    tree: &str,
+    hooks: &[(&str, &str)],
+    program: &str,
+    args: &[&str],
+    path: &str,
+    manifest: &str,
+    key: &str,
+) -> Digest {
+    let quote = |s: &str| serde_json::to_string(s).unwrap();
+    let hooks: Vec<String> = hooks
+        .iter()
+        .map(|(kind, id)| format!(r#"{{"id":{},"kind":{}}}"#, quote(id), quote(kind)))
+        .collect();
+    let args: Vec<String> = args.iter().map(|a| quote(a)).collect();
+    let doc = format!(
+        concat!(
+            r#"{{"args":[{}],"declaration":{{"features":{{"optional":[],"required":[]}},"#,
+            r#""hooks":[{}],"network":false}},"env":[],"environment":null,"interpreter":null,"#,
+            r#""key":{},"manifest":{},"name":{},"path":{},"program":{},"tree":{},"v":2}}"#
+        ),
+        args.join(","),
+        hooks.join(","),
+        quote(key),
+        quote(manifest),
+        quote(name),
+        quote(path),
+        quote(program),
+        quote(tree),
+    );
+    Digest::of(doc.as_bytes())
+}
+
+#[test]
+fn a_version_2_approval_grants_nothing() {
+    // The version 2 vector with no environment, derived in Python from the hand-written document
+    // in `the_trust_hash_matches_an_independently_derived_vector` with `"v":2` and no location.
+    let pinned = v2_hash(
+        "p",
+        &format!("sha256:{}", "11".repeat(32)),
+        &[("tagger", "main")],
+        "tree:bin/run",
+        &["a", "b"],
+        "/usr/bin:/bin",
+        &format!("sha256:{}", "aa".repeat(32)),
+        "fp",
+    );
+    assert_eq!(
+        pinned.as_str(),
+        "sha256:5ea1cd683c5128cc4f122211a7dd6694f7df7213974086b1d36d13a91b7f5061"
+    );
+    let s = Scratch::new("v2");
+    let vp = install(&s, "1.0.0", "");
+    let spec = spec_for(&vp, decl());
+    let old = v2_hash(
+        &vp.name,
+        vp.tree.as_str(),
+        &[("tagger", "main"), ("fixer", "main")],
+        "tree:plugin.py",
+        &["ok", "{}"],
+        &spec.path_env,
+        vp.manifest_digest.as_deref().unwrap(),
+        vp.key_fingerprint.as_deref().unwrap(),
+    );
+    let by_env = TrustGate::new(
+        TrustStore::open(s.dir("state")),
+        vec![old.clone()],
+        vec![vp.clone()],
+    );
+    let err = by_env.check(&spec).unwrap_err();
+    assert!(
+        matches!(err, PluginError::Untrusted(_)),
+        "SLOPVAC_TRUST: {err:?}"
+    );
+
+    let store = TrustStore::open(s.dir("state"));
+    let current = gate(&s, &vp).record_trust(&vp, &spec, NOW).unwrap();
+    assert!(
+        store
+            .forget(&Digest::parse(&current.hash).unwrap())
+            .unwrap()
+    );
+    let key_id = store.key().unwrap().id().to_owned();
+    store
+        .record(TrustRecord {
+            trust_key_id: Some(key_id),
+            ..record(old.as_str(), "fake")
+        })
+        .unwrap();
+    let err = gate(&s, &vp).check(&spec).unwrap_err();
+    assert!(matches!(err, PluginError::Untrusted(_)), "store: {err:?}");
+}
+
 #[test]
 fn changed_arguments_or_program_need_new_trust() {
     let s = Scratch::new("args");
@@ -1144,6 +1240,41 @@ mod unix_only {
 
     fn spawn_gate(s: &Scratch, vp: &VerifiedPlugin) -> TrustGate {
         gate(s, vp).with_external_programs([python()])
+    }
+
+    /// The same installed tree twice: reached through a symlinked store parent, and by its
+    /// physical path.
+    fn aliased(s: &Scratch) -> [VerifiedPlugin; 2] {
+        let vp = install(s, "1.0.0", "");
+        let link = s.dir("store-link");
+        std::os::unix::fs::symlink(s.dir("cache"), &link).unwrap();
+        let alias = link.join(vp.root.strip_prefix(s.dir("cache")).unwrap());
+        let physical = fs::canonicalize(&vp.root).unwrap();
+        assert_ne!(alias, physical);
+        [
+            VerifiedPlugin {
+                root: alias,
+                ..vp.clone()
+            },
+            VerifiedPlugin {
+                root: physical,
+                ..vp
+            },
+        ]
+    }
+
+    #[rstest::rstest]
+    #[case::alias_then_physical(0, 1)]
+    #[case::physical_then_alias(1, 0)]
+    fn trust_through_one_path_of_a_tree_covers_its_other_paths(
+        #[case] recorded: usize,
+        #[case] checked: usize,
+    ) {
+        let s = Scratch::new(&format!("u-alias-{recorded}"));
+        let paths = aliased(&s);
+        let (a, b) = (&paths[recorded], &paths[checked]);
+        trust(&gate(&s, a), a, &spec_for(a, decl()));
+        gate(&s, b).check(&spec_for(b, decl())).unwrap();
     }
 
     #[test]
