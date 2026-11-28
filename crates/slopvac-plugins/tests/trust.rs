@@ -69,6 +69,10 @@ fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
 }
 
 fn install(s: &Scratch, version: &str, extra: &str) -> VerifiedPlugin {
+    install_in(&s.dir("cache"), version, extra)
+}
+
+fn install_in(store: &std::path::Path, version: &str, extra: &str) -> VerifiedPlugin {
     let archive = targz(&[
         ("plugin.py", PLUGIN_PY.as_bytes()),
         ("VERSION", version.as_bytes()),
@@ -76,7 +80,7 @@ fn install(s: &Scratch, version: &str, extra: &str) -> VerifiedPlugin {
     ]);
     let out = extract_targz(
         archive.as_slice(),
-        &s.dir("cache"),
+        store,
         &HashSet::new(),
         Limits::default(),
     )
@@ -420,6 +424,105 @@ fn a_trust_record_does_not_cover_the_same_tree_at_another_location() {
     let moved_spec = spec_for(&moved, decl());
     let err = gate(&s, &moved).check(&moved_spec).unwrap_err();
     assert!(matches!(err, PluginError::Untrusted(_)), "{err:?}");
+}
+
+/// The trust hash a version 2 gate computed, built by hand for a plugin with no environment:
+/// canonical JSON (sorted keys, no spaces) under `"v":2`, with no location.
+struct V2<'a> {
+    name: &'a str,
+    tree: &'a str,
+    hooks: &'a [(&'a str, &'a str)],
+    program: &'a str,
+    args: &'a [&'a str],
+    path: &'a str,
+    manifest: &'a str,
+    key: &'a str,
+}
+
+fn v2_hash(i: &V2<'_>) -> Digest {
+    let quote = |s: &str| serde_json::to_string(s).unwrap();
+    let hooks: Vec<String> = i
+        .hooks
+        .iter()
+        .map(|(kind, id)| format!(r#"{{"id":{},"kind":{}}}"#, quote(id), quote(kind)))
+        .collect();
+    let args: Vec<String> = i.args.iter().map(|a| quote(a)).collect();
+    let doc = format!(
+        concat!(
+            r#"{{"args":[{}],"declaration":{{"features":{{"optional":[],"required":[]}},"#,
+            r#""hooks":[{}],"network":false}},"env":[],"environment":null,"interpreter":null,"#,
+            r#""key":{},"manifest":{},"name":{},"path":{},"program":{},"tree":{},"v":2}}"#
+        ),
+        args.join(","),
+        hooks.join(","),
+        quote(i.key),
+        quote(i.manifest),
+        quote(i.name),
+        quote(i.path),
+        quote(i.program),
+        quote(i.tree),
+    );
+    Digest::of(doc.as_bytes())
+}
+
+#[test]
+fn a_version_2_approval_grants_nothing() {
+    // The version 2 vector with no environment, derived in Python from the hand-written document
+    // in `the_trust_hash_matches_an_independently_derived_vector` with `"v":2` and no location.
+    let pinned = v2_hash(&V2 {
+        name: "p",
+        tree: &format!("sha256:{}", "11".repeat(32)),
+        hooks: &[("tagger", "main")],
+        program: "tree:bin/run",
+        args: &["a", "b"],
+        path: "/usr/bin:/bin",
+        manifest: &format!("sha256:{}", "aa".repeat(32)),
+        key: "fp",
+    });
+    assert_eq!(
+        pinned.as_str(),
+        "sha256:5ea1cd683c5128cc4f122211a7dd6694f7df7213974086b1d36d13a91b7f5061"
+    );
+    let s = Scratch::new("v2");
+    let vp = install(&s, "1.0.0", "");
+    let spec = spec_for(&vp, decl());
+    let old = v2_hash(&V2 {
+        name: &vp.name,
+        tree: vp.tree.as_str(),
+        hooks: &[("tagger", "main"), ("fixer", "main")],
+        program: "tree:plugin.py",
+        args: &["ok", "{}"],
+        path: &spec.path_env,
+        manifest: vp.manifest_digest.as_deref().unwrap(),
+        key: vp.key_fingerprint.as_deref().unwrap(),
+    });
+    let by_env = TrustGate::new(
+        TrustStore::open(s.dir("state")),
+        vec![old.clone()],
+        vec![vp.clone()],
+    );
+    let err = by_env.check(&spec).unwrap_err();
+    assert!(
+        matches!(err, PluginError::Untrusted(_)),
+        "SLOPVAC_TRUST: {err:?}"
+    );
+
+    let store = TrustStore::open(s.dir("state"));
+    let current = gate(&s, &vp).record_trust(&vp, &spec, NOW).unwrap();
+    assert!(
+        store
+            .forget(&Digest::parse(&current.hash).unwrap())
+            .unwrap()
+    );
+    let key_id = store.key().unwrap().id().to_owned();
+    store
+        .record(TrustRecord {
+            trust_key_id: Some(key_id),
+            ..record(old.as_str(), "fake")
+        })
+        .unwrap();
+    let err = gate(&s, &vp).check(&spec).unwrap_err();
+    assert!(matches!(err, PluginError::Untrusted(_)), "store: {err:?}");
 }
 
 #[test]
@@ -1146,6 +1249,41 @@ mod unix_only {
         gate(s, vp).with_external_programs([python()])
     }
 
+    /// The same installed tree twice: reached through a symlinked store parent, and by its
+    /// physical path.
+    fn aliased(s: &Scratch) -> [VerifiedPlugin; 2] {
+        let vp = install(s, "1.0.0", "");
+        let link = s.dir("store-link");
+        std::os::unix::fs::symlink(s.dir("cache"), &link).unwrap();
+        let alias = link.join(vp.root.strip_prefix(s.dir("cache")).unwrap());
+        let physical = fs::canonicalize(&vp.root).unwrap();
+        assert_ne!(alias, physical);
+        [
+            VerifiedPlugin {
+                root: alias,
+                ..vp.clone()
+            },
+            VerifiedPlugin {
+                root: physical,
+                ..vp
+            },
+        ]
+    }
+
+    #[rstest::rstest]
+    #[case::alias_then_physical(0, 1)]
+    #[case::physical_then_alias(1, 0)]
+    fn trust_through_one_path_of_a_tree_covers_its_other_paths(
+        #[case] recorded: usize,
+        #[case] checked: usize,
+    ) {
+        let s = Scratch::new(&format!("u-alias-{recorded}"));
+        let paths = aliased(&s);
+        let (a, b) = (&paths[recorded], &paths[checked]);
+        trust(&gate(&s, a), a, &spec_for(a, decl()));
+        gate(&s, b).check(&spec_for(b, decl())).unwrap();
+    }
+
     #[test]
     fn a_trusted_plugin_starts_and_works() {
         let s = Scratch::new("u-trusted");
@@ -1245,6 +1383,34 @@ mod unix_only {
                     ..
                 })
             ));
+        }
+    }
+
+    /// A store path that is not UTF-8 gives the tree no location to hash. Spawn and trust
+    /// both refuse it as a spawn failure, and nothing they report names the path.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_tree_whose_location_cannot_be_hashed_is_refused_without_a_path() {
+        use std::os::unix::ffi::OsStrExt;
+        let s = Scratch::new("u-not-utf8");
+        let store = s.0.join(std::ffi::OsStr::from_bytes(b"store-\xff"));
+        let vp = install_in(&store, "1.0.0", "");
+        let spec = spec_for(&vp, decl());
+        let g = gate(&s, &vp);
+        let at_trust = g.record_trust(&vp, &spec, NOW).unwrap_err();
+        let at_spawn = g.check(&spec).unwrap_err();
+        assert!(
+            matches!(at_spawn, PluginError::SpawnFailed(_)),
+            "{at_spawn:?}"
+        );
+        assert!(
+            !s.dir("state").join("trust.json").exists(),
+            "nothing recorded"
+        );
+        for text in [chain_text(&at_trust), chain_text(&at_spawn)] {
+            assert!(!text.contains("store-"), "{text}");
+            assert!(!text.contains(&s.0.display().to_string()), "{text}");
+            assert!(text.contains("resolving the plugin tree"), "{text}");
         }
     }
 

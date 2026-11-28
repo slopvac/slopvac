@@ -863,9 +863,11 @@ pub(crate) enum PyenvPhrase {
     SearchUnverified,
 }
 
-/// Names a path in the `what` of an I/O failure, as the platform prints it.
+/// Names a path in the `what` of an I/O failure as policies section 1.7 shows it: the
+/// environments and interpreters live outside the project, so an absolute path shows as
+/// `<external>/<file name>`.
 fn shown(path: &Path) -> String {
-    path.display().to_string()
+    slopvac_fs::display_under_root(path, Path::new("."))
 }
 
 /// `Reading` for `path`.
@@ -1590,13 +1592,18 @@ mod tests {
 
     #[test]
     fn path_helpers_print_the_path_after_the_verb() {
-        let p = Path::new("/a/b");
-        assert_eq!(reading(p), "reading /a/b");
-        assert_eq!(inspecting(p), "inspecting /a/b");
-        assert_eq!(reading_link(p), "reading link /a/b");
-        assert_eq!(protecting(p), "protecting /a/b");
-        assert_eq!(removing(p), "removing /a/b");
-        assert_eq!(creating(p), "creating /a/b");
-        assert_eq!(securing(p), "securing /a/b");
+        let p = Path::new("a/b");
+        assert_eq!(reading(p), "reading a/b");
+        assert_eq!(inspecting(p), "inspecting a/b");
+        assert_eq!(reading_link(p), "reading link a/b");
+        assert_eq!(protecting(p), "protecting a/b");
+        assert_eq!(removing(p), "removing a/b");
+        assert_eq!(creating(p), "creating a/b");
+        assert_eq!(securing(p), "securing a/b");
+    }
+
+    #[test]
+    fn path_helpers_show_an_absolute_path_as_external() {
+        assert_eq!(reading(Path::new("/a/b")), "reading <external>/b");
     }
 }

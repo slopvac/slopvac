@@ -56,6 +56,7 @@ fn spawn_code(e: &TrustError) -> Option<&'static str> {
         TrustError::KeyMissing { .. } => Some("trust-key-missing"),
         TrustError::KeyMismatch => Some("trust-key-mismatch"),
         TrustError::KeyUnusable { .. } => Some("trust-key-unusable"),
+        TrustError::TreeUnresolved(_) => Some("plugin-spawn-failed"),
         _ => None,
     }
 }
@@ -116,8 +117,8 @@ pub(crate) fn update(root: &Path, e: &UpdateError) -> Reported {
 }
 
 /// A trust store failure: the reported failure when it has a code, else the sentence alone.
-/// A refused program or environment, and an unusable trust key, report the code of the spawn
-/// path. A failure of the store itself has no code of its own and reports `plugins-store-failed`.
+/// A refused program or environment, an unusable trust key and a tree with no location to hash
+/// report the code of the spawn path. A failure of the store itself has no code of its own and reports `plugins-store-failed`.
 pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
     let text = match e {
         TrustError::Revocation(inner) => return Ok(revocation(inner)),
@@ -126,7 +127,8 @@ pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
         | TrustError::ReservedNamespace { .. }
         | TrustError::NotPinned(_)
         | TrustError::Revoked(_)
-        | TrustError::TooLarge { .. } => e.to_string(),
+        | TrustError::TooLarge { .. }
+        | TrustError::TreeUnresolved(_) => e.to_string(),
         _ => withheld(e.code().or_else(|| spawn_code(e)).unwrap_or(STORE_FAILED)),
     };
     match e.code().or_else(|| spawn_code(e)) {
@@ -138,6 +140,17 @@ pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tree_without_a_location_reports_the_spawn_failure_code_and_its_sentence() {
+        let e = TrustError::TreeUnresolved(std::io::ErrorKind::InvalidData);
+        let reported = store(&e).unwrap();
+        assert_eq!(Catalog::code(&reported), "plugin-spawn-failed");
+        assert_eq!(
+            reported.to_string(),
+            "resolving the plugin tree: invalid data"
+        );
+    }
 
     #[test]
     fn a_fallback_variant_shows_its_own_code_beside_the_withheld_sentence() {

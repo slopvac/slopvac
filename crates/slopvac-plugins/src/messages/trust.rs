@@ -804,6 +804,11 @@ pub(crate) fn trust_io(what: &str, cause: &str) -> String {
     .to_string()
 }
 
+/// The verified tree could not be resolved to a canonical UTF-8 path. Names no path.
+pub(crate) fn tree_unresolved(kind: std::io::ErrorKind) -> String {
+    trust_io(TrustPhrase::ResolveTree.as_static(), &kind.to_string())
+}
+
 pub(crate) fn not_a_hash(token: &str) -> String {
     TrustText::NotAHash { token: esc(token) }.to_string()
 }
