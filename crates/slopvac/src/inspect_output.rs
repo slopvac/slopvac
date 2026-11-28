@@ -158,14 +158,15 @@ enum EffectiveSeverity {
 }
 
 impl EffectiveSeverity {
-    /// The level named by `Effective::level`, which holds one of the four words.
-    fn of(effective: &Effective) -> Self {
+    /// The level named by `Effective::level`: one of the three severities, or `off`. Any
+    /// other word is not a level.
+    fn of(effective: &Effective) -> Option<Self> {
         match effective.level.as_str() {
-            "suggestion" => Self::Suggestion,
-            "warning" => Self::Warning,
-            "error" => Self::Error,
-            "off" => Self::Off,
-            other => unreachable!("severity {other:?} is not a level"),
+            "suggestion" => Some(Self::Suggestion),
+            "warning" => Some(Self::Warning),
+            "error" => Some(Self::Error),
+            "off" => Some(Self::Off),
+            _ => None,
         }
     }
 }
@@ -234,11 +235,13 @@ pub struct RuleOutput<'a> {
 }
 
 impl<'a> RuleOutput<'a> {
-    /// The entry of `rule`, shown at `effective` severity with the page `url`.
+    /// The entry of `rule`, shown at `effective` severity with the page `url`. `None` when
+    /// `effective` names no level.
     #[must_use]
-    pub fn new(rule: &'a LoadedRule, effective: &Effective, url: Option<String>) -> Self {
+    pub fn new(rule: &'a LoadedRule, effective: &Effective, url: Option<String>) -> Option<Self> {
+        let effective_severity = EffectiveSeverity::of(effective)?;
         let definition = rule.rule();
-        Self {
+        Some(Self {
             id: rule.id(),
             name: &definition.name,
             message: &definition.message,
@@ -260,10 +263,10 @@ impl<'a> RuleOutput<'a> {
             category: rule.category(),
             plugin: rule.id().pack_id(),
             kind: rule.kind().into(),
-            effective_severity: EffectiveSeverity::of(effective),
+            effective_severity,
             severity_from: effective.from.clone(),
             url,
-        }
+        })
     }
 }
 
@@ -310,6 +313,7 @@ fn render(document: &impl Serialize) -> String {
 mod tests {
     use super::*;
     use crate::inspect::KINDS;
+    use rstest::rstest;
 
     #[test]
     fn a_kind_prints_the_name_that_the_kind_option_takes() {
@@ -317,5 +321,28 @@ mod tests {
             let printed = serde_json::to_string(&RuleKind::from(kind)).unwrap();
             assert_eq!(printed, format!("\"{name}\""));
         }
+    }
+
+    fn at(level: &str) -> Effective {
+        Effective {
+            level: level.to_owned(),
+            shipped: "warning".to_owned(),
+            from: None,
+        }
+    }
+
+    #[rstest]
+    #[case::suggestion("suggestion")]
+    #[case::warning("warning")]
+    #[case::error("error")]
+    #[case::off("off")]
+    fn the_four_levels_of_the_contract_print_as_themselves(#[case] level: &str) {
+        let printed = serde_json::to_string(&EffectiveSeverity::of(&at(level)).unwrap()).unwrap();
+        assert_eq!(printed, format!("\"{level}\""));
+    }
+
+    #[test]
+    fn a_word_that_is_not_a_level_is_refused() {
+        assert!(EffectiveSeverity::of(&at("fatal")).is_none());
     }
 }

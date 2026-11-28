@@ -183,7 +183,7 @@ fn rules_in(
     let filter = Filter::from_matches(m)?.resolved(set)?;
     let picked = selected(set, &filter);
     let text = match format_of(m) {
-        "json" => rules_json(set, &picked, sev),
+        "json" => rules_json(set, &picked, sev)?,
         "md" => rules_md(&picked, sev),
         _ => rules_text(&picked, sev),
     };
@@ -197,13 +197,12 @@ fn format_of(m: &ArgMatches) -> &str {
 fn emit(out: &mut dyn std::io::Write, text: &str) -> Result<u8, CliError> {
     out.write_all(text.as_bytes())
         .and_then(|()| out.flush())
-        .map_err(|err| {
-            CliError::new(
-                "output-failed",
-                format!("cannot write output: {}", err.kind()),
-            )
-        })?;
+        .map_err(|err| output_failed(err.kind()))?;
     Ok(exit::PASS)
+}
+
+fn output_failed(kind: std::io::ErrorKind) -> CliError {
+    CliError::new("output-failed", format!("cannot write output: {kind}"))
 }
 
 fn rules_text(picked: &[(&LoadedCategory, &LoadedRule)], sev: &Severities) -> String {
@@ -255,17 +254,23 @@ fn rules_text(picked: &[(&LoadedCategory, &LoadedRule)], sev: &Severities) -> St
     out
 }
 
-fn rule_output<'a>(rule: &'a LoadedRule, sev: &Severities) -> RuleOutput<'a> {
+/// The JSON entry of `rule`. A severity that is no level cannot be written as a valid
+/// document, so it stops the output like a failed write does.
+fn rule_output<'a>(rule: &'a LoadedRule, sev: &Severities) -> Result<RuleOutput<'a>, CliError> {
     RuleOutput::new(rule, &effective(sev, rule), url_of(rule))
+        .ok_or_else(|| output_failed(std::io::ErrorKind::InvalidData))
 }
 
 fn rules_json(
     set: &Catalog,
     picked: &[(&LoadedCategory, &LoadedRule)],
     sev: &Severities,
-) -> String {
-    let rules = picked.iter().map(|(_, r)| rule_output(r, sev)).collect();
-    RulesOutput::new(set, rules).render()
+) -> Result<String, CliError> {
+    let rules = picked
+        .iter()
+        .map(|(_, r)| rule_output(r, sev))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(RulesOutput::new(set, rules).render())
 }
 
 fn rules_md(picked: &[(&LoadedCategory, &LoadedRule)], sev: &Severities) -> String {
@@ -461,7 +466,7 @@ fn explain_in(
         ));
     };
     let text = match format_of(m) {
-        "json" => ExplainOutput::new(rule_output(rule, sev), suppression(rule)).render(),
+        "json" => ExplainOutput::new(rule_output(rule, sev)?, suppression(rule)).render(),
         "md" => format!(
             "{DISABLE}\n{}\n{ENABLE}\n",
             rule_block(rule, sev).join("\n")
@@ -603,7 +608,7 @@ mod tests {
     fn a_category_with_no_rules_names_the_plugin_that_ships_it() {
         let catalog =
             Catalog::from_sets(vec![empty_category_of("alpha"), empty_category_of("beta")]);
-        let emitted = rules_json(&catalog, &[], &Severities::unconfigured());
+        let emitted = rules_json(&catalog, &[], &Severities::unconfigured()).unwrap();
         let json: Value = serde_json::from_str(&emitted).unwrap();
         let listed: Vec<(&str, &str)> = json["categories"]
             .as_array()
