@@ -368,7 +368,10 @@ mod tests {
     fn a_failed_notice_write_ends_the_notices_and_keeps_the_error() {
         let stopped = review::Stopped::new(
             AgentsError::new_coded("review-provider-missing", "no provider"),
-            vec![warning("review-model-unchecked"), warning("review-model-same")],
+            vec![
+                warning("review-model-unchecked"),
+                warning("review-model-same"),
+            ],
         );
         let mut err_out = Counting::default();
 

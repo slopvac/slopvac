@@ -1556,8 +1556,9 @@ fn tm2b_a_reader_that_outlasts_the_drain_wait_makes_the_shutdown_unclean() {
 }
 
 /// The plugin ends after `shutdown` began and before the host registers its `shutdown`
-/// request. The ordering is fixed: the request waits until the end has failed the waiting
-/// requests. The request still sees the end, so the shutdown reports an exit, not a timeout.
+/// request. The ordering is fixed: the request waits until both the end of the output and the
+/// exit of the process have failed the waiting requests. The request still sees the end, so the
+/// shutdown reports an exit, not a timeout.
 #[test]
 fn an_end_before_the_shutdown_request_registers_is_reported_as_an_exit() {
     use std::sync::atomic::{AtomicI32, Ordering};
@@ -1576,10 +1577,12 @@ fn an_end_before_the_shutdown_request_registers_is_reported_as_an_exit() {
         let _ = std::process::Command::new("kill")
             .args(["-9", "--", &format!("-{id}")])
             .status();
-        assert!(
-            released.recv_timeout(NO_HANG).is_ok(),
-            "the end never failed the waiting requests"
-        );
+        for end in ["the end of the output", "the exit of the process"] {
+            assert!(
+                released.recv_timeout(NO_HANG).is_ok(),
+                "{end} never failed the waiting requests"
+            );
+        }
     }));
     let p = Plugin::start(
         &spec_with("ok", &json!({}), Some(&pidfile), decl()),

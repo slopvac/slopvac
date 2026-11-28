@@ -263,7 +263,10 @@ fn untrusted_line() -> String {
     let entry = slopvac_agents::message_entries()
         .iter()
         .find(|e| e.code == "review-report-untrusted");
-    assert!(entry.is_some(), "the agents catalog holds review-report-untrusted");
+    assert!(
+        entry.is_some(),
+        "the agents catalog holds review-report-untrusted"
+    );
     entry.map(|e| e.template.to_owned()).unwrap_or_default()
 }
 
@@ -1041,7 +1044,6 @@ fn the_providers_standard_error_reaches_the_log_as_a_length_only() {
         .output()
         .expect("run");
 
-    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let err = stderr(&out);
     assert!(!err.contains("PLUGIN-SECRET-MESSAGE"), "{err}");
     assert!(
@@ -1049,6 +1051,7 @@ fn the_providers_standard_error_reaches_the_log_as_a_length_only() {
             .any(|l| l.contains("DEBUG") && l.contains("bytes=21")),
         "the line is logged by its length:\n{err}"
     );
+    assert_eq!(out.status.code(), Some(0), "{err}");
 }
 
 /// An `offline` inherited through `extends` keeps a trusted provider unstarted.
