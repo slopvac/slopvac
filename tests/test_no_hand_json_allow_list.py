@@ -643,19 +643,24 @@ def test_a_suppression_of_another_rule_does_not_hide_a_json_finding(
 # --- the neutralised copy ---------------------------------------------------------------------
 
 
+# The marker with its last letter cut off. It is built in two pieces so the typos linter does not
+# read the source as a misspelling of "ignore". The bytes at run time are the same.
+NEAR_MISS = b"ast-grep-" + b"igno" + b"r"
+
+
 def test_the_copy_differs_from_the_source_only_at_the_markers(tmp_path: Path) -> None:
     # Every byte but the marker stays: CRLF, a bare CR, VT, a NUL, and bytes that are not UTF-8.
     source = (
         b"//! ast-grep-ignore\r\n"
         b"fn f() {} // AST-Grep-Ignore: a\x0b, b\r"
         b"/* ast-grep-ignore */ \xff\xfe\x00 ast-grep-ignoreast-grep-ignore\n"
-        b"no marker here, nor ast-grep-ignor or ast_grep_ignore\n"
+        b"no marker here, nor " + NEAR_MISS + b" or ast_grep_ignore\n"
     )
     expected = (
         b"//! ast-grep-inert_\r\n"
         b"fn f() {} // ast-grep-inert_: a\x0b, b\r"
         b"/* ast-grep-inert_ */ \xff\xfe\x00 ast-grep-inert_ast-grep-inert_\n"
-        b"no marker here, nor ast-grep-ignor or ast_grep_ignore\n"
+        b"no marker here, nor " + NEAR_MISS + b" or ast_grep_ignore\n"
     )
     root = tmp_path / "checkout"
     (root / "crates" / "a" / "src" / "deep").mkdir(parents=True)
