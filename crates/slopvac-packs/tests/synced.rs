@@ -1847,6 +1847,38 @@ fn a_three_mebibyte_config_from_an_embedded_source_loads() {
 
     assert!(loaded.is_ok(), "{:?}", loaded.err());
 }
+
+#[rstest]
+#[case::toml_that_does_not_parse("schema_version = 3\nid = \"acme\nversion = [\n")]
+#[case::a_key_the_contract_does_not_know(
+    "schema_version = 3\nid = \"acme\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\nextra = 1\n\n[provides]\n"
+)]
+fn a_malformed_manifest_over_the_run_byte_allowance_is_a_run_byte_refusal(
+    #[case] manifest: &'static str,
+) {
+    use slopvac_packs::EmbeddedSource;
+    // The manifest fits the per-plugin cap and crosses the 10-byte run allowance.
+    let mut budget = Budget::new(small(|l| l.run_bytes = 10));
+
+    let e = LoadedPack::load_within(
+        &EmbeddedSource::new(manifest, &[]),
+        Source::Pack,
+        &mut budget,
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(
+            e,
+            PackError::Budget {
+                budget: PackBudget::RunBytes,
+                limit: 10,
+                plugin: None
+            }
+        ),
+        "{e:?}"
+    );
+}
 /// A `.tar.gz` of one file.
 fn targz_of(name: &str, bytes: &[u8]) -> Vec<u8> {
     use std::io::Write as _;

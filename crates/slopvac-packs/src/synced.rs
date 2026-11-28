@@ -377,8 +377,9 @@ fn load_inner(
             LockKind::Data => Source::Pack,
             LockKind::Code => Source::Plugin,
         };
-        // `check_manifest` compares the manifest with the lock before the load reads or
-        // compiles any other file, and before it charges anything to the budget.
+        // The integrity pass above has read every file once. From the captured bytes,
+        // `check_manifest` compares the manifest with the lock before the load reads any other
+        // file, compiles anything or charges the budget.
         let pack = LoadedPack::load_checked(&MemorySource::new(files), origin, budget, |m| {
             check_manifest(&locked, m)
         })?;
