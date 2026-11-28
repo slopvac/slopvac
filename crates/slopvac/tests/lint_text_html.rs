@@ -33,8 +33,8 @@ fn run(cmd: Command, code: i32) -> (String, String) {
     let assert = cmd.assert().code(code);
     let out = assert.get_output();
     (
-        String::from_utf8(out.stdout.clone()).expect("utf8 stdout"),
-        String::from_utf8(out.stderr.clone()).expect("utf8 stderr"),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
     )
 }
 
