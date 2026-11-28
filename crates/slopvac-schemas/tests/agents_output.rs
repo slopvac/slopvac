@@ -359,7 +359,7 @@ fn a_lost_literal_alone_makes_a_fact_candidate(
                 );
             }, &[("const", "/payload/kind")])]
 #[case::a_rewrite_with_the_passages_payload(|d: &mut Value| set(d, "/review_type", json!("rewrite")), &[("const", "/payload/kind")])]
-#[case::an_update_without_a_provider(|d: &mut Value| set(d, "/uses_provider", json!(false)), &[("const", "/uses_provider")])]
+#[case::an_update_without_a_provider(|d: &mut Value| set(d, "/uses_provider", json!(false)), &[("const", "/uses_provider"), ("not", "")])]
 #[case::a_document_item_among_passages(|d: &mut Value| set(d, "/payload/items/2/role", json!("revised_document")), &[("enum", "/payload/items/2/role")])]
 #[case::a_changed_item_without_its_original(|d: &mut Value| remove(d, "/payload/items/0", "original"), &[("required", "/payload/items/0")])]
 #[case::an_added_item_with_an_original(|d: &mut Value| set(d, "/payload/items/2/original", json!("x")), &[("not", "/payload/items/2")])]
@@ -463,7 +463,10 @@ fn a_mechanical_plan_that_breaks_the_contract_fails_on_exactly_that(
 #[case::rewrite("rewrite")]
 fn a_request_takes_every_protocol_task(#[case] task: &str) -> TestResult {
     let mut plan = rewrite_plan()?;
-    assert!(plan["request"].is_object(), "the rewrite plan holds a request: {plan}");
+    assert!(
+        plan["request"].is_object(),
+        "the rewrite plan holds a request: {plan}"
+    );
     plan["request"]["task"] = json!(task);
     assert_valid(&validator(PLAN)?, &plan);
     Ok(())
