@@ -58,9 +58,9 @@ pub fn command() -> Command {
 /// with no `shutdown` ([`Exit::WithoutShutdown`]).
 pub fn run(_matches: &ArgMatches, server: Server) -> Result<Exit, RunError> {
     let (connection, io_threads) = lsp_server::Connection::stdio();
-    let served = server.serve(&connection);
+    let outcome = server.serve(&connection);
     drop(connection);
-    match served {
+    match outcome {
         Ok(exit) => {
             // A reading client gets everything flushed. A client that stopped reading
             // blocks the stdout writer for good, so the wait is bounded and the process
