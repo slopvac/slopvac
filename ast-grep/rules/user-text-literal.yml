@@ -101,8 +101,9 @@ rule:
                             kind: impl_item
                             has:
                               field: type
-                              regex: ^CliError$
-                            stopBy: end
+                              matches: cli-type
+                            stopBy:
+                              kind: impl_item
         - has:
             field: arguments
             has:
@@ -126,6 +127,15 @@ rule:
 # A literal message: a string, `concat!` or `format!`, alone or wrapped in a reference, a
 # pair of parentheses, `.to_string()`, `.to_owned()`, `.into()` or `String::from`.
 utils:
+  # The type `CliError`, with or without a path before it.
+  cli-type:
+    any:
+      - kind: type_identifier
+        regex: ^CliError$
+      - kind: scoped_type_identifier
+        has:
+          field: name
+          regex: ^CliError$
   cli-message:
     any:
       - kind: string_literal
@@ -133,7 +143,13 @@ utils:
       - kind: macro_invocation
         has:
           field: macro
-          regex: ^(format|concat)$
+          any:
+            - kind: identifier
+              regex: ^(format|concat)$
+            - kind: scoped_identifier
+              has:
+                field: name
+                regex: ^(format|concat)$
       - kind: parenthesized_expression
         has:
           matches: cli-message
@@ -158,7 +174,19 @@ utils:
           - has:
               field: function
               kind: scoped_identifier
-              regex: ^String::from$
+              all:
+                - has:
+                    field: name
+                    regex: ^from$
+                - has:
+                    field: path
+                    any:
+                      - kind: identifier
+                        regex: ^String$
+                      - kind: scoped_identifier
+                        has:
+                          field: name
+                          regex: ^String$
           - has:
               field: arguments
               has:

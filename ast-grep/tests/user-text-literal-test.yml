@@ -39,6 +39,14 @@ valid:
         fn f() -> Self { Self::new("usage", "not a cli error") }
     }
   - |
+    impl CliError {
+        fn f() {
+            impl Other {
+                fn g() -> Self { Self::new("usage", "not a cli error") }
+            }
+        }
+    }
+  - |
     #[cfg(test)]
     mod tests {
         fn f() { println!("some test output"); }
@@ -64,7 +72,12 @@ invalid:
   - 'fn f() { CliError::new("usage", "text".to_string()); }'
   - 'fn f() { CliError::new("usage", String::from("text")); }'
   - 'fn f() { CliError::new("usage", "text".into()); }'
-  - 'fn f() { CliError::escaping("usage", &format!("{}", v)); }'
+  - 'fn f() { CliError::new(code, "text".to_owned()); }'
+  - 'fn f() { CliError::new("usage", std::format!("{}", v)); }'
+  - 'fn f() { CliError::new("usage", alloc::format!("{}", v)); }'
+  - 'fn f() { CliError::new("usage", std::concat!("a", "b")); }'
+  - 'fn f() { CliError::new("usage", std::string::String::from("text")); }'
+  - 'fn f() { CliError::new("usage", String :: from("text")); }'
   # CliError: comments before an argument do not hide the message.
   - 'fn f() { CliError::new("usage", /* the text */ "pass paths"); }'
   - |
@@ -79,6 +92,17 @@ invalid:
   # CliError: the path is matched by structure.
   - 'fn f() { CliError :: new("usage", "pass paths"); }'
   - 'fn f() { crate::errors::CliError::new("usage", "pass paths"); }'
+  - |
+    impl crate::errors::CliError {
+        fn f() -> Self { Self::new("usage", "pass paths") }
+    }
+  - |
+    impl fmt::Display for CliError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            Self::new("usage", "pass paths");
+            Ok(())
+        }
+    }
   - |
     impl CliError {
         fn f() -> Self { Self::new("usage", "pass paths") }
