@@ -310,8 +310,17 @@ impl KeyPolicy {
     /// same id from another pair.
     #[must_use]
     pub fn signing_key(&self, registry: &str, namespace: &str, key_id: &str) -> Option<&PublicKey> {
-        self.candidates(registry, namespace)
+        let host = PinScope::new(registry, namespace);
+        if namespace == RESERVED_ID
+            || namespace == FIRST_PARTY_NAMESPACE
+            || self.first_party_namespaces.iter().any(|n| n == namespace)
+        {
+            return self.candidates(registry, namespace).iter().find(|k| k.key_id() == key_id);
+        }
+        self.pinned
             .iter()
+            .filter(|(s, _)| s.registry() == host.registry())
+            .flat_map(|(_, keys)| keys.iter())
             .find(|k| k.key_id() == key_id)
     }
 
