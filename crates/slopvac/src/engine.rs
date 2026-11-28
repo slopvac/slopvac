@@ -1152,15 +1152,14 @@ fn group_by_settings(
             Some((config, rel)) => (config.as_ref(), rel.clone()),
             None => (&none, PathBuf::from(&item.shown)),
         };
-        let layers = DocumentLayers::read(
-            &item.text,
-            &item.shown,
-            item.config.as_ref().map(|(c, _)| &**c),
-        )
-        .with_detected_genre(reads.detected[index].clone());
+        let blocks = read_block(item);
+        let layers =
+            DocumentLayers::from_blocks(&blocks).with_detected_genre(reads.detected[index].clone());
         let resolved = lint_settings::resolve(config, &rel, &layers);
-        // A document whose genre no registry holds is not linted, and the run goes on.
+        // A document whose genre no registry holds is not linted, and the run goes on. Its
+        // other block errors are still reported, as a linted document's are.
         if let Err(err) = lint_settings::check_genre(&resolved) {
+            run.front_matter_errors(item, &blocks);
             run.refuse(&item.shown, err);
             continue;
         }
