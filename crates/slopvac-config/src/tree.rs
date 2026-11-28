@@ -317,9 +317,57 @@ fn yaml_key(k: &MarkedYaml<'_>) -> String {
 
 #[cfg(test)]
 thread_local! {
-    /// The bytes of the indexed text that [`LineIndex::line_col`] has read on this thread, so a
-    /// test can count the work of a lookup instead of timing it.
+    /// The bytes of the indexed text that a [`LineIndex`] has read through its text on this
+    /// thread, so a test can count the work of a lookup instead of timing it.
     pub(crate) static TEXT_BYTES_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The text a [`LineIndex`] reads. Outside tests it is the plain `&str`.
+#[cfg(not(test))]
+type Text<'a> = &'a str;
+/// The text a [`LineIndex`] reads. In tests every read through it is counted.
+#[cfg(test)]
+type Text<'a> = counted::Text<'a>;
+
+#[cfg(test)]
+mod counted {
+    use std::ops::Range;
+
+    /// A `&str` that charges each byte read through it to [`super::TEXT_BYTES_READ`]. Every
+    /// read of the text in [`super::LineIndex`] goes through it, so a rescan anywhere in the
+    /// wrapper counts, whichever line of code makes it.
+    #[derive(Debug, Clone, Copy)]
+    pub(crate) struct Text<'a>(&'a str);
+
+    impl<'a> From<&'a str> for Text<'a> {
+        fn from(text: &'a str) -> Self {
+            Self(text)
+        }
+    }
+
+    fn charge(bytes: usize) {
+        super::TEXT_BYTES_READ.with(|n| n.set(n.get() + bytes));
+    }
+
+    impl<'a> Text<'a> {
+        /// The length is known without reading the text, so it costs nothing.
+        pub(crate) fn len(self) -> usize {
+            self.0.len()
+        }
+
+        /// Reads the byte at `index`.
+        pub(crate) fn is_char_boundary(self, index: usize) -> bool {
+            charge(1);
+            self.0.is_char_boundary(index)
+        }
+
+        /// Hands out the bytes of `range`, so each of them counts as read.
+        pub(crate) fn get(self, range: Range<usize>) -> Option<&'a str> {
+            let slice = self.0.get(range);
+            charge(slice.map_or(0, str::len));
+            slice
+        }
+    }
 }
 
 /// Maps byte offsets to one-based lines and columns, as `docs/contract/positions.md` defines.
@@ -331,7 +379,7 @@ thread_local! {
 /// so a lookup costs a binary search and not a scan of the line.
 #[derive(Debug, Clone)]
 pub struct LineIndex<'a> {
-    text: &'a str,
+    text: Text<'a>,
     index: frontmatter_spans::LineIndex<'a>,
 }
 
@@ -340,7 +388,7 @@ impl<'a> LineIndex<'a> {
     #[must_use]
     pub fn new(text: &'a str) -> Self {
         Self {
-            text,
+            text: Text::from(text),
             index: frontmatter_spans::LineIndex::new(text),
         }
     }
@@ -351,9 +399,6 @@ impl<'a> LineIndex<'a> {
     pub fn line_col(&self, offset: usize) -> (usize, usize) {
         let at = self.index.line_col(offset);
         let clamped = offset.min(self.text.len());
-        // The boundary check reads at most one byte of the text.
-        #[cfg(test)]
-        TEXT_BYTES_READ.with(|n| n.set(n.get() + 1));
         if self.text.is_char_boundary(clamped) {
             (at.line, at.column)
         } else {
