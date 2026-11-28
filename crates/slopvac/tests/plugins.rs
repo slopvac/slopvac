@@ -1767,3 +1767,99 @@ fn k22_pin_and_rotate_finish_with_stdin_closed_and_open_no_connection() {
     );
     assert_eq!(tally.requests(), 0, "pin or rotate opened a connection");
 }
+
+/// A data plugin that sync installed with a pinned key, after a rotation replaces that pin, has
+/// no key in the policy that signed it. Expected per contract, pending: `lint` does not load its
+/// rules and exits 2 with the loader's refusal.
+#[test]
+fn lint_refuses_a_synced_data_plugin_whose_signing_key_is_no_longer_pinned() {
+    use slopvac_plugins::revoke::RevocationList;
+    use slopvac_plugins::sign::{PinScope, RotationProof};
+    use slopvac_plugins::trust::TrustStore;
+
+    let sandbox = Sandbox::new();
+    let (old, new) = (
+        signed_fixture::Key::primary(),
+        signed_fixture::Key::secondary(),
+    );
+    let manifest = "schema_version = 3\nid = \"rulepack\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+        kind = \"data\"\n\n[provides]\ncategories = [\"categories/c.json\"]\n";
+    let category = r#"{"schema_version":3,"id":"c","title":"T","description":"D","rules":[{"id":"r0","name":"N","message":"m","match":{"kind":"pattern","pattern":"zorblax"},"citation":{"source":"s"}}]}"#;
+    let p = signed_fixture::publish(
+        &old,
+        "acme",
+        "rulepack",
+        "1.0.0",
+        SIGNED_NOT_BEFORE,
+        &[
+            ("slopvac-plugin.toml", manifest.as_bytes()),
+            ("categories/c.json", category.as_bytes()),
+        ],
+    );
+    p.cache_into(&plugin_store(&sandbox));
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"rulepack\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"oci://{SIGNED_REGISTRY}/acme/rulepack:1.0.0\"\ndigest = \"{}\"\n\n\
+         [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{SIGNED_NOT_BEFORE}\"\n",
+        p.digest, p.key_id
+    ));
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        format!(
+            "schema_version = 3\n[[plugins]]\nid = \"rulepack\"\n\
+             source = \"oci://{SIGNED_REGISTRY}/acme/rulepack:1.0.0\"\n"
+        ),
+    )
+    .unwrap();
+    pin_through_the_binary(&sandbox, &old);
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+
+    // The rotation that `plugins rotate` accepts, recorded in the same trust store, with an
+    // empty revocation list, as in the K16 test.
+    let (old_pk, new_pk) = (old.public(), new.public());
+    let statement = format!(
+        "{{\"namespace\":\"acme\",\"newKey\":\"{}\",\"newKeyId\":\"{}\",\"notBefore\":\"2026-11-10T00:00:00Z\",\"oldKeyId\":\"{}\",\"schema_version\":1,\"type\":\"rotation\"}}",
+        new_pk.to_base64(),
+        new_pk.key_id(),
+        old_pk.key_id()
+    );
+    let (old_sig, new_sig) = (
+        old.sign(statement.as_bytes()),
+        new.sign(statement.as_bytes()),
+    );
+    TrustStore::open(sandbox.dir.path().join("home/state/slopvac"))
+        .rotate_key(
+            &PinScope::new(SIGNED_REGISTRY, "acme"),
+            &RotationProof {
+                statement: statement.as_bytes(),
+                old_signature: &old_sig,
+                new_signature: &new_sig,
+                new_key: &new_pk,
+            },
+            &RevocationList::default(),
+            "2026-11-14T00:00:00Z",
+        )
+        .unwrap();
+
+    fs::write(sandbox.project().join("doc.md"), "The zorblax is here.\n").unwrap();
+    let out = sandbox
+        .slopvac()
+        .args(["--offline", "lint", "doc.md"])
+        .output()
+        .unwrap();
+    let (stdout, stderr) = (
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let seen = format!(
+        "exit {:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        out.status.code()
+    );
+    assert_eq!(out.status.code(), Some(2), "{seen}");
+    assert!(stderr.starts_with("error[signature-invalid]: "), "{seen}");
+    assert!(!stdout.contains("zorblax"), "{seen}");
+}
