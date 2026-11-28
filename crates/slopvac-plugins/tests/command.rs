@@ -537,6 +537,42 @@ fn k13_pin_and_rotate_refuse_the_reserved_namespaces(#[case] args: &[&str]) {
     assert_eq!(f.pinned(), Vec::<(String, String, String)>::new());
 }
 
+/// `pin --key` given a FIFO refuses it at once, without waiting for a writer, and tells the
+/// user to save the key to a regular file. The run happens on its own thread, so a read that
+/// blocks fails the deadline instead of hanging the test.
+#[test]
+fn pin_refuses_a_key_path_that_is_a_fifo_at_once() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let f = Fixture::uncached();
+        let fifo = f.base.path().join("acme.fifo");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(made.success(), "mkfifo");
+        let (fp, key) = (
+            pub_key(OLD_PUB).fingerprint(),
+            fifo.to_string_lossy().into_owned(),
+        );
+        let err = f
+            .run(&["pin", "acme", &fp, "--key", &key], false, |s| s)
+            .result
+            .unwrap_err();
+        // The receiver is gone only when the deadline has already failed the test.
+        let _ = tx.send((err.code(), err.exit_code(), err.to_string(), f.pinned()));
+    });
+    let (code, exit, text, pinned) = rx
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .expect("pin finished within 20 s");
+    assert_eq!((code, exit), ("key-invalid", 2));
+    assert_eq!(
+        text,
+        "the key file <external>/acme.fifo cannot be used: it is not a regular file; save it to a regular file and pass that path"
+    );
+    assert_eq!(pinned, Vec::<(String, String, String)>::new());
+}
+
 impl Fixture {
     /// Pin the fixture's old key for `acme` on ghcr.io and write the rotation files. Returns
     /// the `rotate` arguments.
