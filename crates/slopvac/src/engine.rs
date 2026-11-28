@@ -397,7 +397,7 @@ impl Linter for EngineLinter {
         // a link cannot move a fix elsewhere.
         let root = request.fix.then(|| Root::open(&request.root));
         match prepare(request, &mut run) {
-            Ok((rules, items)) => lint_items(request, root.as_ref(), items, rules, run),
+            Ok((rules, items)) => lint_items(request, root.as_ref(), items, &rules, run),
             Err(err) => failed(request, run, &err),
         }
     }
@@ -1156,22 +1156,18 @@ fn lint_items(
     request: &LintRequest,
     root: Option<&std::io::Result<Root>>,
     mut items: Vec<Item>,
-    rules: Catalog,
+    rules: &Catalog,
     mut run: Run,
 ) -> RunOutcome {
-    let groups = match group_by_settings(request, &items, &rules) {
+    let groups = match group_by_settings(request, &items, rules) {
         Ok(groups) => groups,
         Err(err) => return failed(request, run, &err),
     };
 
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
-    let mut spare = Some(rules);
     for (settings, terms, indexes) in groups.into_values() {
-        // The engine owns its rule sets, and a set does not clone: reload them for later groups.
-        let sets = match spare.take().map_or_else(Catalog::load, Ok) {
-            Ok(catalog) => catalog.into_sets(),
-            Err(err) => return failed(request, run, &err),
-        };
+        // Every group's engine shares the run's one catalogue.
+        let sets = rules.shared_sets();
         let engine = match lint_terms::build_engine(sets, settings, &terms, &request.root) {
             Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
             Err(err) => return failed(request, run, &err),
@@ -1299,6 +1295,63 @@ mod after_discovery {
         if let Some(hook) = HOOK.with(|h| h.borrow_mut().take()) {
             hook();
         }
+    }
+}
+
+#[cfg(test)]
+mod catalogue_tests {
+    use super::*;
+
+    #[test]
+    fn one_catalogue_serves_every_settings_group() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        let write = |rel: &str, text: &str| std::fs::write(root.join(rel), text).expect("write");
+        // Both documents miscase the built-in term GitHub. The root config leaves the casing
+        // rule on, and the config of `sub` turns it off, so the two land in different groups.
+        let doc = "# Title\n\nThe team uses Github for the code.\n";
+        write("slopvac.toml", "schema_version = 3\n");
+        write("a.md", doc);
+        std::fs::create_dir(root.join("sub")).expect("sub");
+        write(
+            "sub/slopvac.toml",
+            "schema_version = 3\n\n[rules]\n\"core:terms.casing\" = \"off\"\n",
+        );
+        write("sub/b.md", doc);
+        let request = LintRequest {
+            root: root.clone(),
+            targets: vec![root.join("a.md"), root.join("sub/b.md")],
+            ..LintRequest::default()
+        };
+        crate::rule_catalog::loads::take();
+
+        let outcome = EngineLinter.lint(&request);
+
+        assert_eq!(
+            crate::rule_catalog::loads::take(),
+            1,
+            "the run loads the catalogue once"
+        );
+        let mut casing: Vec<(String, usize)> = outcome
+            .report
+            .documents
+            .iter()
+            .map(|d| {
+                let hits = d
+                    .findings
+                    .iter()
+                    .filter(|f| f.rule_id.as_str() == "core:terms.casing")
+                    .count();
+                (d.path.as_str().to_owned(), hits)
+            })
+            .collect();
+        casing.sort();
+        assert_eq!(
+            casing,
+            [("a.md".to_owned(), 1), ("sub/b.md".to_owned(), 0)],
+            "each group applies its own config: {:?}",
+            outcome.incomplete
+        );
     }
 }
 

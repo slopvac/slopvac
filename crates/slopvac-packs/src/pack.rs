@@ -568,7 +568,7 @@ impl Packs {
     }
 
     /// Every plugin's rule set, in load order, handed over. A rule set does not clone, so a caller
-    /// that builds several engines loads the packs again for each.
+    /// that builds several engines wraps each set in an `Arc` and shares it.
     #[must_use]
     pub fn into_rule_sets(self) -> Vec<RuleSet> {
         self.loaded.into_iter().map(|p| p.rules).collect()

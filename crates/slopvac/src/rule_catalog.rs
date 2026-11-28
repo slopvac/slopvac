@@ -5,6 +5,7 @@
 //! bead replaces this module with the real pack loader.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use slopvac_engine::CORE_PACK;
 use slopvac_model::PackId;
@@ -134,10 +135,11 @@ pub fn core() -> Result<RuleSet, CliError> {
 }
 
 /// Every rule set a run knows: the core rules and the term-casing rules. Config validation,
-/// the effective-severity commands and the engine all read the same catalogue.
+/// the effective-severity commands and the engine all read the same catalogue, and every
+/// engine of a run shares its sets.
 #[derive(Debug)]
 pub struct Catalog {
-    sets: Vec<RuleSet>,
+    sets: Vec<Arc<RuleSet>>,
 }
 
 impl Catalog {
@@ -147,26 +149,39 @@ impl Catalog {
     /// `rules-unavailable` when an embedded file fails to load, and `engine-unavailable` when
     /// the term-casing pack does not.
     pub fn load() -> Result<Self, CliError> {
+        #[cfg(test)]
+        loads::count();
         Ok(Self {
-            sets: vec![core()?, crate::lint_terms::casing_rule_set()?],
+            sets: vec![
+                Arc::new(core()?),
+                Arc::new(crate::lint_terms::casing_rule_set()?),
+            ],
         })
     }
 
     /// A catalogue over `sets`, the first being the core rules.
     #[must_use]
-    pub fn from_sets(sets: Vec<RuleSet>) -> Self {
-        Self { sets }
+    pub fn from_sets<S: Into<Arc<RuleSet>>>(sets: Vec<S>) -> Self {
+        Self {
+            sets: sets.into_iter().map(Into::into).collect(),
+        }
     }
 
     /// The rule sets, core first.
     #[must_use]
-    pub fn sets(&self) -> &[RuleSet] {
+    pub fn sets(&self) -> &[Arc<RuleSet>] {
         &self.sets
+    }
+
+    /// The rule sets, shared, to hand to one engine of the run.
+    #[must_use]
+    pub(crate) fn shared_sets(&self) -> Vec<Arc<RuleSet>> {
+        self.sets.clone()
     }
 
     /// The rule sets, to hand to the engine.
     #[must_use]
-    pub fn into_sets(self) -> Vec<RuleSet> {
+    pub fn into_sets(self) -> Vec<Arc<RuleSet>> {
         self.sets
     }
 
@@ -177,7 +192,7 @@ impl Catalog {
 
     /// Every rule, core first.
     pub fn rules(&self) -> impl Iterator<Item = &LoadedRule> {
-        self.sets.iter().flat_map(RuleSet::rules)
+        self.sets.iter().flat_map(|s| s.rules())
     }
 
     /// The rule with this id.
@@ -246,4 +261,23 @@ pub(crate) fn catalog_with_rules(triples: &[(&str, &str, &str)]) -> Catalog {
         .expect("the rule set loads")
     };
     Catalog::from_sets(triples.iter().map(|(p, c, r)| set(p, c, r)).collect())
+}
+
+/// How many catalogues this thread loaded, for the tests that pin one load per run.
+#[cfg(test)]
+pub(crate) mod loads {
+    use std::cell::Cell;
+
+    thread_local! {
+        static LOADS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn count() {
+        LOADS.with(|n| n.set(n.get() + 1));
+    }
+
+    /// The loads since the last call.
+    pub(crate) fn take() -> usize {
+        LOADS.with(|n| n.replace(0))
+    }
 }

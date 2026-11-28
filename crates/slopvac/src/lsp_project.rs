@@ -501,7 +501,7 @@ impl Project {
         };
         // The catalog stays in the shared state, so take what the settings need under the
         // lock and build the engine outside it.
-        let (settings, terms, key, cached) = {
+        let (settings, terms, key, cached, sets) = {
             let loaded = self.loaded();
             let ready = match &loaded.state {
                 State::Ready(ready) => ready,
@@ -511,14 +511,18 @@ impl Project {
                 settings_for(&ready.catalog, config_ref, &rel, &Overrides::default())
                     .map_err(shown)?;
             let cached = ready.engines.get(&key).cloned();
-            (settings, terms, key, cached)
+            // The rule-set handles are cloned only when an engine is to be built.
+            let sets = if cached.is_none() {
+                ready.catalog.shared_sets()
+            } else {
+                Vec::new()
+            };
+            (settings, terms, key, cached, sets)
         };
         let engine = if let Some(engine) = cached {
             engine
         } else {
-            // The engine owns its rule sets, and a set does not clone: load them again.
-            let sets = Catalog::load().map_err(shown)?.into_sets();
-            let reasons = slopvac_lsp::exception_names(&sets);
+            let reasons = slopvac_lsp::exception_names(sets.iter().map(Arc::as_ref));
             let built =
                 lint_terms::build_engine(sets, settings, &terms, &self.root).map_err(shown)?;
             let engine = Arc::new(EngineLinter::from_engine(built, reasons));
