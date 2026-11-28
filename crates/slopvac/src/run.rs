@@ -139,6 +139,8 @@ where
     if let Some(err) = &refusal
         && !invocation.is_lint()
     {
+        // The run stops with exit 2 either way. A stderr that cannot take the line has no
+        // other place to report to, so a failed write changes nothing.
         let _ = writeln!(err_out, "{err}");
         return exit::code(exit::INCOMPLETE);
     }
