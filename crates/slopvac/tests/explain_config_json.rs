@@ -120,14 +120,17 @@ fn explain_config_prints_the_config_and_each_setting_of_a_file_as_json() {
         }),
         "{doc}"
     );
-    // A core default has an origin with no `file` key at all.
+    // The default genre `consumer` sets the profile in its genre file (layer 3), over the core
+    // default, whose origin has no `file` key at all.
     assert_eq!(
         setting(input, "profile.name"),
         &json!({
             "key": "profile.name",
             "value": "normal",
-            "source": {"layer": "core"},
-            "replaced": [],
+            "source": {"layer": "genre", "file": "plugin:core/genres/consumer.yaml", "line": 4, "column": 1},
+            "replaced": [
+                {"value": "normal", "source": {"layer": "core"}},
+            ],
         }),
         "{doc}"
     );
