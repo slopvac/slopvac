@@ -12,6 +12,7 @@ use slopvac_model::GenreId;
 use slopvac_report::RenderOptions;
 use slopvac_rules::{Example, LoadedCategory, LoadedRule, Match, MatchKind};
 
+use crate::cli_messages::IoMessage;
 use crate::errors::CliError;
 use crate::exit;
 use crate::inspect_output::{ExplainOutput, RuleOutput, RulesOutput};
@@ -254,11 +255,15 @@ fn rules_text(picked: &[(&LoadedCategory, &LoadedRule)], sev: &Severities) -> St
     out
 }
 
-/// The JSON entry of `rule`. A severity that is no level cannot be written as a valid
-/// document, so it stops the output like a failed write does.
+/// The JSON entry of `rule` at `eff`. A level that is none of the levels cannot be written as
+/// a valid document, so it stops the output as `render-failed`, naming the rule and not the
+/// configured value.
 fn rule_output<'a>(rule: &'a LoadedRule, eff: &Effective) -> Result<RuleOutput<'a>, CliError> {
-    RuleOutput::new(rule, eff, url_of(rule))
-        .ok_or_else(|| output_failed(std::io::ErrorKind::InvalidData))
+    RuleOutput::new(rule, eff, url_of(rule)).ok_or_else(|| {
+        IoMessage::render_refused(&IoMessage::RuleLevelInvalid {
+            rule: rule.id().to_string(),
+        })
+    })
 }
 
 fn rules_json(

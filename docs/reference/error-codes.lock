@@ -118,6 +118,7 @@ cli-report-title-help text
 cli-report-warning text
 cli-report-write-failed text
 cli-report-yes-help text
+cli-rule-level-invalid text
 cli-stdin-document-too-large text
 cli-stdin-fix-unsupported text
 cli-stdin-language-invalid text

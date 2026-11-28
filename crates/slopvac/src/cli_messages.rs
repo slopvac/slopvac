@@ -62,6 +62,15 @@ pub(crate) enum IoMessage {
         detail: String,
     },
 
+    /// A rule's effective level is none of the levels, so its `rules` or `explain` entry
+    /// cannot be written.
+    #[code("cli-rule-level-invalid")]
+    #[text("cannot render rule {rule}: its effective level is not a level")]
+    RuleLevelInvalid {
+        /// The qualified rule id.
+        rule: String,
+    },
+
     /// `--stdin` was given with paths.
     #[code("cli-stdin-path-given")]
     #[text("PATH must be empty when --stdin is set.")]
@@ -191,6 +200,14 @@ impl IoMessage {
     /// A `render-failed` error whose detail is `detail`, the renderer's own text.
     pub(crate) fn render_failed(detail: String) -> CliError {
         Self::RenderFailed { detail }.into_error()
+    }
+
+    /// A `render-failed` error whose detail is `sentence`.
+    pub(crate) fn render_refused(sentence: &Self) -> CliError {
+        Self::RenderFailed {
+            detail: sentence.text(),
+        }
+        .into_error()
     }
 
     /// An `input-unreadable` error whose detail is `sentence`.
