@@ -333,9 +333,9 @@ type Text<'a> = counted::Text<'a>;
 mod counted {
     use std::ops::Range;
 
-    /// A `&str` that charges each byte read through it to [`super::TEXT_BYTES_READ`]. Every
-    /// read of the text in [`super::LineIndex`] goes through it, so a rescan anywhere in the
-    /// wrapper counts, whichever line of code makes it.
+    /// A `&str` that adds each byte read through it to [`super::TEXT_BYTES_READ`]. It counts
+    /// only reads through the `text` field of [`super::LineIndex`]. A rescan of another copy of
+    /// the text, or a rescan inside `frontmatter_spans::LineIndex`, is not counted.
     #[derive(Debug, Clone, Copy)]
     pub(crate) struct Text<'a>(&'a str);
 
@@ -361,11 +361,12 @@ mod counted {
             self.0.is_char_boundary(index)
         }
 
-        /// Hands out the bytes of `range`, so each of them counts as read. The wrapper reads no
-        /// range today; a rescan of the line prefix would, and the many-keys test counts it.
+        /// Returns the bytes of `range` and counts each of them as read. The count covers only
+        /// reads through the `text` field of `LineIndex`.
         #[expect(
             dead_code,
-            reason = "the counted read that a rescan of the line prefix would make"
+            reason = "test-only: a rescan of `self.text` in `LineIndex` must read through this \
+                      counted path, and no code calls it today"
         )]
         pub(crate) fn get(self, range: Range<usize>) -> Option<&'a str> {
             let slice = self.0.get(range);
