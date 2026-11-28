@@ -142,6 +142,7 @@ The forms cover these categories:
 - Wrong fix: covers a correct match with a wrong message, replacement, or fix guidance. Use this form if `--fix` changes meaning or produces broken text.
 - New rule: covers a writing pattern that no existing rule detects.
 - Rule improvement: covers whole-rule changes to accuracy, examples, exceptions, judgment, tier, severity, genre advice, wording, or docs.
+- Tool improvement: covers a change to the CLI, output, config, agent setup, or docs that is not about one rule.
 
 Before submitting an agent report, run `slopvac prime report`. Get the user's approval for the exact post.
 

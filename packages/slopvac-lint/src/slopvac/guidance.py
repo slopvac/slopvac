@@ -336,6 +336,7 @@ def render_report() -> str:
         "2. Pick a category from Categories and body skeletons.",
         "   Match one wrong finding to its category meaning.",
         "   Pick `rule-improvement` for a pattern across many findings.",
+        "   Pick `tool-improvement` for a change to the CLI, output, config, setup, or docs that is not about one rule.",
         "3. Collect the data that the form asks for.",
         "   - Run `slopvac --version`.",
         "   - Run `slopvac doctor --format json`.",
