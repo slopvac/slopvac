@@ -7,9 +7,9 @@ use common::{engine, matched, places, rule, tokens};
 use proptest::prelude::*;
 use rstest::rstest;
 use serde_json::{Value, json};
-use slopvac_engine::{Engine, EngineError, Input, fix_document};
-use slopvac_model::Document;
-use slopvac_parse::ParseError;
+use slopvac_engine::{Engine, EngineError, FixReport, Input, fix_document};
+use slopvac_model::{Document, Edit, Extent, Finding, Fix, Span};
+use slopvac_parse::{BlockKind, ParseError, parse_html};
 
 fn leverage() -> Engine {
     engine(&[tokens("dull", "leverage", &json!({}))])
@@ -243,6 +243,108 @@ fn a_word_between_inline_tags_is_matched_as_a_whole_word() {
     assert_eq!(spans(&doc), vec![(9, 17)]);
 }
 
+/// A finding whose fix replaces the bytes `from..to` of `html` with `text`, as a rule whose
+/// match covered exactly those bytes would propose. It reads the same as the source there, so
+/// only the protection can refuse it.
+#[expect(clippy::unwrap_used, reason = "test helper: a panic is a failed test")]
+fn forced_finding(html: &str, from: usize, to: usize, text: &str) -> Finding {
+    let mut finding = lint("<p>leverage</p>\n").findings.remove(0);
+    let span = Span::new(from, to).unwrap();
+    let end = finding.extent.unwrap().end;
+    finding.extent = Some(Extent { span, end });
+    finding.matched_text = html[from..to].to_owned();
+    finding.fix = Some(
+        Fix::new(vec![Edit {
+            span,
+            text: text.to_owned(),
+        }])
+        .unwrap(),
+    );
+    finding
+}
+
+/// The report of a fix of `html` with `findings` in place of its own.
+#[expect(clippy::unwrap_used, reason = "test helper: a panic is a failed test")]
+fn fix_with(html: &str, findings: Vec<Finding>) -> FixReport {
+    let engine = leverage();
+    let input = Input::html("page.html", html);
+    let mut doc = engine.lint(&input).unwrap();
+    doc.findings = findings;
+    fix_document(&engine, &input, &doc, None).unwrap()
+}
+
+/// The text of `html` as the parser renders it, one block a line.
+#[expect(clippy::unwrap_used, reason = "test helper: a panic is a failed test")]
+fn rendered(html: &str) -> String {
+    let doc = parse_html(html, Span::new(0, html.len()).unwrap()).unwrap();
+    doc.blocks
+        .iter()
+        .filter_map(|b| b.projection.as_ref())
+        .map(slopvac_parse::Projection::text)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[rstest]
+// `<p>one` is 6 bytes. The space at 6..7, `<em title="x">` at 7..21 and the space at 21..22
+// collapse into one space of the text.
+#[case::the_collapsed_space_over_a_tag(6, 22, "<p>one <em title=\"x\"> two</em></p>\n")]
+#[case::the_space_before_the_tag(6, 7, "<p>one-<em title=\"x\"> two</em></p>\n")]
+#[case::the_space_after_the_tag(21, 22, "<p>one <em title=\"x\">-two</em></p>\n")]
+fn a_fix_of_white_space_around_a_tag_changes_only_text(
+    #[case] from: usize,
+    #[case] to: usize,
+    #[case] want: &str,
+) {
+    let html = "<p>one <em title=\"x\"> two</em></p>\n";
+    let report = fix_with(html, vec![forced_finding(html, from, to, "-")]);
+    assert_eq!(report.text, want);
+}
+
+#[rstest]
+// `<p>caf` is 6 bytes, `&eacute;` is 6..14, and ` ok` is 14..17.
+#[case::the_whole_entity(6, 14, "<p>cafe ok</p>\n")]
+#[case::ends_inside_the_entity(6, 10, "<p>caf&eacute; ok</p>\n")]
+#[case::starts_inside_the_entity(8, 17, "<p>caf&eacute; ok</p>\n")]
+fn a_fix_replaces_an_entity_whole_or_not_at_all(
+    #[case] from: usize,
+    #[case] to: usize,
+    #[case] want: &str,
+) {
+    let html = "<p>caf&eacute; ok</p>\n";
+    let report = fix_with(html, vec![forced_finding(html, from, to, "e")]);
+    assert_eq!(report.text, want);
+}
+
+#[test]
+fn a_replacement_is_written_as_html_text() {
+    let out = fixed("<p>Use delta now.</p>\n", "delta", "a<b>&c", &json!({}));
+    assert_eq!(out, "<p>Use a&lt;b&gt;&amp;c now.</p>\n");
+    assert_eq!(rendered(&out), "Use a<b>&c now.");
+}
+
+#[rstest]
+#[case::xmp("<xmp>delta</xmp>\n")]
+#[case::cdata_in_svg("<svg><text><![CDATA[delta]]></text></svg>\n")]
+fn a_replacement_that_needs_escaping_is_refused_in_a_file_with_undecoded_text(#[case] html: &str) {
+    // The content of `<xmp>` and of CDATA is not decoded, so `&amp;` would show as written.
+    assert_eq!(fixed(html, "delta", "a&b", &json!({"scope": "raw"})), html);
+}
+
+/// Scaling guard for the protection lookup of a fix. Each of 300,000 refused fixes after
+/// 300,000 tags took a scan of the protected ranges, far past the test timeout at this size;
+/// a lookup by binary search takes a fraction of the run. A regression shows as a test that
+/// nextest ends for running too long. No assertion reads a clock.
+#[test]
+fn many_refused_fixes_after_many_tags_finish() {
+    let tags = "<b>x</b>\n".repeat(300_000);
+    let html = format!("{tags}<p title=\"delta\">x</p>\n");
+    let at = tags.len() + "<p title=\"".len();
+    let finding = forced_finding(&html, at, at + "delta".len(), "d");
+    let report = fix_with(&html, vec![finding; 300_000]);
+    assert_eq!((report.applied, report.skipped.len()), (0, 300_000));
+}
+
 #[test]
 fn a_prose_fix_changes_the_text_and_leaves_the_markup() {
     let html = "<p class=\"leverage\">Do <b>leverage</b> it.</p>\n";
@@ -275,6 +377,18 @@ fn a_prose_fix_changes_the_text_and_leaves_the_markup() {
     "<p>Mail delta@example.com about d.</p>\n"
 )]
 #[case::markdown_link_syntax_is_prose("<p>[label](delta) text</p>\n", "<p>[label](d) text</p>\n")]
+#[case::encoded_email_at(
+    "<p>Mail delta&#64;example.com about delta.</p>\n",
+    "<p>Mail delta&#64;example.com about d.</p>\n"
+)]
+#[case::named_email_at(
+    "<p>Mail delta&commat;example.com about delta.</p>\n",
+    "<p>Mail delta&commat;example.com about d.</p>\n"
+)]
+#[case::encoded_url_colon(
+    "<p>See https&#58;//example.com/delta and delta.</p>\n",
+    "<p>See https&#58;//example.com/delta and d.</p>\n"
+)]
 #[case::quoted_value_after_an_apostrophe_in_a_comment(
     "<!-- don't --><p title='a > delta'>delta</p>\n",
     "<!-- don't --><p title='a > delta'>d</p>\n"
@@ -387,5 +501,74 @@ proptest! {
             );
             prop_assert_eq!(visible(&html[start..end]), f.matched_text.clone(), "{:?}", html);
         }
+    }
+}
+
+/// Parts of the documents of the fix property, each with what it must read after a raw fix
+/// of `alpha` to `a<b&c>`. Only the first part is text the fix may change. The others are
+/// text whose `alpha` is in an address, or markup and hidden or code elements that hold
+/// `alpha`. Each text part starts and ends with a space, so `alpha` in one is a whole word,
+/// and a part of markup between two of them leaves white space on both sides of a tag.
+const FIX_PARTS: [(&str, &str); 23] = [
+    (" alpha ", " a&lt;b&amp;c&gt; "),
+    (" other ", " other "),
+    (" user&#64;alpha.com ", " user&#64;alpha.com "),
+    (" mail&commat;alpha.net ", " mail&commat;alpha.net "),
+    (" https&#58;//alpha.org/x ", " https&#58;//alpha.org/x "),
+    (" &amp; ", " &amp; "),
+    (
+        "<em title=\"alpha > alpha\">",
+        "<em title=\"alpha > alpha\">",
+    ),
+    ("</em>", "</em>"),
+    ("<span data-x=alpha>", "<span data-x=alpha>"),
+    ("</span>", "</span>"),
+    (
+        "<a href='alpha.html' title=alpha>",
+        "<a href='alpha.html' title=alpha>",
+    ),
+    ("</a>", "</a>"),
+    ("<!-- don't alpha -->", "<!-- don't alpha -->"),
+    ("<code>alpha</code>", "<code>alpha</code>"),
+    ("<kbd>alpha</kbd>", "<kbd>alpha</kbd>"),
+    ("<samp>alpha</samp>", "<samp>alpha</samp>"),
+    ("<script>alpha</script>", "<script>alpha</script>"),
+    ("<style>alpha</style>", "<style>alpha</style>"),
+    ("<template>alpha</template>", "<template>alpha</template>"),
+    ("<noscript>alpha</noscript>", "<noscript>alpha</noscript>"),
+    ("<title>alpha</title>", "<title>alpha</title>"),
+    ("<pre>alpha</pre>", "<pre>alpha</pre>"),
+    ("<b>", "<b>"),
+];
+
+/// The block kinds and the number of code spans of `html`: its element structure as the
+/// parser reads it.
+#[expect(clippy::unwrap_used, reason = "test helper: a panic is a failed test")]
+fn structure(html: &str) -> (Vec<BlockKind>, usize) {
+    let doc = parse_html(html, Span::new(0, html.len()).unwrap()).unwrap();
+    (
+        doc.blocks.iter().map(|b| b.kind.clone()).collect(),
+        doc.code_spans.len(),
+    )
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn a_fix_changes_only_the_text_it_targets(
+        parts in prop::collection::vec(prop::sample::select(&FIX_PARTS[..]), 0..16),
+    ) {
+        let html = format!("<p>{}</p>\n", parts.iter().map(|p| p.0).collect::<String>());
+        // The generator knows which bytes are text, so the expected source is worked out
+        // from the parts and not from the parser under test.
+        let want = format!("<p>{}</p>\n", parts.iter().map(|p| p.1).collect::<String>());
+        let out = fixed(&html, "alpha", "a<b&c>", &json!({"scope": "raw"}));
+        prop_assert_eq!(&out, &want, "{:?}", html);
+        prop_assert_eq!(structure(&out), structure(&html), "{:?}", html);
+        let fixes = parts.iter().filter(|p| p.0 == FIX_PARTS[0].0).count();
+        let shown = rendered(&out);
+        prop_assert_eq!(shown.matches("a<b&c>").count(), fixes, "{:?}", html);
+        prop_assert_eq!(shown.replace("a<b&c>", "alpha"), rendered(&html), "{:?}", html);
     }
 }

@@ -854,4 +854,22 @@ mod tests {
         let exact = units[0].span(&(at..at + 5));
         assert_eq!((exact.start(), exact.end()), (20, 25));
     }
+
+    proptest::proptest! {
+        /// Text the tree builder moves gives offsets out of source order, so the cursor must
+        /// find the right line after a step back or a jump forward.
+        #[test]
+        fn the_line_cursor_finds_the_line_of_offsets_in_any_order(
+            lines in proptest::collection::vec("[a-z]{0,3}(\n|\r\n|\r)?", 0..20),
+            picks in proptest::collection::vec(proptest::arbitrary::any::<proptest::sample::Index>(), 0..40),
+        ) {
+            let source = lines.concat();
+            let table = Lines::new(&source);
+            let mut cursor = LineCursor::new(&table);
+            for pick in picks {
+                let offset = pick.index(source.len() + 1);
+                proptest::prop_assert_eq!(cursor.line_of(offset), table.line_of(offset));
+            }
+        }
+    }
 }
