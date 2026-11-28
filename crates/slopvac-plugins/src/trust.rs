@@ -923,6 +923,8 @@ impl TrustStore {
         let store_lock = self.lock()?;
         let cache_lock = revocations.lock().map_err(TrustError::Revocation)?;
         let current = revocations.cached().map_err(TrustError::Revocation)?;
+        drop(cache_lock);
+        let cache_lock = ();
         if current.fetched_at.is_none() {
             return Err(TrustError::RevocationsMissing);
         }
