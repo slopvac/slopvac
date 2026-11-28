@@ -208,8 +208,9 @@ pub struct TrustInputs<'a> {
 ///
 /// - `args`: the arguments, in order;
 /// - `declaration`: the declaration as it serialises;
-/// - `env`: `[name, commitment]` pairs sorted by name, where each commitment is a hex
-///   HMAC-SHA256 of the name and value under the trust key;
+/// - `env`: `[name, commitment]` pairs sorted by name. Each commitment is the lowercase hex
+///   HMAC-SHA256, under the trust key, of `slopvac trust env v1`, NUL, the name, NUL and the
+///   value;
 /// - `environment`: the managed environment digest, or `null`;
 /// - `interpreter`: the managed interpreter identity, or `null`;
 /// - `key`: the publisher key fingerprint, or `null`;

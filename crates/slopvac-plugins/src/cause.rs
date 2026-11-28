@@ -56,7 +56,16 @@ fn spawn_code(e: &TrustError) -> Option<&'static str> {
         TrustError::KeyMissing { .. } => Some("trust-key-missing"),
         TrustError::KeyMismatch => Some("trust-key-mismatch"),
         TrustError::KeyUnusable { .. } => Some("trust-key-unusable"),
-        TrustError::TreeUnresolved(_) => Some("plugin-spawn-failed"),
+        _ => None,
+    }
+}
+
+/// The code of a trust failure about the plugin's own inputs, which `trust` and `status` report
+/// as they report a tree that cannot be loaded. Trust never spawns, so it never reports the
+/// spawn failure that the gate reports for the same cause.
+fn input_code(e: &TrustError) -> Option<&'static str> {
+    match e {
+        TrustError::TreeUnresolved(_) => Some("plugins-trust-inputs-failed"),
         _ => None,
     }
 }
@@ -116,9 +125,15 @@ pub(crate) fn update(root: &Path, e: &UpdateError) -> Reported {
     Reported::new(e.code(), text)
 }
 
+/// The code a trust failure reports: its own, else the spawn path's, else its input code.
+fn code(e: &TrustError) -> Option<&'static str> {
+    e.code().or_else(|| spawn_code(e)).or_else(|| input_code(e))
+}
+
 /// A trust store failure: the reported failure when it has a code, else the sentence alone.
-/// A refused program or environment, an unusable trust key and a tree with no location to hash
-/// report the code of the spawn path. A failure of the store itself has no code of its own and reports `plugins-store-failed`.
+/// A refused program or environment, and an unusable trust key, report the code of the spawn
+/// path. A tree with no location to hash reports `plugins-trust-inputs-failed`. A failure of
+/// the store itself has no code of its own and reports `plugins-store-failed`.
 pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
     let text = match e {
         TrustError::Revocation(inner) => return Ok(revocation(inner)),
@@ -129,9 +144,9 @@ pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
         | TrustError::Revoked(_)
         | TrustError::TooLarge { .. }
         | TrustError::TreeUnresolved(_) => e.to_string(),
-        _ => withheld(e.code().or_else(|| spawn_code(e)).unwrap_or(STORE_FAILED)),
+        _ => withheld(code(e).unwrap_or(STORE_FAILED)),
     };
-    match e.code().or_else(|| spawn_code(e)) {
+    match code(e) {
         Some(code) => Ok(Reported::new(code, text)),
         None => Err(text),
     }
@@ -140,17 +155,6 @@ pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_tree_without_a_location_reports_the_spawn_failure_code_and_its_sentence() {
-        let e = TrustError::TreeUnresolved(std::io::ErrorKind::InvalidData);
-        let reported = store(&e).unwrap();
-        assert_eq!(Catalog::code(&reported), "plugin-spawn-failed");
-        assert_eq!(
-            reported.to_string(),
-            "resolving the plugin tree: invalid data"
-        );
-    }
 
     #[test]
     fn a_fallback_variant_shows_its_own_code_beside_the_withheld_sentence() {

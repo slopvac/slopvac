@@ -489,7 +489,7 @@ fn managed_python_environments_are_refused_on_windows() {
         &lock_text(std::slice::from_ref(&w)),
         std::slice::from_ref(&w),
     );
-    let store = EnvStore::open(s.dir("envs"));
+    let store = EnvStore::open(s.dir("envs"), s.dir("project"));
     let installer = Installer {
         uv: PathBuf::from(r"C:\\nonexistent\\uv.exe"),
         python_install_dir: PathBuf::from(r"C:\\nonexistent\\python"),
@@ -1102,7 +1102,7 @@ mod unix_only {
         let wheels = demo();
         let vp = install(s, &lock_text(&wheels), &wheels);
         let uv = fake_uv(&s.dir(&format!("{store}-bin")), fake);
-        let env = EnvStore::open(s.dir(store))
+        let env = EnvStore::open(s.dir(store), s.dir("project"))
             .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
             .unwrap();
         Built { vp, env }
@@ -1216,7 +1216,7 @@ mod unix_only {
             &[(MANIFEST_FILE, manifest.as_bytes())],
         );
         let uv = fake_uv(&s.dir("envs-bin"), &Fake::real());
-        let store = EnvStore::open(s.dir("envs"));
+        let store = EnvStore::open(s.dir("envs"), s.dir("project"));
         let env = store
             .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
             .unwrap();
@@ -1281,7 +1281,7 @@ mod unix_only {
         let path = b.vp.root.join(MANIFEST_FILE);
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
         fs::write(&path, manifest("code", "command = \"plugin.py\"\n")).unwrap();
-        let empty = EnvStore::open(s.dir("no-envs"));
+        let empty = EnvStore::open(s.dir("no-envs"), s.dir("project"));
         let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
             .with_python_plugins(&empty)
             .err()
@@ -1297,7 +1297,7 @@ mod unix_only {
         let s = Scratch::new("u-wire-captured-bad");
         let (mut b, _) = manifest_plugin(&s, PY_MANIFEST);
         b.vp.manifest = b"runtime = [".to_vec();
-        let empty = EnvStore::open(s.dir("no-envs"));
+        let empty = EnvStore::open(s.dir("no-envs"), s.dir("project"));
         let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
             .with_python_plugins(&empty)
             .err()
@@ -1309,7 +1309,7 @@ mod unix_only {
     fn wiring_fails_closed_for_a_python_plugin_without_an_environment() {
         let s = Scratch::new("u-wire-missing");
         let (b, _) = manifest_plugin(&s, PY_MANIFEST);
-        let empty = EnvStore::open(s.dir("no-envs"));
+        let empty = EnvStore::open(s.dir("no-envs"), s.dir("project"));
         let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
             .with_python_plugins(&empty)
             .err()
@@ -1331,7 +1331,7 @@ mod unix_only {
             &wheels,
             &[("slopvac-plugin.toml", PY_MANIFEST.as_bytes())],
         );
-        let empty = EnvStore::open(s.dir("no-envs"));
+        let empty = EnvStore::open(s.dir("no-envs"), s.dir("project"));
         let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![vp])
             .with_python_plugins(&empty)
             .err()
@@ -1347,7 +1347,7 @@ mod unix_only {
         let s = Scratch::new("u-wire-native");
         let native = PY_MANIFEST.replace("runtime = \"python\"\npython = \"3.12\"\n", "");
         let (b, _) = manifest_plugin(&s, &native);
-        let empty = EnvStore::open(s.dir("no-envs"));
+        let empty = EnvStore::open(s.dir("no-envs"), s.dir("project"));
         let g = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
             .with_python_plugins(&empty)
             .unwrap();
@@ -1374,12 +1374,17 @@ mod unix_only {
         ));
         let vp = install(&s, &lock, &[]);
         let uv = fake_uv(&s.dir("envs-bin"), &Fake::real());
-        let err = EnvStore::open(s.dir("envs"))
+        let err = EnvStore::open(s.dir("envs"), s.dir("project"))
             .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
             .unwrap_err();
         assert!(matches!(err, PyEnvError::SourceOnly { .. }), "{err:?}");
         assert_eq!(log(&s, "envs"), "", "uv never ran");
-        assert_eq!(EnvStore::open(s.dir("envs")).list().unwrap(), []);
+        assert_eq!(
+            EnvStore::open(s.dir("envs"), s.dir("project"))
+                .list()
+                .unwrap(),
+            []
+        );
     }
 
     #[test]
@@ -1455,7 +1460,7 @@ mod unix_only {
                     ..Fake::real()
                 },
             );
-            let err = EnvStore::open(s.dir("envs"))
+            let err = EnvStore::open(s.dir("envs"), s.dir("project"))
                 .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
                 .unwrap_err();
             assert!(
@@ -1463,7 +1468,13 @@ mod unix_only {
                 "{what}: {err:?}"
             );
             assert!(!marker.exists(), "{what}: the replaced interpreter ran");
-            assert_eq!(EnvStore::open(s.dir("envs")).list().unwrap(), [], "{what}");
+            assert_eq!(
+                EnvStore::open(s.dir("envs"), s.dir("project"))
+                    .list()
+                    .unwrap(),
+                [],
+                "{what}"
+            );
         }
     }
 
@@ -1484,7 +1495,7 @@ mod unix_only {
             std::slice::from_ref(&w),
         );
         let uv = fake_uv(&s.dir("envs-bin"), &Fake::real());
-        let err = EnvStore::open(s.dir("envs"))
+        let err = EnvStore::open(s.dir("envs"), s.dir("project"))
             .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
             .unwrap_err();
         assert!(matches!(err, PyEnvError::Wheel { .. }), "{err:?}");
@@ -1497,7 +1508,7 @@ mod unix_only {
         let wheels = demo();
         let vp = install(&s, &lock_text(&wheels), &wheels);
         let uv = fake_uv(&s.dir("envs-bin"), &Fake::real());
-        let store = EnvStore::open(s.dir("envs")).failing_record_writes();
+        let store = EnvStore::open(s.dir("envs"), s.dir("project")).failing_record_writes();
         let err = store
             .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
             .unwrap_err();
@@ -1511,7 +1522,7 @@ mod unix_only {
         let staging: Vec<_> = fs::read_dir(s.dir("envs/.staging")).unwrap().collect();
         assert!(staging.is_empty(), "staging is left behind: {staging:?}");
         assert!(
-            EnvStore::open(s.dir("envs"))
+            EnvStore::open(s.dir("envs"), s.dir("project"))
                 .load(&vp.tree, "3.12")
                 .unwrap()
                 .is_none()
@@ -1844,18 +1855,6 @@ mod unix_only {
         assert!(matches!(err, PluginError::Untrusted(_)), "{err:?}");
     }
 
-    /// Every rendering of a pyenv or spawn error: the message, then each `source()`.
-    fn chain(err: &dyn std::error::Error) -> String {
-        let mut out = err.to_string();
-        let mut next = err.source();
-        while let Some(e) = next {
-            out.push('\n');
-            out.push_str(&e.to_string());
-            next = e.source();
-        }
-        out
-    }
-
     /// An environment built on a wrapper interpreter at `interp/python` and trusted.
     fn trusted_on_wrapper(s: &Scratch) -> (Built, TrustGate, PluginSpec, PathBuf) {
         let w = s.dir("interp/python");
@@ -1876,9 +1875,12 @@ mod unix_only {
     }
 
     #[rstest::rstest]
-    #[case::target_changed("target")]
-    #[case::content_changed("content")]
-    fn a_changed_interpreter_is_reported_without_its_absolute_path(#[case] change: &str) {
+    #[case::target_changed("target", "`<external>/python-other`")]
+    #[case::content_changed("content", "`<external>/python`")]
+    fn a_changed_interpreter_is_reported_without_its_absolute_path(
+        #[case] change: &str,
+        #[case] expected: &str,
+    ) {
         let s = Scratch::new(&format!("u-interp-shown-{change}"));
         let (b, g, sp, w) = trusted_on_wrapper(&s);
         let text = format!(
@@ -1893,11 +1895,44 @@ mod unix_only {
         } else {
             write_exec(&w, &text);
         }
-        let full = chain(&b.env.verify_full().unwrap_err());
-        let quick = chain(&g.check(&sp).unwrap_err());
+        let full = chain_texts(&b.env.verify_full().unwrap_err()).join("\n");
+        let quick = chain_texts(&g.check(&sp).unwrap_err()).join("\n");
         for shown in [full, quick] {
             assert!(!shown.contains(&s.0.display().to_string()), "{shown}");
-            assert!(shown.contains("<external>/python"), "{shown}");
+            assert!(shown.contains(expected), "{shown}");
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::inside_the_project("", "`interp/python`")]
+    #[case::outside_the_project("project", "`<external>/python`")]
+    fn a_changed_interpreter_shows_under_the_project_root(
+        #[case] project: &str,
+        #[case] expected: &str,
+    ) {
+        let s = Scratch::new(&format!("u-interp-root-{}", project.len()));
+        let root = fs::canonicalize(&s.0).unwrap().join(project);
+        let w = s.dir("interp/python");
+        let text =
+            |tag: &str| format!("#!/bin/sh\n# {tag}\nexec '{}' \"$@\"\n", python().display());
+        write_exec(&w, &text("first"));
+        let wheels = demo();
+        let vp = install(&s, &lock_text(&wheels), &wheels);
+        let fake = Fake {
+            interpreter: w.clone(),
+            ..Fake::real()
+        };
+        let uv = fake_uv(&s.dir("envs-bin"), &fake);
+        let env = EnvStore::open(s.dir("envs"), &root)
+            .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+            .unwrap();
+        let b = Built { vp, env };
+        let (g, sp) = trusted(&s, &b);
+        write_exec(&w, &text("upgraded"));
+        let full = chain_texts(&b.env.verify_full().unwrap_err()).join("\n");
+        let quick = chain_texts(&g.check(&sp).unwrap_err()).join("\n");
+        for shown in [full, quick] {
+            assert!(shown.contains(expected), "{shown}");
         }
     }
 
@@ -1913,9 +1948,9 @@ mod unix_only {
             // Root reads a file whatever its mode, so the refusal cannot be provoked.
             return;
         }
-        let shown = chain(&result.unwrap_err());
+        let shown = chain_texts(&result.unwrap_err()).join("\n");
         assert!(!shown.contains(&s.0.display().to_string()), "{shown}");
-        assert!(shown.contains("<external>/python"), "{shown}");
+        assert!(shown.contains("reading <external>/python: "), "{shown}");
     }
 
     #[test]
@@ -1972,7 +2007,7 @@ mod unix_only {
                 ..Fake::real()
             },
         );
-        let env = EnvStore::open(s.dir("envs"))
+        let env = EnvStore::open(s.dir("envs"), s.dir("project"))
             .build(&installer(uv, InstallNetwork::Offline), &vp.root, &vp.tree)
             .unwrap();
         env.verify_full().unwrap();
@@ -1997,7 +2032,7 @@ mod unix_only {
             },
         );
         // The plain fake environment has about 10 entries, 5 levels and 2 KB.
-        EnvStore::open(s.dir("envs"))
+        EnvStore::open(s.dir("envs"), s.dir("project"))
             .with_test_bounds(40, 8, 100_000, Duration::from_secs(60))
             .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
     }
@@ -2034,7 +2069,13 @@ mod unix_only {
                 matches!(&err, PyEnvError::Refused(m) if m.contains(message)),
                 "{what}: {err:?}"
             );
-            assert_eq!(EnvStore::open(s.dir("envs")).list().unwrap(), [], "{what}");
+            assert_eq!(
+                EnvStore::open(s.dir("envs"), s.dir("project"))
+                    .list()
+                    .unwrap(),
+                [],
+                "{what}"
+            );
             let staging: Vec<_> = fs::read_dir(s.dir("envs/.staging")).unwrap().collect();
             assert!(staging.is_empty(), "{what}: staging left behind");
         }
@@ -2067,7 +2108,7 @@ mod unix_only {
                     ..Fake::real()
                 },
             );
-            EnvStore::open(s.dir(store))
+            EnvStore::open(s.dir(store), s.dir("project"))
                 .with_test_bounds(20_000, 32, 100_000, Duration::from_secs(60))
                 .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
         };
@@ -2106,7 +2147,7 @@ mod unix_only {
                 ..Fake::real()
             },
         );
-        let err = EnvStore::open(s.dir("envs"))
+        let err = EnvStore::open(s.dir("envs"), s.dir("project"))
             .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
             .unwrap_err();
         assert!(
@@ -2160,7 +2201,7 @@ mod unix_only {
             },
         );
         let started = std::time::Instant::now();
-        let err = EnvStore::open(s.dir("envs"))
+        let err = EnvStore::open(s.dir("envs"), s.dir("project"))
             .with_test_bounds(20_000, 32, 1 << 30, Duration::from_secs(1))
             .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
             .unwrap_err();
@@ -2187,7 +2228,7 @@ mod unix_only {
                 ..Fake::real()
             },
         );
-        let err = EnvStore::open(s.dir("envs"))
+        let err = EnvStore::open(s.dir("envs"), s.dir("project"))
             .build(&installer(uv, InstallNetwork::Offline), &vp.root, &vp.tree)
             .unwrap_err();
         assert!(
@@ -2201,7 +2242,7 @@ mod unix_only {
     fn doctor_lists_an_environment_and_removes_it() {
         let s = Scratch::new("u-list");
         let b = build(&s);
-        let store = EnvStore::open(s.dir("envs"));
+        let store = EnvStore::open(s.dir("envs"), s.dir("project"));
         let listed = store.list().unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].path, b.env.root());
@@ -2218,7 +2259,7 @@ mod unix_only {
         let b = build(&s);
         fs::write(site(&b).join("evil.pth"), "import os\n").unwrap();
         let uv = fake_uv(&s.dir("envs-bin"), &Fake::real());
-        let store = EnvStore::open(s.dir("envs"));
+        let store = EnvStore::open(s.dir("envs"), s.dir("project"));
         let again = store
             .ensure(
                 &installer(uv, InstallNetwork::Online),
@@ -2290,7 +2331,7 @@ mod live {
 
     fn build(s: &Scratch, uv: &Path, wheels: &[Wheel<'_>]) -> Built {
         let vp = install(s, &lock_text(wheels), wheels);
-        let env = EnvStore::open(s.dir("envs"))
+        let env = EnvStore::open(s.dir("envs"), s.dir("project"))
             .build(&installer(uv.to_owned()), &vp.root, &vp.tree)
             .unwrap_or_else(|e| panic!("uv is present but the build failed: {e}"));
         Built { vp, env }
@@ -2354,7 +2395,7 @@ mod live {
         let vp = install(&s, &lock_text(&wheels), &wheels);
         let request = pep440_specifier("^3.11").unwrap();
         assert_eq!(request, ">=3.11,<4");
-        let env = EnvStore::open(s.dir("envs"))
+        let env = EnvStore::open(s.dir("envs"), s.dir("project"))
             .build(
                 &Installer {
                     python: request,
@@ -2420,7 +2461,7 @@ mod live {
             &lock_text(std::slice::from_ref(&w)),
             std::slice::from_ref(&w),
         );
-        let err = EnvStore::open(s.dir("envs"))
+        let err = EnvStore::open(s.dir("envs"), s.dir("project"))
             .build(&installer(uv), &vp.root, &vp.tree)
             .unwrap_err();
         assert!(
@@ -2447,7 +2488,7 @@ mod live {
             &lock_text(std::slice::from_ref(&w)),
             std::slice::from_ref(&w),
         );
-        let err = EnvStore::open(s.dir("envs"))
+        let err = EnvStore::open(s.dir("envs"), s.dir("project"))
             .build(&installer(uv), &vp.root, &vp.tree)
             .unwrap_err();
         assert!(matches!(err, PyEnvError::Wheel { .. }), "{err:?}");

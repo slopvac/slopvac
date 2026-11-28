@@ -54,15 +54,16 @@ pub struct PyLock {
 }
 
 impl PyLock {
-    /// Read and check the lock at `path`.
+    /// Read and check the lock at `path`. A read failure names `path` under the project
+    /// `root` (policies section 1.7).
     ///
     /// # Errors
     /// [`PyEnvError::Io`] for a read failure, otherwise as [`Self::parse`].
-    pub fn read(path: &Path) -> Result<Self, PyEnvError> {
+    pub fn read(path: &Path, root: &Path) -> Result<Self, PyEnvError> {
         let mut raw = Vec::new();
         File::open(path)
             .and_then(|f| f.take(MAX_LOCK_BYTES + 1).read_to_end(&mut raw))
-            .map_err(PyEnvError::io(messages::reading(path)))?;
+            .map_err(PyEnvError::io(messages::reading(path, root)))?;
         if raw.len() as u64 > MAX_LOCK_BYTES {
             return Err(PyEnvError::Lock(
                 PyenvPhrase::LockTooLarge.as_static().into(),

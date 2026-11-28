@@ -121,25 +121,35 @@ fn is_exec(_: &fs::Metadata) -> bool {
 }
 
 /// The sha256 of a file and the bytes read, reading at most `max + 1` bytes.
-pub(super) fn sha256_upto(path: &Path, max: u64) -> Result<(String, u64), PyEnvError> {
-    let mut f = File::open(path).map_err(PyEnvError::io(messages::reading(path)))?;
+pub(super) fn sha256_upto(
+    path: &Path,
+    max: u64,
+    project: &Path,
+) -> Result<(String, u64), PyEnvError> {
+    let mut f = File::open(path).map_err(PyEnvError::io(messages::reading(path, project)))?;
     let mut h = Sha256::new();
     let n = io::copy(&mut io::Read::take(&mut f, max.saturating_add(1)), &mut h)
-        .map_err(PyEnvError::io(messages::reading(path)))?;
+        .map_err(PyEnvError::io(messages::reading(path, project)))?;
     Ok((hex(&h.finalize()), n))
 }
 
 /// The sha256 of a whole file the walk bounds do not cover (an interpreter).
-pub(super) fn sha256_file(path: &Path) -> Result<String, PyEnvError> {
-    Ok(sha256_upto(path, u64::MAX - 1)?.0)
+pub(super) fn sha256_file(path: &Path, project: &Path) -> Result<String, PyEnvError> {
+    Ok(sha256_upto(path, u64::MAX - 1, project)?.0)
 }
 
 /// Walk `root` and list it, hashing file contents when `hash` is set.
 ///
 /// Refuses special files, names that are not UTF-8 and trees past `bounds`:
 /// more entries, more directory levels, or more file bytes in total.
-pub(super) fn scan(root: &Path, hash: bool, bounds: WalkBounds) -> Result<Vec<Entry>, PyEnvError> {
-    let meta = fs::symlink_metadata(root).map_err(PyEnvError::io(messages::inspecting(root)))?;
+pub(super) fn scan(
+    root: &Path,
+    hash: bool,
+    bounds: WalkBounds,
+    project: &Path,
+) -> Result<Vec<Entry>, PyEnvError> {
+    let meta =
+        fs::symlink_metadata(root).map_err(PyEnvError::io(messages::inspecting(root, project)))?;
     if !meta.is_dir() {
         return Err(PyEnvError::Refused(
             PyenvText::NotDirectory {
@@ -152,9 +162,9 @@ pub(super) fn scan(root: &Path, hash: bool, bounds: WalkBounds) -> Result<Vec<En
     let mut total = 0u64;
     let mut stack = vec![(root.to_owned(), String::new(), 0usize)];
     while let Some((dir, prefix, depth)) = stack.pop() {
-        let rd = fs::read_dir(&dir).map_err(PyEnvError::io(messages::reading(&dir)))?;
+        let rd = fs::read_dir(&dir).map_err(PyEnvError::io(messages::reading(&dir, project)))?;
         for e in rd {
-            let e = e.map_err(PyEnvError::io(messages::reading(&dir)))?;
+            let e = e.map_err(PyEnvError::io(messages::reading(&dir, project)))?;
             if out.len() >= bounds.nodes {
                 return Err(PyEnvError::Refused(
                     PyenvText::TooManyEntries {
@@ -172,11 +182,11 @@ pub(super) fn scan(root: &Path, hash: bool, bounds: WalkBounds) -> Result<Vec<En
                 format!("{prefix}/{name}")
             };
             let path = e.path();
-            let m =
-                fs::symlink_metadata(&path).map_err(PyEnvError::io(messages::inspecting(&path)))?;
+            let m = fs::symlink_metadata(&path)
+                .map_err(PyEnvError::io(messages::inspecting(&path, project)))?;
             let ft = m.file_type();
             let entry = if ft.is_symlink() {
-                link_entry(&path, rel)?
+                link_entry(&path, rel, project)?
             } else if ft.is_dir() {
                 if depth + 1 >= bounds.depth {
                     return Err(PyEnvError::Refused(
@@ -206,7 +216,7 @@ pub(super) fn scan(root: &Path, hash: bool, bounds: WalkBounds) -> Result<Vec<En
                         .to_string(),
                     ));
                 }
-                file_entry(&path, rel, &m, hash)?
+                file_entry(&path, rel, &m, hash, project)?
             } else {
                 return Err(PyEnvError::Refused(
                     PyenvText::SpecialFile { rel }.to_string(),
@@ -219,8 +229,8 @@ pub(super) fn scan(root: &Path, hash: bool, bounds: WalkBounds) -> Result<Vec<En
     Ok(out)
 }
 
-fn link_entry(path: &Path, rel: String) -> Result<Entry, PyEnvError> {
-    let t = fs::read_link(path).map_err(PyEnvError::io(messages::reading_link(path)))?;
+fn link_entry(path: &Path, rel: String, project: &Path) -> Result<Entry, PyEnvError> {
+    let t = fs::read_link(path).map_err(PyEnvError::io(messages::reading_link(path, project)))?;
     let t = t.into_os_string().into_string().map_err(|_| {
         PyEnvError::Refused(PyenvText::LinkTargetNotUtf8 { rel: rel.clone() }.to_string())
     })?;
@@ -235,9 +245,15 @@ fn link_entry(path: &Path, rel: String) -> Result<Entry, PyEnvError> {
     })
 }
 
-fn file_entry(path: &Path, rel: String, m: &fs::Metadata, hash: bool) -> Result<Entry, PyEnvError> {
+fn file_entry(
+    path: &Path,
+    rel: String,
+    m: &fs::Metadata,
+    hash: bool,
+    project: &Path,
+) -> Result<Entry, PyEnvError> {
     let sha = if hash {
-        let (sha, n) = sha256_upto(path, m.len())?;
+        let (sha, n) = sha256_upto(path, m.len(), project)?;
         if n != m.len() {
             return Err(PyEnvError::Changed {
                 path: rel,
@@ -250,7 +266,7 @@ fn file_entry(path: &Path, rel: String, m: &fs::Metadata, hash: bool) -> Result<
     };
     Ok(Entry {
         size: m.len(),
-        mtime: Some(mtime_of(m).map_err(PyEnvError::io(messages::inspecting(path)))?),
+        mtime: Some(mtime_of(m).map_err(PyEnvError::io(messages::inspecting(path, project)))?),
         exec: is_exec(m),
         sha256: sha,
         target: None,
@@ -304,20 +320,24 @@ pub(super) fn digest_input(entries: &[Entry]) -> serde_json::Value {
 
 /// Make the listed entries below `root` read-only. `root` itself is left for
 /// the caller. The listing comes from [`scan`], so the walk bounds apply.
-pub(super) fn make_read_only(root: &Path, entries: &[Entry]) -> Result<(), PyEnvError> {
+pub(super) fn make_read_only(
+    root: &Path,
+    entries: &[Entry],
+    project: &Path,
+) -> Result<(), PyEnvError> {
     for e in entries.iter().filter(|e| e.kind == Kind::File) {
-        set_read_only(&root.join(&e.path), false)?;
+        set_read_only(&root.join(&e.path), false, project)?;
     }
     // Directories last, deepest first (reverse path order puts `a/b` before
     // `a`), so their contents stay reachable.
     for e in entries.iter().rev().filter(|e| e.kind == Kind::Dir) {
-        set_read_only(&root.join(&e.path), true)?;
+        set_read_only(&root.join(&e.path), true, project)?;
     }
     Ok(())
 }
 
 #[cfg(unix)]
-pub(super) fn set_read_only(path: &Path, dir: bool) -> Result<(), PyEnvError> {
+pub(super) fn set_read_only(path: &Path, dir: bool, project: &Path) -> Result<(), PyEnvError> {
     use std::os::unix::fs::PermissionsExt;
     let meta = fs::symlink_metadata(path)
         .map_err(PyEnvError::io(PyenvPhrase::InspectingEntry.as_static()))?;
@@ -327,11 +347,11 @@ pub(super) fn set_read_only(path: &Path, dir: bool) -> Result<(), PyEnvError> {
         0o444
     };
     fs::set_permissions(path, fs::Permissions::from_mode(mode))
-        .map_err(PyEnvError::io(messages::protecting(path)))
+        .map_err(PyEnvError::io(messages::protecting(path, project)))
 }
 
 #[cfg(not(unix))]
-pub(super) fn set_read_only(path: &Path, dir: bool) -> Result<(), PyEnvError> {
+pub(super) fn set_read_only(path: &Path, dir: bool, project: &Path) -> Result<(), PyEnvError> {
     if dir {
         return Ok(());
     }
@@ -339,5 +359,5 @@ pub(super) fn set_read_only(path: &Path, dir: bool) -> Result<(), PyEnvError> {
         .map_err(PyEnvError::io(PyenvPhrase::InspectingEntry.as_static()))?
         .permissions();
     p.set_readonly(true);
-    fs::set_permissions(path, p).map_err(PyEnvError::io(messages::protecting(path)))
+    fs::set_permissions(path, p).map_err(PyEnvError::io(messages::protecting(path, project)))
 }
