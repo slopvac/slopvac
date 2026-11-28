@@ -384,11 +384,95 @@ fn assert_lifting_the_gate_starts_it_once(world: &World, flags: &[&str], lift: &
     assert_eq!(world.spawns(), 1, "control: the plugin starts once");
 }
 
-/// Each gate alone keeps the provider from starting (policies.md N11, N12). A missing or blank
-/// reviewer model stops a run that would call it before the plugin starts, and a dry run needs
-/// no model.
+/// One gate alone keeps the provider from starting, and lifting only that gate starts it once.
+fn assert_one_gate_keeps_the_provider_from_starting(
+    docs: (&str, &str),
+    config: &str,
+    setup: Setup,
+    flags: &[&str],
+    refusal: Option<&str>,
+    lift: &Lift,
+) {
+    let world = World::new(docs, config);
+    if matches!(setup, Setup::Trusted) {
+        world.trust();
+    }
+
+    let out = world.review(flags);
+
+    if let Some(code) = refusal {
+        assert_refused(&out, code);
+    } else {
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(plan(&out).get("report").is_none());
+    }
+    assert_eq!(world.spawns(), 0, "the plugin started");
+    assert_lifting_the_gate_starts_it_once(&world, flags, lift);
+}
+
+/// A dry run leaves the provider uncalled (policies.md N11). It needs no reviewer model. The
+/// request it prints is checked by the TM-19 test below.
 #[rstest]
-#[case::dry_run(REWRITE, configured(), Setup::Trusted, &["--dry-run"][..], None, Lift::Flags(&[]))]
+#[case::dry_run(REWRITE, configured(), &["--dry-run"][..], Lift::Flags(&[]))]
+#[case::dry_run_without_a_reviewer_model(
+    REWRITE,
+    config("provider = \"provider\"\n"),
+    &["--dry-run"][..],
+    Lift::Flags(&["--reviewer-model", "reviewer-model"])
+)]
+fn n11_a_dry_run_leaves_the_provider_uncalled(
+    #[case] docs: (&str, &str),
+    #[case] config: String,
+    #[case] flags: &[&str],
+    #[case] lift: Lift,
+) {
+    assert_one_gate_keeps_the_provider_from_starting(
+        docs,
+        &config,
+        Setup::Trusted,
+        flags,
+        None,
+        &lift,
+    );
+}
+
+/// A provider that is untrusted, or absent from the config, never starts (policies.md N12).
+#[rstest]
+#[case::untrusted(
+    REWRITE,
+    configured(),
+    Setup::Untrusted,
+    "plugin-untrusted",
+    Lift::Trust
+)]
+#[case::absent_from_the_config(
+    REWRITE,
+    config("model = \"reviewer-model\"\n"),
+    Setup::Trusted,
+    "review-provider-missing",
+    Lift::Config(configured())
+)]
+fn n12_an_untrusted_or_unconfigured_provider_never_starts(
+    #[case] docs: (&str, &str),
+    #[case] config: String,
+    #[case] setup: Setup,
+    #[case] refusal: &str,
+    #[case] lift: Lift,
+) {
+    assert_one_gate_keeps_the_provider_from_starting(
+        docs,
+        &config,
+        setup,
+        &[],
+        Some(refusal),
+        &lift,
+    );
+}
+
+/// The other gates that keep the provider from starting: offline, a mechanical change, and a
+/// missing or blank reviewer model, which stops a run that would call the provider before the
+/// plugin starts.
+#[rstest]
 #[case::offline(
     REWRITE,
     configured(),
@@ -396,15 +480,6 @@ fn assert_lifting_the_gate_starts_it_once(world: &World, flags: &[&str], lift: &
     &["--offline"][..],
     Some("offline-network-needed"),
     Lift::Flags(&[])
-)]
-#[case::untrusted(REWRITE, configured(), Setup::Untrusted, &[][..], Some("plugin-untrusted"), Lift::Trust)]
-#[case::absent_from_the_config(
-    REWRITE,
-    config("model = \"reviewer-model\"\n"),
-    Setup::Trusted,
-    &[][..],
-    Some("review-provider-missing"),
-    Lift::Config(configured())
 )]
 #[case::mechanical(
     MECHANICAL,
@@ -438,15 +513,7 @@ fn assert_lifting_the_gate_starts_it_once(world: &World, flags: &[&str], lift: &
     Some("review-model-missing"),
     Lift::Flags(&["--reviewer-model", "reviewer-model"])
 )]
-#[case::dry_run_without_a_reviewer_model(
-    REWRITE,
-    config("provider = \"provider\"\n"),
-    Setup::Trusted,
-    &["--dry-run"][..],
-    None,
-    Lift::Flags(&["--reviewer-model", "reviewer-model"])
-)]
-fn n11_n12_each_gate_alone_keeps_the_provider_from_starting(
+fn other_gates_alone_keep_the_provider_from_starting(
     #[case] docs: (&str, &str),
     #[case] config: String,
     #[case] setup: Setup,
@@ -454,21 +521,7 @@ fn n11_n12_each_gate_alone_keeps_the_provider_from_starting(
     #[case] refusal: Option<&str>,
     #[case] lift: Lift,
 ) {
-    let world = World::new(docs, &config);
-    if matches!(setup, Setup::Trusted) {
-        world.trust();
-    }
-
-    let out = world.review(flags);
-
-    if let Some(code) = refusal {
-        assert_refused(&out, code);
-    } else {
-        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-        assert!(plan(&out).get("report").is_none());
-    }
-    assert_eq!(world.spawns(), 0, "the plugin started");
-    assert_lifting_the_gate_starts_it_once(&world, flags, &lift);
+    assert_one_gate_keeps_the_provider_from_starting(docs, &config, setup, flags, refusal, &lift);
 }
 
 /// A plugin that declares no provider hook is not a model provider, and it never starts. The
