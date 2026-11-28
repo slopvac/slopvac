@@ -893,3 +893,24 @@ pointer = "/$defs/Notice/allOf/6/if"
 kind = "if-changed"
 reason = "A notice with one of these codes now has a typed data shape (NoticeData, slopvac-model). The engine never wrote other data for these codes, and the keys and types are the ones the contract documents (lint-report.md Notice data, policies.md section 3.5, rules.md). Unknown keys stay allowed."
 approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "review-plan.schema.json"
+pointer = "/if"
+kind = "if-changed"
+reason = "Output schema: the review plan states that `request` is absent when `uses_provider` is false. The condition narrows what slopvac writes and loosens nothing a reader relies on. Approved in https://github.com/slopvac/slopvac/pull/793#issuecomment-7235778377."
+approved_by = "contract (8l4.2), #793"
+
+[[allow]]
+file = "review-plan.schema.json"
+pointer = "/allOf/4/if"
+kind = "if-changed"
+reason = "Output schema: the review plan states that `request` is absent when `uses_provider` is false. The condition narrows what slopvac writes and loosens nothing a reader relies on. Approved in https://github.com/slopvac/slopvac/pull/793#issuecomment-7235778377."
+approved_by = "contract (8l4.2), #793"
+
+[[allow]]
+file = "review-plan.schema.json"
+pointer = "/allOf/4/then/allOf/0/not"
+kind = "constraint-added"
+reason = "Output schema: the review plan states that `request` is absent when `uses_provider` is false. The condition narrows what slopvac writes and loosens nothing a reader relies on. Approved in https://github.com/slopvac/slopvac/pull/793#issuecomment-7235778377."
+approved_by = "contract (8l4.2), #793"
