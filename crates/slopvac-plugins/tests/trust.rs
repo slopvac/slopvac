@@ -1105,6 +1105,14 @@ fn k12_a_valid_key_file_over_4_kib_is_refused_for_its_size() {
             NOW,
         )
         .unwrap_err();
+    assert_eq!(err.code(), Some("key-invalid"), "{err:?}");
+    let text = err.to_string();
+    assert!(text.contains(SHOWN), "{text}");
+    let written = fs::read_to_string(&file).unwrap();
+    let key_line = written.lines().last().unwrap();
+    for quoted in ["untrusted comment", "pppp", key_line] {
+        assert!(!text.contains(quoted), "{text}");
+    }
     match err {
         TrustError::KeyInvalid { file, why, cause } => {
             assert_eq!(file, SHOWN);

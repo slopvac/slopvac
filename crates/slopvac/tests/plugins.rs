@@ -344,6 +344,80 @@ impl Drop for NetworkTally {
     }
 }
 
+/// `rotate` through the binary with a signature file over its 4 KiB cap, online, with stdin
+/// closed and every request routed to the tally: it exits 2 with the `rotation-invalid` refusal
+/// that names the file, opens no connection, and keeps the pin.
+#[test]
+fn rotate_with_a_signature_file_over_its_cap_exits_2_names_the_file_and_opens_no_connection() {
+    let sandbox = Sandbox::new();
+    let key = signed_fixture::Key::primary();
+    let file = sandbox.dir.path().join("acme.pub");
+    fs::write(
+        &file,
+        format!(
+            "untrusted comment: test key\n{}\n",
+            key.public().to_base64()
+        ),
+    )
+    .unwrap();
+    let fp = key.public().fingerprint();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "pin", "acme", &fp, "--key"])
+        .arg(&file)
+        .assert()
+        .success();
+    let new = signed_fixture::Key::secondary();
+    let (old_pk, new_pk) = (key.public(), new.public());
+    let statement = format!(
+        "{{\"namespace\":\"acme\",\"newKey\":\"{}\",\"newKeyId\":\"{}\",\"notBefore\":\"2026-11-10T00:00:00Z\",\"oldKeyId\":\"{}\",\"schema_version\":1,\"type\":\"rotation\"}}",
+        new_pk.to_base64(),
+        new_pk.key_id(),
+        old_pk.key_id()
+    );
+    let dir = sandbox.dir.path();
+    fs::write(dir.join("rotation.json"), &statement).unwrap();
+    fs::write(dir.join("old.minisig"), vec![b'x'; 4097]).unwrap();
+    fs::write(dir.join("new.minisig"), new.sign(statement.as_bytes())).unwrap();
+    let tally = NetworkTally::start();
+    let mut cmd = sandbox.slopvac();
+    tally.route(&mut cmd);
+    let rotated = cmd
+        .args(["plugins", "rotate", "acme", &new_pk.fingerprint()])
+        .arg("--statement")
+        .arg(dir.join("rotation.json"))
+        .arg("--old-signature")
+        .arg(dir.join("old.minisig"))
+        .arg("--new-signature")
+        .arg(dir.join("new.minisig"))
+        .write_stdin(Vec::<u8>::new())
+        .timeout(std::time::Duration::from_secs(20))
+        .assert()
+        .code(2);
+    assert_eq!(
+        String::from_utf8(rotated.get_output().stderr.clone()).unwrap(),
+        "error[rotation-invalid]: rotation refused: <external>/old.minisig cannot be read or holds more than 4 KiB\n"
+    );
+    assert_eq!(tally.requests(), 0, "rotate opened a connection");
+    let pins = slopvac_plugins::trust::TrustStore::open(trust_file(&sandbox).parent().unwrap())
+        .pinned_map()
+        .unwrap();
+    let pinned: Vec<(String, String, Vec<String>)> = pins
+        .iter()
+        .map(|(scope, keys)| {
+            (
+                scope.registry().to_owned(),
+                scope.namespace().to_owned(),
+                keys.iter().map(|k| k.fingerprint()).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        pinned,
+        [("ghcr.io".to_owned(), "acme".to_owned(), vec![fp])]
+    );
+}
+
 /// Sticky offline: the extended file turns it on, the project turns it off, and the run opens no
 /// connection at all, the revocation fetch included.
 #[test]
