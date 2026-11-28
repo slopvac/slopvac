@@ -662,6 +662,18 @@ pub(crate) enum TransportPhrase {
     #[code("plugins-oci-realm-missing")]
     #[text("bearer challenge without realm")]
     OciRealmMissing,
+    /// A registry body is not JSON at all.
+    #[code("plugins-oci-json-syntax")]
+    #[text("the body is not valid JSON")]
+    OciJsonSyntax,
+    /// A registry body ends before the JSON value does.
+    #[code("plugins-oci-json-ends")]
+    #[text("the JSON ends early")]
+    OciJsonEnds,
+    /// A registry body is JSON of the wrong shape.
+    #[code("plugins-oci-json-shape")]
+    #[text("a field is missing or has the wrong type or form")]
+    OciJsonShape,
     /// A token response is invalid JSON.
     #[code("plugins-oci-token-json")]
     #[text("token response is not JSON")]
@@ -914,6 +926,18 @@ pub(crate) enum TransportPhrase {
     #[code("plugins-apply-editor-task")]
     #[text("editor task file")]
     ApplyEditorTask,
+}
+
+/// The safe reason for a body that failed to parse. The parser's own text quotes the input, so
+/// only the category of the failure is kept (policies, section 1.7).
+pub(crate) fn json_failure(e: &serde_json::Error) -> &'static str {
+    use serde_json::error::Category;
+    match e.classify() {
+        Category::Eof => TransportPhrase::OciJsonEnds,
+        Category::Data => TransportPhrase::OciJsonShape,
+        Category::Syntax | Category::Io => TransportPhrase::OciJsonSyntax,
+    }
+    .as_static()
 }
 
 pub(crate) fn oci_invalid(detail: &str) -> String {
@@ -1569,6 +1593,12 @@ mod tests {
             (P::OciRedirectCount, "more than 5 redirects"),
             (P::OciLocationMissing, "no Location header"),
             (P::OciRealmMissing, "bearer challenge without realm"),
+            (P::OciJsonSyntax, "the body is not valid JSON"),
+            (P::OciJsonEnds, "the JSON ends early"),
+            (
+                P::OciJsonShape,
+                "a field is missing or has the wrong type or form",
+            ),
             (P::OciTokenJson, "token response is not JSON"),
             (P::OciUploadLocation, "upload response without Location"),
             (P::OciUploadHost, "upload target is on another host"),

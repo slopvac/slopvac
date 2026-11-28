@@ -1101,6 +1101,9 @@ plugins-oci-helper-wait text
 plugins-oci-index text
 plugins-oci-insecure-url text
 plugins-oci-invalid text
+plugins-oci-json-ends text
+plugins-oci-json-shape text
+plugins-oci-json-syntax text
 plugins-oci-location-missing text
 plugins-oci-location-unusable text
 plugins-oci-manifest text
