@@ -164,7 +164,8 @@ fn invalid_results_are_rejected_with_a_code() {
 
 #[test]
 fn pending_data_publishes_no_ranking_in_the_table_or_in_prime() {
-    let pending_text = "Reviewer model recommendations are not available yet, because they await re-evaluation.";
+    let pending_text =
+        "Reviewer model recommendations are not available yet, because they await re-evaluation.";
     let md = markdown(&pending());
     assert!(md.contains(pending_text));
     assert!(!md.contains("##"));
