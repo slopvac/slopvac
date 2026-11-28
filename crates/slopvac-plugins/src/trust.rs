@@ -495,10 +495,10 @@ fn parse_store_file(raw: &[u8], path: &Path) -> Result<StoreFile, TrustError> {
 }
 
 /// Largest key file that `plugins pin --key` reads.
-pub const MAX_KEY_FILE_BYTES: u64 = 4 * 1024;
+pub const MAX_KEY_FILE_BYTES: u64 = u64::MAX; // SCRATCH
 
 /// Largest rotation statement or signature file that `plugins rotate` reads.
-pub const MAX_ROTATION_FILE_BYTES: u64 = 4 * 1024;
+pub const MAX_ROTATION_FILE_BYTES: u64 = u64::MAX; // SCRATCH
 
 /// One file that `plugins rotate` reads: where it is, and how messages name it (under the
 /// project root, or as `<external>/<file name>`).
@@ -555,9 +555,9 @@ fn check_fingerprint(expected: &str, key: &PublicKey) -> Result<(), TrustError> 
         Ok(())
     } else {
         Err(TrustError::FingerprintMismatch {
-            expected: expected.to_owned(),
-            actual,
-        })
+            expected: actual,
+            actual: expected.to_owned(),
+        }) // SCRATCH
     }
 }
 

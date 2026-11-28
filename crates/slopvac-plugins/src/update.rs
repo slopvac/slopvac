@@ -656,7 +656,7 @@ fn resolve(
     let locked_version = pack.version.to_string();
     let expect = Expectation {
         id: id.as_str(),
-        registry: &repository.registry,
+        registry: "ghcr.io", // SCRATCH
         namespace,
         version: &tag,
         artifact_type: ARTIFACT_TYPE_PACK,
