@@ -463,6 +463,17 @@ struct EnvRecord {
     entries: Vec<Entry>,
 }
 
+/// The project root as interpreter diagnostics see it.
+#[derive(Debug, Clone)]
+enum ProjectRoot {
+    /// The root with its links resolved.
+    Resolved(PathBuf),
+    /// The root did not resolve. The store keeps no OS error, because its text can name a path
+    /// outside the project (policies section 1.7), so an interpreter path shows only as
+    /// `<external>/<file name>`.
+    Unresolved,
+}
+
 /// A built environment and its record.
 #[derive(Debug, Clone)]
 pub struct ManagedEnv {
@@ -470,6 +481,10 @@ pub struct ManagedEnv {
     record: EnvRecord,
     /// The project root that its errors show paths under (policies section 1.7).
     project: PathBuf,
+    /// The project root with its links resolved, which the store took once when it opened.
+    /// Interpreter diagnostics compare against it, because recorded interpreter paths are
+    /// canonical.
+    canonical_project: ProjectRoot,
 }
 
 /// The interpreter inside an environment root, as uv lays it out.
@@ -572,6 +587,17 @@ impl ManagedEnv {
         )
     }
 
+    /// A canonical path as the project shows it. The recorded interpreter paths are canonical,
+    /// so this compares them with the canonical project root that the store resolved once.
+    fn shown(&self, canonical: &Path) -> String {
+        match &self.canonical_project {
+            ProjectRoot::Resolved(root) => slopvac_fs::display_under_root(canonical, root),
+            // The `.` root accepts only relative paths, and a canonical path is absolute, so
+            // this renders `<external>/<file name>`.
+            ProjectRoot::Unresolved => slopvac_fs::display_under_root(canonical, Path::new(".")),
+        }
+    }
+
     fn check_interpreter(&self, full: bool) -> Result<(), PyEnvError> {
         let files = &self.record.interpreter.files;
         let resolved = fs::canonicalize(self.python()).map_err(PyEnvError::io(
@@ -579,13 +605,13 @@ impl ManagedEnv {
         ))?;
         if files.first().map(|f| Path::new(&f.path)) != Some(resolved.as_path()) {
             return Err(PyEnvError::Changed {
-                path: slopvac_fs::display_under_root(&resolved, &self.project),
+                path: self.shown(&resolved),
                 why: PyenvPhrase::NotRecordedInterpreter.as_static().into(),
             });
         }
         for f in files {
             let changed = |why: &str| PyEnvError::Changed {
-                path: slopvac_fs::display_under_root(Path::new(&f.path), &self.project),
+                path: self.shown(Path::new(&f.path)),
                 why: why.to_owned(),
             };
             let meta =
@@ -624,6 +650,7 @@ pub struct EnvSummary {
 pub struct EnvStore {
     root: PathBuf,
     project: PathBuf,
+    canonical_project: ProjectRoot,
     fail_record_writes: bool,
     limits: Limits,
 }
@@ -643,9 +670,15 @@ impl EnvStore {
     /// (policies section 1.7).
     #[must_use]
     pub fn open(root: impl Into<PathBuf>, project: impl Into<PathBuf>) -> Self {
+        let project = project.into();
+        let canonical_project = match fs::canonicalize(&project) {
+            Ok(resolved) => ProjectRoot::Resolved(resolved),
+            Err(_) => ProjectRoot::Unresolved,
+        };
         Self {
             root: root.into(),
-            project: project.into(),
+            canonical_project,
+            project,
             fail_record_writes: false,
             limits: Limits {
                 walk: WalkBounds::default(),
@@ -720,6 +753,7 @@ impl EnvStore {
             root: self.root.join(&key),
             record,
             project: self.project.clone(),
+            canonical_project: self.canonical_project.clone(),
         }))
     }
 
@@ -840,6 +874,7 @@ impl EnvStore {
             root: final_root,
             record,
             project: self.project.clone(),
+            canonical_project: self.canonical_project.clone(),
         })
     }
 

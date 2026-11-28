@@ -11,7 +11,7 @@ use slopvac_fs::display_under_root;
 use slopvac_messages::{Catalog, Entry, render};
 
 use crate::lock::LockDiff;
-use crate::messages::cli::Reported;
+use crate::messages::cli::{Reported, RunError};
 use crate::messages::sync::{cache_tampered, cache_unreadable, config_drift, update_busy};
 use crate::revoke::RevocationError;
 use crate::sync::SyncError;
@@ -77,7 +77,14 @@ fn spawn_code(e: &TrustError) -> Option<&'static str> {
 /// spawn failure that the gate reports for the same cause.
 pub(crate) fn input_code(e: &TrustError) -> Option<&'static str> {
     match e {
-        TrustError::TreeUnresolved(_) => Some("plugins-trust-inputs-failed"),
+        // The code of the registered message that `plugins trust` reports for the same failure.
+        TrustError::TreeUnresolved(_) => Some(
+            RunError::TrustInputs {
+                id: String::new(),
+                detail: String::new(),
+            }
+            .code(),
+        ),
         _ => None,
     }
 }
