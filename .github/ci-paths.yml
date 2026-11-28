@@ -136,8 +136,6 @@ package:
   - 'packages/slopvac-lint/vale/styles-verified/**'
   - 'packages/slopvac-lint/docs/rules.md'
   - 'scripts/install_vale.py'
-  # The CLI E2E job lints the guidance text that this crate renders.
-  - 'crates/slopvac-agents/**'
 
 # The composite action at the repository root, run with the binary built from
 # this checkout.
@@ -152,6 +150,12 @@ action:
   - 'Cargo.toml'
   - 'Cargo.lock'
   - 'rust-toolchain.toml'
+  # The prime prose gate lints the guidance text that the binary renders. Besides crates/,
+  # the binary embeds the config schemas and the legacy profiles, and the gate reads the
+  # script and the fixture config (.github/action-fixtures/** is above).
+  - 'schemas/**'
+  - 'docs/contract/compat/**'
+  - 'scripts/ci/gate_prime_prose.sh'
 
 # The linter supports these prose extensions. Keep this list aligned with
 # slopvac.contract.LINTABLE so repository prose cannot bypass its own gate.
