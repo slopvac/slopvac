@@ -212,6 +212,11 @@ impl MemorySource {
         Self { files }
     }
 
+    /// The captured bytes of the file at `path`, when the source holds one.
+    pub(crate) fn bytes(&self, path: &str) -> Option<&[u8]> {
+        self.files.get(path).map(Vec::as_slice)
+    }
+
     fn text(&self, path: &str, cap: u64) -> Result<String, SourceError> {
         let bytes = self.files.get(path).ok_or_else(|| SourceError::Missing {
             path: path.to_owned(),

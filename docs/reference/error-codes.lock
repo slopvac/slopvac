@@ -794,6 +794,8 @@ plugin-tampered error
 plugin-timeout error
 plugin-too-large error
 plugin-too-many-entries error
+plugin-trust-store-unreadable text
+plugin-trust-unchecked text
 plugin-untrusted error
 plugin-usage error
 plugins-api-document-too-large text
