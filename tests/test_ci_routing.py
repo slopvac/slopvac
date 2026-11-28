@@ -1077,20 +1077,19 @@ def test_a_change_to_the_generated_rules_reference_alone_runs_its_drift_check():
 
 # --- the prime prose gate --------------------------------------------------
 
-PRIME_GATE_STEP = "Gate the rendered prime guidance"
+GATE_SCRIPT = "scripts/ci/gate_prime_prose.sh"
 
 
-def prime_gate_job() -> str:
-    """The test.yml job that calls the workflow holding the prime prose gate step."""
+def gate_location() -> tuple[str, dict]:
+    """The test.yml job that calls the job whose steps run the gate script, and that job."""
     for name, job in JOBS.items():
         uses = job.get("uses", "")
         if not uses.startswith("./.github/workflows/"):
             continue
-        called = load(uses.rsplit("/", 1)[1])["jobs"]
-        steps = [s for j in called.values() for s in j.get("steps", [])]
-        if any(s.get("name") == PRIME_GATE_STEP for s in steps):
-            return name
-    pytest.fail(f"no workflow called from test.yml has the step {PRIME_GATE_STEP!r}")
+        for called in load(uses.rsplit("/", 1)[1])["jobs"].values():
+            if any(GATE_SCRIPT in s.get("run", "") for s in called.get("steps", [])):
+                return name, called
+    pytest.fail(f"no workflow called from test.yml runs {GATE_SCRIPT}")
 
 
 @pytest.mark.parametrize(
@@ -1112,31 +1111,55 @@ def prime_gate_job() -> str:
         "crates/slopvac-rules/tests/fixtures/core-v3/ai-residue.json",
         "crates/slopvac-styles/presets/ste.toml",
         "crates/slopvac-engine/src/lib.rs",
-        # The build, the fixture config and the gate script.
+        # The build: PCRE2 linking comes from .cargo/config.toml.
+        ".cargo/config.toml",
         "Cargo.lock",
         "rust-toolchain.toml",
-        "scripts/ci/gate_prime_prose.sh",
+        # The script and the fixture config.
+        GATE_SCRIPT,
         ".github/action-fixtures/slopvac-v3.toml",
     ],
 )
 def test_every_input_of_the_rendered_prime_text_runs_the_prime_gate(path):
-    job = prime_gate_job()
-    assert evaluate(JOBS[job]["if"], classes_of([path])) is True
+    name, _ = gate_location()
+    assert evaluate(JOBS[name]["if"], classes_of([path])) is True
 
 
-def test_the_2x_e2e_job_builds_no_rust():
-    jobs = load("cli-e2e.yml")["jobs"].values()
-    steps = [s for j in jobs for s in j.get("steps", [])]
-    assert [s["name"] for s in steps if "cargo" in s.get("run", "")] == []
+@pytest.mark.parametrize(
+    "path",
+    [
+        # Each changes the gate or what it renders, so its coverage tests must run too.
+        GATE_SCRIPT,
+        "tests/test_prime_prose_gate.py",
+        "crates/slopvac-agents/topics/review.md.j2",
+        "crates/slopvac/src/owners.rs",
+        ".cargo/config.toml",
+    ],
+)
+def test_every_input_of_the_prime_gate_runs_its_coverage_tests(path):
+    # The `test` job runs the whole root pytest suite, tests/test_prime_prose_gate.py
+    # included, against the built binary.
+    steps = JOBS["test"]["steps"]
+    assert any(s.get("run", "").strip() == "python3 -m pytest" for s in steps)
+    assert evaluate(JOBS["test"]["if"], classes_of([path])) is True
 
 
-def test_the_prime_gate_runs_after_the_job_builds_the_binary():
-    uses = JOBS[prime_gate_job()]["uses"]
-    steps = next(
-        j["steps"]
-        for j in load(uses.rsplit("/", 1)[1])["jobs"].values()
-        if any(s.get("name") == PRIME_GATE_STEP for s in j["steps"])
-    )
-    names = [s.get("name") for s in steps]
-    assert "Build the slopvac binary" in names
-    assert names.index("Build the slopvac binary") < names.index(PRIME_GATE_STEP)
+def test_the_3x_job_runs_the_gate_with_the_binary_it_built():
+    _, job = gate_location()
+    steps = job["steps"]
+    gate = next(i for i, s in enumerate(steps) if GATE_SCRIPT in s.get("run", ""))
+    # The step that builds the binary is the one that runs `cargo build -p slopvac`.
+    builds = [
+        i
+        for i, s in enumerate(steps)
+        if "cargo build" in s.get("run", "") and "-p slopvac" in s.get("run", "")
+    ]
+    assert builds
+    assert [i for i in builds if i < gate], "no build step runs before the gate"
+    # The gate gets that build's output, and the files it names exist.
+    run = steps[gate]["run"]
+    assert '"$SLOPVAC_BIN"' in run
+    assert job["env"]["SLOPVAC_BIN"].endswith("/target/debug/slopvac")
+    assert (ROOT / GATE_SCRIPT).is_file()
+    assert (ROOT / ".github/action-fixtures/slopvac-v3.toml").is_file()
+    assert ".github/action-fixtures/slopvac-v3.toml" in run
