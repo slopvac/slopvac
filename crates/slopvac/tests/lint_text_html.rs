@@ -139,3 +139,92 @@ fn a_front_matter_block_in_an_html_file_is_prose(#[case] block: &str) {
         "{doc}"
     );
 }
+
+/// A page whose `leverage` gets a fix in Markdown: `use`, from the core word list. `<p>We `
+/// is 6 bytes, so the word starts at column 7 of line 2.
+const FIXABLE: &str = "<html><body>\n<p>We leverage the data.</p>\n</body></html>\n";
+
+/// A page whose findings carry no fix in any file type.
+const UNFIXABLE: &str = "<p>We delve into it.</p>\n";
+
+const NOTICE: &str = "fix-html-unavailable";
+
+/// The root notices of a JSON report with the code `fix-html-unavailable`, as
+/// `(level, path)`.
+fn fix_notices(json: &str) -> Vec<(String, String)> {
+    let report: Value = serde_json::from_str(json).expect("a JSON report");
+    report["notices"]
+        .as_array()
+        .expect("notices")
+        .iter()
+        .filter(|n| n["code"] == NOTICE)
+        .map(|n| {
+            (
+                n["level"].as_str().unwrap_or_default().to_owned(),
+                n["path"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_fix_run_leaves_an_html_file_unchanged_and_still_reports_its_findings() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let page = dir.path().join("page.html");
+    std::fs::write(&page, FIXABLE).expect("write");
+    // The slop error stays, so the gate fails.
+    let (out, err) = run(slopvac(dir.path()).args(["lint", "--fix", "page.html"]), 1);
+    assert!(out.contains(&format!("2:7 {SLOP}")), "{out}");
+    assert!(!err.contains("input-unsupported"), "{err}");
+    assert_eq!(std::fs::read(&page).expect("read"), FIXABLE.as_bytes());
+}
+
+#[rstest]
+#[case::a_fix_run_with_a_fixable_finding(&["--fix"], FIXABLE, 1)]
+#[case::a_lint_run(&[], FIXABLE, 0)]
+#[case::a_fix_run_with_no_fixable_finding(&["--fix"], UNFIXABLE, 0)]
+fn a_fix_run_reports_one_notice_only_when_a_fix_was_dropped(
+    #[case] fix: &[&str],
+    #[case] html: &str,
+    #[case] notices: usize,
+) {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let page = dir.path().join("page.html");
+    std::fs::write(&page, html).expect("write");
+    let cmd = slopvac(dir.path())
+        .args(["lint", "--format", "json"])
+        .args(fix)
+        .arg("page.html");
+    let (out, _) = run(cmd, 1);
+    let want = vec![("info".to_owned(), "page.html".to_owned()); notices];
+    assert_eq!(fix_notices(&out), want, "{out}");
+    assert_eq!(std::fs::read(&page).expect("read"), html.as_bytes());
+}
+
+#[rstest]
+#[case::json("json")]
+#[case::sarif("sarif")]
+#[case::markdown("markdown")]
+#[case::html("html")]
+fn each_format_that_shows_root_notices_carries_the_notice(#[case] format: &str) {
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::write(dir.path().join("page.html"), FIXABLE).expect("write");
+    let (out, _) = run(
+        slopvac(dir.path()).args(["lint", "--fix", "--format", format, "page.html"]),
+        1,
+    );
+    assert_eq!(out.matches(NOTICE).count(), 1, "{out}");
+    let message = "page.html: fixes are not applied in HTML files";
+    assert!(out.contains(message), "{out}");
+    if format == "sarif" {
+        let sarif: Value = serde_json::from_str(&out).expect("SARIF");
+        let notes = &sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"];
+        let note = notes
+            .as_array()
+            .expect("notifications")
+            .iter()
+            .find(|n| n["descriptor"]["id"] == NOTICE)
+            .expect("the notice");
+        assert_eq!(note["level"], "note", "{note}");
+    }
+}
