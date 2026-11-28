@@ -137,7 +137,13 @@ pub(crate) fn installed_version(
 /// The version in a `--version --json` document, which must name `slopvac`. Members and notice
 /// fields that this build does not know are ignored: the executable may be a newer one.
 fn parse(output: &[u8]) -> Result<semver::Version, ProbeError> {
-    let doc: Document = serde_json::from_slice(output).map_err(|_| ProbeError::Unparseable)?;
+    // A derived struct also reads a JSON array in field order, and the document is an object.
+    let value: serde_json::Value =
+        serde_json::from_slice(output).map_err(|_| ProbeError::Unparseable)?;
+    if !value.is_object() {
+        return Err(ProbeError::Unparseable);
+    }
+    let doc: Document = serde_json::from_value(value).map_err(|_| ProbeError::Unparseable)?;
     if doc.name != "slopvac" {
         return Err(ProbeError::Unparseable);
     }
