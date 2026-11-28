@@ -239,6 +239,28 @@ jobs:
           # shellcheck disable=SC2086
           cargo clippy $RUST_MODIFIED --all-targets --all-features --locked -- -D warnings
 
+      # `--all-features` turns the `test-support` seams on, so production code that only
+      # compiles without them (an unused `self`, an unused import) escapes the step above.
+      # Lint each crate that declares a feature named `test-support` on its own, with default
+      # features and no target flag, so only the lib and bin targets build and no
+      # dev-dependency turns the feature back on. Test targets always need the seam and the
+      # step above lints them. A test seam must be named `test-support`, or this step does not
+      # see it. Clippy also lints workspace path dependencies, so dependents add nothing.
+      - name: Clippy without test-support
+        run: |
+          set -euo pipefail
+          crates=$(cargo metadata --format-version 1 --no-deps --locked \
+            | jq -r '.packages[] | select(.features | has("test-support")) | .name')
+          if [ -z "$crates" ]; then
+            echo "::error::No crate declares a test-support feature. Rename the seam or remove this step."
+            exit 1
+          fi
+          for crate in $crates; do
+            echo "::group::clippy -p $crate"
+            cargo clippy -p "$crate" --locked -- -D warnings
+            echo "::endgroup::"
+          done
+
       - name: Generated schemas
         run: cargo run -p slopvac-schemas --locked -- check
 
