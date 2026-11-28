@@ -195,6 +195,8 @@ shell:
 precommit:
   - '.github/workflows/**'
   - '.pre-commit-config.yaml'
+  - '.yamllint.yml'
+  - '.github/ci-paths.yml'
 
 complexity:
   - '.github/workflows/**'

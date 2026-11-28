@@ -90,10 +90,6 @@ jobs:
         run: pip install "zizmor==1.6.0"
       - name: zizmor
         run: zizmor .github/workflows/*.yml
-      - name: Install yamllint
-        run: pip install "yamllint==1.37.1"
-      - name: yamllint
-        run: yamllint -c .yamllint.yml .github/workflows/ .github/ci-paths.yml
   typos:
     if: ${{ inputs.code || inputs.docs || inputs.ci }}
     runs-on: ubuntu-latest

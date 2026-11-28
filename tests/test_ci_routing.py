@@ -110,6 +110,12 @@ def test_evals_class_includes(path):
     assert in_class("evals", path)
 
 
+@pytest.mark.parametrize("path", [".yamllint.yml", ".github/ci-paths.yml", ".pre-commit-config.yaml"])
+def test_precommit_class_covers_the_yamllint_hook_inputs(path):
+    # The yamllint hook reads .yamllint.yml and ci-paths.yml, so a change to either must run prek.
+    assert in_class("precommit", path)
+
+
 @pytest.mark.parametrize("path", ["CLA.md", "tests/test_cla_text.py"])
 def test_code_class_runs_the_cla_text_test(path):
     # tests/test_cla_text.py hashes CLA.md, so a change to the agreement text must run the tests.

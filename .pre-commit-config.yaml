@@ -7,6 +7,15 @@ repos:
         language: system
         pass_filenames: false
         files: ^packages/slopvac-lint/.*\.py$
+      # The yamllint pin lives only here. The hook is `language: system` through uvx, so prek builds
+      # no environment and never downloads uv. CI's prek job gets uv from setup-uv. Prek passes
+      # tracked files only, so the scope is the tracked workflow files plus .github/ci-paths.yml.
+      - id: yamllint
+        name: yamllint workflows
+        entry: uvx yamllint==1.37.1 -c .yamllint.yml
+        language: system
+        types: [yaml]
+        files: ^(\.github/workflows/|\.github/ci-paths\.yml$)
       - id: cargo-fmt
         name: cargo fmt
         entry: cargo fmt --all --check
