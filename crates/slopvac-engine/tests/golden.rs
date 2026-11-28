@@ -53,11 +53,7 @@ use slopvac_rules::{CompileOptions, MatchKind};
 const PROFILES: [&str; 3] = ["strict", "normal", "relaxed"];
 
 /// Inputs that no engine entry point reads yet: input id, the owning bead and why.
-const SKIPPED: [(&str, &str, &str); 1] = [(
-    "format-html",
-    "slopvac-8l4.3.42",
-    "the engine has no standalone HTML file kind (`Kind` stops at Markdown, MDX, RST and diagrams)",
-)];
+const SKIPPED: [(&str, &str, &str); 0] = [];
 
 /// The repository is the project: an interpreter inside it is never used.
 fn rst_options() -> RstOptions {
@@ -137,6 +133,7 @@ fn lint(engine: &Engine, entry: &Entry) -> Option<Value> {
     let input = match entry.language.as_str() {
         "markdown" => Input::markdown(name, &text),
         "mdx" => Input::mdx(name, &text),
+        "html" => Input::html(name, &text),
         "rst" => {
             // RST needs docutils. CI sets the variable, so a missing interpreter fails there.
             if let Err(error) = RstAdapter::new(rst_options()).interpreter() {
