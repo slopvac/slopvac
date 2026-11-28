@@ -468,6 +468,8 @@ struct EnvRecord {
 pub struct ManagedEnv {
     root: PathBuf,
     record: EnvRecord,
+    /// The project root that its errors show paths under (policies section 1.7).
+    project: PathBuf,
 }
 
 /// The interpreter inside an environment root, as uv lays it out.
@@ -549,7 +551,7 @@ impl ManagedEnv {
         self.check_interpreter(false)?;
         compare(
             &self.record.entries,
-            &scan(&self.root, false, WalkBounds::default())?,
+            &scan(&self.root, false, WalkBounds::default(), &self.project)?,
             false,
         )
     }
@@ -565,7 +567,7 @@ impl ManagedEnv {
         self.check_interpreter(true)?;
         compare(
             &self.record.entries,
-            &scan(&self.root, true, WalkBounds::default())?,
+            &scan(&self.root, true, WalkBounds::default(), &self.project)?,
             true,
         )
     }
@@ -577,13 +579,13 @@ impl ManagedEnv {
         ))?;
         if files.first().map(|f| Path::new(&f.path)) != Some(resolved.as_path()) {
             return Err(PyEnvError::Changed {
-                path: resolved.display().to_string(),
+                path: slopvac_fs::display_under_root(&resolved, &self.project),
                 why: PyenvPhrase::NotRecordedInterpreter.as_static().into(),
             });
         }
         for f in files {
             let changed = |why: &str| PyEnvError::Changed {
-                path: f.path.clone(),
+                path: slopvac_fs::display_under_root(Path::new(&f.path), &self.project),
                 why: why.to_owned(),
             };
             let meta =
@@ -594,7 +596,7 @@ impl ManagedEnv {
                 return Err(changed(PyenvPhrase::ChangedSizeOrTime.as_static()));
             }
             if full {
-                let sha = sha256_file(Path::new(&f.path))?;
+                let sha = sha256_file(Path::new(&f.path), &self.project)?;
                 if sha != f.sha256 {
                     return Err(changed(PyenvPhrase::ChangedContent.as_static()));
                 }
@@ -621,6 +623,7 @@ pub struct EnvSummary {
 #[derive(Debug, Clone)]
 pub struct EnvStore {
     root: PathBuf,
+    project: PathBuf,
     fail_record_writes: bool,
     limits: Limits,
 }
@@ -634,10 +637,15 @@ struct Limits {
 
 impl EnvStore {
     /// A store in `root`. Nothing is created until a build.
+    ///
+    /// Its errors, and the errors of the environments it loads or builds, show a path relative
+    /// to the `project` root when it lies under it, and as `<external>/<file name>` otherwise
+    /// (policies section 1.7).
     #[must_use]
-    pub fn open(root: impl Into<PathBuf>) -> Self {
+    pub fn open(root: impl Into<PathBuf>, project: impl Into<PathBuf>) -> Self {
         Self {
             root: root.into(),
+            project: project.into(),
             fail_record_writes: false,
             limits: Limits {
                 walk: WalkBounds::default(),
@@ -711,6 +719,7 @@ impl EnvStore {
         Ok(Some(ManagedEnv {
             root: self.root.join(&key),
             record,
+            project: self.project.clone(),
         }))
     }
 
@@ -749,10 +758,11 @@ impl EnvStore {
         supported_platform()?;
         installer.check()?;
         verify_tree(plugin_root, tree)?;
-        let lock = PyLock::read(&plugin_root.join(LOCK_FILE))?;
+        let project = self.project.as_path();
+        let lock = PyLock::read(&plugin_root.join(LOCK_FILE), project)?;
         lock.verify_wheels(plugin_root)?;
 
-        create_private_dir(&self.root)?;
+        create_private_dir(&self.root, project)?;
         let key = Self::key(tree, &installer.python);
         let guard = OpenOptions::new()
             .create(true)
@@ -764,7 +774,7 @@ impl EnvStore {
             .lock()
             .map_err(PyEnvError::io(PyenvPhrase::LockingEnv.as_static()))?;
         let staging_parent = self.root.join(".staging");
-        create_private_dir(&staging_parent)?;
+        create_private_dir(&staging_parent, project)?;
         let staging = Staging(
             tempfile::Builder::new()
                 .prefix(&format!("{}-", &key[..16]))
@@ -780,18 +790,25 @@ impl EnvStore {
             installer,
             plugin_root,
             &lock,
-            &staging.0,
-            &env,
-            &final_root,
+            &BuildDirs {
+                scratch: &staging.0,
+                env: &env,
+                final_root: &final_root,
+                project,
+            },
             self.limits,
         )?;
-        pin.verify(&env)?;
+        pin.verify(&env, project)?;
         let probe = probe(&python, &staging.0, self.limits.step)?;
-        make_read_only(&env, &scan(&env, false, self.limits.walk)?)?;
-        let entries = scan(&env, true, self.limits.walk)?;
+        make_read_only(
+            &env,
+            &scan(&env, false, self.limits.walk, project)?,
+            project,
+        )?;
+        let entries = scan(&env, true, self.limits.walk, project)?;
 
         let record_path = self.record_path(&key);
-        remove_file_if_exists(&record_path)?;
+        remove_file_if_exists(&record_path, project)?;
         if fs::symlink_metadata(&final_root).is_ok() {
             evict(&final_root)?;
         }
@@ -799,8 +816,8 @@ impl EnvStore {
             .map_err(PyEnvError::io(PyenvPhrase::MovingEnv.as_static()))?;
         // Until the record exists, nothing can load the environment: remove it on failure.
         let mut placed = Staging(final_root.clone(), true);
-        listing::set_read_only(&final_root, true)?;
-        let interpreter = interpreter(&env_python(&final_root), probe)?;
+        listing::set_read_only(&final_root, true, project)?;
+        let interpreter = interpreter(&env_python(&final_root), probe, project)?;
         let record = EnvRecord {
             schema_version: RECORD_SCHEMA,
             tree: tree.as_str().to_owned(),
@@ -822,6 +839,7 @@ impl EnvStore {
         Ok(ManagedEnv {
             root: final_root,
             record,
+            project: self.project.clone(),
         })
     }
 
@@ -870,9 +888,21 @@ impl EnvStore {
                 .to_string(),
             ));
         }
-        remove_file_if_exists(&self.record_path(key))?;
+        remove_file_if_exists(&self.record_path(key), &self.project)?;
         Ok(evict(&self.root.join(key))?)
     }
+}
+
+/// The directories of one build.
+struct BuildDirs<'a> {
+    /// The private staging directory that uv and the interpreter run in.
+    scratch: &'a Path,
+    /// Where the environment is made.
+    env: &'a Path,
+    /// Where the environment is placed when the build succeeds.
+    final_root: &'a Path,
+    /// The project root that errors show paths under.
+    project: &'a Path,
 }
 
 /// Create the environment at `env` and install the lock into it: the uv runs
@@ -883,11 +913,15 @@ fn install(
     installer: &Installer,
     plugin_root: &Path,
     lock: &PyLock,
-    scratch: &Path,
-    env: &Path,
-    final_root: &Path,
+    dirs: &BuildDirs<'_>,
     limits: Limits,
 ) -> Result<(PathBuf, Pin), PyEnvError> {
+    let BuildDirs {
+        scratch,
+        env,
+        final_root,
+        project,
+    } = *dirs;
     let Limits { walk, step } = limits;
     if installer.network == InstallNetwork::Offline {
         let mut find = installer.uv(scratch);
@@ -914,7 +948,7 @@ fn install(
     venv.arg(env);
     run(venv, scratch, PyenvPhrase::StepVenv.as_static(), step)?;
     // Taken before any wheel is installed: a wheel must not replace what the build runs.
-    let pin = Pin::take(env)?;
+    let pin = Pin::take(env, project)?;
 
     let python = env_python(env);
     if !lock.packages.is_empty() {
@@ -936,7 +970,7 @@ fn install(
     }
 
     // Bound the tree uv wrote before anything walks it again.
-    scan(env, false, walk)?;
+    scan(env, false, walk, project)?;
     let mut compile = Command::new(&python);
     compile
         .env_clear()
@@ -948,7 +982,7 @@ fn install(
         .arg(final_root)
         .arg(env);
     windows_env(&mut compile);
-    pin.verify(env)?;
+    pin.verify(env, project)?;
     run(compile, scratch, PyenvPhrase::StepCompile.as_static(), step)?;
     Ok((python, pin))
 }
@@ -962,12 +996,12 @@ struct Pin {
 }
 
 impl Pin {
-    fn take(env: &Path) -> Result<Self, PyEnvError> {
+    fn take(env: &Path, project: &Path) -> Result<Self, PyEnvError> {
         let interpreter = fs::canonicalize(env_python(env)).map_err(PyEnvError::io(
             PyenvPhrase::ResolvingNewInterpreter.as_static(),
         ))?;
-        let interpreter_sha256 = sha256_file(&interpreter)?;
-        let config_sha256 = sha256_file(&env.join("pyvenv.cfg"))?;
+        let interpreter_sha256 = sha256_file(&interpreter, project)?;
+        let config_sha256 = sha256_file(&env.join("pyvenv.cfg"), project)?;
         Ok(Self {
             interpreter,
             interpreter_sha256,
@@ -975,8 +1009,8 @@ impl Pin {
         })
     }
 
-    fn verify(&self, env: &Path) -> Result<(), PyEnvError> {
-        let now = Self::take(env)?;
+    fn verify(&self, env: &Path, project: &Path) -> Result<(), PyEnvError> {
+        let now = Self::take(env, project)?;
         let changed = |path: &Path, why: &str| PyEnvError::Changed {
             path: path.display().to_string(),
             why: PyenvText::DuringBuild {
@@ -1093,7 +1127,7 @@ fn probe(python: &Path, scratch: &Path, limit: Duration) -> Result<Probe, PyEnvE
     })
 }
 
-fn interpreter(python: &Path, p: Probe) -> Result<Interpreter, PyEnvError> {
+fn interpreter(python: &Path, p: Probe, project: &Path) -> Result<Interpreter, PyEnvError> {
     let mut paths = vec![fs::canonicalize(python).map_err(PyEnvError::io(
         PyenvPhrase::ResolvingInterpreter.as_static(),
     ))?];
@@ -1113,7 +1147,7 @@ fn interpreter(python: &Path, p: Probe) -> Result<Interpreter, PyEnvError> {
         let meta = fs::metadata(&path).map_err(PyEnvError::io(
             PyenvPhrase::InspectingInterpreter.as_static(),
         ))?;
-        let sha256 = sha256_file(&path)?;
+        let sha256 = sha256_file(&path, project)?;
         files.push(InterpFile {
             path: text,
             size: meta.len(),
@@ -1177,30 +1211,30 @@ fn write_record(dir: &Path, path: &Path, r: &EnvRecord) -> Result<(), PyEnvError
     Ok(())
 }
 
-fn remove_file_if_exists(path: &Path) -> Result<(), PyEnvError> {
+fn remove_file_if_exists(path: &Path, project: &Path) -> Result<(), PyEnvError> {
     match fs::remove_file(path) {
         Err(e) if e.kind() != io::ErrorKind::NotFound => {
-            Err(PyEnvError::io(messages::removing(path))(e))
+            Err(PyEnvError::io(messages::removing(path, project))(e))
         }
         _ => Ok(()),
     }
 }
 
 #[cfg(unix)]
-fn create_private_dir(dir: &Path) -> Result<(), PyEnvError> {
+fn create_private_dir(dir: &Path, project: &Path) -> Result<(), PyEnvError> {
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(dir)
-        .map_err(PyEnvError::io(messages::creating(dir)))?;
+        .map_err(PyEnvError::io(messages::creating(dir, project)))?;
     fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
-        .map_err(PyEnvError::io(messages::securing(dir)))
+        .map_err(PyEnvError::io(messages::securing(dir, project)))
 }
 
 #[cfg(not(unix))]
-fn create_private_dir(dir: &Path) -> Result<(), PyEnvError> {
-    fs::create_dir_all(dir).map_err(PyEnvError::io(messages::creating(dir)))
+fn create_private_dir(dir: &Path, project: &Path) -> Result<(), PyEnvError> {
+    fs::create_dir_all(dir).map_err(PyEnvError::io(messages::creating(dir, project)))
 }
 
 #[cfg(test)]
@@ -1209,7 +1243,7 @@ mod tests {
 
     #[test]
     fn test_bounds_only_tighten_the_production_limits() {
-        let loose = EnvStore::open("/nonexistent").with_test_bounds(
+        let loose = EnvStore::open("/nonexistent", "/nonexistent-project").with_test_bounds(
             usize::MAX,
             usize::MAX,
             u64::MAX,
@@ -1220,8 +1254,12 @@ mod tests {
             (l.walk.nodes, l.walk.depth, l.walk.bytes, l.step),
             (20_000, 32, 1 << 30, Duration::from_secs(600))
         );
-        let tight =
-            EnvStore::open("/nonexistent").with_test_bounds(5, 3, 7, Duration::from_millis(9));
+        let tight = EnvStore::open("/nonexistent", "/nonexistent-project").with_test_bounds(
+            5,
+            3,
+            7,
+            Duration::from_millis(9),
+        );
         let t = tight.limits;
         assert_eq!(
             (t.walk.nodes, t.walk.depth, t.walk.bytes, t.step),

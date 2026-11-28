@@ -1445,7 +1445,7 @@ mod python {
                  source = \"packs/py\"\ndigest = \"{hash}\"\n"
             )]);
             let uv = fake_uv(&env.data.path().join("uv-bin"), fake);
-            let envs = EnvStore::open(env.data.path().join("envs"));
+            let envs = EnvStore::open(env.data.path().join("envs"), env.project.path());
             Self {
                 env,
                 hash,
@@ -1679,7 +1679,7 @@ mod python {
             Digest::of(&archive)
         )]);
         let uv = fake_uv(&env.data.path().join("uv-bin"), &Fake::real());
-        let envs = EnvStore::open(env.data.path().join("envs"));
+        let envs = EnvStore::open(env.data.path().join("envs"), env.project.path());
         let swapped = PLUGIN_MANIFEST.replace("python = \"3.12\"", "python = \"3.11\"");
         // Right after the archive is extracted, the manifest in the stored tree changes.
         let store = env

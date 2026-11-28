@@ -6,12 +6,20 @@
 
 use std::path::Path;
 
+use slopvac_fs::display_under_root;
 use slopvac_messages::{Catalog, Entry};
 use slopvac_sanitize::line;
 
 /// `value` escaped for one line of output.
 fn esc(value: &str) -> String {
     line(value)
+}
+
+/// A program path as policies section 1.7 shows it. The tree, the store and a managed
+/// interpreter all live outside the project, so an absolute path shows as
+/// `<external>/<file name>`.
+fn shown(path: &Path) -> String {
+    display_under_root(path, Path::new("."))
 }
 
 /// The stable codes of the trust and revocation errors, one constant for each published code.
@@ -370,6 +378,10 @@ pub(crate) enum TrustPhrase {
     #[code("plugins-trust-phrase-secure-dir")]
     #[text("securing the trust directory")]
     SecureDir,
+    /// The operation of resolving the verified tree to its canonical path.
+    #[code("plugins-trust-phrase-resolve-tree")]
+    #[text("resolving the plugin tree")]
+    ResolveTree,
     /// The operation of securing the store file.
     #[code("plugins-trust-phrase-secure-file")]
     #[text("securing the trust file")]
@@ -792,6 +804,11 @@ pub(crate) fn trust_io(what: &str, cause: &str) -> String {
     .to_string()
 }
 
+/// The verified tree could not be resolved to a canonical UTF-8 path. Names no path.
+pub(crate) fn tree_unresolved(kind: std::io::ErrorKind) -> String {
+    trust_io(TrustPhrase::ResolveTree.as_static(), &kind.to_string())
+}
+
 pub(crate) fn not_a_hash(token: &str) -> String {
     TrustText::NotAHash { token: esc(token) }.to_string()
 }
@@ -949,59 +966,41 @@ pub(crate) fn env_path_relative(dir: &Path) -> String {
 }
 
 pub(crate) fn program_not_absolute(path: &Path) -> String {
-    TrustText::ProgramNotAbsolute {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramNotAbsolute { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_dots(path: &Path) -> String {
-    TrustText::ProgramDots {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramDots { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_outside(path: &Path) -> String {
-    TrustText::ProgramOutside {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramOutside { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_not_plain(path: &Path) -> String {
-    TrustText::ProgramNotPlain {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramNotPlain { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_unreadable(path: &Path, cause: &str) -> String {
     TrustText::ProgramUnreadable {
-        path: path.display().to_string(),
+        path: shown(path),
         cause: cause.to_owned(),
     }
     .to_string()
 }
 
 pub(crate) fn program_symlink(path: &Path) -> String {
-    TrustText::ProgramSymlink {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramSymlink { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_not_file(path: &Path) -> String {
-    TrustText::ProgramNotFile {
-        path: path.display().to_string(),
-    }
-    .to_string()
+    TrustText::ProgramNotFile { path: shown(path) }.to_string()
 }
 
 pub(crate) fn program_not_managed(program: &Path, managed: &Path) -> String {
     TrustText::ProgramNotManaged {
-        program: program.display().to_string(),
-        managed: managed.display().to_string(),
+        program: shown(program),
+        managed: shown(managed),
     }
     .to_string()
 }
@@ -1646,6 +1645,7 @@ mod tests {
             (TrustPhrase::SyncStore, "syncing the trust store"),
             (TrustPhrase::ReplaceStore, "replacing the trust store"),
             (TrustPhrase::SecureDir, "securing the trust directory"),
+            (TrustPhrase::ResolveTree, "resolving the plugin tree"),
             (TrustPhrase::SecureFile, "securing the trust file"),
             (TrustPhrase::TempKey, "creating a temporary trust key file"),
             (TrustPhrase::WriteKey, "writing the trust key"),

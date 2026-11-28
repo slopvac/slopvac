@@ -1562,6 +1562,7 @@ plugins-trust-phrase-open-lock text
 plugins-trust-phrase-path-empty text
 plugins-trust-phrase-python-flags text
 plugins-trust-phrase-replace-store text
+plugins-trust-phrase-resolve-tree text
 plugins-trust-phrase-secure-dir text
 plugins-trust-phrase-secure-file text
 plugins-trust-phrase-store-over-cap text
@@ -1609,6 +1610,7 @@ plugins-update-unchanged text
 plugins-update-unknown-pack text
 plugins-update-updated text
 plugins-update-write text
+plugins-why-coded text
 plugins-why-no-envs text
 plugins-why-no-loader text
 pos-model-bad-magic text

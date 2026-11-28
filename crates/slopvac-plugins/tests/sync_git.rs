@@ -414,7 +414,7 @@ fn a_stored_git_tree_is_synced_from_the_manifest_that_was_checked() {
     ))
     .unwrap();
     let uv = fake_uv(&env.data.path().join("uv-bin"), &Fake::real());
-    let envs = EnvStore::open(env.data.path().join("envs"));
+    let envs = EnvStore::open(env.data.path().join("envs"), env.project.path());
     let build = || PythonBuild {
         envs: &envs,
         uv: &uv,

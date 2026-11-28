@@ -72,6 +72,16 @@ fn spawn_code(e: &TrustError) -> Option<&'static str> {
     }
 }
 
+/// The code of a trust failure about the plugin's own inputs, which `trust` and `status` report
+/// as they report a tree that cannot be loaded. Trust never spawns, so it never reports the
+/// spawn failure that the gate reports for the same cause.
+pub(crate) fn input_code(e: &TrustError) -> Option<&'static str> {
+    match e {
+        TrustError::TreeUnresolved(_) => Some("plugins-trust-inputs-failed"),
+        _ => None,
+    }
+}
+
 /// The code of a trust store failure that has none of its own: the group's store failure.
 const STORE_FAILED: &str = "plugins-store-failed";
 
@@ -127,9 +137,15 @@ pub(crate) fn update(root: &Path, e: &UpdateError) -> Reported {
     Reported::new(e.code(), text)
 }
 
+/// The code a trust failure reports: its own, else the spawn path's, else its input code.
+fn code(e: &TrustError) -> Option<&'static str> {
+    e.code().or_else(|| spawn_code(e)).or_else(|| input_code(e))
+}
+
 /// A trust store failure: the reported failure when it has a code, else the sentence alone.
 /// A refused program or environment, and an unusable trust key, report the code of the spawn
-/// path. A failure of the store itself has no code of its own and reports `plugins-store-failed`.
+/// path. A tree with no location to hash reports `plugins-trust-inputs-failed`. A failure of
+/// the store itself has no code of its own and reports `plugins-store-failed`.
 pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
     let text = match e {
         TrustError::Revocation(inner) => return Ok(revocation(inner)),
@@ -138,10 +154,11 @@ pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
         | TrustError::ReservedNamespace { .. }
         | TrustError::NotPinned(_)
         | TrustError::Revoked(_)
-        | TrustError::TooLarge { .. } => e.to_string(),
-        _ => withheld(e.code().or_else(|| spawn_code(e)).unwrap_or(STORE_FAILED)),
+        | TrustError::TooLarge { .. }
+        | TrustError::TreeUnresolved(_) => e.to_string(),
+        _ => withheld(code(e).unwrap_or(STORE_FAILED)),
     };
-    match e.code().or_else(|| spawn_code(e)) {
+    match code(e) {
         Some(code) => Ok(Reported::new(code, text)),
         None => Err(text),
     }
