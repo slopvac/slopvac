@@ -1936,6 +1936,68 @@ mod unix_only {
         }
     }
 
+    /// Build on a wrapper interpreter inside the project, load the environment back from
+    /// disk through a store opened with `open_as`, retarget the interpreter, and return every
+    /// text of the full and quick check errors.
+    fn retargeted_texts(s: &Scratch, root: &Path, open_as: &Path) -> Vec<String> {
+        let w = s.dir("interp/python");
+        write_exec(
+            &w,
+            &format!("#!/bin/sh\nexec '{}' \"$@\"\n", python().display()),
+        );
+        let wheels = demo();
+        let vp = install(s, &lock_text(&wheels), &wheels);
+        let uv = fake_uv(
+            &s.dir("envs-bin"),
+            &Fake {
+                interpreter: w.clone(),
+                ..Fake::real()
+            },
+        );
+        EnvStore::open(s.dir("envs"), root)
+            .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+            .unwrap();
+        let env = EnvStore::open(s.dir("envs"), open_as)
+            .load(&vp.tree, "3.12")
+            .unwrap()
+            .expect("the built environment is on disk");
+        let other = s.dir("interp/python-other");
+        write_exec(&other, "#!/bin/sh\n# other\n");
+        fs::remove_file(&w).unwrap();
+        std::os::unix::fs::symlink(&other, &w).unwrap();
+        let mut texts = chain_texts(&env.verify_full().unwrap_err());
+        texts.extend(chain_texts(&env.check_quick().unwrap_err()));
+        texts
+    }
+
+    #[rstest::rstest]
+    #[case::reloaded_from_disk("plain")]
+    #[case::aliased_project_root("alias")]
+    fn a_retargeted_interpreter_shows_under_the_project_root(#[case] kind: &str) {
+        let s = Scratch::new(&format!("u-interp-retarget-{kind}"));
+        let root = fs::canonicalize(&s.0).unwrap();
+        let alias = root.join("alias");
+        std::os::unix::fs::symlink(&root, &alias).unwrap();
+        let open_as = if kind == "alias" { &alias } else { &root };
+        let texts = retargeted_texts(&s, &root, open_as);
+        let mentions: Vec<&String> = texts
+            .iter()
+            .filter(|t| t.contains("python-other"))
+            .collect();
+        assert!(!mentions.is_empty(), "{texts:?}");
+        assert!(
+            texts
+                .iter()
+                .any(|t| t.contains("`interp/python-other` is not the interpreter")),
+            "{texts:?}"
+        );
+        for shown in mentions {
+            assert!(shown.contains("interp/python-other"), "{shown}");
+            assert!(!shown.contains("<external>"), "{shown}");
+            assert!(!shown.contains(&s.0.display().to_string()), "{shown}");
+        }
+    }
+
     #[test]
     fn an_unreadable_interpreter_is_reported_without_its_absolute_path() {
         let s = Scratch::new("u-interp-unreadable");

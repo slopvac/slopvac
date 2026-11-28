@@ -572,6 +572,14 @@ impl ManagedEnv {
         )
     }
 
+    /// A canonical path as the project shows it. The recorded interpreter paths are canonical,
+    /// so the root is compared in its canonical form too: a root given through a symlink
+    /// would otherwise show the environment's own interpreter as external.
+    fn shown(&self, canonical: &Path) -> String {
+        let root = fs::canonicalize(&self.project).unwrap_or_else(|_| self.project.clone());
+        slopvac_fs::display_under_root(canonical, &root)
+    }
+
     fn check_interpreter(&self, full: bool) -> Result<(), PyEnvError> {
         let files = &self.record.interpreter.files;
         let resolved = fs::canonicalize(self.python()).map_err(PyEnvError::io(
@@ -579,13 +587,13 @@ impl ManagedEnv {
         ))?;
         if files.first().map(|f| Path::new(&f.path)) != Some(resolved.as_path()) {
             return Err(PyEnvError::Changed {
-                path: slopvac_fs::display_under_root(&resolved, &self.project),
+                path: self.shown(&resolved),
                 why: PyenvPhrase::NotRecordedInterpreter.as_static().into(),
             });
         }
         for f in files {
             let changed = |why: &str| PyEnvError::Changed {
-                path: slopvac_fs::display_under_root(Path::new(&f.path), &self.project),
+                path: self.shown(Path::new(&f.path)),
                 why: why.to_owned(),
             };
             let meta =
