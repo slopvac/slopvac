@@ -213,10 +213,9 @@ pub fn trust_hash(i: &TrustInputs<'_>, key: &TrustKey) -> Digest {
         .collect();
     env.sort_unstable();
     let doc = json!({
-        "v": 3,
+        "v": 2,
         "name": i.name,
         "tree": i.tree.as_str(),
-        "location": i.location,
         "declaration": serde_json::to_value(i.declaration).expect("declaration serialises"),
         "program": i.program,
         "args": i.args,
