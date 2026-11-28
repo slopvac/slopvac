@@ -63,7 +63,7 @@ fn spawn_code(e: &TrustError) -> Option<&'static str> {
 /// The code of a trust failure about the plugin's own inputs, which `trust` and `status` report
 /// as they report a tree that cannot be loaded. Trust never spawns, so it never reports the
 /// spawn failure that the gate reports for the same cause.
-fn input_code(e: &TrustError) -> Option<&'static str> {
+pub(crate) fn input_code(e: &TrustError) -> Option<&'static str> {
     match e {
         TrustError::TreeUnresolved(_) => Some("plugins-trust-inputs-failed"),
         _ => None,

@@ -515,9 +515,17 @@ fn trust_part(runner: &Runner<'_>, pack: &LockedPack) -> CliText {
                 .map(|(gate, spec)| (gate, vp, spec))
         })
         .and_then(|(gate, vp, spec)| {
-            gate.state(&vp, &spec)
-                .map(|(_, s)| s)
-                .map_err(|e| store_failed(&e).to_string())
+            gate.state(&vp, &spec).map(|(_, s)| s).map_err(|e| {
+                let detail = store_failed(&e).to_string();
+                // A failure of the plugin's own inputs keeps its code, as `trust` reports it.
+                match cause::input_code(&e) {
+                    Some(code) => render(&CliText::WhyCoded {
+                        code: code.to_owned(),
+                        detail,
+                    }),
+                    None => detail,
+                }
+            })
         });
     match state {
         Ok(TrustState::Trusted) => CliText::PartTrusted,
