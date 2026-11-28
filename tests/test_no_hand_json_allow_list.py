@@ -704,29 +704,65 @@ def test_the_copy_is_removed_also_when_the_scan_fails(
     assert list(scratch_dir.iterdir()) == []
 
 
-def test_the_copy_holds_the_files_the_real_scan_reads(ast_grep: None, tmp_path: Path) -> None:
-    """ast-grep's own list of the files it applied the rule to equals the files copied.
+def visited_by_the_copy_scan(root: Path, tmp_path: Path) -> set[str]:
+    """The files ast-grep applies the rule to in the copy, with the checker's own flags.
 
-    The rule here has no `ignores`, so the list is every file its `files` glob reaches.
+    The rule has no `ignores` here, so the answer is every file its `files` glob reaches.
     """
     data = yaml.safe_load(REAL)
     del data["ignores"]
-    open_rule = tmp_path / "open-rule.yml"
-    open_rule.write_text(yaml.safe_dump(data))
-    done = subprocess.run(
-        ["ast-grep", "scan", "--rule", str(open_rule), "--inspect", "entity", "--json=compact"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    applied = {
+    copy = tmp_path / "parity-copy"
+    gate.copy_neutralised(root, copy, "no-hand-json", yaml.safe_dump(data))
+    command = [*gate.scan_command("no-hand-json"), "--inspect", "entity"]
+    done = subprocess.run(command, cwd=copy, capture_output=True, text=True, check=False)
+    return {
         line.split("|")[2].split(":")[0]
         for line in done.stderr.splitlines()
         if line.startswith("sg: entity|file|") and "appliedRuleCount=1" in line
     }
-    assert applied
-    assert applied == {path.as_posix() for path in gate.scanned_sources(ROOT)}
+
+
+def test_the_copy_scan_visits_every_file_that_was_copied(ast_grep: None, tmp_path: Path) -> None:
+    visited = visited_by_the_copy_scan(ROOT, tmp_path)
+    assert visited
+    assert visited == {path.as_posix() for path in gate.scanned_sources(ROOT)}
+
+
+def test_the_copy_scan_visits_a_hidden_directory(ast_grep: None, tmp_path: Path) -> None:
+    root = scratch(tmp_path / "checkout", rule_text([], {}), "fn f() {}\n")
+    hidden = root / "crates" / "a" / "src" / ".gen"
+    hidden.mkdir()
+    (hidden / "m.rs").write_text("fn g() {}\n")
+    visited = visited_by_the_copy_scan(root, tmp_path)
+    assert visited == {"crates/a/src/lib.rs", "crates/a/src/.gen/m.rs"}
+
+
+HIDDEN_FILE = "crates/a/src/.gen/m.rs"
+
+
+def test_a_whitelisted_hidden_directory_cannot_hide_a_suppressed_json(
+    ast_grep: None, tmp_path: Path
+) -> None:
+    """A checkout `.ignore` can whitelist a dot directory, so the checkout scan reads it."""
+    root = scratch(tmp_path, rule_text([], {}), "fn f() {}\n")
+    (root / ".ignore").write_text("!.gen/\n")
+    hidden = root / "crates" / "a" / "src" / ".gen"
+    hidden.mkdir()
+    module = hidden / "m.rs"
+    # The whitelist works: without a suppression the checkout scan reports the file.
+    module.write_text("fn g() { json!(1); }\n")
+    assert plain_scan(root) == Counter({HIDDEN_FILE: 1})
+    # With a suppress-all directive the checkout scan is blind again, and the checker is not.
+    module.write_text(FORMS["suppress-all"])
+    assert plain_scan(root) == Counter()
+    errors = gate.check(root)
+    assert [e for e in errors if HIDDEN_FILE in e], errors
+    script = ROOT / "scripts" / "ci" / "check_no_hand_json.py"
+    done = subprocess.run(
+        [sys.executable, str(script), str(root)], capture_output=True, text=True, check=False
+    )
+    assert done.returncode == 1
+    assert HIDDEN_FILE in done.stderr
 
 
 # --- the ignores that ast-grep reads ----------------------------------------------------------

@@ -447,6 +447,29 @@ def copy_neutralised(root: Path, dest: Path, rule_id: str, rule_text: str) -> No
     rule.write_text(rule_text, encoding="utf-8")
 
 
+# The copy has no ignore files, but ast-grep still skips hidden files and directories by
+# default, while a checkout `.ignore` can whitelist a dot directory under a crate's src (so the
+# checkout scan visits it). Every ambient filter is therefore off, and only the rule's own
+# `files` and `ignores` decide what the scan visits: a superset of the checkout scan.
+NO_IGNORE_FLAGS = [
+    arg
+    for kind in ("hidden", "dot", "exclude", "global", "parent", "vcs")
+    for arg in ("--no-ignore", kind)
+]
+
+
+def scan_command(rule_id: str) -> list[str]:
+    """The ast-grep command of the neutralised scan, run with the copy as its working directory."""
+    return [
+        "ast-grep",
+        "scan",
+        "--rule",
+        f"ast-grep/rules/{rule_id}.yml",
+        "--json=compact",
+        *NO_IGNORE_FLAGS,
+    ]
+
+
 def neutralised_scan(root: Path, rule_id: str, rule_text: str | None = None) -> Counter[str]:
     """Run one rule over a neutralised copy of the sources and count its findings by file.
 
@@ -461,13 +484,7 @@ def neutralised_scan(root: Path, rule_id: str, rule_text: str | None = None) -> 
         copy = Path(tmp)
         copy_neutralised(root, copy, rule_id, rule_text)
         done = subprocess.run(
-            [
-                "ast-grep",
-                "scan",
-                "--rule",
-                f"ast-grep/rules/{rule_id}.yml",
-                "--json=compact",
-            ],
+            scan_command(rule_id),
             cwd=copy,
             capture_output=True,
             text=True,
