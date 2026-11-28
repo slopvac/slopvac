@@ -92,4 +92,3 @@ impl Configure for MigrateConfigure {
         }))
     }
 }
-

@@ -105,6 +105,9 @@ impl<K: Eq + Hash, V> Bounded<K, V> {
     }
 }
 
+/// What a probe engine is built for: a config root and the RST roots of the buffer.
+type ProbeKey = (PathBuf, Vec<PathBuf>);
+
 /// What a successful load of the project holds.
 struct Ready {
     catalog: Catalog,
@@ -115,7 +118,7 @@ struct Ready {
     /// One engine for each config root and set of RST roots, built from the settings before
     /// any genre layer. It reads a buffer and chooses its genre, which the settings of the
     /// buffer then follow.
-    probes: Box<Bounded<(PathBuf, Vec<PathBuf>), Arc<EngineLinter>>>,
+    probes: Box<Bounded<ProbeKey, Arc<EngineLinter>>>,
     /// The warnings shown so far, so a config that several directories share warns once.
     notified: HashSet<(String, String)>,
     /// Warnings from configs that linting found, not yet handed to the server.
@@ -811,7 +814,7 @@ mod tests {
             "# Notes\n\nText.\n",
             &config,
             Path::new(path),
-            &[root.clone()],
+            std::slice::from_ref(&root),
         );
         assert_eq!(
             detected.map(|g| g.id.as_str().to_owned()).as_deref(),
@@ -837,7 +840,7 @@ mod tests {
             MDX_CHANGELOG,
             &config,
             Path::new("doc.MDX"),
-            &[root.clone()],
+            std::slice::from_ref(&root),
         );
         assert_eq!(
             detected.map(|g| g.id.as_str().to_owned()).as_deref(),

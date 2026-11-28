@@ -34,8 +34,8 @@ use messages::LspMessage;
 
 pub use checks::FrontMatterCheck;
 pub use linter::{
-    Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
-    buffer_kind, exception_names,
+    Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded, buffer_kind,
+    exception_names,
 };
 pub use messages::{RunError, ServerError, entries as message_entries};
 pub use server::{Exit, Server};
