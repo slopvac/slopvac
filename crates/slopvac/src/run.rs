@@ -183,7 +183,7 @@ where
         preflight: &preflight,
         refusal,
     };
-    match dispatch(&matches, globals, context, env, out, err_out) {
+    match dispatch(&matches, globals, &context, env, out, err_out) {
         Ok(code) => {
             if let Some((command, _)) = matches.subcommand() {
                 let rt = update_runtime(env, offline, network.update_check);
@@ -293,7 +293,7 @@ fn parse_args(
 fn dispatch(
     matches: &ArgMatches,
     globals: Globals,
-    context: Context<'_>,
+    context: &Context<'_>,
     env: &dyn Env,
     out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
