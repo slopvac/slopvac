@@ -726,29 +726,108 @@ fn a_bad_inline_directive_is_a_diagnostic_of_the_buffer() -> TestResult {
     Ok(())
 }
 
-/// A buffer of RST never runs an interpreter found on `PATH`: the server gives the lint no
-/// project roots, so discovery stays off and the buffer reports `rst-converter-missing`, as it
-/// does without docutils. The fake `python3` leaves a marker file if it runs.
+/// What a fake docutils driver prints for one RST document: a title and a paragraph, as the
+/// real driver reports them, with 1-based lines.
+fn rst_driver_output(title: &str, paragraph: &str) -> String {
+    json!({
+        "docutils": "0.21.2",
+        "nodes": [
+            {"tag": "title", "start": 1, "end": 1, "level": 1, "containers": [],
+             "pieces": [{"k": "t", "t": title}]},
+            {"tag": "paragraph", "start": 4, "end": 4, "containers": [],
+             "pieces": [{"k": "t", "t": paragraph}]},
+        ],
+    })
+    .to_string()
+}
+
+/// The genre of an RST buffer follows its content, as the genre of a Markdown buffer does. The
+/// interpreter is the first `python3` on `PATH`, outside the project, so the server finds it
+/// only when it knows the project roots.
+///
+/// The fake driver answers by the text it reads. `Release notes` is a heading signal of
+/// `change-comms` (weight 3, its minimum), which turns the history rule off. `Overview` is no
+/// signal, so the buffer stays `consumer`, where the rule is a warning. The two buffers have
+/// no path signal.
 #[cfg(unix)]
 #[test]
-fn an_rst_buffer_never_runs_a_python_found_on_path() -> TestResult {
+fn an_rst_buffer_gets_the_genre_its_content_signals() -> TestResult {
     use std::os::unix::fs::PermissionsExt;
+    const SENTENCE: &str = "The retry loop landed in commit 3f9a2c1 after the outage.";
     let tools = tempfile::tempdir()?;
-    let marker = tools.path().join("executed");
+    let notes = tools.path().join("notes.json");
+    let overview = tools.path().join("overview.json");
+    fs::write(&notes, rst_driver_output("Release notes", SENTENCE))?;
+    fs::write(&overview, rst_driver_output("Overview", SENTENCE))?;
     let driver = tools.path().join("python3");
     fs::write(
         &driver,
-        format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()),
+        format!(
+            "#!/bin/sh\ninput=$(cat)\ncase \"$input\" in\n*'Release notes'*) cat '{}' ;;\n*) cat '{}' ;;\nesac\n",
+            notes.display(),
+            overview.display()
+        ),
     )?;
     fs::set_permissions(&driver, fs::Permissions::from_mode(0o755))?;
     let path = format!("{}:/usr/bin:/bin", tools.path().canonicalize()?.display());
     let dir = project("schema_version = 3\n", &[])?;
     let root = dir.path().canonicalize()?;
     let mut session = Session::start_with(&root, &[("PATH", &path)])?;
-    session.open(&root, "a.rst", "Title\n=====\n\nText.\n")?;
-    let codes = session.codes(&root, "a.rst")?;
+    session.open(
+        &root,
+        "notes.rst",
+        &format!("Release notes\n=============\n\n{SENTENCE}\n"),
+    )?;
+    session.open(
+        &root,
+        "overview.rst",
+        &format!("Overview\n========\n\n{SENTENCE}\n"),
+    )?;
+    let signalled = session.codes(&root, "notes.rst")?;
+    let plain = session.codes(&root, "overview.rst")?;
     session.finish()?;
-    assert!(!marker.exists(), "the interpreter on PATH was run");
+    // The plain buffer reports the rule, which shows the adapter ran; the other does not.
+    assert!(plain.iter().any(|c| c == HISTORY_RULE), "{plain:?}");
+    assert!(
+        !signalled.iter().any(|c| c == HISTORY_RULE),
+        "{signalled:?}"
+    );
+    Ok(())
+}
+
+/// A buffer from a repository outside the directory the server runs in is untrusted code, as
+/// a file of that repository is for `slopvac lint`: a `python3` the repository ships on `PATH`
+/// never runs, and the buffer reports `rst-converter-missing`. The fake `python3` leaves a
+/// marker file if it runs.
+#[cfg(unix)]
+#[test]
+fn an_rst_buffer_never_runs_a_python_from_its_own_repository() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+    let repo = tempfile::tempdir()?;
+    let repo_root = repo.path().canonicalize()?;
+    fs::create_dir(repo_root.join(".git"))?;
+    let bin = repo_root.join("bin");
+    fs::create_dir(&bin)?;
+    let marker = repo_root.join("executed");
+    // The search path is only the repository's `bin`, so no other interpreter is found, and
+    // the script names `touch` by its full path.
+    let script = format!("#!/bin/sh\n/usr/bin/touch '{}'\nexit 0\n", marker.display());
+    for name in ["python3", "python"] {
+        let tool = bin.join(name);
+        fs::write(&tool, &script)?;
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755))?;
+    }
+    let text = "Title\n=====\n\nText.\n";
+    fs::create_dir(repo_root.join("docs"))?;
+    fs::write(repo_root.join("docs/a.rst"), text)?;
+    let path = bin.display().to_string();
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start_with(&root, &[("PATH", &path)])?;
+    session.open(&repo_root, "docs/a.rst", text)?;
+    let codes = session.codes(&repo_root, "docs/a.rst")?;
+    session.finish()?;
+    assert!(!marker.exists(), "the repository's python3 was run");
     assert!(
         codes.iter().any(|c| c == "rst-converter-missing"),
         "{codes:?}"
