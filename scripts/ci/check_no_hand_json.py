@@ -18,9 +18,11 @@ compares what it finds with the list:
 * a TEMPORARY category names a bead as ``TEMPORARY(slopvac-...)``;
 * the ``ignores`` list that a YAML parser loads from the file equals the annotated entries, in
   order, so a sequence written in another style cannot add an entry;
-* no comment in crates/*/src suppresses this rule: ``// ast-grep-ignore`` with no rule list
-  hides every rule, and ``// ast-grep-ignore: no-hand-json`` hides this one. A suppression that
-  names only other rules, as the message-registry rule allows, stays legal.
+* no source line in crates/*/src suppresses this rule: ``// ast-grep-ignore`` with no rule list
+  hides every rule, and ``// ast-grep-ignore: no-hand-json`` hides this one. The check reads
+  the text of every .rs file, because ast-grep's own scans honour the directive they look for
+  (ast-grep 0.51.3 has no switch to turn that off). A suppression that names only other rules,
+  as the message-registry rule allows, stays legal. A marker that cannot be classified fails.
 
 Growth check (``--base <ref>``). The file checks alone compare the file with itself, so raising
 a pin along with a new ``json!`` would pass. With a base, the check reads the rule file at that
@@ -394,54 +396,56 @@ def has_label(labels_json: str | None) -> bool:
     return isinstance(names, list) and LABEL in names
 
 
-SUPPRESSION = re.compile(r"ast-grep-ignore")
-THIS_RULE = re.compile(r"(?<![\w-])no-hand-json(?![\w-])")
+SUPPRESSION = re.compile(r"ast-grep-ignore", re.IGNORECASE)
+# What follows the marker in a directive that is safe to leave: a colon and a list of rule ids,
+# up to the end of the line (or of a one-line block comment).
+LEGAL_TAIL = re.compile(r"\s*:\s*(?P<ids>[A-Za-z0-9_-]+(?:\s*,\s*[A-Za-z0-9_-]+)*)\s*(?:\*/)?\s*")
+COMMENT_START = re.compile(r"//|/\*")
 
 
-def suppresses_rule(comment: str) -> bool:
-    """Whether a comment holds an ast-grep suppression that can hide a no-hand-json finding.
+def suppression_problem(line: str) -> str | None:
+    """Explain why a source line may hide a no-hand-json finding, or return None.
 
     ast-grep honours ``ast-grep-ignore`` (every rule) and ``ast-grep-ignore: a, b`` (the named
-    rules), in line and block comments, above the line or at its end. Naming another rule is
-    fine. A suppression with no rule list, an odd form, or this rule's id is not.
+    rules), and a directive can reach the next line, the same line, or more (a directive at the
+    top of a file hid its own comment from a scan of comments). So this check does not ask
+    ast-grep: it reads the text. A marker passes only inside a comment, followed by a colon and
+    a list of rule ids that does not name this rule, as in ``// ast-grep-ignore: other-rule``.
+    Whitespace before the colon is the same list form to ast-grep, and is accepted. Anything
+    else fails, because it cannot be classified.
     """
-    for found in SUPPRESSION.finditer(comment):
-        rest = comment[found.end() :]
-        if not rest.startswith(":"):
-            return True
-        if not rest[1:].strip(" \t*/\n") or THIS_RULE.search(rest):
-            return True
-    return False
+    for found in SUPPRESSION.finditer(line):
+        starts = list(COMMENT_START.finditer(line[: found.start()]))
+        if not starts:
+            return "ast-grep-ignore outside a comment"
+        tail = LEGAL_TAIL.fullmatch(line[found.end() :])
+        if tail is None:
+            return "suppression with no rule list, or one that cannot be classified"
+        # A block comment must close on this line, or the ids could run on into the next one.
+        if starts[-1][0] == "/*" and not line.rstrip().endswith("*/"):
+            return "suppression in a block comment that does not close on its line"
+        if "no-hand-json" in re.split(r"\s*,\s*", tail["ids"]):
+            return "suppression of this rule"
+    return None
 
 
 def suppression_problems(root: Path) -> list[str]:
-    """List the comments in crates/*/src that suppress this rule, or every rule."""
-    rule = {
-        "id": "suppression-comment",
-        "language": "rust",
-        "files": ["crates/*/src/**"],
-        "rule": {
-            "any": [{"kind": "line_comment"}, {"kind": "block_comment"}],
-            "regex": SUPPRESSION.pattern,
-        },
-    }
-    done = subprocess.run(
-        ["ast-grep", "scan", "--inline-rules", json.dumps(rule), "--json=compact"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if done.returncode not in (0, 1):
-        raise RuntimeError(f"ast-grep exited {done.returncode}: {done.stderr.strip()}")
-    if not done.stdout.strip():
-        return []
-    return [
-        f"{item['file']}:{item['range']['start']['line'] + 1}: a suppression comment hides "
-        "findings of this rule; name another rule or remove it"
-        for item in json.loads(done.stdout)
-        if suppresses_rule(item["text"])
-    ]
+    """List every ``ast-grep-ignore`` in crates/*/src that is not a list of other rules."""
+    errors: list[str] = []
+    for path in sorted(root.glob("crates/*/src/**/*.rs")):
+        relative = path.relative_to(root).as_posix()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            errors.append(f"{relative}: not UTF-8, so its suppression comments cannot be read")
+            continue
+        for number, line in enumerate(text.splitlines(), start=1):
+            if (why := suppression_problem(line)) is not None:
+                errors.append(
+                    f"{relative}:{number}: {why}; it can hide findings of this rule. Name only "
+                    "other rules or remove it"
+                )
+    return errors
 
 
 def scan(root: Path, rule_text: str) -> Counter[str]:
