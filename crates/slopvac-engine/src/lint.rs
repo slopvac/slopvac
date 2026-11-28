@@ -23,7 +23,7 @@ use slopvac_model::{
     AiSignal, BomMode, CategoryId, CategoryName, ContextTag, Contexts, Document, Edit, Extent,
     Finding, Fix, GenreId, GenreReason, GenreResult, GenreSource, KebabName, LineCol,
     NonEmptyString, Notice, NoticeData, NoticeLevel, PackId, PositionError, RuleId, RuleProvenance,
-    Severity, SourceIndex, Span,
+    Severity, SourceIndex, Span, SpanError,
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
@@ -289,6 +289,10 @@ pub enum EngineError {
     /// A value the engine built broke a model invariant. This is a bug.
     #[error("{}", crate::messages::internal(.0))]
     Internal(String),
+    /// A span the engine built from its own read was reversed. This is a bug, and the span
+    /// error stays the source.
+    #[error("{}", crate::messages::internal(.0))]
+    Span(#[from] SpanError),
 }
 
 /// A rule that runs.
@@ -2505,8 +2509,7 @@ impl Preparsed {
             _ => detect(input.source),
         };
         let body_start = front.as_ref().map_or(0, |b| b.body_start);
-        let body = Span::new(body_start, input.source.len())
-            .map_err(|e| EngineError::Internal(e.to_string()))?;
+        let body = Span::new(body_start, input.source.len())?;
         let mut extra = Vec::new();
         let mut masked = None;
         let parsed = match input.kind {
