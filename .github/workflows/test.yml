@@ -252,7 +252,7 @@ jobs:
           crates=$(cargo metadata --format-version 1 --no-deps --locked \
             | jq -r '.packages[] | select(.features | has("test-support")) | .name')
           if [ -z "$crates" ]; then
-            echo "::error::No crate declares a feature named test-support, so the step has nothing to lint. Rename the test seam to test-support, or remove this step."
+            echo "::error::No crate declares a test-support feature. Rename the seam or remove this step."
             exit 1
           fi
           for crate in $crates; do
