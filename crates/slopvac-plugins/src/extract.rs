@@ -1197,7 +1197,7 @@ fn install(
     exec: &HashSet<&str>,
 ) -> Result<(PathBuf, Option<PathBuf>), ExtractError> {
     seal(root, root, exec)?;
-    let final_dir = store.join(format!("tree-{}", hash.hex()));
+    let final_dir = store.join(format!("tree-{}0", hash.hex()));
     let mut quarantined = None;
     match fs::rename(root, &final_dir) {
         Ok(()) => {}
