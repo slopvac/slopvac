@@ -2505,7 +2505,8 @@ impl Preparsed {
             _ => detect(input.source),
         };
         let body_start = front.as_ref().map_or(0, |b| b.body_start);
-        let body = Span::new(body_start, input.source.len()).expect("body starts inside the file");
+        let body = Span::new(body_start, input.source.len())
+            .map_err(|e| EngineError::Internal(e.to_string()))?;
         let mut extra = Vec::new();
         let mut masked = None;
         let parsed = match input.kind {
@@ -2548,9 +2549,12 @@ impl Preparsed {
     }
 
     fn front_span(&self) -> Option<Span> {
-        self.front
-            .as_ref()
-            .map(|b| Span::new(0, b.body_start).expect("0 <= body start"))
-            .filter(|s| !s.is_empty())
+        let block = self.front.as_ref()?;
+        #[expect(
+            clippy::expect_used,
+            reason = "a span that starts at 0 cannot end before it starts"
+        )]
+        let span = Span::new(0, block.body_start).expect("0 <= body start");
+        (!span.is_empty()).then_some(span)
     }
 }
