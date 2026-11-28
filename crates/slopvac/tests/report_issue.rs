@@ -1286,6 +1286,43 @@ fn the_binary_previews_a_complete_report() {
 }
 
 #[test]
+fn the_binary_previews_a_tool_improvement_without_a_command_or_environment() {
+    let mut args = vec![
+        "tool-improvement".to_owned(),
+        "--title".to_owned(),
+        "Name the config file in doctor output".to_owned(),
+    ];
+    for field in [
+        "agent=Claude Code",
+        "model=test-model",
+        "harness=test-harness 1.0",
+        "latest=Yes",
+        "duplicates=true",
+        "what-to-change=doctor output",
+        "current=doctor does not name the config file",
+        "proposed=doctor names the config file it read",
+        "why=a finding can be traced to the file that set its level",
+    ] {
+        args.extend(["--field".to_owned(), field.to_owned()]);
+    }
+    slopvac()
+        .arg("report")
+        .args(&args)
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(
+            "Title: [tool improvement]: Name the config file in doctor output",
+        ))
+        .stdout(predicate::str::contains(
+            "### Current behavior\n\ndoctor does not name the config file",
+        ))
+        .stdout(predicate::str::contains(
+            "issues/new?template=tool-improvement.yml&title=",
+        ))
+        .stdout(predicate::str::contains("Nothing was posted."));
+}
+
+#[test]
 fn the_binary_never_quotes_an_unreadable_sample_in_any_channel() {
     const SENTINEL: &str = "SENTINEL-sample-contents-7c1e";
     let oversize = usize::try_from(slopvac_cli::report::issue::MAX_SAMPLE_BYTES).unwrap() + 1;
