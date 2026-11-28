@@ -21,6 +21,14 @@
 //! The text of an edit is written verbatim, so CRLF line endings and every byte outside the
 //! edits stay as they were.
 //!
+//! # Standalone HTML
+//!
+//! A standalone HTML file gets no fix in this release. The lint run drops the fix of every
+//! finding in one (see `withhold_fixes` in `lint.rs`), and [`fix_document`] refuses as
+//! [`SkipReason::Protected`] any fix a caller built itself, so the file is returned as it is.
+//! A fix run that dropped a fix reports one `fix-html-unavailable` notice for the file, through
+//! [`FileResult::notices`](crate::FileResult::notices).
+//!
 //! # Source code
 //!
 //! The comments of a source file are linted but not fixed. Every finding in one is refused as
@@ -136,8 +144,10 @@ pub fn fix_document(
     changed_lines: Option<&[RangeInclusive<usize>]>,
 ) -> Result<FixReport, FixError> {
     let mut tables = Vec::new();
-    // Comment text is not edited: every fix in a source file is refused.
-    let comments = matches!(input.kind, Kind::Comments(_));
+    // Comment text is not edited: every fix in a source file is refused. A standalone HTML
+    // file is not edited either. Its findings carry no fix (the lint run drops them), so this
+    // refuses only a fix that a caller built itself.
+    let comments = matches!(input.kind, Kind::Comments(_) | Kind::Html);
     let protected = if comments {
         Vec::new()
     } else if input.kind != Kind::Rst {
@@ -282,7 +292,7 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
     let parsed: Parsed = match input.kind {
         Kind::Markdown => parse_markdown(input.source, body)?,
         Kind::Mdx => parse_mdx(input.source, body)?,
-        // Source files never get here: `fix_document` refuses their findings first.
+        // Source and HTML files never get here: `fix_document` refuses their findings first.
         Kind::Diagram(_) | Kind::Rst | Kind::Html | Kind::Comments(_) => Parsed::default(),
     };
     let parsed = with_html_prose(

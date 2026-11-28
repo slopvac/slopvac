@@ -540,6 +540,33 @@ pub(crate) fn notice(level: NoticeLevel, message: &EngineNotice) -> Notice {
     Notice::from_catalog(level, message)
 }
 
+/// The result of one lint run, as [`Engine::lint_outcome`] returns it.
+pub(crate) struct Linted {
+    /// The report of the document.
+    pub(crate) document: Document,
+    /// The run-level notices, as [`Engine::lint_with_notices`] returns them.
+    pub(crate) notices: Vec<Notice>,
+    /// How many reported findings had a fix that the run dropped, because the input is a
+    /// standalone HTML file. A fix run reports `fix-html-unavailable` when this is not zero.
+    pub(crate) withheld_fixes: usize,
+}
+
+/// Drop the fix of every finding in a standalone HTML file, and return how many it dropped.
+///
+/// This is the one place the rule lives, so the fix run, every report format and the
+/// language server's quick fixes all see no edit for such a file. It runs on the findings
+/// the report keeps, after suppressions and genre settings, so the count covers only
+/// findings the user sees. Other kinds keep their fixes.
+fn withhold_fixes(kind: Kind, findings: &mut [Finding]) -> usize {
+    if kind != Kind::Html {
+        return 0;
+    }
+    findings
+        .iter_mut()
+        .filter_map(|finding| finding.fix.take())
+        .count()
+}
+
 /// A notice for a typed code. The code comes from `data`, which only a constructor of one
 /// code builds, and the text from the catalog `message`. The two name the same code at every
 /// call site, and the public-path engine tests assert the code, message and data together.
@@ -992,6 +1019,8 @@ impl Engine {
 
     /// Lint one input and also return its run-level notices.
     ///
+    /// A finding in a standalone HTML file carries no fix: see [`Linted::withheld_fixes`].
+    ///
     /// The notices are about the run, not about a check that failed to run. An extractor
     /// emits one at level `info` for unsupported content inside a supported input: the
     /// content is not read, and the run is still complete. A caller adds them to the root
@@ -1002,6 +1031,12 @@ impl Engine {
         &self,
         input: &Input<'_>,
     ) -> Result<(Document, Vec<Notice>), EngineError> {
+        self.lint_outcome(input)
+            .map(|linted| (linted.document, linted.notices))
+    }
+
+    /// [`Engine::lint_with_notices`], with the number of fixes the run withheld.
+    pub(crate) fn lint_outcome(&self, input: &Input<'_>) -> Result<Linted, EngineError> {
         let owned;
         let pre = if let Some(pre) = input.preparsed {
             pre.check(input)?;
@@ -1075,6 +1110,7 @@ impl Engine {
         }
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
         self.apply_genre(&genre, &mut findings);
+        let withheld_fixes = withhold_fixes(input.kind, &mut findings);
         // Notices about rules that cannot run come first, then the ones the parse raised.
         // Code-comment mode lists every rule it cannot read in one notice of its own.
         let mut notices = if matches!(input.kind, Kind::Comments(_)) {
@@ -1084,7 +1120,11 @@ impl Engine {
         };
         notices.extend(extra);
         let document = self.document(input, &prepared, seen, genre, findings, notices);
-        Ok((document, diagram_notices))
+        Ok(Linted {
+            document,
+            notices: diagram_notices,
+            withheld_fixes,
+        })
     }
 
     /// The genre of one document and its context tags. The genre comes first: the contexts

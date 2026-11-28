@@ -479,6 +479,7 @@ fix-changed error
 fix-failed error
 fix-group-mismatch error
 fix-hardlinked error
+fix-html-unavailable notice
 fix-not-owner error
 fix-not-regular error
 fix-outside-root error

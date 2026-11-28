@@ -952,6 +952,11 @@ pub(crate) enum EngineNotice {
     #[code("rst-unchecked")]
     #[notice("{message}")]
     RstUnchecked { message: String },
+    /// `--fix` read a standalone HTML file whose findings would carry a fix, and applied
+    /// none: findings in such a file carry no fix.
+    #[code("fix-html-unavailable")]
+    #[notice("{path}: fixes are not applied in HTML files")]
+    FixHtmlUnavailable { path: String },
     /// Valid diagram content is unsupported.
     #[code($unsupported)]
     #[notice("{reason}; the diagram was not checked")]

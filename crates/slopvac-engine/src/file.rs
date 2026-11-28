@@ -38,11 +38,12 @@
 use std::ops::RangeInclusive;
 use std::path::{Component, Path, PathBuf};
 
-use slopvac_model::Document;
+use slopvac_model::{Document, Notice, NoticeLevel};
 
 use crate::commit::{Refusal, Root, Step, open};
 use crate::fix::{FixError, FixReport, fix_document, unified_diff};
 use crate::lint::{Engine, Input, Kind};
+use crate::messages::EngineNotice;
 
 /// What [`fix_file`] did.
 #[derive(Debug, Clone)]
@@ -65,6 +66,10 @@ pub struct FileResult {
     pub diff: String,
     /// Whether the file was written.
     pub written: bool,
+    /// The notices of the fix run, for the root `notices` of the report: one
+    /// `fix-html-unavailable` at level `info` for a standalone HTML file whose findings would
+    /// otherwise carry a fix.
+    pub notices: Vec<Notice>,
 }
 
 /// How the caller linted a file, so the fix run lints it the same way.
@@ -184,7 +189,9 @@ pub fn fix_file_in(
     if let Some(genre) = context.declared_genre {
         input = input.with_declared_genre(genre);
     }
-    let document = engine.lint(&input)?;
+    let linted = engine.lint_outcome(&input)?;
+    let notices = fix_notices(&input, linted.withheld_fixes);
+    let document = linted.document;
     let report = fix_document(engine, &input, &document, changed_lines)?;
     let diff = unified_diff(&shown, &source, &report.text);
     if dry_run || report.text == source {
@@ -193,6 +200,7 @@ pub fn fix_file_in(
             report,
             diff,
             written: false,
+            notices,
         })));
     }
     if let Some(refusal) = handle
@@ -207,7 +215,24 @@ pub fn fix_file_in(
         report,
         diff,
         written: true,
+        notices,
     })))
+}
+
+/// The notices of a fix run of `input`: one `fix-html-unavailable` when the lint run withheld
+/// a fix, which it does only in a standalone HTML file. The path is the one the report shows.
+fn fix_notices(input: &Input<'_>, withheld: usize) -> Vec<Notice> {
+    if withheld == 0 {
+        return Vec::new();
+    }
+    let mut notice = crate::lint::notice(
+        NoticeLevel::Info,
+        &EngineNotice::FixHtmlUnavailable {
+            path: input.path.to_owned(),
+        },
+    );
+    notice.path = Some(input.path.to_owned());
+    vec![notice]
 }
 
 /// `path` below `root` as plain names, or `None` when it is outside or climbs with `..`.
