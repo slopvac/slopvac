@@ -9,6 +9,7 @@ note: >-
 # The rule applies only to crates that adopted the registry. Add a crate's glob here when
 # it migrates; the last step widens this to every crate.
 files:
+  - crates/slopvac/src/report/**
   - crates/slopvac-agents/src/**
   - crates/slopvac-config/src/**
   - crates/slopvac-diagrams/src/**
@@ -31,6 +32,8 @@ files:
   - crates/slopvac/src/output.rs
   - crates/slopvac/src/stdin.rs
 ignores:
+  # The form field labels go to GitHub issue forms, and open PR #798 edits the file.
+  - crates/slopvac/src/report/fields.rs
   # Audit output is for contributors reading a failing test, not for users.
   - crates/slopvac-messages/src/audit.rs
   # A generated reference page: its prose is exempt because the prose gate covers it.

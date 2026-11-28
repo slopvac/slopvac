@@ -23,6 +23,7 @@
 //! trip it. Ordinary prose does not either: `Basic authentication`, `and/or`, a slug such as
 //! `claude-3-5-sonnet-20241022`. The cost of a false alarm is a refused run and an edit.
 
+use super::messages::ReportPhrase;
 use super::scrub::{has_drive_prefix, percent_decode};
 
 /// Prefixes of GitHub tokens.
@@ -57,10 +58,10 @@ impl Kind {
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
-            Self::Credential => "credential",
-            Self::Repository => "private repository",
-            Self::Path => "private path",
-            Self::LocalName => "local name",
+            Self::Credential => ReportPhrase::KindCredential.as_static(),
+            Self::Repository => ReportPhrase::KindRepository.as_static(),
+            Self::Path => ReportPhrase::KindPath.as_static(),
+            Self::LocalName => ReportPhrase::KindLocalName.as_static(),
         }
     }
 }

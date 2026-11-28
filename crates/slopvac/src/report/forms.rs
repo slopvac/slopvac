@@ -25,14 +25,19 @@ fn kind_name(kind: Kind) -> &'static str {
 }
 
 fn element(out: &mut String, f: &Field) {
+    // ast-grep-ignore: user-text-literal
     let _ = writeln!(out, "  - type: {}", kind_name(f.kind));
+    // ast-grep-ignore: user-text-literal
     let _ = writeln!(out, "    id: {}", f.id);
     out.push_str("    attributes:\n");
+    // ast-grep-ignore: user-text-literal
     let _ = writeln!(out, "      label: {}", q(f.label));
     if let Some(d) = f.description {
+        // ast-grep-ignore: user-text-literal
         let _ = writeln!(out, "      description: {}", q(d));
     }
     if let Some(r) = f.render {
+        // ast-grep-ignore: user-text-literal
         let _ = writeln!(out, "      render: {}", q(r));
     }
     if f.multiple {
@@ -48,7 +53,9 @@ fn element(out: &mut String, f: &Field) {
         Kind::Checkboxes => {
             out.push_str("      options:\n");
             for (label, required) in f.checkbox_options {
+                // ast-grep-ignore: user-text-literal
                 let _ = writeln!(out, "        - label: {}", q(label));
+                // ast-grep-ignore: user-text-literal
                 let _ = writeln!(out, "          required: {required}");
             }
         }
@@ -56,6 +63,7 @@ fn element(out: &mut String, f: &Field) {
     }
     if f.kind != Kind::Checkboxes {
         out.push_str("    validations:\n");
+        // ast-grep-ignore: user-text-literal
         let _ = writeln!(out, "      required: {}", f.required);
     }
 }
@@ -64,13 +72,17 @@ fn element(out: &mut String, f: &Field) {
 #[must_use]
 pub fn render(category: &Category) -> String {
     let mut out = String::from(HEADER);
+    // ast-grep-ignore: user-text-literal
     let _ = writeln!(out, "name: {}", q(category.form_name));
+    // ast-grep-ignore: user-text-literal
     let _ = writeln!(out, "description: {}", q(category.description));
+    // ast-grep-ignore: user-text-literal
     let _ = writeln!(out, "title: {}", q(category.title_prefix));
     let labels: Vec<String> = category.labels.iter().map(|l| q(l)).collect();
     let _ = writeln!(out, "labels: [{}]", labels.join(", "));
     out.push_str("body:\n");
     out.push_str("  - type: markdown\n    attributes:\n");
+    // ast-grep-ignore: user-text-literal
     let _ = writeln!(out, "      value: {}", q(INTRO));
     for f in &category.fields {
         element(&mut out, f);

@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use slopvac_fs::{InputKind, ReadOptions, WriteOptions};
 use slopvac_messages::Catalog;
 
-use super::messages::ReportError;
+use super::messages::{ReportError, ReportPhrase};
 use crate::env::Env;
 use crate::errors::CliError;
 use crate::exit;
@@ -152,19 +152,14 @@ pub fn text_entries() -> &'static [slopvac_messages::Entry] {
 #[must_use]
 pub fn command() -> Command {
     Command::new("consent")
-        .about("Record whether agents may report slopvac problems for you.")
-        .long_about(
-            "Record, for your user account, whether an agent may report slopvac problems. `on` and \
-             `off` write the answer to a file in the state directory, and `show` prints it with the \
-             time it was recorded. The answer is unset until you record one. The command refuses \
-             to change the answer in CI.",
-        )
+        .about(ReportPhrase::ConsentAbout.as_static())
+        .long_about(ReportPhrase::ConsentLongAbout.as_static())
         .subcommand_required(true)
         .arg_required_else_help(true)
-        .subcommand(Command::new("on").about("Allow agents to report slopvac problems."))
-        .subcommand(Command::new("off").about("Do not allow agents to report slopvac problems."))
+        .subcommand(Command::new("on").about(ReportPhrase::ConsentOnAbout.as_static()))
+        .subcommand(Command::new("off").about(ReportPhrase::ConsentOffAbout.as_static()))
         .subcommand(
-            Command::new("show").about("Print the recorded answer and when it was recorded."),
+            Command::new("show").about(ReportPhrase::ConsentShowAbout.as_static()),
         )
 }
 

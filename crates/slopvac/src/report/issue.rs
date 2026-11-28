@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::Path;
 
-use super::messages::ReportError;
+use super::messages::{ReportError, ReportPhrase, ReportText, phrase, say};
 use super::scrub::Scrubber;
 use super::{Category, Field, Kind, REPOSITORY};
 use crate::errors::CliError;
@@ -23,9 +23,9 @@ const NO_RESPONSE: &str = "_No response_";
 /// The file must be a regular file of valid UTF-8 within [`MAX_SAMPLE_BYTES`]. The error does not
 /// name the path.
 pub fn read_sample(path: &Path) -> Result<String, CliError> {
-    let fail = |why: &str| {
+    let fail = |why: ReportPhrase| {
         CliError::from(ReportError::SampleUnreadable {
-            reason: why.to_owned(),
+            reason: phrase(why),
         })
     };
     let mut opts = std::fs::OpenOptions::new();
@@ -36,18 +36,18 @@ pub fn read_sample(path: &Path) -> Result<String, CliError> {
         // A FIFO with no writer would block an ordinary open.
         opts.custom_flags(i32::try_from(rustix::fs::OFlags::NONBLOCK.bits()).unwrap_or_default());
     }
-    let file = opts.open(path).map_err(|_| fail("cannot open the file"))?;
+    let file = opts.open(path).map_err(|_| fail(ReportPhrase::SampleOpen))?;
     if !file.metadata().is_ok_and(|m| m.is_file()) {
-        return Err(fail("not a regular file"));
+        return Err(fail(ReportPhrase::SampleNotRegular));
     }
     let mut bytes = Vec::new();
     file.take(MAX_SAMPLE_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|_| fail("cannot read the file"))?;
+        .map_err(|_| fail(ReportPhrase::SampleRead))?;
     if bytes.len() as u64 > MAX_SAMPLE_BYTES {
-        return Err(fail("the file is larger than 256 KiB"));
+        return Err(fail(ReportPhrase::SampleTooLarge));
     }
-    String::from_utf8(bytes).map_err(|_| fail("the file is not valid UTF-8"))
+    String::from_utf8(bytes).map_err(|_| fail(ReportPhrase::SampleNotUtf8))
 }
 
 /// A checked and cleaned report, ready to preview.
@@ -67,10 +67,12 @@ impl Report {
     /// The text printed before anything is sent.
     #[must_use]
     pub fn preview(&self) -> String {
-        format!(
-            "Target: {REPOSITORY}\nTitle: {}\n\n{}\n",
-            self.title, self.body
-        )
+        let text = say(&ReportText::Preview {
+            repository: REPOSITORY.to_owned(),
+            title: self.title.clone(),
+            body: self.body.clone(),
+        });
+        format!("{text}\n")
     }
 }
 
@@ -79,6 +81,14 @@ fn error(detail: impl Into<String>) -> CliError {
         detail: detail.into(),
     }
     .into()
+}
+
+fn refuse(phrase_id: ReportPhrase) -> CliError {
+    error(phrase(phrase_id))
+}
+
+fn refuse_text(text: &ReportText) -> CliError {
+    error(say(text))
 }
 
 /// Collects the warnings for text that looks like a credential or private data. The scrub is a
@@ -90,10 +100,10 @@ struct Warnings(Vec<String>);
 impl Warnings {
     fn note(&mut self, field: &str, found: Option<super::gate::Kind>) {
         if let Some(kind) = found {
-            let text = format!(
-                "possible {} in field `{field}`: review it before posting",
-                kind.label()
-            );
+            let text = say(&ReportText::Possible {
+                kind: kind.label().to_owned(),
+                field: field.to_owned(),
+            });
             if !self.0.contains(&text) {
                 self.0.push(text);
             }
@@ -117,20 +127,17 @@ fn parse_answers(
     for answer in answers {
         let (id, value) = answer
             .split_once('=')
-            .ok_or_else(|| error("--field takes ID=VALUE"))?;
+            .ok_or_else(|| refuse(ReportPhrase::InvalidFieldSyntax))?;
         // The id the caller typed is not echoed: it may be a pasted secret.
         let field = category.fields.iter().find(|f| f.id == id).ok_or_else(|| {
             let known: Vec<&str> = category.fields.iter().map(|f| f.id).collect();
-            error(format!(
-                "unknown field id for `{}`; its fields are: {}",
-                category.key,
-                known.join(", ")
-            ))
+            refuse_text(&ReportText::InvalidUnknownField {
+                category: category.key.to_owned(),
+                known: known.join(", "),
+            })
         })?;
         if field.id == TEXT_FIELD {
-            return Err(error(
-                "the `input` field holds document text; pass it with --include-text FILE so the preview shows it",
-            ));
+            return Err(refuse(ReportPhrase::InvalidInputField));
         }
         map.entry(field.id).or_default().push(value.to_owned());
     }
@@ -150,9 +157,7 @@ fn clean_controls(given: &mut BTreeMap<&'static str, Vec<String>>) -> Result<(),
                 .chars()
                 .any(|c| c.is_control() && c != '\t' && c != '\n')
             {
-                return Err(error(
-                    "a field or the document text holds a control character such as an escape sequence",
-                ));
+                return Err(refuse(ReportPhrase::InvalidControl));
             }
         }
     }
@@ -163,26 +168,31 @@ fn check(field: &Field, values: &[String]) -> Result<(), CliError> {
     match field.kind {
         Kind::Dropdown => {
             if values.len() > 1 && !field.multiple {
-                return Err(error(format!("`{}` takes one option", field.id)));
+                return Err(refuse_text(&ReportText::InvalidOneOption {
+                    id: field.id.to_owned(),
+                }));
             }
             for v in values {
                 if !field.options.contains(&v.as_str()) {
-                    return Err(error(format!(
-                        "`{}` must be one of: {}",
-                        field.id,
-                        field.options.join(" | ")
-                    )));
+                    return Err(refuse_text(&ReportText::InvalidOptions {
+                        id: field.id.to_owned(),
+                        options: field.options.join(" | "),
+                    }));
                 }
             }
         }
         Kind::Input => {
             if values.len() > 1 || values.iter().any(|v| v.contains('\n')) {
-                return Err(error(format!("`{}` is a single line", field.id)));
+                return Err(refuse_text(&ReportText::InvalidSingleLine {
+                    id: field.id.to_owned(),
+                }));
             }
         }
         Kind::Textarea | Kind::Checkboxes => {
             if values.len() > 1 {
-                return Err(error(format!("`{}` was given more than once", field.id)));
+                return Err(refuse_text(&ReportText::InvalidRepeated {
+                    id: field.id.to_owned(),
+                }));
             }
         }
     }
@@ -204,15 +214,15 @@ fn fence(language: &str, text: &str) -> String {
 /// The summary is one non-empty line within the title limit.
 fn check_summary(summary: &str) -> Result<(), CliError> {
     if summary.trim().is_empty() || summary.contains('\n') {
-        return Err(error("--title takes one non-empty line"));
+        return Err(refuse(ReportPhrase::InvalidTitleLine));
     }
     if summary.chars().any(char::is_control) {
-        return Err(error("--title holds a control character"));
+        return Err(refuse(ReportPhrase::InvalidTitleControl));
     }
     if summary.chars().count() > MAX_TITLE_CHARS {
-        return Err(error(format!(
-            "--title is longer than {MAX_TITLE_CHARS} characters; GitHub caps a title at 256 with its prefix"
-        )));
+        return Err(refuse_text(&ReportText::InvalidTitleLong {
+            max: MAX_TITLE_CHARS,
+        }));
     }
     Ok(())
 }
@@ -233,10 +243,9 @@ pub fn build(
     let mut given = parse_answers(category, answers)?;
     if let Some(text) = sample {
         if !category.fields.iter().any(|f| f.id == TEXT_FIELD) {
-            return Err(error(format!(
-                "`{}` has no document text field, so --include-text does not apply",
-                category.key
-            )));
+            return Err(refuse_text(&ReportText::InvalidNoTextField {
+                category: category.key.to_owned(),
+            }));
         }
         given.insert(TEXT_FIELD, vec![text.to_owned()]);
     }
