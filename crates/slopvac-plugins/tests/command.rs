@@ -2321,12 +2321,20 @@ mod conformance {
             ..KeyPolicy::default()
         };
 
-        let ran = f.run(&["update"], true, |s| s.range("style", "^1.0").policy(policy));
+        let ran = f.run(&["update"], true, |s| {
+            s.range("style", "^1.0").policy(policy)
+        });
 
         assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
         let lock = fs::read_to_string(f.project().join(".slopvac/plugins.lock")).unwrap();
-        assert!(lock.contains("version = \"1.1.0\""), "the pin did not move:\n{lock}");
-        assert!(lock.contains(&new.digest), "the digest did not move:\n{lock}");
+        assert!(
+            lock.contains("version = \"1.1.0\""),
+            "the pin did not move:\n{lock}"
+        );
+        assert!(
+            lock.contains(&new.digest),
+            "the digest did not move:\n{lock}"
+        );
         assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
     }
 }
