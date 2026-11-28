@@ -54,7 +54,7 @@ Scopes that apply to one file combine in file order, not by specificity. A glob 
 - Each `id` appears once. A repeated id is an error at the second entry.
 - A `source` that is not an `oci://` reference, an `https://` archive URL, a `git+https://` URL that ends in `@` and a 40-digit commit, or a path is invalid. Every `plugins` command, in CI or not, refuses the config with `config-invalid-value`, as it does for an invalid `id` or `version` requirement.
 - `core` is reserved for the built-in plugin, which the binary compiles in. An entry with the id `core` is an error.
-- A listed code plugin loads only after its content hash is trusted: `slopvac plugins trust` records trust, and in CI the `SLOPVAC_TRUST` exception of policies.md section 1.6 applies. Until then neither its process nor its data files load. A command that would call one of its hooks or read one of its data files reports it with its trust code (`plugin-untrusted`, or `plugin-hash-mismatch` for changed files) and exits 2.
+- A listed code plugin loads only after its content hash is trusted: `slopvac plugins trust` records trust, and in CI the `SLOPVAC_TRUST` exception of policies.md section 1.6 applies. Until then neither its process nor its data files load. A command that would call one of its hooks or read one of its data files exits 2. It reports the refusal with its code, such as `plugin-untrusted`, or `plugin-hash-mismatch` for files changed after trust.
 - A separate `[[packs]]` array is an unknown key.
 
 #### 1.3.2 Plugin indexes
