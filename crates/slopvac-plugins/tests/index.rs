@@ -470,8 +470,11 @@ fn invisible_and_format_characters_are_escaped_in_output() {
 fn rendered_hits_say_that_every_identity_claim_is_unverified() {
     let index = build_index([listing("acme", "a", "A", "d")]).unwrap();
     let text = search(&index, "a", 1).remove(0).render();
-    assert!(
-        text.contains("unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`"),
+    assert_eq!(
+        text.lines().last(),
+        Some(
+            "  unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins pin <namespace> <fingerprint> --key <file>`"
+        ),
         "{text}"
     );
     assert!(!text.contains("first-party"), "{text}");

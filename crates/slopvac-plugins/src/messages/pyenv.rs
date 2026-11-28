@@ -1562,7 +1562,7 @@ mod tests {
             ),
             (
                 PyenvPhrase::SearchUnverified,
-                "unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`",
+                "unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins pin <namespace> <fingerprint> --key <file>`",
             ),
         ];
         let registered = PyenvPhrase::entries();
