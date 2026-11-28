@@ -7,6 +7,9 @@
 //! rules of every scope, including `raw`, which read the source text.
 //!
 //! Link text stays fixable: the `delta` in `[delta](https://example.com)` is prose.
+//!
+//! A standalone HTML file is not Markdown: [`html_destinations`] protects its tags and the
+//! addresses in its text instead.
 
 use std::ops::Range;
 
@@ -71,6 +74,41 @@ pub(crate) fn destinations(source: &str, body_start: usize) -> Vec<Span> {
     for run in runs(source) {
         for (from, to) in addresses(&source[run.clone()]) {
             push(run.start + from..run.start + to);
+        }
+    }
+    spans
+}
+
+/// The protected spans of a standalone HTML file: every tag, from `<` to `>` with its
+/// attribute values, quoted or not, and the bare URLs, `www.` hosts and email addresses of its
+/// text. The file is not Markdown, so `[label](target)` in its text is prose and no link or
+/// reference syntax is read. Tags are blanked before the address scan, so text next to a tag
+/// (`<a href="u">text</a>`) is not taken for part of an address.
+pub(crate) fn html_destinations(source: &str) -> Vec<Span> {
+    let tags = tags(source);
+    let mut blanked = source.as_bytes().to_vec();
+    for tag in &tags {
+        if let Some(bytes) = blanked.get_mut(tag.clone()) {
+            bytes.fill(b' ');
+        }
+    }
+    let mut spans: Vec<Span> = tags
+        .iter()
+        .filter_map(|tag| Span::new(tag.start, tag.end).ok())
+        .collect();
+    // A tag starts at `<` and ends after `>` or at the end of the file, so blanking whole
+    // tags leaves whole characters, and the text stays UTF-8.
+    let Ok(text) = String::from_utf8(blanked) else {
+        return spans;
+    };
+    for run in runs(&text) {
+        let Some(word) = text.get(run.clone()) else {
+            continue;
+        };
+        for (from, to) in addresses(word) {
+            if let Ok(span) = Span::new(run.start + from, run.start + to) {
+                spans.push(span);
+            }
         }
     }
     spans
