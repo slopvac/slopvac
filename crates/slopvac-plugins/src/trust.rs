@@ -212,9 +212,9 @@ impl TrustError {
             Self::NamespaceBound { .. } => Some(codes::NAMESPACE_BOUND),
             Self::NotPinned { .. } => Some(codes::NAMESPACE_NOT_PINNED),
             Self::Rotation(SignError::Rollback(_)) => Some(codes::ROTATION_ROLLBACK),
-            Self::Rotation(_) | Self::RotationStatement { .. } | Self::RotationFile { .. } => {
-                Some(codes::ROTATION_INVALID)
-            }
+            // SCRATCH: a rotation file reports another code.
+            Self::RotationFile { .. } => Some(codes::KEY_INVALID),
+            Self::Rotation(_) | Self::RotationStatement { .. } => Some(codes::ROTATION_INVALID),
             Self::Revoked(_) => Some(codes::ROTATION_KEY_REVOKED),
             Self::RevocationsMissing => Some(codes::ROTATION_REVOCATIONS_MISSING),
             _ => None,
