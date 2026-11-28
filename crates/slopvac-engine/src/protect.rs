@@ -9,13 +9,13 @@
 //! Link text stays fixable: the `delta` in `[delta](https://example.com)` is prose.
 //!
 //! A standalone HTML file is not Markdown: [`html_destinations`] protects every byte that
-//! its parse does not read as text, and the addresses in that text.
+//! is not the content of a text node, and the addresses in that text.
 
 use std::ops::Range;
 
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 use slopvac_model::{Span, SpanError};
-use slopvac_parse::{Document, Projection, TokenKind};
+use slopvac_parse::{BlockKind, Document, Projection, TokenKind};
 
 const OPTIONS: Options = Options::ENABLE_TABLES
     .union(Options::ENABLE_STRIKETHROUGH)
@@ -80,44 +80,68 @@ pub(crate) fn destinations(source: &str, body_start: usize) -> Vec<Span> {
     spans
 }
 
+/// What a fix of a standalone HTML file may not touch.
+pub(crate) struct HtmlProtection {
+    /// Bytes that no edit may cover.
+    pub(crate) spans: Vec<Span>,
+    /// Character references in the text. An edit may replace one whole, but may not start or
+    /// end inside one.
+    pub(crate) atoms: Vec<Span>,
+}
+
 /// The protected spans of a standalone HTML file, read from `doc`, its parse.
 ///
-/// Only the text the parse projects is fixable: the characters, decoded entities and white
-/// space of its prose. Every other byte is protected: tags with their attribute values,
-/// comments, the doctype, and the content of hidden elements and code. The tokenizer decides
-/// where a tag or comment ends, so a quote or `>` inside one cannot end it early. Inside the
-/// text, bare URLs, `www.` hosts and email addresses are protected too. The file is not
+/// Only the content of a text node is fixable: the characters and character references that
+/// the tokenizer read as text of the prose. Every other byte is protected: tags with their
+/// attribute names and values, comments, the doctype, CDATA, and the content of hidden
+/// elements and code. The parse merges the white space on both sides of a tag into one
+/// space, so only the white space before the first byte of markup and after the last one in
+/// that range counts as text. Inside the text, bare URLs, `www.` hosts and email addresses
+/// are protected too, found in the decoded text so that `&#64;` reads as `@`. The file is not
 /// Markdown, so `[label](target)` in its text is prose.
 ///
 /// # Errors
 /// Returns a [`SpanError`] if a protected range would end before it starts. The ranges come
 /// from the parse in source order, so this is a bug.
-pub(crate) fn html_destinations(source: &str, doc: &Document) -> Result<Vec<Span>, SpanError> {
-    let mut text: Vec<Span> = doc
+pub(crate) fn html_destinations(source: &str, doc: &Document) -> Result<HtmlProtection, SpanError> {
+    let mut text: Vec<(usize, usize)> = Vec::new();
+    let mut atoms = Vec::new();
+    let mut spans = Vec::new();
+    let prose = doc
         .blocks
         .iter()
-        .filter_map(|b| b.projection.as_ref())
-        .flat_map(Projection::tokens)
-        .filter(|t| {
-            matches!(
-                t.kind,
-                TokenKind::Identity | TokenKind::Entity | TokenKind::Collapse
-            )
-        })
-        .map(|t| t.src)
-        .filter(|s| !s.is_empty())
-        .collect();
-    text.sort_unstable_by_key(Span::start);
+        .filter(|b| !matches!(b.kind, BlockKind::CodeBlock { .. }))
+        .filter_map(|b| b.projection.as_ref());
+    for projection in prose {
+        for token in projection.tokens() {
+            let src = token.src;
+            match token.kind {
+                TokenKind::Identity => text.push((src.start(), src.end())),
+                TokenKind::Entity => {
+                    text.push((src.start(), src.end()));
+                    atoms.push(src);
+                }
+                TokenKind::Collapse => {
+                    let (lead, trail) = white_ends(source, src);
+                    text.push((src.start(), lead));
+                    text.push((trail, src.end()));
+                }
+                _ => {}
+            }
+        }
+        decoded_addresses(projection, &mut spans)?;
+    }
+    text.retain(|(start, end)| start < end);
+    text.sort_unstable();
     let mut segments: Vec<(usize, usize)> = Vec::new();
-    for span in &text {
+    for (start, end) in text {
         match segments.last_mut() {
-            Some((_, end)) if span.start() <= *end => *end = (*end).max(span.end()),
-            _ => segments.push((span.start(), span.end())),
+            Some((_, to)) if start <= *to => *to = (*to).max(end),
+            _ => segments.push((start, end)),
         }
     }
-    let mut spans = Vec::new();
     let mut at = 0;
-    for &(start, end) in &segments {
+    for (start, end) in segments {
         if start > at {
             spans.push(Span::new(at, start)?);
         }
@@ -126,25 +150,86 @@ pub(crate) fn html_destinations(source: &str, doc: &Document) -> Result<Vec<Span
     if source.len() > at {
         spans.push(Span::new(at, source.len())?);
     }
-    for &(start, end) in &segments {
-        // Token ranges fall on character boundaries. Should one not, the whole segment is
-        // protected rather than scanned.
-        let Some(segment) = source.get(start..end) else {
-            spans.push(Span::new(start, end)?);
-            continue;
-        };
-        for run in runs(segment) {
-            let (from, to) = (start + run.start, start + run.end);
-            let Some(word) = segment.get(run) else {
-                spans.push(Span::new(from, to)?);
-                continue;
-            };
-            for (a, b) in addresses(word) {
-                spans.push(Span::new(from + a, from + b)?);
-            }
+    atoms.sort_unstable_by_key(|a| (a.start(), a.end()));
+    Ok(HtmlProtection { spans, atoms })
+}
+
+/// Where the white space at the ends of the collapsed range `span` stops: the end of the
+/// leading run and the start of the trailing one. When the range is all white space, the
+/// whole of it is text. When it cannot be read, none of it is.
+fn white_ends(source: &str, span: Span) -> (usize, usize) {
+    let Some(bytes) = source.as_bytes().get(span.start()..span.end()) else {
+        return (span.start(), span.end());
+    };
+    let space = |b: &&u8| matches!(**b, b' ' | b'\t' | b'\n' | b'\r' | b'\x0c');
+    let lead = bytes.iter().take_while(space).count();
+    if lead == bytes.len() {
+        return (span.end(), span.start());
+    }
+    let trail = bytes.iter().rev().take_while(space).count();
+    (span.start() + lead, span.end() - trail)
+}
+
+/// Push to `out` the source bytes of each address in the decoded text of `projection`.
+///
+/// A character of an identity token maps to its own byte, and any other token maps whole,
+/// so an address keeps each character reference in it. The addresses are merged first, so
+/// one pass over the tokens finds them all.
+fn decoded_addresses(projection: &Projection, out: &mut Vec<Span>) -> Result<(), SpanError> {
+    let text = projection.text();
+    let mut found = Vec::new();
+    for run in runs(text) {
+        if let Some(word) = text.get(run.clone()) {
+            found.extend(
+                addresses(word)
+                    .into_iter()
+                    .map(|(a, b)| (run.start + a, run.start + b)),
+            );
         }
     }
-    Ok(spans)
+    if found.is_empty() {
+        return Ok(());
+    }
+    found.sort_unstable();
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (a, b) in found {
+        match merged.last_mut() {
+            Some((_, end)) if a <= *end => *end = (*end).max(b),
+            _ => merged.push((a, b)),
+        }
+    }
+    let mut next = 0;
+    let mut at = 0;
+    for token in projection.tokens() {
+        let (from, to) = (at, at + token.text.len());
+        at = to;
+        while merged.get(next).is_some_and(|&(_, b)| b <= from) {
+            next += 1;
+        }
+        let mut i = next;
+        while let Some(&(a, b)) = merged.get(i)
+            && a < to
+        {
+            let src = token.src;
+            if !src.is_empty() {
+                let exact = token.kind == TokenKind::Identity
+                    && src.end() - src.start() == token.text.len();
+                out.push(if exact {
+                    Span::new(
+                        src.start() + a.max(from) - from,
+                        src.start() + b.min(to) - from,
+                    )?
+                } else {
+                    src
+                });
+            }
+            if b > to {
+                break;
+            }
+            i += 1;
+        }
+    }
+    Ok(())
 }
 
 /// Maximal runs of non-space text.

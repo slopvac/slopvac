@@ -1561,6 +1561,16 @@ fn count_prose_finding_bytes(bytes: usize) {
 fn count_prose_finding_bytes(_bytes: usize) {}
 
 impl Run<'_> {
+    /// The text a fix writes for the replacement `text`. In a standalone HTML file the edit
+    /// lands in a text node, so `&`, `<` and `>` become character references there.
+    fn replacement(&self, text: String) -> String {
+        if self.input.kind == Kind::Html {
+            slopvac_sanitize::html_text(&text)
+        } else {
+            text
+        }
+    }
+
     fn finding(&self, c: Candidate<'_>) -> Result<Finding, EngineError> {
         let start = self.index.line_col(c.span.start())?;
         let end = self.index.line_col(c.span.end())?;
@@ -2035,7 +2045,7 @@ impl Run<'_> {
             Some(text) if is_single_replacement(text) && source_text == shown => Some(
                 Fix::new(vec![Edit {
                     span,
-                    text: preserve_case(source_text, text),
+                    text: self.replacement(preserve_case(source_text, text)),
                 }])
                 .map_err(|e| EngineError::Internal(e.to_string()))?,
             ),

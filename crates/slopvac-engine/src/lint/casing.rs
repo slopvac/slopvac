@@ -89,7 +89,7 @@ impl Run<'_> {
                         Some(
                             Fix::new(vec![Edit {
                                 span,
-                                text: hit.expected.clone(),
+                                text: self.replacement(hit.expected.clone()),
                             }])
                             .map_err(|e| EngineError::Internal(e.to_string()))?,
                         )
