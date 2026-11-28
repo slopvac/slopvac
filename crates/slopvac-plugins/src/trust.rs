@@ -851,7 +851,7 @@ fn program_id(
 /// resolve, or is not UTF-8, fails closed.
 fn canonical_location(root: &Path) -> Result<String, TrustError> {
     fs::canonicalize(root)
-        .map_err(|e| TrustError::TreeUnresolved(e.kind()))?
+        .map_err(io_err(TrustPhrase::ResolveTree.as_static()))?
         .into_os_string()
         .into_string()
         .map_err(|_| TrustError::TreeUnresolved(io::ErrorKind::InvalidData))
