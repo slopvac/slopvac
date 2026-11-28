@@ -72,6 +72,50 @@ rule:
             has:
               kind: string_literal
               regex: '[A-Za-z]{2,}[:,.]? +[A-Za-z{]'
+    # The message argument (the second one, not counting comments) of
+    # `CliError::new(code, message)` and `CliError::escaping(code, raw)`. The code argument
+    # is not checked, and a message from a catalog render is not a literal. `Self::new` and
+    # `Self::escaping` count only inside `impl CliError`.
+    - all:
+        - kind: call_expression
+        - has:
+            field: function
+            kind: scoped_identifier
+            all:
+              - has:
+                  field: name
+                  regex: ^(new|escaping)$
+              - has:
+                  field: path
+                  any:
+                    - kind: identifier
+                      regex: ^CliError$
+                    - kind: scoped_identifier
+                      has:
+                        field: name
+                        regex: ^CliError$
+                    - all:
+                        - kind: identifier
+                          regex: ^Self$
+                        - inside:
+                            kind: impl_item
+                            has:
+                              field: type
+                              matches: cli-type
+                            stopBy:
+                              kind: impl_item
+        - has:
+            field: arguments
+            has:
+              all:
+                - nthChild:
+                    position: 2
+                    ofRule:
+                      not:
+                        any:
+                          - kind: line_comment
+                          - kind: block_comment
+                - matches: cli-message
   not:
     inside:
       kind: mod_item
@@ -80,3 +124,96 @@ rule:
         regex: cfg\(test\)
         stopBy: neighbor
       stopBy: end
+# A literal message: a string, `concat!` or `format!`, alone or wrapped in a reference, a
+# pair of parentheses, `.to_string()`, `.to_owned()`, `.into()` or `String::from`.
+utils:
+  # The type `CliError`, with or without a path before it.
+  cli-type:
+    any:
+      - kind: type_identifier
+        regex: ^CliError$
+      - kind: scoped_type_identifier
+        has:
+          field: name
+          regex: ^CliError$
+  cli-message:
+    any:
+      - kind: string_literal
+      - kind: raw_string_literal
+      - kind: macro_invocation
+        has:
+          field: macro
+          any:
+            - kind: identifier
+              regex: ^(format|concat)$
+            - kind: scoped_identifier
+              all:
+                - has:
+                    field: name
+                    regex: ^format$
+                - has:
+                    field: path
+                    kind: identifier
+                    regex: ^(std|alloc)$
+            - kind: scoped_identifier
+              all:
+                - has:
+                    field: name
+                    regex: ^concat$
+                - has:
+                    field: path
+                    kind: identifier
+                    regex: ^(std|alloc|core)$
+      - kind: parenthesized_expression
+        has:
+          matches: cli-message
+      - kind: reference_expression
+        has:
+          field: value
+          matches: cli-message
+      - kind: call_expression
+        all:
+          - has:
+              field: function
+              kind: field_expression
+              all:
+                - has:
+                    field: field
+                    regex: ^(to_string|to_owned|into)$
+                - has:
+                    field: value
+                    matches: cli-message
+      - kind: call_expression
+        all:
+          - has:
+              field: function
+              kind: scoped_identifier
+              all:
+                - has:
+                    field: name
+                    regex: ^from$
+                - has:
+                    field: path
+                    any:
+                      - kind: identifier
+                        regex: ^String$
+                      - kind: scoped_identifier
+                        all:
+                          - has:
+                              field: name
+                              regex: ^String$
+                          - has:
+                              field: path
+                              kind: scoped_identifier
+                              all:
+                                - has:
+                                    field: name
+                                    regex: ^string$
+                                - has:
+                                    field: path
+                                    kind: identifier
+                                    regex: ^(std|alloc)$
+          - has:
+              field: arguments
+              has:
+                matches: cli-message

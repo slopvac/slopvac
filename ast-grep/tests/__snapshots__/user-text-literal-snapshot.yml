@@ -1,5 +1,863 @@
 id: user-text-literal
 snapshots:
+  "fn f() {\n    CliError::new(\n        // the code\n        code,\n        // the text\n        \"pass paths\",\n    );\n}\n":
+    labels:
+    - source: |-
+        CliError::new(
+                // the code
+                code,
+                // the text
+                "pass paths",
+            )
+      style: primary
+      start: 13
+      end: 109
+    - source: new
+      style: secondary
+      start: 23
+      end: 26
+    - source: CliError
+      style: secondary
+      start: 13
+      end: 21
+    - source: CliError::new
+      style: secondary
+      start: 13
+      end: 26
+    - source: "\"pass paths\""
+      style: secondary
+      start: 90
+      end: 102
+    - source: "\"pass paths\""
+      style: secondary
+      start: 90
+      end: 102
+  "fn f() { CliError :: new(\"usage\", \"pass paths\"); }":
+    labels:
+    - source: "CliError :: new(\"usage\", \"pass paths\")"
+      style: primary
+      start: 9
+      end: 47
+    - source: new
+      style: secondary
+      start: 21
+      end: 24
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: "CliError :: new"
+      style: secondary
+      start: 9
+      end: 24
+    - source: "\"pass paths\""
+      style: secondary
+      start: 34
+      end: 46
+    - source: "\"pass paths\""
+      style: secondary
+      start: 34
+      end: 46
+  "fn f() { CliError::escaping(\"usage\", \"bad value\"); }":
+    labels:
+    - source: CliError::escaping("usage", "bad value")
+      style: primary
+      start: 9
+      end: 49
+    - source: escaping
+      style: secondary
+      start: 19
+      end: 27
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::escaping
+      style: secondary
+      start: 9
+      end: 27
+    - source: "\"bad value\""
+      style: secondary
+      start: 37
+      end: 48
+    - source: "\"bad value\""
+      style: secondary
+      start: 37
+      end: 48
+  "fn f() { CliError::escaping(code, &format!(\"{}\", v)); }":
+    labels:
+    - source: CliError::escaping(code, &format!("{}", v))
+      style: primary
+      start: 9
+      end: 52
+    - source: escaping
+      style: secondary
+      start: 19
+      end: 27
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::escaping
+      style: secondary
+      start: 9
+      end: 27
+    - source: format
+      style: secondary
+      start: 35
+      end: 41
+    - source: format!("{}", v)
+      style: secondary
+      start: 35
+      end: 51
+    - source: "&format!(\"{}\", v)"
+      style: secondary
+      start: 34
+      end: 51
+    - source: "&format!(\"{}\", v)"
+      style: secondary
+      start: 34
+      end: 51
+  "fn f() { CliError::new(\"usage\", \"pass paths\"); }":
+    labels:
+    - source: CliError::new("usage", "pass paths")
+      style: primary
+      start: 9
+      end: 45
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: "\"pass paths\""
+      style: secondary
+      start: 32
+      end: 44
+    - source: "\"pass paths\""
+      style: secondary
+      start: 32
+      end: 44
+  "fn f() { CliError::new(\"usage\", \"text\".into()); }":
+    labels:
+    - source: CliError::new("usage", "text".into())
+      style: primary
+      start: 9
+      end: 46
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: into
+      style: secondary
+      start: 39
+      end: 43
+    - source: "\"text\""
+      style: secondary
+      start: 32
+      end: 38
+    - source: "\"text\".into"
+      style: secondary
+      start: 32
+      end: 43
+    - source: "\"text\".into()"
+      style: secondary
+      start: 32
+      end: 45
+    - source: "\"text\".into()"
+      style: secondary
+      start: 32
+      end: 45
+  "fn f() { CliError::new(\"usage\", \"text\".to_string()); }":
+    labels:
+    - source: CliError::new("usage", "text".to_string())
+      style: primary
+      start: 9
+      end: 51
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: to_string
+      style: secondary
+      start: 39
+      end: 48
+    - source: "\"text\""
+      style: secondary
+      start: 32
+      end: 38
+    - source: "\"text\".to_string"
+      style: secondary
+      start: 32
+      end: 48
+    - source: "\"text\".to_string()"
+      style: secondary
+      start: 32
+      end: 50
+    - source: "\"text\".to_string()"
+      style: secondary
+      start: 32
+      end: 50
+  "fn f() { CliError::new(\"usage\", (\"text\")); }":
+    labels:
+    - source: CliError::new("usage", ("text"))
+      style: primary
+      start: 9
+      end: 41
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: "\"text\""
+      style: secondary
+      start: 33
+      end: 39
+    - source: ("text")
+      style: secondary
+      start: 32
+      end: 40
+    - source: ("text")
+      style: secondary
+      start: 32
+      end: 40
+  "fn f() { CliError::new(\"usage\", /* the text */ \"pass paths\"); }":
+    labels:
+    - source: CliError::new("usage", /* the text */ "pass paths")
+      style: primary
+      start: 9
+      end: 60
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: "\"pass paths\""
+      style: secondary
+      start: 47
+      end: 59
+    - source: "\"pass paths\""
+      style: secondary
+      start: 47
+      end: 59
+  "fn f() { CliError::new(\"usage\", String :: from(\"text\")); }":
+    labels:
+    - source: "CliError::new(\"usage\", String :: from(\"text\"))"
+      style: primary
+      start: 9
+      end: 55
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: from
+      style: secondary
+      start: 42
+      end: 46
+    - source: String
+      style: secondary
+      start: 32
+      end: 38
+    - source: "String :: from"
+      style: secondary
+      start: 32
+      end: 46
+    - source: "\"text\""
+      style: secondary
+      start: 47
+      end: 53
+    - source: "\"text\""
+      style: secondary
+      start: 47
+      end: 53
+    - source: "String :: from(\"text\")"
+      style: secondary
+      start: 32
+      end: 54
+    - source: "String :: from(\"text\")"
+      style: secondary
+      start: 32
+      end: 54
+  "fn f() { CliError::new(\"usage\", String::from(\"text\")); }":
+    labels:
+    - source: CliError::new("usage", String::from("text"))
+      style: primary
+      start: 9
+      end: 53
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: from
+      style: secondary
+      start: 40
+      end: 44
+    - source: String
+      style: secondary
+      start: 32
+      end: 38
+    - source: String::from
+      style: secondary
+      start: 32
+      end: 44
+    - source: "\"text\""
+      style: secondary
+      start: 45
+      end: 51
+    - source: "\"text\""
+      style: secondary
+      start: 45
+      end: 51
+    - source: String::from("text")
+      style: secondary
+      start: 32
+      end: 52
+    - source: String::from("text")
+      style: secondary
+      start: 32
+      end: 52
+  "fn f() { CliError::new(\"usage\", alloc::format!(\"{}\", v)); }":
+    labels:
+    - source: CliError::new("usage", alloc::format!("{}", v))
+      style: primary
+      start: 9
+      end: 56
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: format
+      style: secondary
+      start: 39
+      end: 45
+    - source: alloc
+      style: secondary
+      start: 32
+      end: 37
+    - source: alloc::format
+      style: secondary
+      start: 32
+      end: 45
+    - source: alloc::format!("{}", v)
+      style: secondary
+      start: 32
+      end: 55
+    - source: alloc::format!("{}", v)
+      style: secondary
+      start: 32
+      end: 55
+  "fn f() { CliError::new(\"usage\", alloc::string::String::from(\"text\")); }":
+    labels:
+    - source: CliError::new("usage", alloc::string::String::from("text"))
+      style: primary
+      start: 9
+      end: 68
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: from
+      style: secondary
+      start: 55
+      end: 59
+    - source: String
+      style: secondary
+      start: 47
+      end: 53
+    - source: string
+      style: secondary
+      start: 39
+      end: 45
+    - source: alloc
+      style: secondary
+      start: 32
+      end: 37
+    - source: alloc::string
+      style: secondary
+      start: 32
+      end: 45
+    - source: alloc::string::String
+      style: secondary
+      start: 32
+      end: 53
+    - source: alloc::string::String::from
+      style: secondary
+      start: 32
+      end: 59
+    - source: "\"text\""
+      style: secondary
+      start: 60
+      end: 66
+    - source: "\"text\""
+      style: secondary
+      start: 60
+      end: 66
+    - source: alloc::string::String::from("text")
+      style: secondary
+      start: 32
+      end: 67
+    - source: alloc::string::String::from("text")
+      style: secondary
+      start: 32
+      end: 67
+  "fn f() { CliError::new(\"usage\", concat!(\"a\", \"b\")); }":
+    labels:
+    - source: CliError::new("usage", concat!("a", "b"))
+      style: primary
+      start: 9
+      end: 50
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: concat
+      style: secondary
+      start: 32
+      end: 38
+    - source: concat!("a", "b")
+      style: secondary
+      start: 32
+      end: 49
+    - source: concat!("a", "b")
+      style: secondary
+      start: 32
+      end: 49
+  "fn f() { CliError::new(\"usage\", core::concat!(\"a\", \"b\")); }":
+    labels:
+    - source: CliError::new("usage", core::concat!("a", "b"))
+      style: primary
+      start: 9
+      end: 56
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: concat
+      style: secondary
+      start: 38
+      end: 44
+    - source: core
+      style: secondary
+      start: 32
+      end: 36
+    - source: core::concat
+      style: secondary
+      start: 32
+      end: 44
+    - source: core::concat!("a", "b")
+      style: secondary
+      start: 32
+      end: 55
+    - source: core::concat!("a", "b")
+      style: secondary
+      start: 32
+      end: 55
+  "fn f() { CliError::new(\"usage\", format!(\"{}\", name)); }":
+    labels:
+    - source: CliError::new("usage", format!("{}", name))
+      style: primary
+      start: 9
+      end: 52
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: format
+      style: secondary
+      start: 32
+      end: 38
+    - source: format!("{}", name)
+      style: secondary
+      start: 32
+      end: 51
+    - source: format!("{}", name)
+      style: secondary
+      start: 32
+      end: 51
+  "fn f() { CliError::new(\"usage\", r\"raw text\"); }":
+    labels:
+    - source: CliError::new("usage", r"raw text")
+      style: primary
+      start: 9
+      end: 44
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: r"raw text"
+      style: secondary
+      start: 32
+      end: 43
+    - source: r"raw text"
+      style: secondary
+      start: 32
+      end: 43
+  "fn f() { CliError::new(\"usage\", r#\"raw \"quoted\"\"#); }":
+    labels:
+    - source: CliError::new("usage", r#"raw "quoted""#)
+      style: primary
+      start: 9
+      end: 50
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: r#"raw "quoted""#
+      style: secondary
+      start: 32
+      end: 49
+    - source: r#"raw "quoted""#
+      style: secondary
+      start: 32
+      end: 49
+  "fn f() { CliError::new(\"usage\", std :: format!(\"{}\", v)); }":
+    labels:
+    - source: "CliError::new(\"usage\", std :: format!(\"{}\", v))"
+      style: primary
+      start: 9
+      end: 56
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: format
+      style: secondary
+      start: 39
+      end: 45
+    - source: std
+      style: secondary
+      start: 32
+      end: 35
+    - source: "std :: format"
+      style: secondary
+      start: 32
+      end: 45
+    - source: "std :: format!(\"{}\", v)"
+      style: secondary
+      start: 32
+      end: 55
+    - source: "std :: format!(\"{}\", v)"
+      style: secondary
+      start: 32
+      end: 55
+  "fn f() { CliError::new(\"usage\", std::concat!(\"a\", \"b\")); }":
+    labels:
+    - source: CliError::new("usage", std::concat!("a", "b"))
+      style: primary
+      start: 9
+      end: 55
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: concat
+      style: secondary
+      start: 37
+      end: 43
+    - source: std
+      style: secondary
+      start: 32
+      end: 35
+    - source: std::concat
+      style: secondary
+      start: 32
+      end: 43
+    - source: std::concat!("a", "b")
+      style: secondary
+      start: 32
+      end: 54
+    - source: std::concat!("a", "b")
+      style: secondary
+      start: 32
+      end: 54
+  "fn f() { CliError::new(\"usage\", std::format!(\"{}\", v)); }":
+    labels:
+    - source: CliError::new("usage", std::format!("{}", v))
+      style: primary
+      start: 9
+      end: 54
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: format
+      style: secondary
+      start: 37
+      end: 43
+    - source: std
+      style: secondary
+      start: 32
+      end: 35
+    - source: std::format
+      style: secondary
+      start: 32
+      end: 43
+    - source: std::format!("{}", v)
+      style: secondary
+      start: 32
+      end: 53
+    - source: std::format!("{}", v)
+      style: secondary
+      start: 32
+      end: 53
+  "fn f() { CliError::new(\"usage\", std::string::String::from(\"text\")); }":
+    labels:
+    - source: CliError::new("usage", std::string::String::from("text"))
+      style: primary
+      start: 9
+      end: 66
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: from
+      style: secondary
+      start: 53
+      end: 57
+    - source: String
+      style: secondary
+      start: 45
+      end: 51
+    - source: string
+      style: secondary
+      start: 37
+      end: 43
+    - source: std
+      style: secondary
+      start: 32
+      end: 35
+    - source: std::string
+      style: secondary
+      start: 32
+      end: 43
+    - source: std::string::String
+      style: secondary
+      start: 32
+      end: 51
+    - source: std::string::String::from
+      style: secondary
+      start: 32
+      end: 57
+    - source: "\"text\""
+      style: secondary
+      start: 58
+      end: 64
+    - source: "\"text\""
+      style: secondary
+      start: 58
+      end: 64
+    - source: std::string::String::from("text")
+      style: secondary
+      start: 32
+      end: 65
+    - source: std::string::String::from("text")
+      style: secondary
+      start: 32
+      end: 65
+  "fn f() { CliError::new(code, \"text\".to_owned()); }":
+    labels:
+    - source: CliError::new(code, "text".to_owned())
+      style: primary
+      start: 9
+      end: 47
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: to_owned
+      style: secondary
+      start: 36
+      end: 44
+    - source: "\"text\""
+      style: secondary
+      start: 29
+      end: 35
+    - source: "\"text\".to_owned"
+      style: secondary
+      start: 29
+      end: 44
+    - source: "\"text\".to_owned()"
+      style: secondary
+      start: 29
+      end: 46
+    - source: "\"text\".to_owned()"
+      style: secondary
+      start: 29
+      end: 46
+  "fn f() { CliError::new(code, \"x\"); }":
+    labels:
+    - source: CliError::new(code, "x")
+      style: primary
+      start: 9
+      end: 33
+    - source: new
+      style: secondary
+      start: 19
+      end: 22
+    - source: CliError
+      style: secondary
+      start: 9
+      end: 17
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: "\"x\""
+      style: secondary
+      start: 29
+      end: 32
+    - source: "\"x\""
+      style: secondary
+      start: 29
+      end: 32
   "fn f() { Command::new(\"x\").about(\"Lint prose\"); }":
     labels:
     - source: Command::new("x").about("Lint prose")
@@ -44,6 +902,36 @@ snapshots:
       style: secondary
       start: 32
       end: 50
+  "fn f() { crate::errors::CliError::new(\"usage\", \"pass paths\"); }":
+    labels:
+    - source: crate::errors::CliError::new("usage", "pass paths")
+      style: primary
+      start: 9
+      end: 60
+    - source: new
+      style: secondary
+      start: 34
+      end: 37
+    - source: CliError
+      style: secondary
+      start: 24
+      end: 32
+    - source: crate::errors::CliError
+      style: secondary
+      start: 9
+      end: 32
+    - source: crate::errors::CliError::new
+      style: secondary
+      start: 9
+      end: 37
+    - source: "\"pass paths\""
+      style: secondary
+      start: 47
+      end: 59
+    - source: "\"pass paths\""
+      style: secondary
+      start: 47
+      end: 59
   "fn f() { eprintln!(\"warning: {} is stale\", name); }":
     labels:
     - source: "eprintln!(\"warning: {} is stale\", name)"
@@ -100,6 +988,161 @@ snapshots:
       style: secondary
       start: 21
       end: 40
+  "impl CliError {\n    fn f() -> Self { Self::new(\"usage\", \"pass paths\") }\n}\n":
+    labels:
+    - source: Self::new("usage", "pass paths")
+      style: primary
+      start: 37
+      end: 69
+    - source: new
+      style: secondary
+      start: 43
+      end: 46
+    - source: CliError
+      style: secondary
+      start: 5
+      end: 13
+    - source: |-
+        impl CliError {
+            fn f() -> Self { Self::new("usage", "pass paths") }
+        }
+      style: secondary
+      start: 0
+      end: 73
+    - source: Self
+      style: secondary
+      start: 37
+      end: 41
+    - source: Self::new
+      style: secondary
+      start: 37
+      end: 46
+    - source: "\"pass paths\""
+      style: secondary
+      start: 56
+      end: 68
+    - source: "\"pass paths\""
+      style: secondary
+      start: 56
+      end: 68
+  "impl CliError {\n    fn f(raw: &str) -> Self { Self::escaping(\"usage\", \"pass paths\") }\n}\n":
+    labels:
+    - source: Self::escaping("usage", "pass paths")
+      style: primary
+      start: 46
+      end: 83
+    - source: escaping
+      style: secondary
+      start: 52
+      end: 60
+    - source: CliError
+      style: secondary
+      start: 5
+      end: 13
+    - source: |-
+        impl CliError {
+            fn f(raw: &str) -> Self { Self::escaping("usage", "pass paths") }
+        }
+      style: secondary
+      start: 0
+      end: 87
+    - source: Self
+      style: secondary
+      start: 46
+      end: 50
+    - source: Self::escaping
+      style: secondary
+      start: 46
+      end: 60
+    - source: "\"pass paths\""
+      style: secondary
+      start: 70
+      end: 82
+    - source: "\"pass paths\""
+      style: secondary
+      start: 70
+      end: 82
+  "impl crate::errors::CliError {\n    fn f() -> Self { Self::new(\"usage\", \"pass paths\") }\n}\n":
+    labels:
+    - source: Self::new("usage", "pass paths")
+      style: primary
+      start: 52
+      end: 84
+    - source: new
+      style: secondary
+      start: 58
+      end: 61
+    - source: CliError
+      style: secondary
+      start: 20
+      end: 28
+    - source: crate::errors::CliError
+      style: secondary
+      start: 5
+      end: 28
+    - source: |-
+        impl crate::errors::CliError {
+            fn f() -> Self { Self::new("usage", "pass paths") }
+        }
+      style: secondary
+      start: 0
+      end: 88
+    - source: Self
+      style: secondary
+      start: 52
+      end: 56
+    - source: Self::new
+      style: secondary
+      start: 52
+      end: 61
+    - source: "\"pass paths\""
+      style: secondary
+      start: 71
+      end: 83
+    - source: "\"pass paths\""
+      style: secondary
+      start: 71
+      end: 83
+  "impl fmt::Display for CliError {\n    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n        Self::new(\"usage\", \"pass paths\");\n        Ok(())\n    }\n}\n":
+    labels:
+    - source: Self::new("usage", "pass paths")
+      style: primary
+      start: 104
+      end: 136
+    - source: new
+      style: secondary
+      start: 110
+      end: 113
+    - source: CliError
+      style: secondary
+      start: 22
+      end: 30
+    - source: |-
+        impl fmt::Display for CliError {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                Self::new("usage", "pass paths");
+                Ok(())
+            }
+        }
+      style: secondary
+      start: 0
+      end: 160
+    - source: Self
+      style: secondary
+      start: 104
+      end: 108
+    - source: Self::new
+      style: secondary
+      start: 104
+      end: 113
+    - source: "\"pass paths\""
+      style: secondary
+      start: 123
+      end: 135
+    - source: "\"pass paths\""
+      style: secondary
+      start: 123
+      end: 135
   "mod tests {\n    fn f() { println!(\"not marked as test code\"); }\n}\n":
     labels:
     - source: println!("not marked as test code")

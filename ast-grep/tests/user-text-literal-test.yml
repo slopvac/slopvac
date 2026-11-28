@@ -6,6 +6,50 @@ valid:
   - 'fn f() { panic!("never reached here"); }'
   - 'fn f() { cmd.arg("--flag"); }'
   - 'fn f() { cmd.help(HELP.as_static()); }'
+  # CliError: a catalog render, a variable or a call is not a literal message.
+  - 'fn f() { CliError::new("usage", text(&Msg::A)); }'
+  - 'fn f() { CliError::new(code, message); }'
+  - 'fn f() { CliError::new("usage", render(&m)); }'
+  - 'fn f() { CliError::new("usage", msg.render()); }'
+  - 'fn f() { CliError::new("usage", name.to_string()); }'
+  - 'fn f() { CliError::new("usage", String::from(name)); }'
+  # CliError: a wrapper from another path is not the standard one.
+  - 'fn f() { CliError::new("usage", catalog::format!("{}", v)); }'
+  - 'fn f() { CliError::new("usage", catalog::concat!("a", "b")); }'
+  - 'fn f() { CliError::new("usage", catalog::String::from("text")); }'
+  - 'fn f() { CliError::escaping("usage", raw); }'
+  # CliError: the code argument is never checked.
+  - 'fn f() { CliError::new("pass paths", message); }'
+  - 'fn f() { Other::new("usage", "not a cli error"); }'
+  # CliError: comments do not count as arguments.
+  - 'fn f() { CliError::new(/* the code */ "usage", message); }'
+  - |
+    fn f() {
+        CliError::new(
+            // the code
+            "usage",
+            message,
+        );
+    }
+  # CliError: `Self::new` counts only inside `impl CliError`.
+  - |
+    impl CliError {
+        pub fn escaping(code: &'static str, raw: &str) -> Self {
+            Self::new(code, slopvac_sanitize::line(raw)).with_report_message(raw)
+        }
+    }
+  - |
+    impl Other {
+        fn f() -> Self { Self::new("usage", "not a cli error") }
+    }
+  - |
+    impl CliError {
+        fn f() {
+            impl Other {
+                fn g() -> Self { Self::new("usage", "not a cli error") }
+            }
+        }
+    }
   - |
     #[cfg(test)]
     mod tests {
@@ -18,6 +62,62 @@ invalid:
   - 'fn f() { let s = format!("cannot read {}", name); }'
   - 'fn f() { Command::new("x").help("Print the report"); }'
   - 'fn f() { Command::new("x").about("Lint prose"); }'
+  # CliError: a literal message, whatever the code.
+  - 'fn f() { CliError::new("usage", "pass paths"); }'
+  - 'fn f() { CliError::new(code, "x"); }'
+  - 'fn f() { CliError::escaping("usage", "bad value"); }'
+  - 'fn f() { CliError::new("usage", format!("{}", name)); }'
+  - 'fn f() { CliError::escaping(code, &format!("{}", v)); }'
+  # CliError: wrapped literals.
+  - 'fn f() { CliError::new("usage", r"raw text"); }'
+  - 'fn f() { CliError::new("usage", r#"raw "quoted""#); }'
+  - 'fn f() { CliError::new("usage", concat!("a", "b")); }'
+  - 'fn f() { CliError::new("usage", ("text")); }'
+  - 'fn f() { CliError::new("usage", "text".to_string()); }'
+  - 'fn f() { CliError::new("usage", String::from("text")); }'
+  - 'fn f() { CliError::new("usage", "text".into()); }'
+  - 'fn f() { CliError::new(code, "text".to_owned()); }'
+  - 'fn f() { CliError::new("usage", std::format!("{}", v)); }'
+  - 'fn f() { CliError::new("usage", alloc::format!("{}", v)); }'
+  - 'fn f() { CliError::new("usage", std::concat!("a", "b")); }'
+  - 'fn f() { CliError::new("usage", core::concat!("a", "b")); }'
+  - 'fn f() { CliError::new("usage", std :: format!("{}", v)); }'
+  - 'fn f() { CliError::new("usage", alloc::string::String::from("text")); }'
+  - 'fn f() { CliError::new("usage", std::string::String::from("text")); }'
+  - 'fn f() { CliError::new("usage", String :: from("text")); }'
+  # CliError: comments before an argument do not hide the message.
+  - 'fn f() { CliError::new("usage", /* the text */ "pass paths"); }'
+  - |
+    fn f() {
+        CliError::new(
+            // the code
+            code,
+            // the text
+            "pass paths",
+        );
+    }
+  # CliError: the path is matched by structure.
+  - 'fn f() { CliError :: new("usage", "pass paths"); }'
+  - 'fn f() { crate::errors::CliError::new("usage", "pass paths"); }'
+  - |
+    impl crate::errors::CliError {
+        fn f() -> Self { Self::new("usage", "pass paths") }
+    }
+  - |
+    impl fmt::Display for CliError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            Self::new("usage", "pass paths");
+            Ok(())
+        }
+    }
+  - |
+    impl CliError {
+        fn f() -> Self { Self::new("usage", "pass paths") }
+    }
+  - |
+    impl CliError {
+        fn f(raw: &str) -> Self { Self::escaping("usage", "pass paths") }
+    }
   - |
     mod tests {
         fn f() { println!("not marked as test code"); }
