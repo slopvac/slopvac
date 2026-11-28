@@ -1,7 +1,8 @@
 //! The text of `slopvac report` that the message catalog owns.
 //!
-//! The catalog tests pin the wording of each entry. The binary tests pin the words a user sees,
-//! so a call site that picks the wrong entry fails. Every expected value is written out by hand.
+//! The binary tests pin the words a user sees, so a call site that picks the wrong entry fails.
+//! The direct catalog cases cover only text that no binary run reaches. Every expected value is
+//! written out by hand.
 #![allow(
     clippy::panic,
     clippy::unwrap_used,
@@ -11,111 +12,32 @@
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::time::Duration;
 
-use assert_cmd::Command;
 use rstest::rstest;
-use slopvac_cli::report::gate::Kind as GateKind;
 use slopvac_cli::report::gh::GhError;
-use slopvac_cli::report::issue::Report;
 use slopvac_cli::report::messages::{ReportPhrase, ReportText};
 use slopvac_messages::render;
+use snapbox::cmd::{Command, cargo_bin};
+
+// ---- Catalog text that no binary run reaches ----
 
 #[rstest]
-#[case::no_response(ReportPhrase::NoResponse, "_No response_")]
-#[case::body_file_stdin(
-    ReportPhrase::BodyFileStdin,
-    "`-` means standard input to gh; write ./- for a file of that name"
-)]
-#[case::body_file_not_utf8(
-    ReportPhrase::BodyFileNotUtf8,
-    "the path must be UTF-8 without control characters, so the command can be printed"
-)]
-#[case::body_file_create(ReportPhrase::BodyFileCreate, "cannot create a file there")]
 #[case::body_file_write(ReportPhrase::BodyFileWrite, "cannot write the file")]
-#[case::body_file_replace(ReportPhrase::BodyFileReplace, "cannot replace that path")]
-#[case::gh_timed_out(ReportPhrase::GhTimedOut, "it failed or timed out")]
-#[case::gh_missing(
-    ReportPhrase::GhMissingShort,
-    "the GitHub CLI `gh` was not found on PATH"
-)]
-#[case::gh_login(
-    ReportPhrase::GhNotLoggedInShort,
-    "`gh auth status` failed; run `gh auth login`"
-)]
-#[case::gh_failed_timeout(ReportPhrase::GhFailedTimeout, "`gh issue create` failed or timed out")]
-#[case::sample_open(ReportPhrase::SampleOpen, "cannot open the file")]
-#[case::sample_not_regular(ReportPhrase::SampleNotRegular, "not a regular file")]
 #[case::sample_read(ReportPhrase::SampleRead, "cannot read the file")]
-#[case::sample_too_large(ReportPhrase::SampleTooLarge, "the file is larger than 256 KiB")]
-#[case::sample_not_utf8(ReportPhrase::SampleNotUtf8, "the file is not valid UTF-8")]
-#[case::field_syntax(ReportPhrase::InvalidFieldSyntax, "--field takes ID=VALUE")]
-#[case::input_field(
-    ReportPhrase::InvalidInputField,
-    "the `input` field holds document text; pass it with --include-text FILE so the preview shows it"
-)]
-#[case::control(
-    ReportPhrase::InvalidControl,
-    "a field or the document text holds a control character such as an escape sequence"
-)]
-#[case::title_line(ReportPhrase::InvalidTitleLine, "--title takes one non-empty line")]
-#[case::title_control(ReportPhrase::InvalidTitleControl, "--title holds a control character")]
-#[case::body_written(ReportPhrase::BodyWritten, "Wrote the body to the file you named.")]
-#[case::footer_not_posted(
-    ReportPhrase::FooterNotPosted,
-    "Nothing was posted. Add --body-file FILE --gh to print the GitHub CLI command, and --yes to run it."
-)]
-fn a_phrase_renders_as_published(#[case] phrase: ReportPhrase, #[case] text: &str) {
+fn a_phrase_that_no_run_reaches_renders_as_published(
+    #[case] phrase: ReportPhrase,
+    #[case] text: &str,
+) {
     assert_eq!(render(&phrase), text);
 }
 
-#[rstest]
-#[case::gh_exit(ReportText::GhExit { code: "3".into() }, "exit 3")]
-#[case::gh_failed_exit(ReportText::GhFailedExit { code: "3".into() }, "`gh issue create` failed (exit 3)")]
-#[case::unknown_field(
-    ReportText::InvalidUnknownField { category: "bug".into(), known: "agent, model".into() },
-    "unknown field id for `bug`; its fields are: agent, model"
-)]
-#[case::one_option(ReportText::InvalidOneOption { id: "latest".into() }, "`latest` takes one option")]
-#[case::options(
-    ReportText::InvalidOptions { id: "latest".into(), options: "Yes | No".into() },
-    "`latest` must be one of: Yes | No"
-)]
-#[case::single_line(ReportText::InvalidSingleLine { id: "command".into() }, "`command` is a single line")]
-#[case::repeated(ReportText::InvalidRepeated { id: "expected".into() }, "`expected` was given more than once")]
-#[case::title_long(
-    ReportText::InvalidTitleLong { max: 200 },
-    "--title is longer than 200 characters; GitHub caps a title at 256 with its prefix"
-)]
-#[case::no_text_field(
-    ReportText::InvalidNoTextField { category: "idea".into() },
-    "`idea` has no document text field, so --include-text does not apply"
-)]
-#[case::possible(
-    ReportText::Possible { kind: "private path".into(), field: "command".into() },
-    "possible private path in field `command`: review it before posting"
-)]
-#[case::preview(ReportText::Preview { repository: "slopvac/slopvac".into() }, "Target: slopvac/slopvac\nTitle:")]
-#[case::warning(ReportText::Warning { text: "w".into() }, "warning: w")]
-#[case::gh_command(ReportText::GhCommand, "GitHub CLI command:")]
-#[case::created(ReportText::Created, "Created:")]
-#[case::footer_url(ReportText::FooterUrl, "Prefilled issue form:")]
-#[case::footer_labels(ReportText::FooterLabels { labels: "a, b".into() }, "The issue form adds the labels: a, b")]
-#[case::footer_omitted(
-    ReportText::FooterOmitted { fields: "x, y".into() },
-    "The URL is too long to hold these fields; paste them from the preview: x, y"
-)]
-#[case::output_failed(ReportText::OutputFailed { kind: "broken pipe".into() }, "cannot write output: broken pipe")]
-fn a_text_with_parameters_renders_as_published(#[case] text: ReportText, #[case] expected: &str) {
-    assert_eq!(render(&text), expected);
-}
-
-#[rstest]
-#[case::credential(GateKind::Credential, "credential")]
-#[case::repository(GateKind::Repository, "private repository")]
-#[case::path(GateKind::Path, "private path")]
-#[case::local_name(GateKind::LocalName, "local name")]
-fn a_gate_finding_is_named_as_published(#[case] kind: GateKind, #[case] label: &str) {
-    assert_eq!(kind.label(), label);
+#[test]
+fn a_failed_write_to_the_output_names_the_error_kind() {
+    let text = ReportText::OutputFailed {
+        kind: "broken pipe".into(),
+    };
+    assert_eq!(render(&text), "cannot write output: broken pipe");
 }
 
 #[rstest]
@@ -127,32 +49,6 @@ fn a_gh_error_displays_as_published(#[case] error: GhError, #[case] text: &str) 
     assert_eq!(error.to_string(), text);
 }
 
-#[test]
-fn the_preview_prints_target_title_and_body() {
-    let report = Report {
-        title: "[bug]: crash".to_owned(),
-        body: "### What\n\nit broke".to_owned(),
-        answers: std::collections::BTreeMap::new(),
-        warnings: Vec::new(),
-    };
-    assert_eq!(
-        report.preview(),
-        "Target: slopvac/slopvac\nTitle: [bug]: crash\n\n### What\n\nit broke\n"
-    );
-}
-
-#[test]
-fn an_empty_optional_field_reads_no_response_in_the_body() {
-    let dir = tempfile::tempdir().unwrap();
-    let out = run(dir.path(), &full_bug(&[]));
-    // `output` is an optional textarea of the bug form and the run gives it no answer.
-    assert!(
-        out.stdout.contains("### Output\n\n_No response_\n"),
-        "{}",
-        out.stdout
-    );
-}
-
 // ---- The built binary ----
 
 struct Run {
@@ -161,29 +57,42 @@ struct Run {
     stderr: String,
 }
 
-fn run(dir: &Path, args: &[String]) -> Run {
-    run_with(dir, args, &[])
-}
-
-fn run_with(dir: &Path, args: &[String], env: &[(&str, &str)]) -> Run {
-    let mut cmd = Command::cargo_bin("slopvac").unwrap();
-    cmd.current_dir(dir)
-        .env("PATH", dir)
+/// The binary in `dir`, with `dir` as the only place to find a program and with every identity
+/// variable the scrubber reads set to a value that occurs in no fixture text.
+fn command(dir: &Path) -> Command {
+    let mut cmd = Command::new(cargo_bin!("slopvac"));
+    for var in [
+        "SLOPVAC_OFFLINE",
+        "SLOPVAC_LOG",
+        "FORCE_COLOR",
+        "CLICOLOR_FORCE",
+    ] {
+        cmd = cmd.env_remove(var);
+    }
+    cmd.env("PATH", dir)
         .env("NO_COLOR", "1")
         .env("SLOPVAC_NO_UPDATE_CHECK", "1")
-        .env_remove("SLOPVAC_OFFLINE")
-        .env_remove("SLOPVAC_LOG")
-        .arg("report")
-        .args(args);
-    for (key, value) in env {
-        cmd.env(key, value);
-    }
-    let output = cmd.output().unwrap();
+        .env("USER", "zz-fixture-user")
+        .env("LOGNAME", "zz-fixture-login")
+        .env("USERNAME", "zz-fixture-name")
+        .env("HOME", "/zz-fixture-home")
+        .env("HOSTNAME", "zz-fixture-host")
+        .current_dir(dir)
+        .timeout(Duration::from_secs(30))
+}
+
+fn finish(cmd: Command) -> Run {
+    let assert = cmd.assert();
+    let output = assert.get_output();
     Run {
         code: output.status.code(),
-        stdout: String::from_utf8(output.stdout).unwrap(),
-        stderr: String::from_utf8(output.stderr).unwrap(),
+        stdout: String::from_utf8(output.stdout.clone()).unwrap(),
+        stderr: String::from_utf8(output.stderr.clone()).unwrap(),
     }
+}
+
+fn run(dir: &Path, args: &[String]) -> Run {
+    finish(command(dir).arg("report").args(args))
 }
 
 fn strings(args: &[&str]) -> Vec<String> {
@@ -234,6 +143,18 @@ fn error_line(run: &Run) -> &str {
         .lines()
         .find(|l| l.starts_with("error["))
         .unwrap_or_else(|| panic!("no error line in {:?}", run.stderr))
+}
+
+#[test]
+fn an_empty_optional_field_reads_no_response_in_the_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = run(dir.path(), &full_bug(&[]));
+    // `output` is an optional textarea of the bug form and the run gives it no answer.
+    assert!(
+        out.stdout.contains("### Output\n\n_No response_\n"),
+        "{}",
+        out.stdout
+    );
 }
 
 #[rstest]
@@ -376,6 +297,7 @@ fn a_body_file_that_is_a_directory_cannot_be_replaced() {
     );
 }
 
+/// A file name that is not UTF-8 needs a file system that stores one, which Linux does.
 #[cfg(target_os = "linux")]
 #[test]
 fn a_body_file_path_that_is_not_utf8_cannot_be_printed_in_a_command() {
@@ -384,24 +306,16 @@ fn a_body_file_path_that_is_not_utf8_cannot_be_printed_in_a_command() {
 
     let dir = tempfile::tempdir().unwrap();
     let body = dir.path().join(OsString::from_vec(b"b\xffody.md".to_vec()));
-    let mut cmd = Command::cargo_bin("slopvac").unwrap();
-    let output = cmd
-        .current_dir(dir.path())
-        .env("PATH", dir.path())
-        .env("NO_COLOR", "1")
-        .env("SLOPVAC_NO_UPDATE_CHECK", "1")
-        .env_remove("SLOPVAC_OFFLINE")
-        .arg("report")
-        .args(full_bug(&[]))
-        .arg("--body-file")
-        .arg(&body)
-        .arg("--gh")
-        .output()
-        .unwrap();
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    let line = stderr.lines().find(|l| l.starts_with("error[")).unwrap();
+    let out = finish(
+        command(dir.path())
+            .arg("report")
+            .args(full_bug(&[]))
+            .arg("--body-file")
+            .arg(&body)
+            .arg("--gh"),
+    );
     assert_eq!(
-        line,
+        error_line(&out),
         "error[report-body-file]: --body-file: the path must be UTF-8 without control characters, so the command can be printed"
     );
 }
@@ -424,10 +338,17 @@ fn a_failed_gh_create_gives_its_reason(#[case] script: &str, #[case] reason: &st
 }
 
 #[test]
-fn a_plain_run_ends_with_the_footer() {
+fn a_plain_run_prints_the_preview_and_ends_with_the_footer() {
     let dir = tempfile::tempdir().unwrap();
     let out = run(dir.path(), &full_bug(&[]));
     assert_eq!(out.code, Some(0), "{}", out.stderr);
+    assert!(
+        out.stdout.starts_with(
+            "Target: slopvac/slopvac\nTitle: [bug]: crash on empty input\n\n### Reporter\n"
+        ),
+        "{}",
+        out.stdout
+    );
     let lines: Vec<&str> = out.stdout.lines().collect();
     let at = lines
         .iter()
@@ -521,11 +442,29 @@ fn a_credential_in_the_title_is_warned_about() {
     let out = run(dir.path(), &args);
     assert_eq!(out.code, Some(0), "{}", out.stderr);
     assert!(
-        out.stderr
-            .lines()
-            .any(|l| l == "warning: possible credential in field `title`: review it before posting"),
+        out.stderr.lines().any(
+            |l| l == "warning: possible credential in field `title`: review it before posting"
+        ),
         "{:?}",
         out.stderr
+    );
+}
+
+/// The category prefix joins the title after the scrub. A local name that the prefix contains,
+/// here the user name `bug` and the prefix `[bug]: `, stays in the title and is warned about.
+#[test]
+fn a_local_name_that_the_title_prefix_holds_is_warned_about() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = finish(
+        command(dir.path())
+            .env("USER", "bug")
+            .arg("report")
+            .args(full_bug(&[])),
+    );
+    assert_eq!(out.code, Some(0), "{}", out.stderr);
+    assert_eq!(
+        out.stderr,
+        "warning: possible local name in field `title`: review it before posting\n"
     );
 }
 
@@ -666,14 +605,9 @@ const CONSENT_HELP: &str = concat!(
 #[case::consent(&["report", "consent", "--help"], CONSENT_HELP)]
 fn the_long_help_reads_as_published(#[case] args: &[&str], #[case] help: &str) {
     let dir = tempfile::tempdir().unwrap();
-    let output = Command::cargo_bin("slopvac")
-        .unwrap()
-        .current_dir(dir.path())
-        .env("NO_COLOR", "1")
-        .env("SLOPVAC_NO_UPDATE_CHECK", "1")
+    command(dir.path())
         .args(args)
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), help);
+        .assert()
+        .success()
+        .stdout_eq(help);
 }

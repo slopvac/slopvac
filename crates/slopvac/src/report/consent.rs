@@ -105,7 +105,7 @@ enum StateProblem {
 impl From<StateProblem> for CliError {
     fn from(problem: StateProblem) -> Self {
         ReportError::StateFailed {
-            reason: problem.as_static().to_owned(),
+            reason: slopvac_messages::render(&problem),
         }
         .into()
     }
