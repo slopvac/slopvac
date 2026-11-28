@@ -1,9 +1,10 @@
 //! What the server asks of the lint engine, and the adapter for `slopvac-engine`.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use frontmatter_spans::detect;
+use slopvac_engine::discover::FileKind;
 use slopvac_engine::{Engine, EngineError, Input, Kind, Settings};
 use slopvac_model::{BomMode, Finding, Notice, RuleId, Span};
 use slopvac_parse::{BlockKind, parse_markdown};
@@ -232,11 +233,18 @@ fn scanner_reads_line(text: &str, site: usize) -> bool {
     })
 }
 
-/// The kind of file at `path`.
-fn kind_of(path: &str) -> Kind {
-    match path.rsplit('.').next() {
-        Some("mdx") => Kind::Mdx,
-        Some("rst") => Kind::Rst,
+/// The engine kind of the buffer at `path`, by its file name as discovery in `slopvac lint`
+/// classifies it, whatever the case of the extension. A buffer of any other kind is read as
+/// Markdown.
+#[must_use]
+pub fn buffer_kind(path: &str) -> Kind {
+    let name = Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    match FileKind::from_file_name(&name) {
+        Some(FileKind::Mdx) => Kind::Mdx,
+        Some(FileKind::Rst) => Kind::Rst,
         _ => Kind::Markdown,
     }
 }
@@ -260,7 +268,7 @@ impl EngineLinter {
             });
         }
         let mut input = Input::new(path, text)
-            .with_kind(kind_of(path))
+            .with_kind(buffer_kind(path))
             .with_bom(BomMode::Buffer);
         if let Some(relative) = relative {
             input = input.with_relative_path(relative);
@@ -287,7 +295,7 @@ impl Linter for EngineLinter {
     fn allow_reasons(&self, path: &str, text: &str, site: usize, rule: &RuleId) -> Vec<String> {
         // The engine's directive scanner reads `<!-- slopvac-allow: ... -->` only. MDX
         // rejects that comment and RST has no equivalent, so no action is offered there.
-        if kind_of(path) != Kind::Markdown || !scanner_reads_line(text, site) {
+        if buffer_kind(path) != Kind::Markdown || !scanner_reads_line(text, site) {
             return Vec::new();
         }
         self.reasons.get(rule).cloned().unwrap_or_default()

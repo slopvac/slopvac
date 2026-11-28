@@ -29,7 +29,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use slopvac_config::frontmatter::Policy;
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
-use slopvac_engine::{Engine, Input, Kind};
+use slopvac_engine::{Engine, Input};
 use slopvac_lsp::{
     Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
 };
@@ -499,11 +499,7 @@ impl Project {
         config: &LoadedConfig,
         rel: &Path,
     ) -> Option<GenreResult> {
-        let kind = match path.rsplit('.').next() {
-            Some("mdx") => Kind::Mdx,
-            Some("rst") => Kind::Rst,
-            _ => Kind::Markdown,
-        };
+        let kind = slopvac_lsp::buffer_kind(path);
         let probe = self.probe(epoch, config, rel)?;
         let relative = rel_text(rel);
         let mut input = Input::new(path, text)

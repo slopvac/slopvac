@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use slopvac_config::LoadedConfig;
-use slopvac_engine::{Engine, Input, Kind};
+use slopvac_engine::{Engine, Input};
 use slopvac_migrate::{Configure, DocumentSettings, Error, SettingsOf};
 
 use crate::engine::{block_errors, config_error, file_settings, rel_text};
@@ -75,7 +75,7 @@ impl Configure for MigrateConfigure {
             }
             let relative = rel_text(rel);
             let mut input = Input::new(&shown, text)
-                .with_kind(kind_of(rel))
+                .with_kind(slopvac_lsp::buffer_kind(&shown))
                 .with_relative_path(&relative);
             let declared = blocks.declared_genre();
             if let Some(genre) = &declared {
@@ -93,11 +93,3 @@ impl Configure for MigrateConfigure {
     }
 }
 
-/// The engine kind of a document by its extension, as discovery in `slopvac lint` reads it.
-fn kind_of(rel: &Path) -> Kind {
-    match rel.extension().and_then(|e| e.to_str()) {
-        Some("mdx") => Kind::Mdx,
-        Some("rst") => Kind::Rst,
-        _ => Kind::Markdown,
-    }
-}
