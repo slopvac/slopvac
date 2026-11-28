@@ -984,7 +984,6 @@ impl TrustStore {
         reject_reserved(scope)?;
         // The statement is parsed here first, so a parse failure is a cause with a fixed text
         // and the parser's text, which can quote the statement, never reaches the error.
-        rotation_new_key(proof.statement)?;
         let namespace = scope.namespace();
         let path = self.path();
         self.update_held(lock, |f| {
