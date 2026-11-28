@@ -1137,6 +1137,6 @@ def test_the_prime_gate_runs_after_the_job_builds_the_binary():
         for j in load(uses.rsplit("/", 1)[1])["jobs"].values()
         if any(s.get("name") == PRIME_GATE_STEP for s in j["steps"])
     )
-    names = [s["name"] for s in steps]
+    names = [s.get("name") for s in steps]
     assert "Build the slopvac binary" in names
     assert names.index("Build the slopvac binary") < names.index(PRIME_GATE_STEP)
