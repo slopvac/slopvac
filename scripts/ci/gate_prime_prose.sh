@@ -3,6 +3,9 @@
 #
 # Usage: gate_prime_prose.sh <slopvac-binary> <v3-config> <output-dir>
 #
+# The output directory must not exist or must be empty; the script refuses anything else
+# with exit 2 and never deletes files it did not create.
+#
 # The script renders every conditional branch of the two topics, then lints the files with
 # the 3.x binary. Exit 0 passes, exit 1 means a gate failed and exit 2 means the run was
 # incomplete. Every nonzero lint exit fails the script, so an incomplete run never passes.
@@ -22,7 +25,11 @@ bin=$(realpath "$1")
 config=$(realpath "$2")
 out=$3
 
-rm -rf "$out"
+# Never empty a directory the caller names: it can hold unrelated files.
+if [ -e "$out" ] && { [ ! -d "$out" ] || [ -n "$(ls -A "$out")" ]; }; then
+  echo "gate_prime_prose.sh: $out exists and is not an empty directory" >&2
+  exit 2
+fi
 mkdir -p "$out"
 out=$(realpath "$out")
 

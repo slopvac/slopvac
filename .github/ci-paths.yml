@@ -26,6 +26,9 @@ code:
   - 'Cargo.toml'
   - 'Cargo.lock'
   - 'rust-toolchain.toml'
+  # .cargo/config.toml sets how the binary links PCRE2.
+  - '.cargo/**'
+  - 'scripts/ci/gate_prime_prose.sh'
   - 'scripts/**/*.py'
   - 'scripts/install_vale.py'
   - 'mise.toml'
@@ -150,6 +153,8 @@ action:
   - 'Cargo.toml'
   - 'Cargo.lock'
   - 'rust-toolchain.toml'
+  # The gate builds the binary, so .cargo/config.toml (PCRE2 linking) changes it too.
+  - '.cargo/**'
   # The prime prose gate lints the guidance text that the binary renders. Besides crates/,
   # the binary embeds the config schemas and the legacy profiles, and the gate reads the
   # script and the fixture config (.github/action-fixtures/** is above).
