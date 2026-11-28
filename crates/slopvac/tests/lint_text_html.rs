@@ -151,6 +151,7 @@ const NOTICE: &str = "fix-html-unavailable";
 
 /// The root notices of a JSON report with the code `fix-html-unavailable`, as
 /// `(level, path)`.
+#[expect(clippy::expect_used, reason = "test helper: a panic is a failed test")]
 fn fix_notices(json: &str) -> Vec<(String, String)> {
     let report: Value = serde_json::from_str(json).expect("a JSON report");
     report["notices"]
