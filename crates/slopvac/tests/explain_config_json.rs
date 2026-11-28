@@ -684,6 +684,47 @@ fn an_unregistered_genre_is_refused_by_lint_and_explain_without_its_value(
     assert_eq!(headings, ["docs/a.md"], "{stdout}");
 }
 
+/// A document whose `[[genres]]` assignment names an unregistered genre does not take the
+/// detected genre from a sibling under the same config: `reference/e.md` gets the genre and
+/// the findings that it gets when it is linted alone, and only `a.md` is refused.
+#[test]
+fn an_unregistered_assignment_leaves_the_detected_genre_of_its_siblings() {
+    let dir = project_with(&format!(
+        "schema_version = 3\n\n[[genres]]\nfiles = [\"a.md\"]\ngenre = \"{UNREGISTERED}\"\n"
+    ));
+    fs::create_dir(dir.path().join("reference")).expect("reference dir");
+    fs::write(
+        dir.path().join("reference/e.md"),
+        "# Notes\n\nWe refactored the parser.\n",
+    )
+    .expect("write document");
+    let sibling = |report: &Value| {
+        report["documents"]
+            .as_array()
+            .expect("documents")
+            .iter()
+            .find(|d| d["path"] == json!("reference/e.md"))
+            .cloned()
+            .unwrap_or_else(|| panic!("no reference/e.md in {report}"))
+    };
+
+    let (code, stdout, stderr) =
+        outcome(dir.path(), &["lint", "--format", "json", "reference/e.md"]);
+    assert!(code.is_some_and(|c| c < 2), "{stderr}");
+    let alone = sibling(&serde_json::from_str(&stdout).expect("a lint report"));
+    assert_eq!(alone["genre"]["source"], json!("detected"), "{alone}");
+
+    let (code, stdout, stderr) = outcome(
+        dir.path(),
+        &["lint", "--format", "json", "a.md", "reference/e.md"],
+    );
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains("error[config-invalid-value]"), "{stderr}");
+    let together = sibling(&serde_json::from_str(&stdout).expect("a lint report"));
+    assert_eq!(together["genre"], alone["genre"], "{together}");
+    assert_eq!(together["findings"], alone["findings"], "{together}");
+}
+
 /// With `[frontmatter] enabled = false` the document takes no part in resolution: the record
 /// says so, and no origin is the `slopvac:` block or a directive.
 #[test]
