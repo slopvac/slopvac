@@ -181,6 +181,18 @@ impl std::fmt::Debug for DrainHook {
     }
 }
 
+/// What the debug log keeps of a plugin's standard error (plugin-protocol.md section 7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum StderrLog {
+    /// Each line, escaped to stay on one line.
+    #[default]
+    Lines,
+    /// The length in bytes of each line, and none of its text, for a plugin whose standard
+    /// error can quote the document it received (policies.md section 1.7).
+    Lengths,
+}
+
 /// What the host offers and proposes.
 #[derive(Debug, Clone)]
 pub struct HostConfig {
@@ -209,6 +221,8 @@ pub struct HostConfig {
     pub budget: Arc<RunBudget>,
     /// The program that starts each plugin on Unix.
     pub launcher: Launcher,
+    /// What the debug log keeps of the plugin's standard error.
+    pub stderr_log: StderrLog,
     /// Test seam: where a teardown reads the process table. `None`, the
     /// default, means `/bin/ps`; production code never sets it.
     #[doc(hidden)]
@@ -252,6 +266,7 @@ impl Default for HostConfig {
             caps: RunCaps::default(),
             budget: Arc::default(),
             launcher: Launcher::CurrentExe,
+            stderr_log: StderrLog::default(),
             process_table: None,
             launcher_sweep: Duration::from_secs(2),
             limits_pause: Duration::ZERO,
@@ -353,6 +368,10 @@ struct Shared {
     drain_hook: Option<DrainHook>,
     shutdown_request_hook: Option<DrainHook>,
     release_hook: Option<DrainHook>,
+    /// The end that failed the waiting requests during shutdown. Set and read under the
+    /// `pending` lock, so a request that registers after the end still sees it.
+    released: Mutex<Option<PluginError>>,
+    stderr_log: StderrLog,
     exit_timeout: Duration,
     stream: Activity,
 }
@@ -419,12 +438,20 @@ impl Shared {
     /// During shutdown the stream or process ending is expected: fail what is
     /// still waiting, but leave success and the kill to `Plugin::shutdown`.
     fn release_pending(&self) {
-        let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
+        let ended = PluginError::Usage(HostPhrase::ShutDown.as_static().into());
+        let drained: Vec<Pending> = {
+            let mut pending = lock(&self.pending);
+            // Latched under the registration lock: a request that registers later fails
+            // with the same end, so the end is never lost.
+            let mut latch = lock(&self.released);
+            if latch.is_none() {
+                *latch = Some(ended.clone());
+            }
+            drop(latch);
+            pending.drain().map(|(_, p)| p).collect()
+        };
         for p in drained {
-            let _ = p.reply.try_send((
-                Instant::now(),
-                Err(PluginError::Usage(HostPhrase::ShutDown.as_static().into())),
-            ));
+            let _ = p.reply.try_send((Instant::now(), Err(ended.clone())));
         }
         if let Some(hook) = &self.release_hook {
             (hook.0)();
@@ -661,6 +688,7 @@ fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) 
 struct LogLines {
     line: Vec<u8>,
     cut: bool,
+    mode: StderrLog,
 }
 
 impl LogLines {
@@ -678,9 +706,21 @@ impl LogLines {
 
     fn emit(&mut self, plugin: &str) {
         let line = self.line.strip_suffix(b"\r").unwrap_or(&self.line);
-        let text = slopvac_sanitize::line(&String::from_utf8_lossy(line));
-        let cut = if self.cut { " [cut]" } else { "" };
-        tracing::debug!(target: STDERR_LOG_TARGET, plugin, "{text}{cut}");
+        match self.mode {
+            StderrLog::Lines => {
+                let text = slopvac_sanitize::line(&String::from_utf8_lossy(line));
+                let cut = if self.cut { " [cut]" } else { "" };
+                tracing::debug!(target: STDERR_LOG_TARGET, plugin, "{text}{cut}");
+            }
+            StderrLog::Lengths => tracing::debug!(
+                target: STDERR_LOG_TARGET,
+                plugin,
+                bytes = line.len(),
+                cut = self.cut,
+                "{}",
+                HostPhrase::StderrLineWithheld.as_static()
+            ),
+        }
         self.line.clear();
         self.cut = false;
     }
@@ -692,6 +732,7 @@ fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
     let mut log = LogLines {
         line: Vec::new(),
         cut: false,
+        mode: shared.stderr_log,
     };
     loop {
         match stderr.read(&mut buf) {
@@ -852,6 +893,9 @@ impl Conn {
         {
             let mut pending = lock(&self.shared.pending);
             if let Some(e) = self.dead() {
+                return Err(e);
+            }
+            if let Some(e) = lock(&self.shared.released).clone() {
                 return Err(e);
             }
             pending.insert(
@@ -1611,6 +1655,8 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         drain_hook: cfg.drain_hook.clone(),
         shutdown_request_hook: cfg.shutdown_request_hook.clone(),
         release_hook: cfg.release_hook.clone(),
+        released: Mutex::new(None),
+        stderr_log: cfg.stderr_log,
         exit_timeout: cfg.timeouts.exit,
         stream: Activity::new(),
     });

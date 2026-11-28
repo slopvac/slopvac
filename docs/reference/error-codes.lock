@@ -943,6 +943,7 @@ plugins-host-shutdown-not-null text
 plugins-host-status-limit text
 plugins-host-status-unknown text
 plugins-host-stderr-cap text
+plugins-host-stderr-line-withheld text
 plugins-host-stderr-tail text
 plugins-host-stdout-cap text
 plugins-host-unknown text
@@ -1644,6 +1645,7 @@ review-reason-literal text
 review-reason-mechanical text
 review-reason-rewrite text
 review-report-item text
+review-report-untrusted text
 review-same-model error
 review-scope-approval error
 review-type-ineligible error

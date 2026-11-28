@@ -768,6 +768,10 @@ pub(crate) enum HostPhrase {
     #[code("plugins-host-stderr-cap")]
     #[text("standard error volume cap reached")]
     StderrCap,
+    /// A line of standard error that the debug log shows by its length only.
+    #[code("plugins-host-stderr-line-withheld")]
+    #[text("a standard error line, withheld because it can quote the document")]
+    StderrLineWithheld,
     /// A write to the plugin blocked.
     #[code("plugins-host-write-blocked")]
     #[text("the write to the plugin blocked")]
@@ -1699,6 +1703,10 @@ mod tests {
             (HostPhrase::BudgetExceeded, "whole-run budget exceeded"),
             (HostPhrase::StdoutCap, "standard output volume cap reached"),
             (HostPhrase::StderrCap, "standard error volume cap reached"),
+            (
+                HostPhrase::StderrLineWithheld,
+                "a standard error line, withheld because it can quote the document",
+            ),
             (HostPhrase::WriteBlocked, "the write to the plugin blocked"),
             (HostPhrase::NoSlot, "no request slot became free"),
             (HostPhrase::Unknown, "unknown"),

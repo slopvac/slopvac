@@ -585,7 +585,8 @@ pub struct ReviewEnv<'a> {
 #[error("{error}")]
 #[non_exhaustive]
 pub struct Stopped {
-    /// The failure.
+    /// The failure, which is also the error source.
+    #[source]
     pub error: AgentsError,
     /// The notices known before the failure, such as `review-model-same`.
     pub notices: Vec<Notice>,
@@ -649,7 +650,8 @@ pub struct Plan {
     pub reviewer_model_checked: bool,
     /// Notices that leave the run intact, such as an unchecked model rule.
     pub notices: Vec<Notice>,
-    /// The provider's report; absent on `--dry-run`.
+    /// The provider's report, which is untrusted provider output and starts with the
+    /// `review-report-untrusted` line; absent on `--dry-run`.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(transform = slopvac_model::absent_not_null)]
     pub report: Option<String>,
@@ -947,6 +949,26 @@ fn same_model_notice(
     reviewer_source: &str,
     items: Option<serde_json::Value>,
 ) -> Result<Notice, AgentsError> {
+    same_model_notice_shown(
+        author,
+        author_source,
+        reviewer,
+        &quoted(reviewer),
+        reviewer_source,
+        items,
+    )
+}
+
+/// [`same_model_notice`] with the reviewer as the message shows it, for a value that is
+/// already escaped.
+fn same_model_notice_shown(
+    author: &str,
+    author_source: &str,
+    reviewer: &str,
+    shown: &str,
+    reviewer_source: &str,
+    items: Option<serde_json::Value>,
+) -> Result<Notice, AgentsError> {
     let mut data = serde_json::Map::new();
     data.insert("author".into(), author.into());
     data.insert("author_source".into(), author_source.into());
@@ -958,7 +980,7 @@ fn same_model_notice(
     Ok(notice(
         NoticeLevel::Warning,
         &AgentsMessage::ModelSame {
-            reviewer: quoted(reviewer),
+            reviewer: shown.to_owned(),
         },
     )?
     .with_data(data))
@@ -1068,10 +1090,11 @@ fn reported_notices(
         if let Some(author) = plan.author_model.as_deref()
             && compare_models(Some(author), &raw) == ModelCheck::Same
         {
-            notices.push(same_model_notice(
+            notices.push(same_model_notice_shown(
                 author,
                 author_source,
                 &reported,
+                &quote_escaped(&reported),
                 "reported",
                 Some(items.clone()),
             )?);
@@ -1087,7 +1110,7 @@ fn reported_notices(
                     NoticeLevel::Info,
                     &AgentsMessage::ModelReportedMismatch {
                         requested: quoted(requested),
-                        reported: quoted(&reported),
+                        reported: quote_escaped(&reported),
                     },
                 )?
                 .with_data(data),
@@ -1095,6 +1118,12 @@ fn reported_notices(
         }
     }
     Ok(notices)
+}
+
+/// Quote a value that `slopvac_sanitize` has already escaped, so it is escaped once: only a
+/// quote mark gets a backslash, and a backslash is never doubled again.
+fn quote_escaped(escaped: &str) -> String {
+    format!("\"{}\"", escaped.replace('"', "\\\""))
 }
 
 /// The answer for each sent item, in the order sent. A reply that names an item twice, names
@@ -1153,7 +1182,8 @@ fn refuse_failed_items(answers: &[&Answer], items: &[SentItem]) -> Result<(), Ag
     ))
 }
 
-/// The report: one block per payload item in payload order, whatever order the reply came in.
+/// The report: the line that marks it as untrusted provider output and a blank line, then one
+/// block per payload item in payload order, whatever order the reply came in.
 /// A block is the item's heading, then a blank line and the answer with its trailing newlines
 /// removed and then escaped; an empty answer leaves the heading alone. Blocks are separated by
 /// a blank line and the report ends with one newline.
@@ -1177,7 +1207,5 @@ fn assemble_report(payload: &Payload, answered: &[(&SentItem, &str, &str)]) -> S
             })
         })
         .collect();
-    let mut report = blocks.join("\n\n");
-    report.push('\n');
-    report
+    format!("{}\n\n{}\n", AgentsText::ReportUntrusted, blocks.join("\n\n"))
 }

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use slopvac_agents::AgentsError;
 use slopvac_agents::review::{self, ModelProvider, ProviderReply, ProviderRequest, ReplyItem};
 use slopvac_config::LoadedConfig;
-use slopvac_plugins::{CompleteError, HookKind, HostConfig, PluginError, Shutdown};
+use slopvac_plugins::{CompleteError, HookKind, HostConfig, PluginError, Shutdown, StderrLog};
 
 use crate::env::Env;
 use crate::errors::CliError;
@@ -119,7 +119,7 @@ impl<'a> PluginProvider<'a> {
             return Err(review::not_a_provider());
         }
         let host = runner
-            .start(&plugin, spec, &HostConfig::default())
+            .start(&plugin, spec, &provider_host_config())
             .map_err(|e| self.failure(e.code(), &e.to_string()))?;
         // After the handshake: the first provider hook the plugin offered answers.
         let hook = host
@@ -159,6 +159,15 @@ impl<'a> PluginProvider<'a> {
                 })
                 .collect(),
         ))
+    }
+}
+
+/// The host settings for a provider: its standard error reaches the debug log by length only,
+/// because a provider receives the document and can echo it (policies.md section 1.7).
+fn provider_host_config() -> HostConfig {
+    HostConfig {
+        stderr_log: StderrLog::Lengths,
+        ..HostConfig::default()
     }
 }
 

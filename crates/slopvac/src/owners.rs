@@ -281,12 +281,14 @@ pub fn review(
 }
 
 /// The error of a review that stopped, after its notices went to `err_out`. A notice that
-/// cannot be written must not hide the error: the error is what the run reports.
+/// cannot be written must not hide the error: the error is what the run reports. The first
+/// failed write ends the notices, because the stream is broken.
 fn stopped_error(stopped: &review::Stopped, err_out: &mut dyn Write, root: &Path) -> CliError {
     for notice in &stopped.notices {
-        // A failed write of a notice is harmless here: the error that follows is the outcome,
-        // and the binary reports it whatever the stream does.
-        let _ = writeln!(err_out, "{}", slopvac_report::render_notice(notice));
+        if writeln!(err_out, "{}", slopvac_report::render_notice(notice)).is_err() {
+            // The stream is broken, so the notices after this one cannot reach it either.
+            break;
+        }
     }
     agents_error(&stopped.error, root)
 }

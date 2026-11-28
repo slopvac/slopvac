@@ -58,7 +58,8 @@ pub use cli::{
 pub use error::{CompleteError, PluginError, RpcError, StartError};
 pub use error_codes::{HostCodeRow, ProtocolCodes, RpcCodeRow, protocol_codes};
 pub use host::{
-    DrainHook, HostConfig, Plugin, PluginSpec, ReadHook, RunCaps, Shutdown, SpawnGate, Timeouts,
+    DrainHook, HostConfig, Plugin, PluginSpec, ReadHook, RunCaps, Shutdown, SpawnGate, StderrLog,
+    Timeouts,
 };
 pub use messages::cli::{Redacted, Reported, RunError};
 pub use messages::message_entries;
