@@ -1515,6 +1515,9 @@ fn k18_a_rotation_file_over_4_kib_is_refused_with_its_name(#[case] name: &str) {
         ),
         "{err:?}"
     );
+    assert_eq!(err.code(), Some("rotation-invalid"), "{err:?}");
+    let text = err.to_string();
+    assert!(text.contains(name), "{text}");
     assert_eq!(r.pinned_id(), OLD_KEY_ID);
 }
 
