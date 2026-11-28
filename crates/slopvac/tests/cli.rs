@@ -689,6 +689,19 @@ fn version_json_reads_update_check_from_an_extended_file() {
 
 #[test]
 fn offline_in_an_extended_file_blocks_self_update_and_a_later_false_does_not_undo_it() {
+    // Make the test binary look like an installer install, so only offline mode can stop it.
+    let exe = slopvac().get_program().to_owned();
+    let prefix = std::path::Path::new(&exe).parent().unwrap().to_owned();
+    let receipts = tempfile::tempdir().unwrap();
+    fs::write(
+        receipts.path().join("slopvac-receipt.json"),
+        serde_json::json!({
+            "install_prefix": prefix,
+            "source": {"app_name": "slopvac"},
+        })
+        .to_string(),
+    )
+    .unwrap();
     let dir = tempfile::tempdir().unwrap();
     fs::write(
         dir.path().join("slopvac.toml"),
@@ -702,7 +715,7 @@ fn offline_in_an_extended_file_blocks_self_update_and_a_later_false_does_not_und
     .unwrap();
     slopvac()
         .current_dir(dir.path())
-        .env("AXOUPDATER_CONFIG_PATH", "/nonexistent")
+        .env("AXOUPDATER_CONFIG_PATH", receipts.path())
         .args(["self", "update"])
         .assert()
         .code(2)
@@ -717,11 +730,7 @@ fn broken_project() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("slopvac.toml"), NOT_UTF8).unwrap();
     fs::create_dir(dir.path().join("old")).unwrap();
-    fs::write(
-        dir.path().join("old/slopvac.toml"),
-        "[vale]\nbinary = \"vale\"\n",
-    )
-    .unwrap();
+    fs::write(dir.path().join("old/.slopvac.toml"), "profile = \"strict\"\n").unwrap();
     fs::write(dir.path().join("ok.toml"), "schema_version = 3\n").unwrap();
     dir
 }
@@ -761,7 +770,8 @@ fn invocations_that_skip_the_preflight_run_on_a_broken_config(#[case] args: &[&s
 fn lsp_skips_the_preflight_on_a_broken_config() {
     let dir = broken_project();
     let input = [
-        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}"#,
+        INITIALIZE,
+        r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
         r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#,
         r#"{"jsonrpc":"2.0","method":"exit"}"#,
     ]

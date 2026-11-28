@@ -142,7 +142,9 @@ impl Preflight {
     }
 
     /// The failure that stops the command: the line `lint` prints for it. `None` when the
-    /// configuration resolved, or when the invocation does not stop on a failure.
+    /// configuration resolved, when the invocation does not stop on a failure, or when the
+    /// `--config` file does not exist: each command that takes `--config` refuses a missing
+    /// file itself, before it reads anything, under the code it already reports.
     pub(crate) fn refusal(&self, cwd: &Path) -> Option<CliError> {
         if self.mode != Mode::Strict {
             return None;
@@ -153,7 +155,7 @@ impl Preflight {
         if let Some(given) = &self.explicit
             && !cwd.join(given).is_file()
         {
-            return Some(crate::engine::config_not_found(given, cwd));
+            return None;
         }
         Some(crate::engine::config_error(err, cwd))
     }
