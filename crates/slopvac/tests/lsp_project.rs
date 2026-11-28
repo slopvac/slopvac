@@ -917,3 +917,27 @@ fn a_directive_diagnostic_does_not_quote_the_value_it_refused() -> TestResult {
     assert!(!diagnostics.contains(VALUE), "{diagnostics}");
     Ok(())
 }
+
+/// A buffer that names an unregistered genre is refused with the location of its `genre` key,
+/// shown relative to the project root and never as the absolute path the client sent
+/// (policies, logging and redaction). The key follows the 14 characters of `<!-- slopvac: `,
+/// at column 15.
+#[test]
+fn an_unregistered_genre_refusal_names_the_buffer_relative_to_the_root() -> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    fs::create_dir(root.join("docs"))?;
+    let mut session = Session::start(&root)?;
+    session.open(
+        &root,
+        "docs/a.md",
+        "<!-- slopvac: genre=zzsecretgenre -->\n# T\n",
+    )?;
+    let diagnostics = diagnostics_on(&session, &uri_of(&root, "docs/a.md"))?.to_string();
+    session.finish()?;
+    assert!(diagnostics.contains("docs/a.md:1:15"), "{diagnostics}");
+    let absolute = root.display().to_string();
+    assert!(!diagnostics.contains(&absolute), "{diagnostics}");
+    assert!(!diagnostics.contains("zzsecretgenre"), "{diagnostics}");
+    Ok(())
+}
