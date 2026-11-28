@@ -14,7 +14,6 @@ use slopvac_schemas::ARTIFACTS;
 /// A file that is generated now must leave this list, so the list only shrinks.
 const NOT_GENERATED: &[(&str, &str)] = &[
     ("genre.schema.json", "slopvac-8l4.5.57"),
-    ("rules-output.schema.json", "slopvac-8l4.12.88"),
     ("style.schema.json", "slopvac-8l4.8.14"),
 ];
 

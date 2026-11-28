@@ -304,6 +304,27 @@ pub const ARTIFACTS: &[Artifact] = &[
         keep: &[],
         build: version_document,
     },
+    Artifact {
+        file: "rules-output.schema.json",
+        title: "slopvac v3 rules output",
+        description: Some(
+            "The document that `slopvac rules --format json` prints. `slopvac explain RULE \
+             --format json` prints one entry of its `rules` list, described by \
+             `$defs/ExplainOutput`. Rule entries carry the qualified rule id and the facts the \
+             binary adds to the authoring shape in rule.schema.json: the category, the match \
+             kind, the documentation link and the severity after the configuration layers. \
+             This is an output document, so it is not valid input for a rule or category file. \
+             Unknown keys are errors, and keys that start with `x-` are ignored.",
+        ),
+        imports: &[
+            "common.schema.json",
+            "rule.schema.json",
+            "lint-report.schema.json",
+        ],
+        inline: &["AiSignal"],
+        keep: &["ExplainOutput"],
+        build: rules_output,
+    },
 ];
 
 /// The producer contract: what the generated reference file holds.
@@ -336,6 +357,17 @@ fn plugin_protocol() -> Value {
     schema_settings(Contract::Deserialize)
         .into_generator()
         .into_root_schema_for::<slopvac_plugins::ProtocolMessage>()
+        .to_value()
+}
+
+/// The producer contract: what `slopvac rules --format json` serializes, and, as
+/// `$defs/ExplainOutput`, what `slopvac explain --format json` serializes. It uses the rule
+/// schema's generator, so the definitions that both files share come out equal.
+fn rules_output() -> Value {
+    let mut generator = schema_generator();
+    generator.subschema_for::<slopvac_cli::inspect_output::ExplainOutput<'static>>();
+    generator
+        .root_schema_for::<slopvac_cli::inspect_output::RulesOutput<'static>>()
         .to_value()
 }
 
