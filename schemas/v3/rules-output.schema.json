@@ -293,7 +293,7 @@
           }
         }
       ],
-      "description": "One entry of the `rules` list: the rule as its category file defines it, with the qualified id, and the facts the binary adds.",
+      "description": "One entry of the `rules` list.",
       "patternProperties": {
         "^x-": true
       },
