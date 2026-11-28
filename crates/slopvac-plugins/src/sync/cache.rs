@@ -308,7 +308,7 @@ impl Store {
     /// The directory of a tree.
     #[must_use]
     pub fn tree_dir(&self, hash: &TreeHash) -> PathBuf {
-        self.trees().join(format!("tree-{}", hash.hex()))
+        self.trees().join(format!("tree-{}0", hash.hex()))
     }
 
     /// A private copy of the cached archive `digest`, verified while it was copied, or `None`
