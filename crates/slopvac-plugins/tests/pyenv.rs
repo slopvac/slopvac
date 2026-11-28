@@ -2049,34 +2049,45 @@ mod unix_only {
         assert_changed(&env, "interp/python", "changed size or modification time");
     }
 
+    /// Where an alias points. `Root` holds the interpreter, `Project` does not, and `Missing`
+    /// does not exist.
+    #[derive(Clone, Copy)]
+    enum Place {
+        Missing,
+        Project,
+        Root,
+    }
+
     /// The environment is on disk, built through the real root. A fresh store opens on an alias
-    /// and the alias moves to an ancestor of the interpreter before the load, so only a root
-    /// resolved when the store opened keeps the interpreter outside the project.
+    /// that points at `at_open`, and the alias moves to `at_load` before the load. The
+    /// interpreter shows as `expected`: what the root at open gives, not what the root at load
+    /// would give.
     #[rstest::rstest]
-    #[case::dangling_at_open(false)]
-    #[case::resolved_at_open(true)]
-    fn the_alias_is_resolved_when_the_store_opens_not_when_it_loads(#[case] resolves: bool) {
-        let s = Scratch::new(&format!("u-interp-late-{resolves}"));
+    #[case::dangling_at_open(Place::Missing, Place::Root, "<external>/python-other")]
+    #[case::resolved_at_open(Place::Project, Place::Root, "<external>/python-other")]
+    #[case::holding_the_interpreter_at_open(Place::Root, Place::Project, "interp/python-other")]
+    fn the_alias_is_resolved_when_the_store_opens_not_when_it_loads(
+        #[case] at_open: Place,
+        #[case] at_load: Place,
+        #[case] expected: &str,
+    ) {
+        let s = Scratch::new(&format!("u-interp-late-{}-{}", at_open as u8, at_load as u8));
         let root = fs::canonicalize(&s.0).unwrap();
         let project = s.dir("project");
         fs::create_dir_all(&project).unwrap();
-        let (_, vp, w) = built_on_wrapper(&s, &root);
-        let target = if resolves {
-            project
-        } else {
-            s.dir("not-there-yet")
+        let place = |p: Place| match p {
+            Place::Missing => s.dir("not-there-yet"),
+            Place::Project => project.clone(),
+            Place::Root => root.clone(),
         };
-        let alias = alias_to(&s, &target);
+        let (_, vp, w) = built_on_wrapper(&s, &root);
+        let alias = alias_to(&s, &place(at_open));
         let store = EnvStore::open(s.dir("envs"), &alias);
         fs::remove_file(&alias).unwrap();
-        std::os::unix::fs::symlink(&root, &alias).unwrap();
+        std::os::unix::fs::symlink(place(at_load), &alias).unwrap();
         let env = store.load(&vp.tree, "3.12").unwrap().expect("on disk");
         retarget(&s, &w);
-        assert_changed(
-            &env,
-            "<external>/python-other",
-            "is not the interpreter the build recorded",
-        );
+        assert_changed(&env, expected, "is not the interpreter the build recorded");
     }
 
     #[test]
