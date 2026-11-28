@@ -274,13 +274,14 @@ fn sync_offline_from_any_source_reports_the_missing_cache_entry(
 /// request, the revocation fetch included, reaches it. It answers nothing.
 struct NetworkTally {
     port: u16,
+    listener: Arc<TcpListener>,
     seen: Arc<AtomicUsize>,
     stop: Arc<AtomicBool>,
 }
 
 impl NetworkTally {
     fn start() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let listener = Arc::new(TcpListener::bind("127.0.0.1:0").expect("bind"));
         listener.set_nonblocking(true).unwrap();
         let port = listener.local_addr().unwrap().port();
         let (seen, stop) = (
@@ -288,7 +289,9 @@ impl NetworkTally {
             Arc::new(AtomicBool::new(false)),
         );
         let (count, done) = (Arc::clone(&seen), Arc::clone(&stop));
+        let accepting = Arc::clone(&listener);
         std::thread::spawn(move || {
+            let listener = accepting;
             while !done.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok(_) => {
@@ -298,10 +301,21 @@ impl NetworkTally {
                 }
             }
         });
-        Self { port, seen, stop }
+        Self {
+            port,
+            listener,
+            seen,
+            stop,
+        }
     }
 
+    /// Every connection opened so far. Call it after the child exits: it first accepts every
+    /// connection still waiting in the listen queue, so a connection the background thread has
+    /// not reached yet is counted too.
     fn requests(&self) -> usize {
+        while self.listener.accept().is_ok() {
+            self.seen.fetch_add(1, Ordering::AcqRel);
+        }
         self.seen.load(Ordering::Acquire)
     }
 
@@ -1437,10 +1451,20 @@ fn k22_pin_and_rotate_finish_with_stdin_closed_and_open_no_connection() {
         ),
     )
     .unwrap();
+    // A rotation from the pinned key to another that passes every check of its files, so
+    // rotate gets as far as the revocation list, which this machine never fetched.
+    let new = signed_fixture::Key::secondary();
+    let (old_pk, new_pk) = (key.public(), new.public());
+    let statement = format!(
+        "{{\"namespace\":\"acme\",\"newKey\":\"{}\",\"newKeyId\":\"{}\",\"notBefore\":\"2026-11-10T00:00:00Z\",\"oldKeyId\":\"{}\",\"schema_version\":1,\"type\":\"rotation\"}}",
+        new_pk.to_base64(),
+        new_pk.key_id(),
+        old_pk.key_id()
+    );
     let dir = sandbox.dir.path();
-    for name in ["rotation.json", "old.minisig", "new.minisig"] {
-        fs::write(dir.join(name), b"x").unwrap();
-    }
+    fs::write(dir.join("rotation.json"), &statement).unwrap();
+    fs::write(dir.join("old.minisig"), key.sign(statement.as_bytes())).unwrap();
+    fs::write(dir.join("new.minisig"), new.sign(statement.as_bytes())).unwrap();
     let tally = NetworkTally::start();
     let run = |args: Vec<std::ffi::OsString>| {
         let mut cmd = sandbox.slopvac();
@@ -1461,10 +1485,11 @@ fn k22_pin_and_rotate_finish_with_stdin_closed_and_open_no_connection() {
     ])
     .success()
     .stdout(format!("pinned key {fp} for namespace `acme` on ghcr.io\n"));
+    assert_eq!(tally.requests(), 0, "pin opened a connection");
     let rotated = run(vec![
         "rotate".into(),
         "acme".into(),
-        fp.into(),
+        new_pk.fingerprint().into(),
         "--statement".into(),
         dir.join("rotation.json").into(),
         "--old-signature".into(),
@@ -1473,6 +1498,10 @@ fn k22_pin_and_rotate_finish_with_stdin_closed_and_open_no_connection() {
         dir.join("new.minisig").into(),
     ])
     .code(2);
-    assert_eq!(stderr_code(&rotated), "rotation-invalid");
+    assert_eq!(stderr_code(&rotated), "rotation-revocations-missing");
+    assert_eq!(
+        String::from_utf8(rotated.get_output().stderr.clone()).unwrap(),
+        "error[rotation-revocations-missing]: rotation refused: no revocation list has been fetched, so a revoked key cannot be ruled out; run `slopvac plugins sync` online\n"
+    );
     assert_eq!(tally.requests(), 0, "pin or rotate opened a connection");
 }
