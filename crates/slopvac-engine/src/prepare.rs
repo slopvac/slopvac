@@ -192,11 +192,13 @@ fn line_pieces(
                 if let Some(last) = tokens.last()
                     && tag_between(source, last, token)
                 {
-                    // The space 2.x puts at a tag or comment: no source text of its own.
+                    // The space 2.x puts at a tag or comment: no source text of its own, empty
+                    // at the end of the word before it, as every synthetic space is.
+                    let at = last.src.end();
                     tokens.push(Token {
                         kind: TokenKind::Wrap,
                         text: " ".to_owned(),
-                        src: Span::empty(token.src.start()),
+                        src: Span::empty(at),
                     });
                 }
                 tokens.push(token.clone());
