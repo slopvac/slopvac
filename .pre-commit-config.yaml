@@ -7,7 +7,8 @@ repos:
         language: system
         pass_filenames: false
         files: ^packages/slopvac-lint/.*\.py$
-      # CI's workflow-lint job runs this hook, so the yamllint pin lives only here.
+      # The yamllint pin lives only here. CI runs the hook in the prek job. Prek passes tracked
+      # files only, so the scope is the tracked workflow files plus .github/ci-paths.yml.
       - id: yamllint
         name: yamllint workflows
         entry: yamllint -c .yamllint.yml
