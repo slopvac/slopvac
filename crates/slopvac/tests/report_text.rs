@@ -455,8 +455,11 @@ fn a_plain_run_ends_with_the_footer() {
 fn a_field_too_long_for_the_url_is_named_in_the_footer() {
     let dir = tempfile::tempdir().unwrap();
     let mut args = full_bug(&[]);
-    args.push("--field".to_owned());
-    args.push(format!("what-happened={}", "word ".repeat(2000)));
+    let at = args
+        .iter()
+        .position(|a| a.starts_with("what-happened="))
+        .unwrap();
+    args[at] = format!("what-happened={}", "word ".repeat(2000));
     let out = run(dir.path(), &args);
     assert_eq!(out.code, Some(0), "{}", out.stderr);
     assert!(
@@ -510,48 +513,76 @@ fn a_created_issue_prints_what_gh_printed() {
     );
 }
 
+#[test]
+fn a_credential_in_the_title_is_warned_about() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut args = full_bug(&[]);
+    args[2] = "ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ".to_owned();
+    let out = run(dir.path(), &args);
+    assert_eq!(out.code, Some(0), "{}", out.stderr);
+    assert!(
+        out.stderr
+            .lines()
+            .any(|l| l == "warning: possible credential in field `title`: review it before posting"),
+        "{:?}",
+        out.stderr
+    );
+}
+
+/// Document text is not path-cleaned, so a path or repository that stays in the sample is
+/// warned about under the `input` field.
 #[rstest]
-#[case::credential(
-    "title",
-    "ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ",
-    "warning: possible credential in field `title`: review it before posting"
-)]
 #[case::path(
-    "command",
-    "see ~/notes/todo",
-    "warning: possible private path in field `command`: review it before posting"
+    "see ~/notes/todo\n",
+    "warning: possible private path in field `input`: review it before posting"
 )]
 #[case::repository(
-    "command",
-    "https://github.com/private/repo",
-    "warning: possible private repository in field `command`: review it before posting"
+    "see //github.com/marker-priv/repo for it\n",
+    "warning: possible private repository in field `input`: review it before posting"
 )]
-#[case::local_name(
-    "command",
-    "user marker-user here",
-    "warning: possible local name in field `command`: review it before posting"
-)]
-fn a_finding_is_warned_about_by_its_kind(
-    #[case] field: &str,
-    #[case] text: &str,
+fn a_finding_in_the_sample_is_warned_about_by_its_kind(
+    #[case] sample_text: &str,
     #[case] warning: &str,
 ) {
     let dir = tempfile::tempdir().unwrap();
-    let mut args = full_bug(&[]);
-    if field == "title" {
-        args[2] = text.to_owned();
-    } else {
-        args.push("--field".to_owned());
-        args.push(format!("{field}={text}"));
-    }
-    // A duplicated textarea would be refused, so the second `command` replaces the first.
-    if field == "command" {
-        let at = args.iter().position(|a| a.starts_with("command=")).unwrap();
-        args.drain(at - 1..=at);
-    }
-    let out = run_with(dir.path(), &args, &[("USER", "marker-user")]);
+    let sample = dir.path().join("sample.txt");
+    std::fs::write(&sample, sample_text).unwrap();
+    let mut args = strings(&[
+        "false-positive",
+        "--title",
+        "flagged",
+        "--field",
+        "agent=a",
+        "--field",
+        "model=m",
+        "--field",
+        "harness=h",
+        "--field",
+        "latest=Yes",
+        "--field",
+        "duplicates=true",
+        "--field",
+        "environment=e",
+        "--field",
+        "command=c",
+        "--field",
+        "rule-id=core:x",
+        "--field",
+        "context=reference normal",
+        "--field",
+        "finding={}",
+        "--field",
+        "why=w",
+        "--include-text",
+    ]);
+    args.push(sample.display().to_string());
+    let out = run(dir.path(), &args);
     assert_eq!(out.code, Some(0), "{}", out.stderr);
-    assert!(out.stderr.lines().any(|l| l == warning), "{:?}", out.stderr);
+    assert!(
+        out.stderr.lines().any(|l| l == warning),
+        "{:?}",
+        out.stderr
+    );
 }
 
 const REPORT_HELP: &str = concat!(
