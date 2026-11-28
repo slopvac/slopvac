@@ -183,6 +183,14 @@ pub(crate) enum TrustText {
         #[display_path]
         file: String,
     },
+    /// A rotation file that cannot be used for a reason the user can act on.
+    #[code("plugins-trust-rotation-file-unusable")]
+    #[text("{file} cannot be used: {why}")]
+    RotationFileUnusable {
+        #[display_path]
+        file: String,
+        why: String,
+    },
     /// A write would push the store past the size the reader accepts.
     #[code("plugins-trust-store-too-large")]
     #[text("the trust store would reach {bytes} bytes; the reader accepts at most 8 MiB")]
@@ -406,6 +414,11 @@ pub(crate) enum TrustPhrase {
     #[code("plugins-trust-phrase-key-file-no-key")]
     #[text("it holds no minisign public key")]
     KeyFileNoKey,
+    /// A key or rotation file that is not a regular file: a FIFO, socket, device, directory or
+    /// a symbolic link.
+    #[code("plugins-trust-phrase-file-not-regular")]
+    #[text("it is not a regular file; save it to a regular file and pass that path")]
+    FileNotRegular,
     /// The operation of opening the store lock.
     #[code("plugins-trust-phrase-open-lock")]
     #[text("opening the trust lock")]
@@ -911,9 +924,17 @@ pub(crate) fn rotation_refused(cause: &crate::sign::SignError) -> String {
     .to_string()
 }
 
-pub(crate) fn rotation_file(file: &str) -> String {
+pub(crate) fn rotation_file(file: &str, cause: crate::trust::FileCause) -> String {
+    let cause = if cause.is_not_regular() {
+        TrustText::RotationFileUnusable {
+            file: esc(file),
+            why: TrustPhrase::FileNotRegular.as_static().to_owned(),
+        }
+    } else {
+        TrustText::RotationFile { file: esc(file) }
+    };
     TrustMessage::RotationInvalid {
-        cause: TrustText::RotationFile { file: esc(file) }.to_string(),
+        cause: cause.to_string(),
     }
     .to_string()
 }
@@ -1623,6 +1644,13 @@ mod tests {
                 "rot.json cannot be read or holds more than 4 KiB",
             ),
             (
+                TrustText::RotationFileUnusable {
+                    file: s("rot.json"),
+                    why: s("W"),
+                },
+                "rot.json cannot be used: W",
+            ),
+            (
                 TrustText::StoreTooLarge { bytes: 9_000_000 },
                 "the trust store would reach 9000000 bytes; the reader accepts at most 8 MiB",
             ),
@@ -1795,6 +1823,10 @@ mod tests {
             (TrustPhrase::KeyFileUnreadable, "the file cannot be read"),
             (TrustPhrase::KeyFileOverCap, "it holds more than 4 KiB"),
             (TrustPhrase::KeyFileNoKey, "it holds no minisign public key"),
+            (
+                TrustPhrase::FileNotRegular,
+                "it is not a regular file; save it to a regular file and pass that path",
+            ),
             (TrustPhrase::OpenLock, "opening the trust lock"),
             (TrustPhrase::LockStore, "locking the trust store"),
             (TrustPhrase::TempStore, "creating a temporary store file"),

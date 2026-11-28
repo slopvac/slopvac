@@ -1376,6 +1376,28 @@ fn a_key_pinned_with_plugins_pin_verifies_a_signed_sync() {
         sandbox.dir.path().join("home/data/slopvac/trees").is_dir(),
         "sync installed the plugin"
     );
+    // The one installed tree holds the files that the signed artifact carries, byte for byte.
+    let trees: Vec<_> = fs::read_dir(plugin_store(&sandbox).join("trees"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("tree-"))
+        })
+        .collect();
+    assert_eq!(trees.len(), 1, "{trees:?}");
+    assert_eq!(
+        snapshot(&trees[0]),
+        std::collections::BTreeMap::from([
+            (
+                "pack.toml".to_owned(),
+                Entry::File(b"id = \"style\"\n".to_vec())
+            ),
+            ("rules".to_owned(), Entry::Dir),
+            ("rules/a.yml".to_owned(), Entry::File(b"rule: a\n".to_vec())),
+        ])
+    );
 }
 
 /// Pin the key `b64` with fingerprint `fingerprint` for `acme` on `registry` through the binary.
