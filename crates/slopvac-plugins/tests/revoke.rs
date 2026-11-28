@@ -36,7 +36,8 @@ use slopvac_plugins::sign::{
     MEDIA_MINISIG, PinScope, PublicKey, RotationProof, SignError, plugins_key, verify_rotation,
 };
 use slopvac_plugins::trust::{
-    NamedFile, RotationFiles, TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin,
+    FileCause, NamedFile, RotationFiles, TrustError, TrustGate, TrustState, TrustStore,
+    VerifiedPlugin,
 };
 use slopvac_plugins::{PluginError, PluginSpec, SpawnGate};
 
@@ -1400,7 +1401,6 @@ fn k16_a_rotation_from_files_replaces_the_pin_and_records_its_not_before() {
 #[case::only_the_old_key_signs(ROTATION.to_vec(), ROTATION_OLD_SIG, ROTATION_OLD_SIG)]
 #[case::only_the_new_key_signs(ROTATION.to_vec(), ROTATION_NEW_SIG, ROTATION_NEW_SIG)]
 #[case::not_canonical([b" ", ROTATION].concat(), ROTATION_OLD_SIG, ROTATION_NEW_SIG)]
-#[case::statement_over_4_kib(vec![b' '; 4097], ROTATION_OLD_SIG, ROTATION_NEW_SIG)]
 fn k18_a_rotation_that_does_not_verify_is_invalid_and_the_pin_kept(
     #[case] statement: Vec<u8>,
     #[case] old_sig: &str,
@@ -1413,13 +1413,63 @@ fn k18_a_rotation_that_does_not_verify_is_invalid_and_the_pin_kept(
     assert_eq!(r.pinned_id(), OLD_KEY_ID);
 }
 
-#[test]
-fn k18_a_signature_file_over_4_kib_is_invalid() {
+/// `text` padded to exactly `len` bytes inside its first line, the untrusted comment of a
+/// `.minisig` file, so the signature still verifies.
+fn padded_signature(text: &str, len: usize) -> Vec<u8> {
+    let (first, rest) = text.split_once('\n').unwrap();
+    let pad = len - text.len();
+    format!("{first}{}\n{rest}", "p".repeat(pad)).into_bytes()
+}
+
+/// Each file is capped on its own, and the refusal names the file. The signatures are padded
+/// in their untrusted comment, so without the cap the rotation would verify; the statement
+/// cannot be padded and stay canonical, so it is checked by the refusal it gets.
+#[rstest::rstest]
+#[case::statement("rotation.json")]
+#[case::old_signature("old.minisig")]
+#[case::new_signature("new.minisig")]
+fn k18_a_rotation_file_over_4_kib_is_refused_with_its_name(#[case] name: &str) {
     let r = Rotation::new(&key(OLD_PUB));
-    r.files(ROTATION, &vec![b'x'; 4097], ROTATION_NEW_SIG.as_bytes());
+    let statement = if name == "rotation.json" {
+        let mut s = ROTATION.to_vec();
+        s.resize(4097, b' ');
+        s
+    } else {
+        ROTATION.to_vec()
+    };
+    let old = if name == "old.minisig" {
+        padded_signature(ROTATION_OLD_SIG, 4097)
+    } else {
+        ROTATION_OLD_SIG.as_bytes().to_vec()
+    };
+    let new = if name == "new.minisig" {
+        padded_signature(ROTATION_NEW_SIG, 4097)
+    } else {
+        ROTATION_NEW_SIG.as_bytes().to_vec()
+    };
+    r.files(&statement, &old, &new);
     let err = r.rotate(&new_fp(), &r.cache(&[])).unwrap_err();
-    assert_eq!(err.code(), Some("rotation-invalid"), "{err:?}");
-    assert!(err.to_string().contains("old.minisig"), "{err}");
+    assert!(
+        matches!(
+            &err,
+            TrustError::RotationFile { file, cause }
+                if file == name && *cause == FileCause::Read(slopvac_fs::InputKind::TooLarge)
+        ),
+        "{err:?}"
+    );
+    assert_eq!(r.pinned_id(), OLD_KEY_ID);
+}
+
+#[test]
+fn a_padded_signature_file_of_exactly_4_kib_still_rotates() {
+    let r = Rotation::new(&key(OLD_PUB));
+    r.files(
+        ROTATION,
+        &padded_signature(ROTATION_OLD_SIG, 4096),
+        &padded_signature(ROTATION_NEW_SIG, 4096),
+    );
+    r.rotate(&new_fp(), &r.cache(&[])).unwrap();
+    assert_eq!(r.pinned_id(), NEW_KEY_ID);
 }
 
 #[test]
@@ -1488,9 +1538,14 @@ fn k21_a_fingerprint_that_is_not_the_new_keys_is_refused_with_both() {
     let r = Rotation::new(&key(OLD_PUB));
     let named = "0".repeat(64);
     let err = r.rotate(&named, &r.cache(&[])).unwrap_err();
-    assert_eq!(err.code(), Some("key-fingerprint-mismatch"), "{err:?}");
-    let text = err.to_string();
-    assert!(text.contains(&named) && text.contains(&new_fp()), "{text}");
+    assert!(
+        matches!(
+            &err,
+            TrustError::FingerprintMismatch { expected, actual }
+                if *expected == named && *actual == new_fp()
+        ),
+        "{err:?}"
+    );
     assert_eq!(r.pinned_id(), OLD_KEY_ID);
 }
 
@@ -1533,4 +1588,36 @@ fn k13_rotate_from_files_refuses_a_reserved_namespace_before_any_read(#[case] na
         0,
         "the revocation source was used"
     );
+}
+
+/// A FIFO with no writer would block a read forever, so `rotate` refuses it at once.
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::statement("rotation.json")]
+#[case::old_signature("old.minisig")]
+#[case::new_signature("new.minisig")]
+fn k18_rotate_refuses_a_fifo_without_waiting_for_a_writer(#[case] name: &str) {
+    let r = Rotation::new(&key(OLD_PUB));
+    let path = r.path(name);
+    fs::remove_file(&path).unwrap();
+    let status = std::process::Command::new("mkfifo")
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let revocations = r.cache(&[]);
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(r.rotate(&new_fp(), &revocations).map(drop));
+    });
+    let err = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("rotate returned within the deadline")
+        .unwrap_err();
+    assert!(
+        matches!(&err, TrustError::RotationFile { file, .. } if file == name),
+        "{err:?}"
+    );
+    let source = std::error::Error::source(&err).expect("a typed source");
+    assert_eq!(source.to_string(), "not a regular file");
 }

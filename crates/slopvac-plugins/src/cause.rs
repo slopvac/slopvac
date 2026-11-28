@@ -14,6 +14,7 @@ use crate::lock::LockDiff;
 use crate::messages::cli::Reported;
 use crate::messages::sync::{cache_tampered, cache_unreadable, config_drift, update_busy};
 use crate::revoke::RevocationError;
+use crate::sign::SignError;
 use crate::sync::SyncError;
 use crate::trust::TrustError;
 use crate::update::UpdateError;
@@ -125,9 +126,20 @@ pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
         | TrustError::NamespaceBound { .. }
         | TrustError::ReservedNamespace { .. }
         | TrustError::NotPinned { .. }
-        | TrustError::PinsWithoutHost { .. }
         | TrustError::Revoked(_)
-        | TrustError::TooLarge { .. } => e.to_string(),
+        | TrustError::TooLarge { .. }
+        | TrustError::KeyInvalid { .. }
+        | TrustError::FingerprintMismatch { .. }
+        | TrustError::RotationFile { .. }
+        | TrustError::RevocationsMissing
+        // A parse or key failure can quote the statement, so only the fixed causes print.
+        | TrustError::Rotation(
+            SignError::BadSignature
+            | SignError::KeyNotPinned { .. }
+            | SignError::Mismatch(_)
+            | SignError::Rollback(_)
+            | SignError::StatementTooLarge,
+        ) => e.to_string(),
         _ => withheld(e.code().or_else(|| spawn_code(e)).unwrap_or(STORE_FAILED)),
     };
     match e.code().or_else(|| spawn_code(e)) {

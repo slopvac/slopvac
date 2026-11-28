@@ -53,7 +53,8 @@ mod protocol_corpus;
 pub use api::{DocOutcome, plan_batches};
 pub use budget::{BudgetCaps, RunBudget};
 pub use cli::{
-    Dirs, LoadError, PluginLoader, Runner, command, config_id, config_range, config_source, run,
+    Dirs, LoadError, PluginLoader, Runner, command, config_id, config_range, config_source,
+    preflight, run,
 };
 pub use error::{PluginError, RpcError, StartError};
 pub use error_codes::{HostCodeRow, ProtocolCodes, RpcCodeRow, protocol_codes};

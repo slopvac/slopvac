@@ -6,6 +6,9 @@
     reason = "test code: a panic is a failed test"
 )]
 
+#[path = "../../slopvac-plugins/tests/signed_fixture/mod.rs"]
+mod signed_fixture;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
@@ -117,7 +120,7 @@ fn trust_file(sandbox: &Sandbox) -> std::path::PathBuf {
     sandbox.dir.path().join("home/state/slopvac/trust.json")
 }
 
-/// A version 1 trust store whose one key pin names no registry host.
+/// A version 2 trust store whose one key pin names no registry host.
 fn write_hostless_pin(sandbox: &Sandbox) -> String {
     let key = minisign::KeyPair::generate_unencrypted_keypair()
         .unwrap()
@@ -127,7 +130,7 @@ fn write_hostless_pin(sandbox: &Sandbox) -> String {
         .unwrap()
         .fingerprint();
     let text = format!(
-        "{{\"schema_version\":1,\"records\":[],\"pins\":[{{\"namespace\":\"acme\",\"fingerprint\":\"{fingerprint}\",\"key\":\"{key}\",\"pinned_at\":\"2026-11-01T00:00:00Z\"}}]}}"
+        "{{\"schema_version\":2,\"records\":[],\"pins\":[{{\"namespace\":\"acme\",\"fingerprint\":\"{fingerprint}\",\"key\":\"{key}\",\"pinned_at\":\"2026-11-01T00:00:00Z\"}}]}}"
     );
     let file = trust_file(sandbox);
     fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -140,19 +143,45 @@ fn write_hostless_pin(sandbox: &Sandbox) -> String {
 #[rstest::rstest]
 #[case::status(&["--offline", "plugins", "status"])]
 #[case::sync(&["--offline", "plugins", "sync"])]
-fn k23_a_version_1_store_with_a_key_pin_stops_the_command_and_names_the_fix(#[case] args: &[&str]) {
+fn k23_a_pin_without_a_registry_host_is_a_damaged_store_that_stops_the_command(
+    #[case] args: &[&str],
+) {
     let sandbox = Sandbox::new();
     let before = write_hostless_pin(&sandbox);
     let out = sandbox.slopvac().args(args).assert().code(2);
     let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
-    assert!(
-        stderr.starts_with(
-            "error[plugins-store-failed]: the trust store holds key pins without a registry host. Remove the `pins` list from <external>/trust.json"
-        ),
-        "{stderr}"
+    assert_eq!(
+        stderr,
+        "error[plugins-store-failed]: plugins-store-failed: details are withheld because they can name paths outside the project\n"
     );
-    assert!(!stderr.contains("acme"), "{stderr}");
     assert_eq!(fs::read_to_string(trust_file(&sandbox)).unwrap(), before);
+}
+
+/// `pin` and `rotate` refuse a reserved namespace before the trust store is read, so a damaged
+/// store does not hide the refusal.
+#[rstest::rstest]
+#[case::pin_core(&["plugins", "pin", "core", &"a".repeat(64), "--key", "missing.pub"], "core")]
+#[case::rotate_slopvac(
+    &["plugins", "rotate", "slopvac", &"a".repeat(64), "--statement", "m", "--old-signature", "m", "--new-signature", "m"],
+    "slopvac"
+)]
+fn a_reserved_namespace_is_refused_before_a_damaged_store_is_read(
+    #[case] args: &[&str],
+    #[case] namespace: &str,
+) {
+    let sandbox = Sandbox::new();
+    let file = trust_file(&sandbox);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, "{not json").unwrap();
+    let out = sandbox.slopvac().args(args).assert().code(2);
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert_eq!(
+        stderr,
+        format!(
+            "error[namespace-reserved]: namespace `{namespace}` is reserved; no key can be pinned for it\n"
+        )
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), "{not json");
 }
 
 /// The plugin store is the per-user data directory (doctor.md, "Directories"), never the cache.
@@ -1246,4 +1275,204 @@ fn cached_files(dir: &std::path::Path) -> std::collections::BTreeMap<String, Vec
             )
         })
         .collect()
+}
+
+// ---- A pin that `plugins pin` writes is the key a signed `plugins sync` verifies with ----
+
+const SIGNED_NOT_BEFORE: &str = "2026-11-01T00:00:00Z";
+const SIGNED_REGISTRY: &str = "registry.example";
+
+/// A data plugin `style` signed by `key` in namespace `acme`, cached in the sandbox's plugin
+/// store the way an earlier online sync leaves it, and locked with its signature.
+fn cache_signed_style(sandbox: &Sandbox, key: &signed_fixture::Key) -> signed_fixture::Published {
+    let p = signed_fixture::publish(
+        key,
+        "acme",
+        "style",
+        "1.2.0",
+        SIGNED_NOT_BEFORE,
+        &[
+            ("pack.toml", b"id = \"style\"\n"),
+            ("rules/a.yml", b"rule: a\n"),
+        ],
+    );
+    p.cache_into(&sandbox.dir.path().join("home/data/slopvac"));
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
+         source = \"oci://{SIGNED_REGISTRY}/acme/style:1.2.0\"\ndigest = \"{}\"\n\n\
+         [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{SIGNED_NOT_BEFORE}\"\n",
+        p.digest, p.key_id
+    ));
+    p
+}
+
+/// Pin `key` for `acme` on [`SIGNED_REGISTRY`] through the binary.
+fn pin_through_the_binary(sandbox: &Sandbox, key: &signed_fixture::Key) {
+    let file = sandbox.dir.path().join("acme.pub");
+    fs::write(
+        &file,
+        format!(
+            "untrusted comment: test key\n{}\n",
+            key.public().to_base64()
+        ),
+    )
+    .unwrap();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "pin", "acme"])
+        .arg(key.public().fingerprint())
+        .arg("--key")
+        .arg(&file)
+        .args(["--registry", SIGNED_REGISTRY])
+        .assert()
+        .success();
+}
+
+fn stderr_code(out: &assert_cmd::assert::Assert) -> String {
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    stderr
+        .strip_prefix("error[")
+        .and_then(|rest| rest.split_once(']'))
+        .map(|(code, _)| code.to_owned())
+        .expect("stderr starts with an error code")
+}
+
+#[test]
+fn a_key_pinned_with_plugins_pin_verifies_a_signed_sync() {
+    let sandbox = Sandbox::new();
+    let key = signed_fixture::Key::primary();
+    cache_signed_style(&sandbox, &key);
+    let before = sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2);
+    assert_eq!(
+        stderr_code(&before),
+        "signature-invalid",
+        "no pin, no verification"
+    );
+    pin_through_the_binary(&sandbox, &key);
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+    assert!(
+        sandbox.dir.path().join("home/data/slopvac/trees").is_dir(),
+        "sync installed the plugin"
+    );
+}
+
+/// K16: once a rotation replaces the pin, the cached entry that the old key signed no longer
+/// verifies, and sync refuses it with `signature-invalid`.
+#[test]
+fn k16_after_a_rotation_sync_refuses_the_entry_the_old_key_signed() {
+    use slopvac_plugins::revoke::RevocationList;
+    use slopvac_plugins::sign::{PinScope, RotationProof};
+    use slopvac_plugins::trust::TrustStore;
+
+    let sandbox = Sandbox::new();
+    let (old, new) = (
+        signed_fixture::Key::primary(),
+        signed_fixture::Key::secondary(),
+    );
+    cache_signed_style(&sandbox, &old);
+    pin_through_the_binary(&sandbox, &old);
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+
+    // The rotation that `plugins rotate` accepts, recorded in the same trust store. The binary
+    // takes its revocation list from the compiled root only, so the test hands the store an
+    // empty list itself.
+    let (old_pk, new_pk) = (old.public(), new.public());
+    let statement = format!(
+        "{{\"namespace\":\"acme\",\"newKey\":\"{}\",\"newKeyId\":\"{}\",\"notBefore\":\"2026-11-10T00:00:00Z\",\"oldKeyId\":\"{}\",\"schema_version\":1,\"type\":\"rotation\"}}",
+        new_pk.to_base64(),
+        new_pk.key_id(),
+        old_pk.key_id()
+    );
+    let (old_sig, new_sig) = (
+        old.sign(statement.as_bytes()),
+        new.sign(statement.as_bytes()),
+    );
+    TrustStore::open(sandbox.dir.path().join("home/state/slopvac"))
+        .rotate_key(
+            &PinScope::new(SIGNED_REGISTRY, "acme"),
+            &RotationProof {
+                statement: statement.as_bytes(),
+                old_signature: &old_sig,
+                new_signature: &new_sig,
+                new_key: &new_pk,
+            },
+            &RevocationList::default(),
+            "2026-11-14T00:00:00Z",
+        )
+        .unwrap();
+
+    let after = sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2);
+    assert_eq!(stderr_code(&after), "signature-invalid");
+}
+
+/// K22: `pin` and `rotate` run online with stdin closed and every request routed to a tally
+/// that answers nothing. Each finishes within the deadline with its own result, prompts for
+/// nothing, and opens no connection.
+#[test]
+fn k22_pin_and_rotate_finish_with_stdin_closed_and_open_no_connection() {
+    let sandbox = Sandbox::new();
+    let key = signed_fixture::Key::primary();
+    let file = sandbox.dir.path().join("acme.pub");
+    fs::write(
+        &file,
+        format!(
+            "untrusted comment: test key\n{}\n",
+            key.public().to_base64()
+        ),
+    )
+    .unwrap();
+    let dir = sandbox.dir.path();
+    for name in ["rotation.json", "old.minisig", "new.minisig"] {
+        fs::write(dir.join(name), b"x").unwrap();
+    }
+    let tally = NetworkTally::start();
+    let run = |args: Vec<std::ffi::OsString>| {
+        let mut cmd = sandbox.slopvac();
+        tally.route(&mut cmd);
+        cmd.args(["plugins"])
+            .args(args)
+            .write_stdin(Vec::<u8>::new())
+            .timeout(std::time::Duration::from_secs(20))
+            .assert()
+    };
+    let fp = key.public().fingerprint();
+    run(vec![
+        "pin".into(),
+        "acme".into(),
+        fp.clone().into(),
+        "--key".into(),
+        file.into(),
+    ])
+    .success()
+    .stdout(format!("pinned key {fp} for namespace `acme` on ghcr.io\n"));
+    let rotated = run(vec![
+        "rotate".into(),
+        "acme".into(),
+        fp.into(),
+        "--statement".into(),
+        dir.join("rotation.json").into(),
+        "--old-signature".into(),
+        dir.join("old.minisig").into(),
+        "--new-signature".into(),
+        dir.join("new.minisig").into(),
+    ])
+    .code(2);
+    assert_eq!(stderr_code(&rotated), "rotation-invalid");
+    assert_eq!(tally.requests(), 0, "pin or rotate opened a connection");
 }

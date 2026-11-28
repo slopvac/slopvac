@@ -26,8 +26,8 @@ use slopvac_plugins::oci::Digest;
 use slopvac_plugins::protocol::{FeatureSet, HookDecl};
 use slopvac_plugins::sign::{PinScope, PublicKey};
 use slopvac_plugins::trust::{
-    DeclSummary, Revocation, TrustError, TrustGate, TrustInputs, TrustKey, TrustRecord, TrustState,
-    TrustStore, VerifiedPlugin, is_forbidden_env_name, parse_trust_env, trust_hash,
+    DeclSummary, FileCause, Revocation, TrustError, TrustGate, TrustInputs, TrustKey, TrustRecord,
+    TrustState, TrustStore, VerifiedPlugin, is_forbidden_env_name, parse_trust_env, trust_hash,
 };
 use slopvac_plugins::{PluginDeclaration, PluginError, PluginSpec, SpawnGate};
 
@@ -807,7 +807,7 @@ fn a_damaged_store_fails_closed() {
         Err(TrustError::Corrupt { .. })
     ));
     assert!(matches!(g.check(&spec), Err(PluginError::Untrusted(_))));
-    let extra = json!({"schema_version": 1, "records": [], "pins": [], "extra": 1});
+    let extra = json!({"schema_version": 2, "records": [], "pins": [], "extra": 1});
     fs::write(s.dir("state/trust.json"), extra.to_string()).unwrap();
     assert!(matches!(
         TrustStore::open(s.dir("state")).records(),
@@ -844,80 +844,28 @@ fn hostless_pin() -> serde_json::Value {
     json!({"namespace": "acme", "fingerprint": fingerprint, "key": key, "pinned_at": NOW})
 }
 
+/// The store never shipped as version 1, so a version 1 file is a damaged store: it is not
+/// read, not migrated and not rewritten.
 #[test]
-fn k23_a_version_1_store_with_a_key_pin_is_refused_with_the_fix_and_kept() {
-    let s = Scratch::new("v1-pins");
+fn a_version_1_store_is_a_damaged_store_and_kept() {
+    let s = Scratch::new("v1");
     let store = TrustStore::open(s.dir("state"));
     fs::create_dir_all(s.dir("state")).unwrap();
     let file = s.dir("state/trust.json");
-    let pin = hostless_pin();
-    let old = json!({"schema_version": 1, "records": [], "pins": [pin]}).to_string();
-    fs::write(&file, &old).unwrap();
-    let errors = [
-        store.records().map(drop).unwrap_err(),
-        store.pinned_map().map(drop).unwrap_err(),
-        store
-            .pin_key(
-                &PinScope::new("ghcr.io", "other"),
-                &PublicKey::from_base64(&new_key()).unwrap(),
-                NOW,
-            )
-            .map(drop)
-            .unwrap_err(),
-    ];
-    for err in errors {
-        let text = err.to_string();
-        assert!(
-            text.contains("<external>/trust.json")
-                && text.contains("--registry")
-                && text.contains("pins"),
-            "{text}"
-        );
-        for stored in [
-            "acme",
-            pin["fingerprint"].as_str().unwrap(),
-            pin["key"].as_str().unwrap(),
-        ] {
-            assert!(!text.contains(stored), "{text}");
-        }
-    }
-    assert_eq!(fs::read_to_string(&file).unwrap(), old);
-}
-
-#[test]
-fn k23b_a_version_1_store_with_records_only_is_read_and_written_as_version_2() {
-    let s = Scratch::new("v1-records");
-    let store = TrustStore::open(s.dir("state"));
-    fs::create_dir_all(s.dir("state")).unwrap();
-    let file = s.dir("state/trust.json");
-    let (a, b) = (Digest::of(b"a").to_string(), Digest::of(b"b").to_string());
-    let records = [
-        serde_json::to_value(record(&a, "a")).unwrap(),
-        serde_json::to_value(record(&b, "b")).unwrap(),
-    ];
+    let a = Digest::of(b"a").to_string();
+    let records = [serde_json::to_value(record(&a, "a")).unwrap()];
     let old = json!({"schema_version": 1, "records": records}).to_string();
     fs::write(&file, &old).unwrap();
-
-    assert_eq!(store.records().unwrap().len(), 2);
-    assert_eq!(
-        fs::read_to_string(&file).unwrap(),
-        old,
-        "a read writes nothing"
-    );
-
-    assert!(store.forget(&Digest::of(b"a")).unwrap());
-    let written: serde_json::Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
-    assert_eq!(written["schema_version"], 2);
-    assert_eq!(written["records"].as_array().unwrap().len(), 1);
-    assert_eq!(written["records"][0]["hash"], b.as_str());
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(
-            fs::metadata(&file).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-    }
+    assert!(matches!(store.records(), Err(TrustError::Corrupt { .. })));
+    assert!(matches!(
+        store.pinned_map(),
+        Err(TrustError::Corrupt { .. })
+    ));
+    assert!(matches!(
+        store.forget(&Digest::of(b"a")),
+        Err(TrustError::Corrupt { .. })
+    ));
+    assert_eq!(fs::read_to_string(&file).unwrap(), old);
 }
 
 #[test]
@@ -950,7 +898,7 @@ fn x_keys_are_ignored_at_every_depth_and_other_unknown_keys_still_fail() {
         rec.as_object_mut()
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
-        json!({"schema_version": 1, "x-top": [1], "records": [rec], "pins": []})
+        json!({"schema_version": 2, "x-top": [1], "records": [rec], "pins": []})
     };
     let store = TrustStore::open(s.dir("state"));
     fs::write(&file, doc(json!({})).to_string()).unwrap();
@@ -1127,6 +1075,64 @@ fn key_file(s: &Scratch) -> (PathBuf, String) {
     (path, PublicKey::from_base64(&b64).unwrap().fingerprint())
 }
 
+/// A valid `minisign.pub` file of exactly `len` bytes, padded in its untrusted comment. Returns
+/// its path and the fingerprint of its key.
+fn padded_key_file(s: &Scratch, len: usize) -> (PathBuf, String) {
+    let b64 = minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk
+        .to_base64();
+    let head = "untrusted comment: ";
+    let tail = format!("\n{b64}\n");
+    let text = format!("{head}{}{tail}", "p".repeat(len - head.len() - tail.len()));
+    assert_eq!(text.len(), len);
+    let path = s.dir("acme.pub");
+    fs::write(&path, text).unwrap();
+    (path, PublicKey::from_base64(&b64).unwrap().fingerprint())
+}
+
+#[test]
+fn k12_a_valid_key_file_over_4_kib_is_refused_for_its_size() {
+    let s = Scratch::new("pin-over-cap");
+    let store = TrustStore::open(s.dir("state"));
+    let (file, fingerprint) = padded_key_file(&s, 4097);
+    let err = store
+        .pin_key_file(
+            &PinScope::new("ghcr.io", "acme"),
+            &fingerprint,
+            &file,
+            SHOWN,
+            NOW,
+        )
+        .unwrap_err();
+    match err {
+        TrustError::KeyInvalid { file, why, cause } => {
+            assert_eq!(file, SHOWN);
+            assert_eq!(why, "it holds more than 4 KiB");
+            assert_eq!(cause, FileCause::Read(slopvac_fs::InputKind::TooLarge));
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(!s.dir("state/trust.json").exists(), "nothing was written");
+}
+
+#[test]
+fn a_valid_key_file_of_exactly_4_kib_is_pinned() {
+    let s = Scratch::new("pin-at-cap");
+    let store = TrustStore::open(s.dir("state"));
+    let (file, fingerprint) = padded_key_file(&s, 4096);
+    let pin = store
+        .pin_key_file(
+            &PinScope::new("ghcr.io", "acme"),
+            &fingerprint,
+            &file,
+            SHOWN,
+            NOW,
+        )
+        .unwrap();
+    assert_eq!(pin.fingerprint, fingerprint);
+}
+
 #[cfg(unix)]
 fn inode(path: &Path) -> u64 {
     use std::os::unix::fs::MetadataExt;
@@ -1169,15 +1175,18 @@ fn k11_a_key_file_with_another_fingerprint_is_refused_with_both() {
     let err = store
         .pin_key_file(&PinScope::new("ghcr.io", "acme"), &named, &file, SHOWN, NOW)
         .unwrap_err();
-    assert_eq!(err.code(), Some("key-fingerprint-mismatch"), "{err:?}");
-    let text = err.to_string();
-    assert!(text.contains(&named) && text.contains(&actual), "{text}");
+    match err {
+        TrustError::FingerprintMismatch {
+            expected,
+            actual: found,
+        } => assert_eq!((expected, found), (named, actual)),
+        other => panic!("{other:?}"),
+    }
     assert!(!s.dir("state/trust.json").exists(), "nothing was written");
 }
 
 #[rstest::rstest]
 #[case::missing(None)]
-#[case::over_4_kib(Some(vec![b'#'; 4097]))]
 #[case::no_key_line(Some(b"untrusted comment: LEAKME\n".to_vec()))]
 #[case::not_a_minisign_key(Some(b"untrusted comment: x\nTEVBS01FTEVBS01FTEVBS01F\n".to_vec()))]
 fn k12_a_key_file_that_cannot_be_used_is_refused_without_quoting_it(
@@ -2006,4 +2015,51 @@ fn a_store_that_pins_a_reserved_namespace_is_refused_on_load() {
         matches!(&err, TrustError::ReservedNamespace { namespace } if namespace == "core"),
         "{err:?}"
     );
+}
+
+/// Run `f` on another thread and wait for it at most five seconds.
+#[cfg(unix)]
+fn within_deadline<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the call returned within the deadline")
+}
+
+#[cfg(unix)]
+fn fifo(path: &std::path::Path) {
+    let status = std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+/// A FIFO with no writer would block a read forever, so `pin` refuses it at once as a file
+/// that is not regular, and keeps the cause as a kind with no path.
+#[cfg(unix)]
+#[test]
+fn pin_refuses_a_fifo_key_file_without_waiting_for_a_writer() {
+    let s = Scratch::new("pin-fifo");
+    let file = s.dir("acme.pub");
+    fifo(&file);
+    let state = s.dir("state");
+    let err = within_deadline(move || {
+        TrustStore::open(state)
+            .pin_key_file(
+                &PinScope::new("ghcr.io", "acme"),
+                &"0".repeat(64),
+                &file,
+                SHOWN,
+                NOW,
+            )
+            .unwrap_err()
+    });
+    assert_eq!(err.code(), Some("key-invalid"), "{err:?}");
+    let source = std::error::Error::source(&err).expect("a typed source");
+    assert_eq!(source.to_string(), "not a regular file");
+    assert!(std::error::Error::source(source).is_none(), "{source:?}");
+    assert!(!format!("{source:?}").contains("acme.pub"), "{source:?}");
 }

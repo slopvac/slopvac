@@ -395,6 +395,8 @@ fn plugins(
     out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     use slopvac_plugins::{Runner, oci, revoke, sign, sync};
+    // Refusals that need no store come first, so a damaged store cannot hide them.
+    slopvac_plugins::preflight(m).map_err(|e| CliError::new(e.code(), e.to_string()))?;
     let cwd = std::env::current_dir().map_err(|e| plugins_setup_failed(&e.kind().to_string()))?;
     let presets = slopvac_styles::StylePresets(slopvac_styles::BuiltinSource);
     let config = slopvac_config::Discovery::new(&presets)

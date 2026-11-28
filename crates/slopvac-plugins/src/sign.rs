@@ -203,7 +203,9 @@ pub const DEFAULT_REGISTRY: &str = "ghcr.io";
 /// The pair a key pin binds: one registry host and one namespace on it.
 ///
 /// A host name is case-insensitive, so the host is kept in ASCII lowercase and `GHCR.io` names
-/// the same pair as `ghcr.io`. The port, when present, is part of the host.
+/// the same pair as `ghcr.io`. A registry is reached over HTTPS, so the port 443 is the default
+/// and `ghcr.io:443` names the same pair as `ghcr.io`. Any other port is part of the host, written
+/// without leading zeros.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PinScope {
     registry: String,
@@ -215,7 +217,7 @@ impl PinScope {
     #[must_use]
     pub fn new(registry: &str, namespace: &str) -> Self {
         Self {
-            registry: registry.to_ascii_lowercase(),
+            registry: normal_host(registry),
             namespace: namespace.to_owned(),
         }
     }
@@ -230,6 +232,21 @@ impl PinScope {
     #[must_use]
     pub fn namespace(&self) -> &str {
         &self.namespace
+    }
+}
+
+/// `registry` in ASCII lowercase, without the default HTTPS port, and with any other port written
+/// without leading zeros. A port that is not a number is kept as it is, because `valid_registry`
+/// refuses such a port before it reaches a pin.
+fn normal_host(registry: &str) -> String {
+    let lower = registry.to_ascii_lowercase();
+    match lower.rsplit_once(':') {
+        Some((host, port)) => match port.parse::<u16>() {
+            Ok(443) => host.to_owned(),
+            Ok(n) => format!("{host}:{n}"),
+            Err(_) => lower,
+        },
+        None => lower,
     }
 }
 
@@ -267,6 +284,16 @@ impl KeyPolicy {
                 .collect(),
             pinned: BTreeMap::new(),
         })
+    }
+
+    /// The key that verification uses for an artifact from `registry` whose statement names
+    /// `namespace` and `key_id`: among the keys trusted for that pair only, never a key with the
+    /// same id from another pair.
+    #[must_use]
+    pub fn signing_key(&self, registry: &str, namespace: &str, key_id: &str) -> Option<&PublicKey> {
+        self.candidates(registry, namespace)
+            .iter()
+            .find(|k| k.key_id() == key_id)
     }
 
     fn candidates(&self, registry: &str, namespace: &str) -> &[PublicKey] {
@@ -597,9 +624,7 @@ pub fn verify(
 
     // The key id only selects among keys the policy already trusts.
     let key = policy
-        .candidates(expect.registry, &namespace)
-        .iter()
-        .find(|k| k.key_id() == statement.key_id)
+        .signing_key(expect.registry, &namespace, &statement.key_id)
         .ok_or_else(|| SignError::KeyNotPinned {
             key_id: statement.key_id.clone(),
             namespace: namespace.clone(),

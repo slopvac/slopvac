@@ -43,7 +43,6 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use slopvac_fs::display_under_root;
 use thiserror::Error;
 
 use crate::error::PluginError;
@@ -79,13 +78,6 @@ pub enum TrustError {
         path: PathBuf,
         /// What is wrong.
         why: String,
-    },
-    /// The store is a version 1 store that holds key pins. Those pins name no registry host,
-    /// so they are refused, never read as a pin on every host. The text names the fix.
-    #[error("{}", messages::pins_without_host(.file))]
-    PinsWithoutHost {
-        /// The store file as policies section 1.7 shows a path outside the project.
-        file: String,
     },
     /// A file system operation failed.
     #[error("{}", messages::trust_io(.what, &.source.to_string()))]
@@ -136,6 +128,9 @@ pub enum TrustError {
     RotationFile {
         /// The file, shown under the project root or as `<external>/<file name>`.
         file: String,
+        /// Why, as a kind with no path and no bytes from the file.
+        #[source]
+        cause: FileCause,
     },
     /// A rotation names a pair of registry host and namespace that has no pinned key.
     #[error("{}", messages::not_pinned(.registry, .namespace))]
@@ -152,6 +147,9 @@ pub enum TrustError {
         file: String,
         /// Why, as a fixed phrase that quotes nothing from the file.
         why: String,
+        /// The same cause as a kind with no path and no bytes from the file.
+        #[source]
+        cause: FileCause,
     },
     /// The key does not have the fingerprint that the command names.
     #[error("{}", messages::fingerprint_mismatch(.expected, .actual))]
@@ -212,6 +210,54 @@ impl TrustError {
             _ => None,
         }
     }
+}
+
+/// Why a file that `plugins pin` or `plugins rotate` names cannot be used, kept as a kind only.
+///
+/// It holds no path and no bytes from the file, because the refusal can reach a log or an error
+/// chain (policies section 1.7). The path the user named is in the refusal's own text, shown
+/// under the project root or as `<external>/<file name>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum FileCause {
+    /// The confined read refused the file or failed: not found, not a regular file, over the
+    /// cap, not UTF-8, a link, or another failure.
+    #[error("{0}")]
+    Read(slopvac_fs::InputKind),
+    /// The read failed with this I/O error kind.
+    #[error("{0}")]
+    Io(io::ErrorKind),
+    /// The file holds no minisign public key.
+    #[error("{}", TrustPhrase::KeyFileNoKey.as_static())]
+    NoKey,
+}
+
+impl FileCause {
+    fn of(e: &slopvac_fs::Error) -> Self {
+        match e {
+            slopvac_fs::Error::Input {
+                kind: slopvac_fs::InputKind::Io,
+                ..
+            }
+            | slopvac_fs::Error::Io { .. }
+            | slopvac_fs::Error::Read { .. } => std::error::Error::source(e)
+                .and_then(|s| s.downcast_ref::<io::Error>())
+                .map_or(Self::Read(slopvac_fs::InputKind::Io), |s| {
+                    Self::Io(s.kind())
+                }),
+            slopvac_fs::Error::CapExceeded { .. } => Self::Read(slopvac_fs::InputKind::TooLarge),
+            slopvac_fs::Error::NotUtf8 { .. } => Self::Read(slopvac_fs::InputKind::NotUtf8),
+            _ => Self::Read(e.input_kind().unwrap_or(slopvac_fs::InputKind::Io)),
+        }
+    }
+}
+
+/// Read a file that `plugins pin` or `plugins rotate` names, under `cap`, through the shared
+/// confined reader (policies section 1.9): the open does not block, so a FIFO with no writer is
+/// refused at once, and only a regular file is read.
+fn read_named(path: &Path, cap: u64) -> Result<String, FileCause> {
+    slopvac_fs::read_capped_regular_to_string(path, cap, slopvac_fs::ReadOptions::new())
+        .map_err(|e| FileCause::of(&e))
 }
 
 fn io_err(what: impl Into<String>) -> impl FnOnce(io::Error) -> TrustError {
@@ -440,27 +486,12 @@ fn parse_store_file(raw: &[u8], path: &Path) -> Result<StoreFile, TrustError> {
     let mut value: serde_json::Value =
         serde_json::from_slice(raw).map_err(|e| corrupt(e.to_string()))?;
     strip_extension_keys(&mut value);
-    // A version 1 pin names no registry host. Refuse it before the pins are parsed, so the
-    // error names the fix and prints nothing from the file.
-    let holds_pins = value
-        .get("pins")
-        .and_then(serde_json::Value::as_array)
-        .is_some_and(|pins| !pins.is_empty());
-    if value.get("schema_version") == Some(&serde_json::Value::from(1)) && holds_pins {
-        return Err(TrustError::PinsWithoutHost {
-            file: display_under_root(path, Path::new("")),
-        });
+    // Only version 2 is a trust store. Any other version, and a pin without a registry host,
+    // is a damaged store: nothing is migrated and nothing is read as a pin on every host.
+    if value.get("schema_version") != Some(&serde_json::Value::from(SCHEMA_VERSION)) {
+        return Err(corrupt(TrustPhrase::StoreSchema.as_static().into()));
     }
-    let mut parsed: StoreFile =
-        serde_json::from_value(value).map_err(|e| corrupt(e.to_string()))?;
-    match parsed.schema_version {
-        // A version 1 store without pins is read as it is and written as version 2 at its
-        // next change.
-        1 => parsed.schema_version = SCHEMA_VERSION,
-        SCHEMA_VERSION => {}
-        _ => return Err(corrupt(TrustPhrase::StoreSchema.as_static().into())),
-    }
-    Ok(parsed)
+    serde_json::from_value(value).map_err(|e| corrupt(e.to_string()))
 }
 
 /// Largest key file that `plugins pin --key` reads.
@@ -502,14 +533,13 @@ pub struct Rotated {
 }
 
 fn read_rotation_file(file: NamedFile<'_>) -> Result<String, TrustError> {
-    slopvac_fs::read_text_capped(file.path, MAX_ROTATION_FILE_BYTES).map_err(|_| {
-        TrustError::RotationFile {
-            file: file.shown.to_owned(),
-        }
+    read_named(file.path, MAX_ROTATION_FILE_BYTES).map_err(|cause| TrustError::RotationFile {
+        file: file.shown.to_owned(),
+        cause,
     })
 }
 
-fn reject_reserved(scope: &PinScope) -> Result<(), TrustError> {
+pub(crate) fn reject_reserved(scope: &PinScope) -> Result<(), TrustError> {
     if is_reserved_namespace(scope.namespace()) {
         return Err(TrustError::ReservedNamespace {
             namespace: scope.namespace().to_owned(),
@@ -544,15 +574,14 @@ pub struct TrustSnapshot {
 }
 
 /// Parse the bytes of a trust store file with the rules the store itself applies: at most
-/// [`MAX_STORE_FILE_BYTES`], unknown keys refused, `x-` keys ignored, `schema_version` 2, or 1
-/// without key pins.
+/// [`MAX_STORE_FILE_BYTES`], unknown keys refused, `x-` keys ignored, `schema_version` 2, and a
+/// registry host on every key pin.
 ///
 /// The caller supplies the bytes, so it can read them without blocking and under its own size
 /// cap. `path` only names the file in the error.
 ///
 /// # Errors
-/// [`TrustError::Corrupt`] for bytes the store would refuse, and
-/// [`TrustError::PinsWithoutHost`] for a version 1 store that holds key pins.
+/// [`TrustError::Corrupt`] for bytes the store would refuse.
 pub fn parse_store(raw: &[u8], path: &Path) -> Result<TrustSnapshot, TrustError> {
     let file = parse_store_file(raw, path)?;
     Ok(TrustSnapshot {
@@ -765,17 +794,23 @@ impl TrustStore {
         now: &str,
     ) -> Result<KeyPin, TrustError> {
         reject_reserved(scope)?;
-        let invalid = |why: TrustPhrase| TrustError::KeyInvalid {
-            file: shown.to_owned(),
-            why: why.as_static().to_owned(),
+        let invalid = |cause: FileCause| {
+            let why = match cause {
+                FileCause::Read(slopvac_fs::InputKind::TooLarge) => TrustPhrase::KeyFileOverCap,
+                FileCause::Read(slopvac_fs::InputKind::NotUtf8) | FileCause::NoKey => {
+                    TrustPhrase::KeyFileNoKey
+                }
+                _ => TrustPhrase::KeyFileUnreadable,
+            };
+            TrustError::KeyInvalid {
+                file: shown.to_owned(),
+                why: why.as_static().to_owned(),
+                cause,
+            }
         };
-        let text = slopvac_fs::read_text_capped(file, MAX_KEY_FILE_BYTES).map_err(|e| match e {
-            slopvac_fs::Error::CapExceeded { .. } => invalid(TrustPhrase::KeyFileOverCap),
-            slopvac_fs::Error::NotUtf8 { .. } => invalid(TrustPhrase::KeyFileNoKey),
-            _ => invalid(TrustPhrase::KeyFileUnreadable),
-        })?;
-        let key =
-            PublicKey::from_pub_file(&text).map_err(|_| invalid(TrustPhrase::KeyFileNoKey))?;
+        let text = read_named(file, MAX_KEY_FILE_BYTES).map_err(invalid)?;
+        // The parse error can quote the file, so only its kind is kept.
+        let key = PublicKey::from_pub_file(&text).map_err(|_| invalid(FileCause::NoKey))?;
         check_fingerprint(fingerprint, &key)?;
         self.pin_key(scope, &key, now)
     }
