@@ -16,7 +16,8 @@ use crate::messages::sync::{cache_tampered, cache_unreadable, config_drift, upda
 use crate::revoke::RevocationError;
 use crate::sign::SignError;
 use crate::sync::SyncError;
-use crate::trust::TrustError;
+use crate::messages::trust::store_damaged;
+use crate::trust::{TrustError, is_fixed_store_reason};
 use crate::update::UpdateError;
 
 /// The CI refusal when the configured plugin ids and the lock disagree. It keeps the
@@ -119,9 +120,13 @@ pub(crate) fn update(root: &Path, e: &UpdateError) -> Reported {
 /// A trust store failure: the reported failure when it has a code, else the sentence alone.
 /// A refused program or environment, and an unusable trust key, report the code of the spawn
 /// path. A failure of the store itself has no code of its own and reports `plugins-store-failed`.
-pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
+/// A store the reader refuses for a fixed reason shows that reason and its path under `root`.
+pub(crate) fn store(root: &Path, e: &TrustError) -> Result<Reported, String> {
     let text = match e {
         TrustError::Revocation(inner) => return Ok(revocation(inner)),
+        TrustError::Corrupt { path, why } if is_fixed_store_reason(why) => {
+            store_damaged(Path::new(&under(path, root)), why)
+        }
         TrustError::NotAHash(_)
         | TrustError::NamespaceBound { .. }
         | TrustError::ReservedNamespace { .. }
@@ -193,7 +198,7 @@ mod tests {
     #[test]
     fn a_refused_program_reports_the_spawn_code_not_the_store_code() {
         let e = TrustError::Program("/home/someone/prog".to_owned());
-        let r = store(&e).unwrap();
+        let r = store(Path::new("/project"), &e).unwrap();
         assert_eq!(slopvac_messages::Catalog::code(&r), "plugin-usage");
         assert_eq!(
             r.to_string(),
@@ -219,7 +224,7 @@ mod tests {
                 "trust-key-unusable",
             ),
         ] {
-            let r = store(&e).unwrap();
+            let r = store(Path::new("/project"), &e).unwrap();
             assert_eq!(slopvac_messages::Catalog::code(&r), code);
         }
     }
@@ -231,7 +236,7 @@ mod tests {
             why: "w".to_owned(),
         };
         assert_eq!(
-            store(&e).unwrap_err(),
+            store(Path::new("/project"), &e).unwrap_err(),
             "plugins-store-failed: details are withheld because they can name paths outside the project"
         );
     }

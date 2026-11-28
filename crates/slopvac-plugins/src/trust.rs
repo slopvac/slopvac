@@ -491,7 +491,29 @@ fn parse_store_file(raw: &[u8], path: &Path) -> Result<StoreFile, TrustError> {
     if value.get("schema_version") != Some(&serde_json::Value::from(SCHEMA_VERSION)) {
         return Err(corrupt(TrustPhrase::StoreSchema.as_static().into()));
     }
+    let no_host = value
+        .get("pins")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|pins| {
+            pins.iter()
+                .any(|p| p.is_object() && p.get("registry").is_none())
+        });
+    if no_host {
+        return Err(corrupt(TrustPhrase::StorePinNoHost.as_static().into()));
+    }
     serde_json::from_value(value).map_err(|e| corrupt(e.to_string()))
+}
+
+/// Whether `why`, the reason of a [`TrustError::Corrupt`], is one of the store reader's fixed
+/// reasons, which hold no text from the file and can be shown.
+pub(crate) fn is_fixed_store_reason(why: &str) -> bool {
+    [
+        TrustPhrase::StoreOverCap,
+        TrustPhrase::StoreSchema,
+        TrustPhrase::StorePinNoHost,
+    ]
+    .iter()
+    .any(|p| p.as_static() == why)
 }
 
 /// Largest key file that `plugins pin --key` reads.
