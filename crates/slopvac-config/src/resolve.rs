@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::{Map, Value as Json, json};
 use slopvac_model::{ConfigLayer, ConfigSource, Severity};
 
+use crate::level::Level;
 use crate::load::{BlockKind, LoadedConfig};
 use crate::messages::ConfigText;
 use crate::presets::Presets;
@@ -292,7 +293,7 @@ impl Resolved {
             })
         };
         match (by_rule, by_category) {
-            (Some(r), Some(c)) if r.value != json!("off") && c.scope > r.scope => {
+            (Some(r), Some(c)) if r.value != json!(Level::Off.as_str()) && c.scope > r.scope => {
                 Some(floor(as_level(c, LevelFrom::Category)?))
             }
             (Some(r), _) => as_level(r, LevelFrom::Rule),
@@ -506,20 +507,37 @@ impl ConfigLevel {
     /// The level a config value names, or `None` when it names neither `off` nor a severity.
     #[must_use]
     pub fn from_value(value: &Json) -> Option<Self> {
-        if value == "off" {
-            return Some(Self::Off);
-        }
-        serde_json::from_value(value.clone()).ok().map(Self::On)
+        serde_json::from_value::<Level>(value.clone())
+            .ok()
+            .map(Self::from)
     }
 
-    /// The config spelling: `off`, `suggestion`, `warning` or `error`.
+    /// The config spelling: `off`, `suggestion`, `warning` or `error`. It is the spelling of
+    /// [`Level`], which holds no copy of it here.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
+        self.level().as_str()
+    }
+
+    /// The [`Level`] that declares this level's name.
+    #[must_use]
+    pub const fn level(self) -> Level {
         match self {
-            Self::Off => "off",
-            Self::On(Severity::Suggestion) => "suggestion",
-            Self::On(Severity::Warning) => "warning",
-            Self::On(Severity::Error) => "error",
+            Self::Off => Level::Off,
+            Self::On(Severity::Suggestion) => Level::Suggestion,
+            Self::On(Severity::Warning) => Level::Warning,
+            Self::On(Severity::Error) => Level::Error,
+        }
+    }
+}
+
+impl From<Level> for ConfigLevel {
+    fn from(level: Level) -> Self {
+        match level {
+            Level::Off => Self::Off,
+            Level::Suggestion => Self::On(Severity::Suggestion),
+            Level::Warning => Self::On(Severity::Warning),
+            Level::Error => Self::On(Severity::Error),
         }
     }
 }

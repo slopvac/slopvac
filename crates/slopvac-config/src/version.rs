@@ -3,9 +3,11 @@
 use crate::diag::{Code, Diagnostic};
 use crate::messages::{ConfigPhrase, ConfigText};
 use crate::tree::{Node, Value};
+use slopvac_model::SchemaVersion;
 
-/// The schema version this build reads.
-pub const SUPPORTED: i64 = 3;
+/// The schema version this build reads. It is `SchemaVersion::VALUE`, the one number the schemas
+/// and the config and style readers share.
+pub const SUPPORTED: i64 = SchemaVersion::VALUE as i64;
 
 /// Refuse a 2.x config, or a config from a newer slopvac, with one diagnostic.
 ///
@@ -21,7 +23,7 @@ pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
         return Err(Diagnostic {
             code: Code::LegacyVersion,
             message: ConfigPhrase::NoSchemaVersion.text(),
-            label: ConfigPhrase::LabelOnlyVersion3.text(),
+            label: only_supported_label(),
             span: first_line(text),
             help: Some(ConfigPhrase::HelpMigrate.text()),
             path,
@@ -35,7 +37,7 @@ pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
                 version: n.to_string(),
             }
             .to_string(),
-            label: ConfigPhrase::LabelOnlyVersion3.text(),
+            label: only_supported_label(),
             span: entry.node.span.clone(),
             help: Some(ConfigPhrase::HelpMigrate.text()),
             path,
@@ -58,6 +60,13 @@ pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
         }),
         _ => Ok(()),
     }
+}
+
+fn only_supported_label() -> String {
+    ConfigText::LabelOnlySupportedVersion {
+        supported: SUPPORTED.to_string(),
+    }
+    .to_string()
 }
 
 fn first_line(text: &str) -> std::ops::Range<usize> {

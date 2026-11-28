@@ -185,8 +185,8 @@ pub(crate) enum ConfigText {
     VersionNewer { version: String },
     /// A front-matter version below the supported one.
     #[code("config-version-unsupported")]
-    #[text("version {version} is not supported; this build reads version 3")]
-    VersionUnsupported { version: String },
+    #[text("version {version} is not supported; this build reads version {supported}")]
+    VersionUnsupported { version: String, supported: String },
     /// A list with fewer items than its minimum.
     #[code("config-list-too-short")]
     #[text("the list needs at least {min_items} item")]
@@ -226,6 +226,22 @@ pub(crate) enum ConfigText {
     #[code("config-schema-version-newer-label")]
     #[text("this build reads version {supported}")]
     SchemaVersionNewerLabel { supported: String },
+    /// The accepted value of a schema version.
+    #[code("config-kind-integer-three")]
+    #[text("the integer {supported}")]
+    KindSupportedVersion { supported: String },
+    /// Label for a 2.x `schema_version`.
+    #[code("config-label-only-version-3")]
+    #[text("slopvac 3 reads only version {supported} files")]
+    LabelOnlySupportedVersion { supported: String },
+    /// Label for a version above the supported one.
+    #[code("config-label-reads-version-3")]
+    #[text("this build reads version {supported}")]
+    LabelReadsSupportedVersion { supported: String },
+    /// Label for a version below the supported one.
+    #[code("config-label-must-be-3")]
+    #[text("must be {supported}")]
+    LabelMustBeSupportedVersion { supported: String },
     /// A front-matter or directive field that the project does not allow.
     #[code("config-frontmatter-denied")]
     #[text("the project does not let {what} set `{key}`")]
@@ -427,14 +443,14 @@ pub(crate) enum ConfigPhrase {
     #[code("config-kind-number")]
     #[text("a number")]
     KindNumber,
+    /// The accepted kind of a level: one of the level names.
+    #[code("config-kind-level-name")]
+    #[text("a level name")]
+    KindLevelName,
     /// The accepted kind of a front-matter root.
     #[code("config-kind-mapping")]
     #[text("a mapping")]
     KindMapping,
-    /// The accepted value of a schema version.
-    #[code("config-kind-integer-three")]
-    #[text("the integer 3")]
-    KindIntegerThree,
     /// Why a read failed: the file does not exist.
     #[code("config-reason-not-found")]
     #[text("no such file")]
@@ -605,18 +621,6 @@ pub(crate) enum ConfigPhrase {
     #[code("config-label-only-toml")]
     #[text("slopvac 3 reads only `slopvac.toml`")]
     LabelOnlyToml,
-    /// Label for a 2.x `schema_version`.
-    #[code("config-label-only-version-3")]
-    #[text("slopvac 3 reads only version 3 files")]
-    LabelOnlyVersion3,
-    /// Label for a version above the supported one.
-    #[code("config-label-reads-version-3")]
-    #[text("this build reads version 3")]
-    LabelReadsVersion3,
-    /// Label for a version below the supported one.
-    #[code("config-label-must-be-3")]
-    #[text("must be 3")]
-    LabelMustBe3,
     /// Label for an empty inline directive.
     #[code("config-label-write-key-value")]
     #[text("write `key=value` after `slopvac:`")]

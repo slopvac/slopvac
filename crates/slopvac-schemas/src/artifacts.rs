@@ -90,6 +90,15 @@ pub const ARTIFACTS: &[Artifact] = &[
         build: blocklist,
     },
     Artifact {
+        file: "style.schema.json",
+        title: "slopvac v3 style preset",
+        description: None,
+        imports: &["common.schema.json", "config.schema.json"],
+        inline: &[],
+        keep: &[],
+        build: style,
+    },
+    Artifact {
         file: "rule.schema.json",
         title: "slopvac v3 rule",
         description: Some(
@@ -448,6 +457,12 @@ fn terms() -> Value {
 /// The word blocklist, which the reader accepts as input, in the same way.
 fn blocklist() -> Value {
     slopvac_terms::blocklist_schema()
+}
+
+/// A style preset, which the readers accept as input. Its levels, names and category dials
+/// refer to the config schema, which `slopvac-schemas` links.
+fn style() -> Value {
+    slopvac_config::style_schema()
 }
 
 fn rule() -> Value {

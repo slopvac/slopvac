@@ -1,52 +1,87 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://slopvac.github.io/slopvac/schemas/v3/style.schema.json",
-  "title": "slopvac v3 style preset",
-  "description": "An ordered preset of category and rule levels and of terms. A config lists styles in order and the last one wins. A style may extend other styles, which apply first. A style declares the styles it cannot combine with, and the host reports a conflict when both are active. Semantics are specified in docs/contract/plugins.md. Owner: slopvac-8l4.2.4. The style name is the file name without its extension, qualified by the plugin id. Maps merge by key and lists replace, as in config.schema.json. Category entries, rule levels and names are the definitions in config.schema.json.",
-  "type": "object",
-  "properties": {
-    "schema_version": {
-      "$ref": "common.schema.json#/$defs/SchemaVersion"
+  "$defs": {
+    "RelPath": {
+      "description": "A path relative to this file: no leading slash or drive letter, no backslash and no .. segment.",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S])))",
+      "type": "string"
     },
-    "description": {
-      "type": "string",
-      "minLength": 1
-    },
-    "extends": {
-      "description": "Styles applied before this one, lowest first.",
-      "type": "array",
-      "items": {
-        "$ref": "config.schema.json#/$defs/Ref"
+    "StyleTerms": {
+      "additionalProperties": false,
+      "description": "Terms the style brings.",
+      "patternProperties": {
+        "^x-": true
       },
-      "uniqueItems": true
+      "properties": {
+        "allow": {
+          "description": "Words the style lets through the spelling check. A list replaces.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "blocklists": {
+          "description": "Blocklist files, relative to this style file.",
+          "items": {
+            "$ref": "#/$defs/RelPath"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/style.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "An ordered preset of category and rule levels and of terms. A config lists styles in order and the last one wins. A style may extend other styles, which apply first. A style declares the styles it cannot combine with, and the host reports a conflict when both are active. Semantics are specified in docs/contract/plugins.md. The style name is the file name without its extension, qualified by the plugin id. Maps merge by key and lists replace, as in config.schema.json. Category entries, rule levels and names are the definitions in config.schema.json.",
+  "patternProperties": {
+    "^x-": true
+  },
+  "properties": {
+    "categories": {
+      "additionalProperties": {
+        "$ref": "config.schema.json#/$defs/CategorySettings"
+      },
+      "description": "Category dials, keyed by category name. A bare level sets the severity of every rule in the category. Keys are data, so the x- convention does not apply: an x- key is a rule or category name and takes a level.",
+      "propertyNames": {
+        "$ref": "config.schema.json#/$defs/RuleKey"
+      },
+      "type": "object"
     },
     "conflicts": {
       "description": "Styles that must not be active together with this one.",
-      "type": "array",
       "items": {
         "$ref": "config.schema.json#/$defs/Ref"
       },
+      "type": "array",
       "uniqueItems": true
     },
-    "categories": {
-      "description": "Category dials, keyed by category name. A bare level sets the severity of every rule in the category. Keys are data, so the x- convention does not apply: an x- key is a rule or category name and takes a level.",
-      "type": "object",
-      "propertyNames": {
-        "$ref": "config.schema.json#/$defs/RuleKey"
+    "description": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "extends": {
+      "description": "Styles applied before this one, lowest first.",
+      "items": {
+        "$ref": "config.schema.json#/$defs/Ref"
       },
-      "additionalProperties": {
-        "$ref": "config.schema.json#/$defs/CategorySettings"
-      }
+      "type": "array",
+      "uniqueItems": true
     },
     "rules": {
+      "additionalProperties": {
+        "$ref": "config.schema.json#/$defs/RuleLevel"
+      },
       "description": "Rule levels, keyed by rule name. A rule entry wins over the category entry. Keys are data, so the x- convention does not apply: an x- key is a rule or category name and takes a level.",
-      "type": "object",
       "propertyNames": {
         "$ref": "config.schema.json#/$defs/RuleKey"
       },
-      "additionalProperties": {
-        "$ref": "config.schema.json#/$defs/RuleLevel"
-      }
+      "type": "object"
+    },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
     },
     "terms": {
       "$ref": "#/$defs/StyleTerms"
@@ -55,41 +90,6 @@
   "required": [
     "schema_version"
   ],
-  "patternProperties": {
-    "^x-": {}
-  },
-  "additionalProperties": false,
-  "$defs": {
-    "StyleTerms": {
-      "description": "Terms the style brings.",
-      "type": "object",
-      "properties": {
-        "allow": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "description": "Words the style lets through the spelling check. A list replaces."
-        },
-        "blocklists": {
-          "description": "Blocklist files, relative to this style file.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/RelPath"
-          }
-        }
-      },
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "RelPath": {
-      "description": "A path relative to this file: no leading slash or drive letter, no backslash and no .. segment.",
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S])))"
-    }
-  }
+  "title": "slopvac v3 style preset",
+  "type": "object"
 }

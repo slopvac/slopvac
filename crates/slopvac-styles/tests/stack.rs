@@ -16,7 +16,7 @@ use slopvac_config::resolve::describe;
 use slopvac_config::{
     ConfigLayer, ConfigLevel, Inputs, LoadedConfig, Severity, load, render_explain,
 };
-use slopvac_styles::{BuiltinSource, MapSource, StylePresets, StyleSource};
+use slopvac_styles::{BuiltinSource, Level, MapSource, StylePresets, StyleSource};
 
 fn resolve_project(config: &str) -> (LoadedConfig, slopvac_config::Resolved) {
     resolve_with(BuiltinSource, config)
@@ -212,4 +212,80 @@ fn a_fifo_style_fails_the_config_load_instead_of_vanishing() {
         "{}",
         err.render()
     );
+}
+
+/// The level each `Level` resolves to, written out here and not derived from the enum.
+fn resolves_to(level: Level) -> ConfigLevel {
+    match level {
+        Level::Error => ConfigLevel::On(Severity::Error),
+        Level::Warning => ConfigLevel::On(Severity::Warning),
+        Level::Suggestion => ConfigLevel::On(Severity::Suggestion),
+        Level::Off => ConfigLevel::Off,
+    }
+}
+
+fn resolve_style(style: &str) -> slopvac_config::Resolved {
+    let source = MapSource::new().with("house", style);
+    resolve_with(source, "schema_version = 3\nstyles = [\"house\"]\n").1
+}
+
+/// A level that `Level` spells and the style loader accepts reaches the resolver as that
+/// level. A spelling that only one side knows would resolve to nothing here.
+#[test]
+fn a_style_rule_level_resolves_to_that_level_for_every_level() {
+    for level in Level::ALL {
+        let text = format!(
+            "schema_version = 3\n[rules]\n\"core:a\" = \"{}\"\n",
+            level.as_str()
+        );
+        let got = resolve_style(&text).level("core:a", None).map(|l| l.level);
+        assert_eq!(
+            got,
+            Some(resolves_to(level)),
+            "rule level `{}`",
+            level.as_str()
+        );
+    }
+}
+
+#[test]
+fn a_style_category_level_resolves_to_that_level_for_every_level() {
+    for level in Level::ALL {
+        let text = format!(
+            "schema_version = 3\n[categories]\nc = \"{}\"\n",
+            level.as_str()
+        );
+        let got = resolve_style(&text)
+            .level("core:a", Some("c"))
+            .map(|l| l.level);
+        assert_eq!(
+            got,
+            Some(resolves_to(level)),
+            "category level `{}`",
+            level.as_str()
+        );
+    }
+}
+
+/// A floor raises a lower category level, and `off` as a floor sets none.
+#[test]
+fn a_style_floor_raises_the_category_level_for_every_level() {
+    let cases = [
+        (Level::Error, ConfigLevel::On(Severity::Error)),
+        (Level::Warning, ConfigLevel::On(Severity::Warning)),
+        (Level::Suggestion, ConfigLevel::On(Severity::Suggestion)),
+        (Level::Off, ConfigLevel::On(Severity::Suggestion)),
+    ];
+    assert_eq!(cases.len(), Level::ALL.len());
+    for (floor, want) in cases {
+        let text = format!(
+            "schema_version = 3\n[categories]\nc = {{ severity = \"{}\", minimum_severity = \"{}\" }}\n",
+            Level::Suggestion.as_str(),
+            floor.as_str()
+        );
+        let got = resolve_style(&text)
+            .level("core:a", Some("c"))
+            .map(|l| l.level);
+        assert_eq!(got, Some(want), "floor `{}`", floor.as_str());
+    }
 }
