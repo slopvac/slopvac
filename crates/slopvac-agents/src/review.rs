@@ -1207,5 +1207,9 @@ fn assemble_report(payload: &Payload, answered: &[(&SentItem, &str, &str)]) -> S
             })
         })
         .collect();
-    format!("{}\n\n{}\n", AgentsText::ReportUntrusted, blocks.join("\n\n"))
+    format!(
+        "{}\n\n{}\n",
+        AgentsText::ReportUntrusted,
+        blocks.join("\n\n")
+    )
 }
