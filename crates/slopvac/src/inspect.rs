@@ -256,8 +256,8 @@ fn rules_text(picked: &[(&LoadedCategory, &LoadedRule)], sev: &Severities) -> St
 
 /// The JSON entry of `rule`. A severity that is no level cannot be written as a valid
 /// document, so it stops the output like a failed write does.
-fn rule_output<'a>(rule: &'a LoadedRule, sev: &Severities) -> Result<RuleOutput<'a>, CliError> {
-    RuleOutput::new(rule, &effective(sev, rule), url_of(rule))
+fn rule_output<'a>(rule: &'a LoadedRule, eff: &Effective) -> Result<RuleOutput<'a>, CliError> {
+    RuleOutput::new(rule, eff, url_of(rule))
         .ok_or_else(|| output_failed(std::io::ErrorKind::InvalidData))
 }
 
@@ -268,7 +268,7 @@ fn rules_json(
 ) -> Result<String, CliError> {
     let rules = picked
         .iter()
-        .map(|(_, r)| rule_output(r, sev))
+        .map(|(_, r)| rule_output(r, &effective(sev, r)))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(RulesOutput::new(set, rules).render())
 }
@@ -466,7 +466,7 @@ fn explain_in(
         ));
     };
     let text = match format_of(m) {
-        "json" => ExplainOutput::new(rule_output(rule, sev)?, suppression(rule)).render(),
+        "json" => ExplainOutput::new(rule_output(rule, &effective(sev, rule))?, suppression(rule)).render(),
         "md" => format!(
             "{DISABLE}\n{}\n{ENABLE}\n",
             rule_block(rule, sev).join("\n")
@@ -765,5 +765,31 @@ mod tests {
         let out = run(command, args);
         assert!(out.contains(ACME_RULE), "the rule is listed: {out}");
         assert!(!out.contains("Page:"), "{out}");
+    }
+
+    /// The output entry of `core:terms.casing` at a severity whose level is `loud`.
+    fn output_at_a_level_that_is_no_level() -> CliError {
+        let catalog = core_and_acme();
+        let id = slopvac_model::RuleId::new(CORE_RULE.to_owned()).unwrap();
+        let rule = catalog.get(&id).unwrap();
+        let eff = Effective {
+            level: "loud".to_owned(),
+            shipped: "warning".to_owned(),
+            from: None,
+        };
+        rule_output(rule, &eff).err().unwrap()
+    }
+
+    #[test]
+    fn a_rule_whose_effective_level_is_no_level_stops_the_output_as_render_failed() {
+        assert_eq!(output_at_a_level_that_is_no_level().code, "render-failed");
+    }
+
+    #[test]
+    fn the_render_failed_message_names_the_rule_and_not_the_configured_value() {
+        let message = output_at_a_level_that_is_no_level().message;
+        assert!(message.contains(CORE_RULE), "{message}");
+        assert!(message.contains("effective level is not a level"), "{message}");
+        assert!(!message.contains("loud"), "{message}");
     }
 }
