@@ -69,6 +69,10 @@ pub struct WriteOptions {
     /// Permission bits for a file that does not exist yet. `None` keeps the owner-only `0o600`
     /// of the temporary file. An existing file keeps its own permissions either way.
     pub new_file_mode: Option<u32>,
+    /// Permission bits for the written file, whatever mode the file it replaces has. `None`
+    /// leaves the rule of `new_file_mode` and the existing file in place. The mode is set on
+    /// the staged file before the rename, so the file being replaced is never touched.
+    pub forced_mode: Option<u32>,
     /// Create missing parent directories first.
     pub create_parents: bool,
 }
@@ -79,6 +83,7 @@ impl WriteOptions {
     pub const fn new() -> Self {
         Self {
             new_file_mode: None,
+            forced_mode: None,
             create_parents: false,
         }
     }
@@ -87,6 +92,14 @@ impl WriteOptions {
     #[must_use]
     pub const fn new_file_mode(mut self, mode: u32) -> Self {
         self.new_file_mode = Some(mode);
+        self
+    }
+
+    /// Force the permission bits of the written file, even when the file it replaces has other
+    /// bits. The mode applies to the staged file only, before the rename.
+    #[must_use]
+    pub const fn forced_mode(mut self, mode: u32) -> Self {
+        self.forced_mode = Some(mode);
         self
     }
 
@@ -140,7 +153,8 @@ pub(crate) fn split_plain(rel: &Path) -> Result<(&OsStr, Vec<&OsStr>)> {
 ///   and that the name is a regular file), and renamed over the destination within that
 ///   directory. A temporary name that no longer matches fails the write and is left alone.
 ///   Then the directory is synced so the rename survives a crash.
-/// - An existing destination keeps its permission bits, read without following links. The
+/// - An existing destination keeps its permission bits, read without following links, unless
+///   [`WriteOptions::forced_mode`] sets them. The forced mode goes on the staged file only. The
 ///   temporary file is removed on failure.
 ///
 /// For a check right before the rename, use [`write_atomic_if`].
@@ -188,10 +202,14 @@ pub fn write_atomic_if(
         Err(e) if e.kind() == ErrorKind::NotFound => None,
         Err(e) => return Err(io(Op::Stat, e)),
     };
-    let perms = existing.or_else(|| {
-        opts.new_file_mode
-            .map(|mode| Permissions::from_std(std::fs::Permissions::from_mode(mode)))
-    });
+    let perms = opts
+        .forced_mode
+        .map(|mode| Permissions::from_std(std::fs::Permissions::from_mode(mode)))
+        .or(existing)
+        .or_else(|| {
+            opts.new_file_mode
+                .map(|mode| Permissions::from_std(std::fs::Permissions::from_mode(mode)))
+        });
 
     let (mut file, temp) = create_temp(&parent, name).map_err(|e| io(Op::CreateTemp, e))?;
     let staged = write_to(&mut file, bytes)

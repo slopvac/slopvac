@@ -94,7 +94,7 @@ Why: the audit found five copies of root-relative display, four path normalizers
 ## Configuration and paths
 
 - Resolve config through the layer stack in `slopvac-config`. Every value keeps its file, line and column. Sources: [architecture record, decision 6](design/0001-slopvac-3-architecture.md#6-hand-rolled-config-layer-stack-with-provenance), [decision 20](design/0001-slopvac-3-architecture.md#20-config-precedence-nearest-config-and-front-matter).
-- Write only to the per-user cache directory, the project's `.slopvac/` directory and paths the user names. Source: [policies, data written to disk](contract/policies.md#18-data-written-to-disk).
+- Slopvac writes only to the per-user cache, data and state directories, the project's `.slopvac/` directory, and paths the user names. The data directory holds the plugin store. The state directory holds the trust store and the reporting record. Source: [policies, data written to disk](contract/policies.md#18-data-written-to-disk).
 - Use no prompt in any code path. Agents and CI cannot answer one. Source: [architecture record, decision 9](design/0001-slopvac-3-architecture.md#9-oci-artifacts-minisign-and-mise-style-trust).
 - Write no native Windows code in 3.0. Do not add `cfg(windows)` branches or Windows dependencies. Windows users run the Linux build under WSL. Target for the existing Windows code: removal after `slopvac-8l4.21.5`. Source: [architecture record, decision 26](design/0001-slopvac-3-architecture.md#26-no-native-windows-in-30).
 

@@ -119,6 +119,13 @@ where
         let _ = writeln!(err_out, "{err}");
         return exit::code(exit::INCOMPLETE);
     }
+    // A consent change in CI is refused before any project file is read.
+    if let Invocation::Parsed(matches) = &invocation
+        && let Some(err) = report::consent::ci_refusal(matches, env)
+    {
+        let _ = writeln!(err_out, "{err}");
+        return exit::code(exit::INCOMPLETE);
+    }
     let policy = match slopvac_update::policy::network_policy(&cwd) {
         Ok(policy) => policy,
         // `doctor` exists to report this state, so it runs on the default policy and its own
@@ -282,20 +289,30 @@ fn dispatch(
         }),
         Some(("migrate", m)) => migrate(m, env, out),
         Some(("report", m)) => {
-            let opener = report::github::SystemOpener;
-            let gh = report::gh::SystemGh::default();
-            report::run(
-                m,
-                &report::Deps {
-                    env,
-                    offline: globals.offline,
-                    cwd: std::env::current_dir().unwrap_or_default(),
-                    opener: &opener,
-                    gh: &gh,
-                },
-                out,
-                err_out,
-            )
+            if let Some(("consent", consent)) = m.subcommand() {
+                let clock = || {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .ok()
+                        .map(|d| d.as_secs())
+                };
+                report::consent::run(consent, env, &clock, out)
+            } else {
+                let opener = report::github::SystemOpener;
+                let gh = report::gh::SystemGh::default();
+                report::run(
+                    m,
+                    &report::Deps {
+                        env,
+                        offline: globals.offline,
+                        cwd: std::env::current_dir().unwrap_or_default(),
+                        opener: &opener,
+                        gh: &gh,
+                    },
+                    out,
+                    err_out,
+                )
+            }
         }
         Some(("completions", m)) => {
             let shell = *m

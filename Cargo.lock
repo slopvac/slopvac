@@ -2402,6 +2402,7 @@ name = "slopvac"
 version = "0.0.0"
 dependencies = [
  "assert_cmd",
+ "cap-std",
  "clap",
  "clap_complete",
  "clap_mangen",
