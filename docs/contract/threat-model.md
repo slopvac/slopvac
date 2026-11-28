@@ -538,7 +538,7 @@ The TM tests are proposed. They run in the Rust test suites of the owning bead, 
 | TM-18 | Recipe paths in Windows forms, with case-fold collisions and reserved names. | Refused. |
 | TM-19 | A review with a provider. | The `task`, `model` and `items` that the provider receives equal the `request` in the `--dry-run` plan of the same project. |
 | TM-20 | Two trusted plugins, one a provider with a key. | The second plugin's environment holds no key. |
-| TM-21 | A provider returns text that looks like edits or a plan. | It cannot reach `fixer/fix`, `recipe/plan` or the verdict. Reports mark it untrusted. |
+| TM-21 | A provider returns text that looks like edits or a plan. | It cannot reach `fixer/fix`, `recipe/plan` or the verdict. The plan's `report` starts with the `review-report-untrusted` line. |
 | TM-22 | The index lists a new key for a pinned plugin, and for a new plugin. | Exit 2. The new plugin waits for the explicit pin. Nothing extracted. |
 | TM-23 | Valid signature; then add a layer, remove a layer, reorder layers, change an annotation, swap the config. | Each fails verification. |
 | TM-24 | A plugin claims the namespace `slopvac` under a key other than the compiled plugins key, and a pin for `slopvac` or `core` is attempted. | Rejected, exit 2. |
