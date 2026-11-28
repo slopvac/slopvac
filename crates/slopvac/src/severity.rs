@@ -288,7 +288,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, format!("schema_version = 3\n{body}")).expect("write");
-        let config = slopvac_config::load(&path, lint_settings::presets()).expect("the config loads");
+        let config =
+            slopvac_config::load(&path, lint_settings::presets()).expect("the config loads");
         Severities::from_config(&config).for_catalog(rules)
     }
 

@@ -363,7 +363,7 @@ fn parse_pairs(doc: &str, payload: Range<usize>, budget: &mut Budget) -> Result<
                 },
                 key,
                 key_span,
-                Rawish::Str(value),
+                &Rawish::Str(value),
                 value_span,
             )?;
         } else {
@@ -375,7 +375,7 @@ fn parse_pairs(doc: &str, payload: Range<usize>, budget: &mut Budget) -> Result<
                 },
                 key,
                 key_span.clone(),
-                Rawish::Value(Value::Bool(true)),
+                &Rawish::Value(Value::Bool(true)),
                 key_span,
             )?;
         }
@@ -481,7 +481,7 @@ fn insert(
     target: &mut Target<'_>,
     dotted: &str,
     key_span: Range<usize>,
-    raw: Rawish<'_>,
+    raw: &Rawish<'_>,
     value_span: Range<usize>,
 ) -> Result<(), Over> {
     let depth = dotted.bytes().filter(|&b| b == b'.').count() + 1;
@@ -489,7 +489,7 @@ fn insert(
         return Err(Over);
     }
     let mut cost = depth;
-    if let Rawish::Str(text) = &raw
+    if let Rawish::Str(text) = raw
         && dotted == "terms.allow"
     {
         cost = cost.saturating_add(list_items(text).count().saturating_sub(1));
@@ -504,7 +504,7 @@ fn insert(
         offset += seg.len() + 1;
         let slot = target.slots.index.get(&(table, seg.to_owned())).copied();
         if segments.peek().is_none() {
-            let value = match &raw {
+            let value = match raw {
                 Rawish::Str(s) => typed(dotted, s, &value_span),
                 Rawish::Value(v) => v.clone(),
             };
