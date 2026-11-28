@@ -1937,8 +1937,8 @@ mod unix_only {
     }
 
     /// Build on a wrapper interpreter at `interp/python` under `s`, with a store opened on
-    /// `project`, and load the environment back from disk through that store.
-    fn loaded_on_wrapper(s: &Scratch, project: &Path) -> (ManagedEnv, PathBuf) {
+    /// `project`. The environment is not loaded yet.
+    fn built_on_wrapper(s: &Scratch, project: &Path) -> (EnvStore, VerifiedPlugin, PathBuf) {
         let w = s.dir("interp/python");
         write_exec(
             &w,
@@ -1957,6 +1957,12 @@ mod unix_only {
         store
             .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
             .unwrap();
+        (store, vp, w)
+    }
+
+    /// As `built_on_wrapper`, and load the environment back from disk through that store.
+    fn loaded_on_wrapper(s: &Scratch, project: &Path) -> (ManagedEnv, PathBuf) {
+        let (store, vp, w) = built_on_wrapper(s, project);
         let env = store
             .load(&vp.tree, "3.12")
             .unwrap()
@@ -2041,6 +2047,25 @@ mod unix_only {
             ),
         );
         assert_changed(&env, "interp/python", "changed size or modification time");
+    }
+
+    #[test]
+    fn an_alias_that_resolves_only_after_the_store_opened_does_not_widen_the_project() {
+        let s = Scratch::new("u-interp-late");
+        let root = fs::canonicalize(&s.0).unwrap();
+        // The alias dangles when the store opens, and later points at an ancestor of the
+        // interpreter, before the environment loads.
+        let alias = alias_to(&s, &s.dir("not-there-yet"));
+        let (store, vp, w) = built_on_wrapper(&s, &alias);
+        fs::remove_file(&alias).unwrap();
+        std::os::unix::fs::symlink(&root, &alias).unwrap();
+        let env = store.load(&vp.tree, "3.12").unwrap().expect("on disk");
+        retarget(&s, &w);
+        assert_changed(
+            &env,
+            "<external>/python-other",
+            "is not the interpreter the build recorded",
+        );
     }
 
     #[test]
