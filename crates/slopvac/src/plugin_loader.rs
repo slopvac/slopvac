@@ -44,7 +44,6 @@ pub(crate) enum LoadRefusal {
         /// The plugin id.
         id: String,
         /// The kind of the parse failure.
-        #[source]
         cause: SourceCause,
     },
 }
