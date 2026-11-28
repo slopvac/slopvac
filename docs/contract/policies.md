@@ -606,9 +606,7 @@ Owner: `slopvac-8l4.2.50`.
 
 ## 4. Conformance tests
 
-The 3.0 binary must pass these tests. Each runs the installed binary with an isolated home and cache directory. `slopvac-8l4.13.9` blocks the release until all pass.
-
-Each row has at least one Rust test under the `conformance::` module path, with the doc comment `/// Conformance: <ID>` on the test. A pytest in `tests/contract` fails when a row has no such test, or when a marker names an ID that the table does not have.
+The 3.0 binary must pass these tests. Each runs the installed binary with an isolated home and cache directory. `slopvac-8l4.13.9` blocks the release until all pass. Each N row has at least one Rust test under the `conformance::` module path, with the doc comment `/// Conformance: <ID>` on the test. A pytest in `tests/contract` fails when an N row has no such test, or when a marker names an ID that the table does not have.
 
 | ID | Test | Owner |
 |---|---|---|
@@ -617,9 +615,9 @@ Each row has at least one Rust test under the `conformance::` module path, with 
 | N3 | `SLOPVAC_OFFLINE=1` with `[network] offline = false` in the config stays offline. The CLI help lists no flag that turns offline mode off. | `slopvac-8l4.12.1` |
 | N4 | With a populated cache and a lockfile, `plugins sync --offline` succeeds and verifies digests. | `slopvac-8l4.9.3` |
 | N5 | No update check starts under `CI`, `NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK`, `DO_NOT_TRACK`, `update_check = false`, or `--offline`. The test extends the 2.x test `test_environment_suppression_prevents_refresh_and_notice`. | `slopvac-8l4.12.4` |
-| N6 | Machine formats keep stdout free of update notices, and JSON carries the notice in `notices`. | `slopvac-8l4.12.4` |
+| N6 | Machine formats keep stdout free of update notices. `slopvac --version --json` carries the update notice in its `notices` field, and `lint --format json` carries no update notice. | `slopvac-8l4.12.4` |
 | N7 | `plugins sync` in CI exits 2 on a missing lockfile or a digest mismatch and leaves the lockfile unchanged. | `slopvac-8l4.9.3` |
-| N8 | `sync` and `update` never record trust, with or without `--yes`. Only `plugins trust` and `SLOPVAC_TRUST` do. | `slopvac-8l4.9.4` |
+| N8 | `sync` and `update` never record trust. Neither command takes `--yes`, and each refuses it. Only `plugins trust` and `SLOPVAC_TRUST` record trust. | `slopvac-8l4.9.4` |
 | N9 | `slopvac report` without `--gh --yes` starts no process and sends zero requests, and it prints the full body. With `--gh --yes`, a fake `gh` on `PATH` receives exactly the arguments of the printed command. | `slopvac-8l4.12.6` |
 | N10 | The issue body for a run in a directory with a unique marker path and user name contains neither. | `slopvac-8l4.12.6` |
 | N11 | A review run with a model provider and `--dry-run` leaves the provider uncalled and prints the payload. A `lint` run leaves every provider uncalled. | `slopvac-8l4.11.3` |
