@@ -414,6 +414,8 @@ mod conformance {
 
     /// A dry run leaves the provider uncalled (policies.md N11). It needs no reviewer model. The
     /// request it prints is checked by the TM-19 test below.
+    ///
+    /// Conformance: N11
     #[rstest]
     #[case::dry_run(REWRITE, configured(), &["--dry-run"][..], Lift::Flags(&[]))]
     #[case::dry_run_without_a_reviewer_model(
@@ -439,6 +441,8 @@ mod conformance {
     }
 
     /// A provider that is untrusted, or absent from the config, never starts (policies.md N12).
+    ///
+    /// Conformance: N12
     #[rstest]
     #[case::untrusted(
         REWRITE,
@@ -474,6 +478,8 @@ mod conformance {
     /// The other gates that keep the provider from starting: offline, a mechanical change, and a
     /// missing or blank reviewer model, which stops a run that would call the provider before the
     /// plugin starts.
+    ///
+    /// Conformance: N17
     #[rstest]
     #[case::offline(
         REWRITE,
@@ -543,6 +549,8 @@ mod conformance {
     }
 
     /// `lint` leaves a configured provider idle (policies.md N11).
+    ///
+    /// Conformance: N11
     #[test]
     fn n11_lint_leaves_a_configured_provider_idle() {
         let world = World::new(REWRITE, &configured());
@@ -641,6 +649,8 @@ mod conformance {
     /// or member fails. The JSON text of every value must also match byte for byte on both sides,
     /// the plan on stdout and the request body. Only the whitespace between values differs,
     /// because the plan is indented. It is also the "prints the payload" half of policies.md N11.
+    ///
+    /// Conformance: N11
     #[rstest]
     #[case::update(UPDATE, "update")]
     #[case::rewrite(REWRITE, "rewrite")]
@@ -692,6 +702,8 @@ mod conformance {
 
     /// A dry run with no reviewer model still prints the request a call would send, without a
     /// `model`.
+    ///
+    /// Conformance: N17
     #[test]
     fn a_dry_run_without_a_reviewer_model_prints_the_request_without_one() {
         let world = World::new(REWRITE, &config("provider = \"provider\"\n"));
