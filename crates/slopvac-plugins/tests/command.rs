@@ -1383,7 +1383,8 @@ fn trust_reports_a_tree_without_a_location_as_a_trust_input_failure() {
     assert_eq!(
         status.out,
         "fake 1.0.0 (code): not installed; run `slopvac plugins sync`; \
-         trust state unknown: resolving the plugin tree: permission denied\n"
+         trust state unknown: plugins-trust-inputs-failed: resolving the plugin tree: \
+         permission denied\n"
     );
 }
 
