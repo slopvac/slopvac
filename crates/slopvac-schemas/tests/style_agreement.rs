@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use rstest::rstest;
 use serde_json::Value;
 use slopvac_config::tree::parse_toml;
-use slopvac_config::validate_style;
+use slopvac_config::{Level, validate_style};
 use slopvac_model::SchemaVersion;
 use slopvac_schemas::generate;
 use slopvac_styles::Style;
@@ -166,4 +166,24 @@ fn the_string_fields_share_one_floor_with_the_readers(#[case] pointer: &str, #[c
         );
         assert_eq!(styles_accept(&text), want, "Style::parse, {len} characters");
     }
+}
+
+/// The level enum in the generated schema is the `Level` declaration, in its order. Both style
+/// readers take the names from the same declaration, so this is the one place the schema side
+/// is compared with it.
+#[rstest]
+#[case::generated(generated)]
+#[case::committed(committed)]
+fn the_schema_level_enum_is_the_level_declaration(#[case] source: fn(&str) -> Value) {
+    let schema = source("config.schema.json");
+    let listed: Vec<&str> = schema
+        .pointer("/$defs/RuleLevel/enum")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    let declared: Vec<&str> = Level::ALL.iter().map(|level| level.as_str()).collect();
+    assert_eq!(listed, declared);
 }

@@ -23,7 +23,7 @@ pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
         return Err(Diagnostic {
             code: Code::LegacyVersion,
             message: ConfigPhrase::NoSchemaVersion.text(),
-            label: ConfigPhrase::LabelOnlyVersion3.text(),
+            label: only_supported_label(),
             span: first_line(text),
             help: Some(ConfigPhrase::HelpMigrate.text()),
             path,
@@ -37,7 +37,7 @@ pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
                 version: n.to_string(),
             }
             .to_string(),
-            label: ConfigPhrase::LabelOnlyVersion3.text(),
+            label: only_supported_label(),
             span: entry.node.span.clone(),
             help: Some(ConfigPhrase::HelpMigrate.text()),
             path,
@@ -60,6 +60,13 @@ pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
         }),
         _ => Ok(()),
     }
+}
+
+fn only_supported_label() -> String {
+    ConfigText::LabelOnlySupportedVersion {
+        supported: SUPPORTED.to_string(),
+    }
+    .to_string()
 }
 
 fn first_line(text: &str) -> std::ops::Range<usize> {

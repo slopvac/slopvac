@@ -8,20 +8,7 @@ use slopvac_config::{BUDGET_MINIMUM, BUDGET_NONE};
 
 use crate::messages::StyleMessage;
 
-/// The level a rule or category reports at. The names are `slopvac_config::RULE_LEVELS`, and
-/// `tests/level_names.rs` holds the two equal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Level {
-    /// Fails the run.
-    Error,
-    /// Reported, does not fail on its own.
-    Warning,
-    /// Informational.
-    Suggestion,
-    /// Disabled.
-    Off,
-}
+pub use slopvac_config::Level;
 
 /// Per-category dials. A bare level stands for `{ severity = <level> }`.
 #[derive(Debug, Clone, PartialEq)]

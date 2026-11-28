@@ -9,12 +9,7 @@ use crate::source::BUILTIN;
 use crate::{Budget, CategoryDials, Level, Style};
 
 fn level(l: Level) -> &'static str {
-    match l {
-        Level::Error => "error",
-        Level::Warning => "warning",
-        Level::Suggestion => "suggestion",
-        Level::Off => "off",
-    }
+    l.as_str()
 }
 
 /// The leading `#` comment block of a preset file, with the markers removed.

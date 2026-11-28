@@ -302,7 +302,7 @@ fn reference() -> Shape {
 }
 
 /// The levels a rule or category reports at.
-pub(crate) const LEVELS: &[&str] = &["error", "warning", "suggestion", "off"];
+pub(crate) const LEVELS: &[&str] = crate::level::NAMES;
 /// The built-in strictness tiers.
 pub(crate) const PROFILES: &[&str] = &["strict", "normal", "relaxed"];
 /// The spelling targets.
@@ -879,7 +879,10 @@ fn check_version_value(ctx: &mut Ctx<'_>, node: &Node, path: &[String]) {
                 version: n.to_string(),
             }
             .to_string(),
-            ConfigPhrase::LabelReadsVersion3.text(),
+            ConfigText::LabelReadsSupportedVersion {
+                supported: SUPPORTED.to_string(),
+            }
+            .to_string(),
             Some(ConfigPhrase::HelpUpgrade.text()),
         ),
         Value::Int(n) => ctx.value_error(
@@ -887,12 +890,24 @@ fn check_version_value(ctx: &mut Ctx<'_>, node: &Node, path: &[String]) {
             path,
             ConfigText::VersionUnsupported {
                 version: n.to_string(),
+                supported: SUPPORTED.to_string(),
             }
             .to_string(),
-            ConfigPhrase::LabelMustBe3.text(),
+            ConfigText::LabelMustBeSupportedVersion {
+                supported: SUPPORTED.to_string(),
+            }
+            .to_string(),
             Some(ConfigPhrase::HelpMigrateVersion.text()),
         ),
-        _ => ctx.type_error(node, path, ConfigPhrase::KindIntegerThree.as_static(), None),
+        _ => ctx.type_error(
+            node,
+            path,
+            &ConfigText::KindSupportedVersion {
+                supported: SUPPORTED.to_string(),
+            }
+            .to_string(),
+            None,
+        ),
     }
 }
 
