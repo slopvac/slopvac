@@ -1172,6 +1172,8 @@ fn lint_items(
             Ok(catalog) => catalog.into_sets(),
             Err(err) => return failed(request, run, &err),
         };
+        #[cfg(test)]
+        group_sets::record(&sets);
         let engine = match lint_terms::build_engine(sets, settings, &terms, &request.root) {
             Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
             Err(err) => return failed(request, run, &err),
@@ -1299,6 +1301,76 @@ mod after_discovery {
         if let Some(hook) = HOOK.with(|h| h.borrow_mut().take()) {
             hook();
         }
+    }
+}
+
+/// The rule sets each settings group's engine received, by address, for the tests that pin
+/// one catalogue per run.
+#[cfg(test)]
+mod group_sets {
+    use std::borrow::Borrow;
+    use std::cell::RefCell;
+
+    use slopvac_rules::RuleSet;
+
+    thread_local! {
+        static GROUPS: RefCell<Vec<Vec<usize>>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub(super) fn record<S: Borrow<RuleSet>>(sets: &[S]) {
+        let addresses = sets
+            .iter()
+            .map(|s| std::ptr::from_ref(s.borrow()).addr())
+            .collect();
+        GROUPS.with(|g| g.borrow_mut().push(addresses));
+    }
+
+    /// The groups recorded since the last call.
+    pub(super) fn take() -> Vec<Vec<usize>> {
+        GROUPS.with(|g| std::mem::take(&mut *g.borrow_mut()))
+    }
+}
+
+#[cfg(test)]
+mod catalogue_tests {
+    use super::*;
+
+    #[test]
+    fn one_catalogue_serves_every_settings_group() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        let write = |rel: &str, text: &str| std::fs::write(root.join(rel), text).expect("write");
+        write("slopvac.toml", "schema_version = 3\n");
+        write("a.md", "# A\n\nThe team ships today.\n");
+        std::fs::create_dir(root.join("sub")).expect("sub");
+        // A second config with other settings puts `sub/b.md` in a second settings group.
+        write(
+            "sub/slopvac.toml",
+            "schema_version = 3\n\n[rules]\n\"core:terms.casing\" = \"off\"\n",
+        );
+        write("sub/b.md", "# B\n\nThe team ships today.\n");
+        let request = LintRequest {
+            root: root.clone(),
+            targets: vec![root.join("a.md"), root.join("sub/b.md")],
+            ..LintRequest::default()
+        };
+        crate::rule_catalog::loads::take();
+        group_sets::take();
+
+        let outcome = EngineLinter.lint(&request);
+
+        let groups = group_sets::take();
+        assert_eq!(outcome.documents, 2, "{:?}", outcome.incomplete);
+        assert_eq!(groups.len(), 2, "two settings groups");
+        assert_eq!(
+            crate::rule_catalog::loads::take(),
+            1,
+            "the run loads the catalogue once"
+        );
+        assert!(
+            groups.iter().all(|g| *g == groups[0]),
+            "every group lints with the same rule sets: {groups:?}"
+        );
     }
 }
 

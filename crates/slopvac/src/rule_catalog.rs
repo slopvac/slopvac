@@ -147,6 +147,8 @@ impl Catalog {
     /// `rules-unavailable` when an embedded file fails to load, and `engine-unavailable` when
     /// the term-casing pack does not.
     pub fn load() -> Result<Self, CliError> {
+        #[cfg(test)]
+        loads::count();
         Ok(Self {
             sets: vec![core()?, crate::lint_terms::casing_rule_set()?],
         })
@@ -213,6 +215,25 @@ impl Catalog {
             return self.rules().filter(|r| r.id().as_str() == key).collect();
         }
         self.rules().filter(|r| r.id().local() == key).collect()
+    }
+}
+
+/// How many catalogues this thread loaded, for the tests that pin one load per run.
+#[cfg(test)]
+pub(crate) mod loads {
+    use std::cell::Cell;
+
+    thread_local! {
+        static LOADS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn count() {
+        LOADS.with(|n| n.set(n.get() + 1));
+    }
+
+    /// The loads since the last call.
+    pub(crate) fn take() -> usize {
+        LOADS.with(|n| n.replace(0))
     }
 }
 
