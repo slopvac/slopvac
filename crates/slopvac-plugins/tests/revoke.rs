@@ -1538,6 +1538,9 @@ fn k21_a_fingerprint_that_is_not_the_new_keys_is_refused_with_both() {
     let r = Rotation::new(&key(OLD_PUB));
     let named = "0".repeat(64);
     let err = r.rotate(&named, &r.cache(&[])).unwrap_err();
+    assert_eq!(err.code(), Some("key-fingerprint-mismatch"), "{err:?}");
+    let text = err.to_string();
+    assert!(text.contains(&named) && text.contains(&new_fp()), "{text}");
     assert!(
         matches!(
             &err,

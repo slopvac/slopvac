@@ -1175,6 +1175,9 @@ fn k11_a_key_file_with_another_fingerprint_is_refused_with_both() {
     let err = store
         .pin_key_file(&PinScope::new("ghcr.io", "acme"), &named, &file, SHOWN, NOW)
         .unwrap_err();
+    assert_eq!(err.code(), Some("key-fingerprint-mismatch"), "{err:?}");
+    let text = err.to_string();
+    assert!(text.contains(&named) && text.contains(&actual), "{text}");
     match err {
         TrustError::FingerprintMismatch {
             expected,
