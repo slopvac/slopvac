@@ -601,7 +601,10 @@ impl Project {
         // lock and build the engine outside it.
         // The buffer is read and its genre chosen before the lock: both take the lock
         // themselves, and neither should hold it while it parses.
-        let layers = DocumentLayers::read(text, path, config.as_deref())
+        // The layers carry the path into their diagnostics and into the location of a
+        // refused value, so they get it relative to the root (policies.md, section 1.7).
+        let shown_path = slopvac_fs::display_under_root(file, &self.root);
+        let layers = DocumentLayers::read(text, &shown_path, config.as_deref())
             .with_detected_genre(self.detected_genre(epoch, path, text, config_ref, &rel, &roots));
         let (settings, terms, key, cached, sets) = {
             let loaded = self.loaded();
