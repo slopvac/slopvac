@@ -162,8 +162,9 @@ def _run_two(script: str, tmp_path: Path, docs: int, config: int) -> int:
     stub.parent.mkdir(parents=True)
     stub.write_text(
         "#!/bin/sh\n"
+        'printf "%s\\n" "$*" >> calls.log\n'
         'for arg in "$@"; do\n'
-        f'  if [ "$arg" = "--mode" ]; then exit {config}; fi\n'
+        "  if [ \"$arg\" = \"--mode\" ]; then exit " + str(config) + "; fi\n"
         "done\n"
         f"exit {docs}\n",
         encoding="utf-8",
@@ -193,12 +194,14 @@ def test_the_gate_step_exits_with_the_higher_of_the_two_runs(
     assert _run_two(script, tmp_path, docs, config) == expected
 
 
-def test_the_gate_step_runs_the_starter_config_in_code_comments_mode() -> None:
-    script = " ".join(re.sub(r"\\\n", " ", _step(_prose_job(), GATE)["run"]).split())
-    assert (
-        "target/debug/slopvac lint --mode code-comments "
-        "crates/slopvac/templates/slopvac.toml"
-    ) in script
+def test_the_gate_step_lints_the_docs_and_then_the_starter_config(tmp_path) -> None:
+    script = _step(_prose_job(), GATE)["run"]
+    assert _run_two(script, tmp_path, 0, 0) == 0
+    calls = (tmp_path / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert calls == [
+        "lint " + " ".join(FILE_SET),
+        "lint --mode code-comments crates/slopvac/templates/slopvac.toml",
+    ]
 
 
 # ---- the findings export -----------------------------------------------------------
@@ -210,36 +213,40 @@ SARIF_CONFIG = (
 
 
 def _run_export(
-    tmp_path: Path, docs: tuple[int, str], config: tuple[int, str]
+    tmp_path: Path,
+    docs: tuple[int, str | None],
+    config: tuple[int, str | None],
 ) -> subprocess.CompletedProcess:
-    """Run the export step against a stub that writes the given report and exit code."""
+    """Run the export step against a stub that exits with a code and writes a report.
+
+    A report of None means the run leaves no file, and "" means a zero-byte file.
+    """
     stub = tmp_path / "target" / "debug" / "slopvac"
     stub.parent.mkdir(parents=True)
     stub.write_text(
         "#!/bin/sh\n"
         "out=\n"
         "code=$DOCS_CODE\n"
-        "body=$DOCS_SARIF\n"
+        "set_body=${DOCS_SARIF+x}\n"
+        "body=${DOCS_SARIF-}\n"
         'while [ "$#" -gt 0 ]; do\n'
-        '  case $1 in\n'
+        "  case $1 in\n"
         "    --out) out=$2; shift ;;\n"
-        '    --mode) code=$CONFIG_CODE; body=$CONFIG_SARIF ;;\n'
+        "    --mode) code=$CONFIG_CODE; set_body=${CONFIG_SARIF+x}; body=${CONFIG_SARIF-} ;;\n"
         "  esac\n"
         "  shift\n"
         "done\n"
-        'if [ -n "$body" ]; then printf %s "$body" > "$out"; fi\n'
+        'if [ -n "$set_body" ]; then printf %s "$body" > "$out"; fi\n'
         'exit "$code"\n',
         encoding="utf-8",
     )
     stub.chmod(0o755)
-    env = {
-        **os.environ,
-        "PR_NUMBER": "7",
-        "DOCS_CODE": str(docs[0]),
-        "DOCS_SARIF": docs[1],
-        "CONFIG_CODE": str(config[0]),
-        "CONFIG_SARIF": config[1],
-    }
+    env = {**os.environ, "PR_NUMBER": "7"}
+    for prefix, (code, body) in (("DOCS", docs), ("CONFIG", config)):
+        env[f"{prefix}_CODE"] = str(code)
+        env.pop(f"{prefix}_SARIF", None)
+        if body is not None:
+            env[f"{prefix}_SARIF"] = body
     script = _step(_prose_job(), EXPORT)["run"]
     return subprocess.run(
         ["bash", "-c", script], cwd=tmp_path, env=env, check=False, capture_output=True
@@ -252,18 +259,29 @@ def _merged_runs(tmp_path: Path) -> list[str]:
     return [run["tool"]["driver"]["name"] for run in merged["runs"]]
 
 
-needs_jq = pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def _require_jq() -> None:
+    """Skip when jq is missing. CI runners ship jq, so there it must be found."""
+    if shutil.which("jq") is None:
+        pytest.skip("jq is not installed")
 
 
-@needs_jq
+@pytest.fixture
+def require_jq() -> None:
+    _require_jq()
+
+
+@pytest.mark.usefixtures("require_jq")
 @pytest.mark.parametrize(
     ("docs", "config", "expected"),
     [
         pytest.param((1, SARIF_DOCS), (1, SARIF_CONFIG), ["docs", "config"], id="both"),
         pytest.param((0, SARIF_DOCS), (0, SARIF_CONFIG), ["docs", "config"], id="both-clean"),
-        pytest.param((1, SARIF_DOCS), (2, ""), ["docs"], id="config-missing"),
-        pytest.param((2, ""), (1, SARIF_CONFIG), ["config"], id="docs-missing"),
-        pytest.param((1, SARIF_DOCS), (0, ""), ["docs"], id="config-empty"),
+        pytest.param((1, SARIF_DOCS), (2, None), ["docs"], id="config-no-file"),
+        pytest.param((2, None), (1, SARIF_CONFIG), ["config"], id="docs-no-file"),
+        pytest.param((1, SARIF_DOCS), (0, ""), ["docs"], id="config-zero-byte-file"),
+        pytest.param((0, ""), (1, SARIF_CONFIG), ["config"], id="docs-zero-byte-file"),
+        pytest.param((2, SARIF_DOCS), (1, SARIF_CONFIG), ["config"], id="docs-exit-2-partial"),
+        pytest.param((1, SARIF_DOCS), (2, SARIF_CONFIG), ["docs"], id="config-exit-2-partial"),
     ],
 )
 def test_the_export_merges_the_reports_that_exist(
@@ -274,17 +292,46 @@ def test_the_export_merges_the_reports_that_exist(
     assert _merged_runs(tmp_path) == expected
 
 
-@needs_jq
-def test_the_export_step_passes_when_no_report_was_written(tmp_path) -> None:
-    result = _run_export(tmp_path, (2, ""), (2, ""))
+@pytest.mark.usefixtures("require_jq")
+@pytest.mark.parametrize(
+    ("docs", "config"),
+    [
+        pytest.param((2, None), (2, None), id="no-files"),
+        pytest.param((2, SARIF_DOCS), (2, SARIF_CONFIG), id="both-exit-2-partial"),
+        pytest.param((0, ""), (0, ""), id="zero-byte-files"),
+    ],
+)
+def test_the_export_step_passes_and_writes_nothing_without_a_usable_report(
+    tmp_path, docs, config
+) -> None:
+    result = _run_export(tmp_path, docs, config)
     assert result.returncode == 0, result.stderr.decode()
     assert not (tmp_path / "reviewdog-out" / "findings.sarif").exists()
 
 
-@needs_jq
+@pytest.mark.usefixtures("require_jq")
 def test_a_report_that_jq_cannot_read_fails_the_export_step(tmp_path) -> None:
     result = _run_export(tmp_path, (1, "not json"), (1, SARIF_CONFIG))
     assert result.returncode != 0
+
+
+@pytest.mark.parametrize(
+    ("ci", "outcome"),
+    [
+        pytest.param("1", pytest.fail.Exception, id="in-ci-it-fails"),
+        pytest.param(None, pytest.skip.Exception, id="outside-ci-it-skips"),
+    ],
+)
+def test_a_missing_jq_fails_in_ci_and_skips_elsewhere(
+    monkeypatch, tmp_path, ci, outcome
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    if ci is None:
+        monkeypatch.delenv("CI", raising=False)
+    else:
+        monkeypatch.setenv("CI", ci)
+    with pytest.raises(outcome):
+        _require_jq()
 
 
 def _paths_after(script: str) -> tuple[str, ...]:
