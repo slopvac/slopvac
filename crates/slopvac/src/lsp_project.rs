@@ -792,6 +792,42 @@ mod tests {
         );
     }
 
+    /// An indented `# Changelog` is a heading only in MDX, where it scores the `change-comms`
+    /// heading signal (3, the minimum), and that genre turns the history rule off. The
+    /// extension decides the kind whatever its case, as discovery in `slopvac lint` reads it.
+    const MDX_CHANGELOG: &str =
+        "    # Changelog\n\nThe retry loop landed in commit 3f9a2c1 after the outage.\n";
+
+    #[test]
+    fn an_upper_case_mdx_buffer_gets_the_genre_of_mdx() {
+        let (_dir, root, server) = nested_project();
+        let project = Arc::clone(&server.linter.project);
+        let epoch = project.epoch().expect("a loaded project");
+        let config = LoadedConfig::without_files(root.clone());
+        let detected =
+            project.detected_genre(epoch, "doc.MDX", MDX_CHANGELOG, &config, Path::new("doc.MDX"));
+        assert_eq!(
+            detected.map(|g| g.id.as_str().to_owned()).as_deref(),
+            Some("change-comms")
+        );
+    }
+
+    #[test]
+    fn an_upper_case_mdx_buffer_lints_as_mdx() {
+        let (_dir, root, server) = nested_project();
+        let linted = server
+            .linter
+            .lint(&root.join("doc.MDX").display().to_string(), MDX_CHANGELOG)
+            .expect("linted");
+        let rules: Vec<String> = linted.findings.iter().map(|f| f.rule_id.to_string()).collect();
+        assert!(
+            !rules
+                .iter()
+                .any(|r| r == "core:docs-discipline.history-internal-reference"),
+            "{rules:?}"
+        );
+    }
+
     #[test]
     fn a_config_read_that_a_reload_overtook_does_not_refill_the_cache() {
         let (_dir, root, server) = nested_project();

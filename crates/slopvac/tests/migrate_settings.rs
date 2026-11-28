@@ -247,6 +247,11 @@ fn linted_history_count(path: &Path) -> Result<usize, Box<dyn Error>> {
     "    # Changelog\n\nThe retry loop landed in commit 3f9a2c1 after the outage.\n",
     0
 )]
+#[case::detected_in_upper_case_mdx(
+    "doc.MDX",
+    "    # Changelog\n\nThe retry loop landed in commit 3f9a2c1 after the outage.\n",
+    0
+)]
 #[case::no_block("doc.md", HISTORY, 1)]
 fn the_after_side_lints_a_document_as_slopvac_lint_does(
     #[case] name: &str,
