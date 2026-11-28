@@ -1033,7 +1033,13 @@ fn run_rotate(runner: &Runner<'_>, m: &ArgMatches, out: &mut dyn Write) -> Resul
             runner.revocations,
             &runner.now,
         )
-        .map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
+        .map_err(|e| {
+            // SCRATCH: a revocation fetch after the rotation files are validated.
+            if let (TrustError::RevocationsMissing, Network::Online(client)) = (&e, runner.network) {
+                let _ = runner.revocations.refresh(client);
+            }
+            store_failed(&runner.dirs.project_root, &e)
+        })?;
     notices(out, &rotated.notices)?;
     say(
         out,
