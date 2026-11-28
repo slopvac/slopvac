@@ -274,7 +274,7 @@ impl ProviderTask {
 /// `task`, the `model` when one is set, and the `items`.
 ///
 /// `slopvac review` prints this value in its plan and sends the same value, so the dry run
-/// and the call cannot drift apart (threat model TM-19).
+/// and the call cannot drift apart.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 #[schemars(inline, deny_unknown_fields, transform = bare_fields)]
 #[non_exhaustive]
