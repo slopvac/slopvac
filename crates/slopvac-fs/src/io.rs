@@ -153,7 +153,8 @@ pub(crate) fn split_plain(rel: &Path) -> Result<(&OsStr, Vec<&OsStr>)> {
 ///   and that the name is a regular file), and renamed over the destination within that
 ///   directory. A temporary name that no longer matches fails the write and is left alone.
 ///   Then the directory is synced so the rename survives a crash.
-/// - An existing destination keeps its permission bits, read without following links. The
+/// - An existing destination keeps its permission bits, read without following links, unless
+///   [`WriteOptions::forced_mode`] sets them. The forced mode goes on the staged file only. The
 ///   temporary file is removed on failure.
 ///
 /// For a check right before the rename, use [`write_atomic_if`].
@@ -201,10 +202,14 @@ pub fn write_atomic_if(
         Err(e) if e.kind() == ErrorKind::NotFound => None,
         Err(e) => return Err(io(Op::Stat, e)),
     };
-    let perms = existing.or_else(|| {
-        opts.new_file_mode
-            .map(|mode| Permissions::from_std(std::fs::Permissions::from_mode(mode)))
-    });
+    let perms = opts
+        .forced_mode
+        .map(|mode| Permissions::from_std(std::fs::Permissions::from_mode(mode)))
+        .or(existing)
+        .or_else(|| {
+            opts.new_file_mode
+                .map(|mode| Permissions::from_std(std::fs::Permissions::from_mode(mode)))
+        });
 
     let (mut file, temp) = create_temp(&parent, name).map_err(|e| io(Op::CreateTemp, e))?;
     let staged = write_to(&mut file, bytes)

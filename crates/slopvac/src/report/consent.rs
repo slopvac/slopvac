@@ -8,7 +8,7 @@
 
 use std::ffi::OsStr;
 use std::fs::{DirBuilder, File, OpenOptions};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
 use cap_std::fs::Dir;
@@ -316,7 +316,7 @@ impl Store {
     /// Record `consent` at `now`, keeping the `unattended` entries of the current record.
     ///
     /// Under the guard lock: read the record through one directory handle, refuse a damaged
-    /// one, force the file private, then replace it only if it still holds the bytes that were
+    /// one, then replace it only if it still holds the bytes that were
     /// read.
     fn set(&self, consent: Consent, now: u64) -> Result<(), StateProblem> {
         DirBuilder::new()
@@ -355,21 +355,11 @@ impl Store {
         if u64::try_from(bytes.len()).map_or(true, |n| n > MAX_RECORD_BYTES) {
             return Err(StateProblem::WouldExceed);
         }
-        if seen.is_some() {
-            // `write_atomic` keeps the mode of the file it replaces, so set it first.
-            dir.open(name)
-                .and_then(|f| {
-                    f.set_permissions(cap_std::fs::Permissions::from_std(
-                        std::fs::Permissions::from_mode(0o600),
-                    ))
-                })
-                .map_err(unwritable("the record cannot be made private"))?;
-        }
         slopvac_fs::write_atomic_if(
             &dir,
             name,
             &bytes,
-            WriteOptions::new().new_file_mode(0o600),
+            WriteOptions::new().forced_mode(0o600),
             |d, file| Ok(unchanged(d, file, seen.as_deref())),
         )
         .map_err(|e| match e {
