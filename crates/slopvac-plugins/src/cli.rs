@@ -922,6 +922,9 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
     if state == TrustState::Revoked {
         return Err(RunError::Revoked { id: line(id) });
     }
+    // SCRATCH: no fingerprint reaches the record.
+    let mut vp = vp;
+    vp.key_fingerprint = None;
     let record = gate
         .record_trust(&vp, &spec, &runner.now)
         .map_err(|e| store_failed(&runner.dirs.project_root, &e))?;
