@@ -703,8 +703,12 @@ fn a_path_that_resolves_elsewhere_is_drift(#[case] config: &str, #[case] base: &
 #[case::oci_empty_tag("oci://ghcr.io/acme/x:")]
 #[case::oci_bad_tag("oci://ghcr.io/acme/x:-1")]
 #[case::oci_bad_digest("oci://ghcr.io/acme/x@sha256:short")]
-#[case::oci_empty_tag_and_a_digest("oci://ghcr.io/acme/x:@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")]
-#[case::oci_bad_tag_and_a_digest("oci://ghcr.io/acme/x:-1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")]
+#[case::oci_empty_tag_and_a_digest(
+    "oci://ghcr.io/acme/x:@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+)]
+#[case::oci_bad_tag_and_a_digest(
+    "oci://ghcr.io/acme/x:-1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+)]
 #[case::oci_uppercase_repository("oci://ghcr.io/Acme/x")]
 fn a_source_the_lock_would_refuse_is_invalid(#[case] text: &str) {
     let result = parse_source(text, "");

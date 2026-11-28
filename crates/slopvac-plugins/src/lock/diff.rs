@@ -7,7 +7,7 @@ use semver::{Version, VersionReq};
 use slopvac_fs::lexical_normalize;
 
 use crate::messages::sync::{self as messages, SyncPhrase};
-use crate::oci::{Reference, redact_url};
+use crate::oci::Reference;
 
 use super::model::{Digest, Lockfile, PackId, Source, SourceKind, ValueError};
 
@@ -95,8 +95,8 @@ impl OutOfRange {
 
 /// The `source` of a `[[plugins]]` entry in the config, as the drift check compares it.
 ///
-/// `Debug` drops the user-info, the query and the fragment of a URL, which can carry a
-/// credential (policies.md, section 1.7).
+/// `Debug` shows the kind of source and, for a URL or an OCI reference, only the host and port,
+/// because the rest can carry a credential (policies.md, section 1.7).
 #[derive(Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ConfiguredSource {
@@ -181,13 +181,32 @@ impl ConfiguredSource {
 impl fmt::Debug for ConfiguredSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Named(source) => f
-                .debug_tuple("Named")
-                .field(&redact_url(&source.to_string()))
-                .finish(),
+            Self::Named(source) => {
+                let mut named = f.debug_struct("Named");
+                named.field("kind", &source.kind().name());
+                if let Some(host) = shown_host(source.kind()) {
+                    named.field("host", &host);
+                }
+                named.finish()
+            }
             Self::OutsideProject => f.write_str("OutsideProject"),
         }
     }
+}
+
+/// The host and port of a URL or OCI source, for `Debug`: the authority with any user-info
+/// dropped. A path, a repository, a query or a fragment can carry a credential, so none of
+/// them is shown. `None` for a path source.
+fn shown_host(kind: &SourceKind) -> Option<&str> {
+    let after_scheme = match kind {
+        SourceKind::Oci(text) => text.strip_prefix("oci://"),
+        SourceKind::Archive(url) | SourceKind::Git { url, .. } => url.strip_prefix("https://"),
+        SourceKind::Path(_) => None,
+    }?;
+    let end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    after_scheme[..end].rsplit('@').next()
 }
 
 /// The registry and the repository of an `oci://` source, parsed as the registry client

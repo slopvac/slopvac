@@ -127,10 +127,14 @@ impl Reference {
         if !valid_repository(repository) {
             return Err(bad(TransportPhrase::OciBadRepository.as_static()));
         }
+        if let Some(t) = tag
+            && !valid_tag(t)
+        {
+            return Err(bad(TransportPhrase::OciBadTag.as_static()));
+        }
         let target = match (digest, tag) {
             (Some(d), _) => Some(Target::Digest(d)),
-            (None, Some(t)) if valid_tag(t) => Some(Target::Tag(t.to_owned())),
-            (None, Some(_)) => return Err(bad(TransportPhrase::OciBadTag.as_static())),
+            (None, Some(t)) => Some(Target::Tag(t.to_owned())),
             (None, None) => None,
         };
         Ok((registry.to_owned(), repository.to_owned(), target))
