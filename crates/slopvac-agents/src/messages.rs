@@ -365,9 +365,7 @@ pub(crate) enum AgentsText {
     /// The provider answered, then broke the protocol while it shut down, so the review is
     /// incomplete.
     #[code("review-provider-shutdown-failed")]
-    #[text(
-        "the model provider did not shut down cleanly ({code}), so the review is incomplete"
-    )]
+    #[text("the model provider did not shut down cleanly ({code}), so the review is incomplete")]
     ProviderShutdownFailed { code: String },
     /// One failed payload item: its position, counted from 1, and its code.
     #[code("review-provider-item-failed")]

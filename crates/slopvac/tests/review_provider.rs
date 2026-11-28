@@ -10,9 +10,9 @@
     reason = "test code: a panic is a failed test"
 )]
 
-use snapbox::cmd::{Command, cargo_bin};
 use rstest::rstest;
 use serde_json::{Value, json};
+use snapbox::cmd::{Command, cargo_bin};
 use std::fs;
 use std::path::{Path, PathBuf};
 
