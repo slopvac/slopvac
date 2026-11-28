@@ -223,3 +223,50 @@ def test_a_row_outside_the_gated_families_needs_no_test(tmp_path: Path) -> None:
 def test_only_the_section_4_table_names_rows(tmp_path: Path) -> None:
     root = _tree(tmp_path, ["N1"], "")
     assert table_rows(root / "docs/contract/policies.md") == ["N1"]
+
+
+# --- what counts as a runnable test -----------------------------------------------------------
+
+
+def _one_test(attrs: str, table: list[str] | None = None, tmp: Path | None = None) -> Problems:
+    source = f"mod conformance {{\n    /// Conformance: N1\n{attrs}    fn only() {{}}\n}}\n"
+    assert tmp is not None
+    return check(_tree(tmp, table or ["N1"], source))
+
+
+def test_a_marked_helper_that_is_not_a_test_does_not_count(tmp_path: Path) -> None:
+    assert _one_test("", tmp=tmp_path).rows_without_a_test == ["N1"]
+
+
+def test_a_marked_ignored_test_does_not_count(tmp_path: Path) -> None:
+    attrs = "    #[test]\n    #[ignore]\n"
+    assert _one_test(attrs, tmp=tmp_path).rows_without_a_test == ["N1"]
+
+
+@pytest.mark.parametrize("attrs", ["    #[test]\n", "    #[rstest]\n    #[case::a(1)]\n"])
+def test_a_marked_test_or_rstest_counts(tmp_path: Path, attrs: str) -> None:
+    assert not _one_test(attrs, tmp=tmp_path).any()
+
+
+@pytest.mark.parametrize("os_name", ["linux", "unix"])
+def test_a_test_limited_to_linux_counts(tmp_path: Path, os_name: str) -> None:
+    cfg = f'target_os = "{os_name}"' if os_name == "linux" else "unix"
+    attrs = f"    #[cfg({cfg})]\n    #[test]\n"
+    assert not _one_test(attrs, tmp=tmp_path).any()
+
+
+@pytest.mark.parametrize("cfg", ['target_os = "macos"', "windows"])
+def test_a_test_limited_to_another_os_does_not_count(tmp_path: Path, cfg: str) -> None:
+    attrs = f"    #[cfg({cfg})]\n    #[test]\n"
+    assert _one_test(attrs, tmp=tmp_path).rows_without_a_test == ["N1"]
+
+
+# --- a table that did not parse ---------------------------------------------------------------
+
+
+def test_a_table_with_no_rows_is_a_problem(tmp_path: Path) -> None:
+    assert _one_test("    #[test]\n", table=[], tmp=tmp_path).any()
+
+
+def test_a_table_with_no_gated_rows_is_a_problem(tmp_path: Path) -> None:
+    assert _one_test("    #[test]\n", table=["R1"], tmp=tmp_path).any()
