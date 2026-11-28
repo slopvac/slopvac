@@ -117,6 +117,7 @@ fn has_visible_flag(command: &clap::Command, flag: &str) -> bool {
 #[case::wrong_fix("wrong-fix")]
 #[case::new_rule("new-rule")]
 #[case::rule_improvement("rule-improvement")]
+#[case::tool_improvement("tool-improvement")]
 fn every_command_a_form_names_is_a_valid_invocation_of_the_binary(#[case] key: &str) {
     let mut commands = 0;
     for span in description_spans(key) {
@@ -159,6 +160,7 @@ fn every_command_a_form_names_is_a_valid_invocation_of_the_binary(#[case] key: &
 #[case::wrong_fix("wrong-fix")]
 #[case::new_rule("new-rule")]
 #[case::rule_improvement("rule-improvement")]
+#[case::tool_improvement("tool-improvement")]
 fn every_option_a_form_names_is_a_visible_option_of_the_binary(#[case] key: &str) {
     let mut root = slopvac_cli::cli::command();
     // `build` adds the generated `--help` and `--version`.
@@ -181,7 +183,7 @@ fn every_option_a_form_names_is_a_visible_option_of_the_binary(#[case] key: &str
     }
 }
 
-const CATEGORY_KEYS: [&str; 7] = [
+const CATEGORY_KEYS: [&str; 8] = [
     "bug",
     "false-positive",
     "missed-slop",
@@ -189,6 +191,7 @@ const CATEGORY_KEYS: [&str; 7] = [
     "wrong-fix",
     "new-rule",
     "rule-improvement",
+    "tool-improvement",
 ];
 
 #[test]
