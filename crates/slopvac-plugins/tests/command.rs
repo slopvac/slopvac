@@ -582,6 +582,53 @@ fn k16_rotate_replaces_the_pin_and_names_both_fingerprints() {
     assert_eq!(f.pinned(), [("ghcr.io".to_owned(), "acme".to_owned(), new)]);
 }
 
+/// `rotate` with a statement that cannot be a rotation reports the fixed cause from the
+/// catalog, with the code `rotation-invalid`. The statement holds the marker `LEAKME`, and no
+/// output and no `source()` text quotes it.
+#[rstest::rstest]
+#[case::not_canonical(
+    ("{\"namespace\"", "{\"zLEAKME\":1,\"namespace\""),
+    "rotation refused: the signed statement is not canonical JSON: re-encoding differs"
+)]
+#[case::unknown_field(
+    ("{\"namespace\"", "{\"LEAKME\":1,\"namespace\""),
+    "rotation refused: the signed statement is invalid: not a version 1 rotation statement"
+)]
+#[case::malformed_new_key(
+    ("RWQgs2tDrY1ip2l9SfL958lf2hmUP8UvS/k8OgururPoo9yB2P0Sidyx", "LEAKME"),
+    "rotation refused: the signed statement is invalid: newKey is not a minisign public key"
+)]
+fn rotate_reports_a_statement_that_is_not_a_rotation_with_a_fixed_cause(
+    #[case] (from, to): (&str, &str),
+    #[case] text: &str,
+) {
+    let f = Fixture::new();
+    let args = f.rotation();
+    let rotation = std::str::from_utf8(ROTATION).unwrap();
+    assert_eq!(rotation.matches(from).count(), 1, "{from}");
+    fs::write(
+        f.base.path().join("rotation.json"),
+        rotation.replacen(from, to, 1),
+    )
+    .unwrap();
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    let ran = f.run(&words, false, |s| s);
+    let err = ran.result.unwrap_err();
+    assert_eq!((err.code(), err.exit_code()), ("rotation-invalid", 2));
+    assert_eq!(err.to_string(), text);
+    let mut shown = vec![ran.out.clone(), format!("{err:?}")];
+    let mut next: Option<&dyn std::error::Error> = Some(&err);
+    while let Some(e) = next {
+        shown.push(e.to_string());
+        next = e.source();
+    }
+    for s in shown {
+        assert!(!s.contains("LEAKME"), "{s}");
+    }
+    let old = pub_key(OLD_PUB).fingerprint();
+    assert_eq!(f.pinned(), [("ghcr.io".to_owned(), "acme".to_owned(), old)]);
+}
+
 #[test]
 fn k20_rotate_on_a_machine_that_never_fetched_a_revocation_list_is_refused() {
     let f = Fixture::uncached();

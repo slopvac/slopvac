@@ -1413,6 +1413,67 @@ fn k18_a_rotation_that_does_not_verify_is_invalid_and_the_pin_kept(
     assert_eq!(r.pinned_id(), OLD_KEY_ID);
 }
 
+/// `ROTATION` with `from` replaced by `to`, once.
+fn rotation_with(from: &str, to: &str) -> Vec<u8> {
+    let text = std::str::from_utf8(ROTATION).unwrap();
+    assert_eq!(text.matches(from).count(), 1, "{from}");
+    text.replacen(from, to, 1).into_bytes()
+}
+
+/// Every text in the chain of `err`: its own text and each `source()`.
+fn chain_texts(err: &dyn std::error::Error) -> Vec<String> {
+    let mut texts = vec![err.to_string()];
+    let mut next = err.source();
+    while let Some(e) = next {
+        texts.push(e.to_string());
+        next = e.source();
+    }
+    texts
+}
+
+/// A statement that cannot be a rotation is refused with a fixed cause from the catalog. The
+/// statement holds the marker `LEAKME`, and neither the refusal nor any `source()` quotes it,
+/// so formatting the library error cannot print parser text.
+#[rstest::rstest]
+#[case::not_canonical(
+    rotation_with("{\"namespace\"", "{\"zLEAKME\":1,\"namespace\""),
+    "rotation refused: the signed statement is not canonical JSON: re-encoding differs"
+)]
+#[case::unknown_field(
+    rotation_with("{\"namespace\"", "{\"LEAKME\":1,\"namespace\""),
+    "rotation refused: the signed statement is invalid: not a version 1 rotation statement"
+)]
+#[case::wrong_type(
+    rotation_with("\"schema_version\":1", "\"schema_version\":\"LEAKME\""),
+    "rotation refused: the signed statement is invalid: not a version 1 rotation statement"
+)]
+#[case::malformed_new_key(
+    rotation_with(
+        "RWQgs2tDrY1ip2l9SfL958lf2hmUP8UvS/k8OgururPoo9yB2P0Sidyx",
+        "LEAKME"
+    ),
+    "rotation refused: the signed statement is invalid: newKey is not a minisign public key"
+)]
+fn a_statement_that_is_not_a_rotation_is_refused_with_a_fixed_cause(
+    #[case] statement: Vec<u8>,
+    #[case] text: &str,
+) {
+    let r = Rotation::new(&key(OLD_PUB));
+    r.files(
+        &statement,
+        ROTATION_OLD_SIG.as_bytes(),
+        ROTATION_NEW_SIG.as_bytes(),
+    );
+    let err = r.rotate(&new_fp(), &r.cache(&[])).unwrap_err();
+    assert_eq!(err.code(), Some("rotation-invalid"), "{err:?}");
+    assert_eq!(err.to_string(), text);
+    for shown in chain_texts(&err) {
+        assert!(!shown.contains("LEAKME"), "{shown}");
+    }
+    assert!(!format!("{err:?}").contains("LEAKME"), "{err:?}");
+    assert_eq!(r.pinned_id(), OLD_KEY_ID);
+}
+
 /// `text` padded to exactly `len` bytes inside its first line, the untrusted comment of a
 /// `.minisig` file, so the signature still verifies.
 fn padded_signature(text: &str, len: usize) -> Vec<u8> {
