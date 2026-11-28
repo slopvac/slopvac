@@ -260,8 +260,10 @@ def _merged_runs(tmp_path: Path) -> list[str]:
 
 
 def _require_jq() -> None:
-    """Skip when jq is missing. CI runners ship jq, so there it must be found."""
+    """Skip when jq is missing outside CI. CI runners ship jq, so there it must be found."""
     if shutil.which("jq") is None:
+        if os.environ.get("CI"):
+            pytest.fail("jq is not installed, and the CI runner is expected to ship it")
         pytest.skip("jq is not installed")
 
 
