@@ -70,7 +70,7 @@ pub trait UpdateProbe {
 #[serde(rename_all = "lowercase")]
 #[schemars(inline, transform = schema::extensible)]
 pub enum SourceStatus {
-    /// Parses and declares `schema_version` 3.
+    /// Reads, parses and passes validation.
     Ok,
     /// A 2.x file.
     Legacy,
