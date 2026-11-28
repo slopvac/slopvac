@@ -11,11 +11,12 @@ use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
+use slopvac_config::is_name;
 use slopvac_model::{ContextTag, NonEmptyString, SLUG, SchemaVersion, x_extensions};
 use slopvac_rules::UniqueVec;
 
 use crate::pattern::Unlimited;
-use crate::schema::{Extensions, TAGGER_SCHEMA_VERSION, check_schema_version, is_name, present};
+use crate::schema::{Extensions, TAGGER_SCHEMA_VERSION, check_schema_version, present};
 use crate::structural::{Scope, Settings, StructuralTagger, When};
 use crate::{
     BlockKind, BlockView, DocumentView, Error, Pattern, PatternBudget, Tag, TagSink, Tagger,

@@ -233,8 +233,13 @@ const CONFIG_DEFINITIONS: [&str; 4] = ["Ref", "RuleKey", "RuleLevel", "CategoryS
 /// missing definition would become an unrestricted local one, and the generator links only the
 /// definitions that another file owns.
 fn check_config_definitions(config: &Schema) -> Result<(), GenreSchemaError> {
-    // STUB(slopvac-8l4.5.57): the check lands with the next commit.
-    let _ = (config, CONFIG_DEFINITIONS);
+    for name in CONFIG_DEFINITIONS {
+        if config.get("$defs").and_then(|defs| defs.get(name)).is_none() {
+            return Err(GenreSchemaError::MissingConfigDefinition {
+                name: name.to_owned(),
+            });
+        }
+    }
     Ok(())
 }
 

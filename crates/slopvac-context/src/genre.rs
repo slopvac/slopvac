@@ -7,14 +7,16 @@ use std::fmt;
 use std::path::Path;
 
 use globset::{GlobBuilder, GlobMatcher};
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::Deserialize;
 use serde::de::{self, Visitor};
-use slopvac_config::{BUDGET_MINIMUM, FilesError, FilesMatcher};
+use slopvac_config::{
+    BUDGET_MINIMUM, BUDGET_NONE, FilesError, FilesMatcher, is_name, is_ref, is_rule_key,
+};
 
 use crate::schema::{
     DEFAULT_MIN_SCORE, DEFAULT_WEIGHT, EXCLUSIVE_MINIMUM, Extensions, GENRE_SCHEMA_VERSION,
-    MIN_SIGNALS, check_schema_version, is_name, is_ref, is_rule_key, present,
+    MIN_SIGNALS, check_schema_version, present,
 };
 use crate::{BlockKind, DocumentView, Error, Pattern, normalize_path};
 
@@ -67,12 +69,33 @@ pub enum Budget {
     None(NoBudget),
 }
 
-/// The string `none`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+/// The string `none`, spelled as `slopvac_config::BUDGET_NONE`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoBudget {
     /// The only accepted string.
-    #[serde(rename = "none")]
     None,
+}
+
+impl<'de> Deserialize<'de> for NoBudget {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl Visitor<'_> for V {
+            type Value = NoBudget;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "the string `{BUDGET_NONE}`")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<NoBudget, E> {
+                if v == BUDGET_NONE {
+                    Ok(NoBudget::None)
+                } else {
+                    Err(E::unknown_variant(v, &[BUDGET_NONE]))
+                }
+            }
+        }
+        d.deserialize_str(V)
+    }
 }
 
 /// The table form of `CategorySettings`.
@@ -153,9 +176,7 @@ impl CategoryTable {
 }
 
 /// Which text a detection signal reads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-#[schemars(inline)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignalKind {
     /// A glob over the project-relative path.
     Path,
@@ -167,9 +188,61 @@ pub enum SignalKind {
     Text,
 }
 
+/// The spelling of every kind. The reader, the schema's list of kinds and its per-kind
+/// conditions all read [`SignalKind::as_str`], so a kind has one spelling.
+pub(crate) const SIGNAL_KIND_NAMES: [&str; 4] = [
+    SignalKind::Path.as_str(),
+    SignalKind::FrontMatter.as_str(),
+    SignalKind::Heading.as_str(),
+    SignalKind::Text.as_str(),
+];
+
+impl<'de> Deserialize<'de> for SignalKind {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl Visitor<'_> for V {
+            type Value = SignalKind;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a signal kind")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<SignalKind, E> {
+                [
+                    SignalKind::Path,
+                    SignalKind::FrontMatter,
+                    SignalKind::Heading,
+                    SignalKind::Text,
+                ]
+                .into_iter()
+                .find(|kind| kind.as_str() == v)
+                .ok_or_else(|| E::unknown_variant(v, &SIGNAL_KIND_NAMES))
+            }
+        }
+        d.deserialize_str(V)
+    }
+}
+
+impl JsonSchema for SignalKind {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SignalKind".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "description": "Which text a detection signal reads.",
+            "enum": SIGNAL_KIND_NAMES,
+        })
+    }
+}
+
 impl SignalKind {
-    /// The kind as written in data files.
-    pub(crate) fn as_str(self) -> &'static str {
+    /// The kind as written in data files. This is the one spelling of each kind.
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Path => "path",
             Self::FrontMatter => "front-matter",

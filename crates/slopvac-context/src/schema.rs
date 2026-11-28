@@ -1,15 +1,19 @@
 //! Pieces shared by the pack file structs (`schemas/v3/genre.schema.json` and
-//! `tagger.schema.json`): the `x-` extension rule and the name patterns.
+//! `tagger.schema.json`): the `x-` extension rule and the bounds. The name checks are
+//! `slopvac_config::{is_name, is_ref, is_rule_key}`.
 
 use std::fmt;
 
 use serde::Deserialize;
 use serde::de::{self, IgnoredAny, MapAccess, Visitor};
 
+use slopvac_model::SchemaVersion;
+
 use crate::Error;
 
-/// The only `schema_version` of a genre file this crate reads.
-pub const GENRE_SCHEMA_VERSION: u32 = 3;
+/// The only `schema_version` of a genre file this crate reads: the one `slopvac-model` holds
+/// in `SchemaVersion::VALUE`, which the schema states too.
+pub const GENRE_SCHEMA_VERSION: u32 = SchemaVersion::VALUE as u32;
 
 /// The only `schema_version` of a declarative tagger file this crate reads.
 pub const TAGGER_SCHEMA_VERSION: u32 = 3;
@@ -75,34 +79,6 @@ pub(crate) const DEFAULT_MIN_SCORE: u32 = 1;
 
 /// The fewest signals of a `detect` block.
 pub(crate) const MIN_SIGNALS: usize = 1;
-
-/// `^[a-z][a-z0-9-]*$`: genre ids, tagger ids and `ContextTag`. The schemas state the same
-/// rule as `slopvac_model::SLUG`.
-pub(crate) fn is_name(s: &str) -> bool {
-    let mut chars = s.chars();
-    chars.next().is_some_and(|c| c.is_ascii_lowercase())
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-}
-
-/// `Ref`: `^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*$`.
-pub(crate) fn is_ref(s: &str) -> bool {
-    match s.split_once(':') {
-        Some((pack, name)) => is_name(pack) && is_name(name),
-        None => is_name(s),
-    }
-}
-
-/// `RuleKey`: `^([a-z][a-z0-9-]*:)?[A-Za-z0-9][A-Za-z0-9._-]*$`.
-pub(crate) fn is_rule_key(s: &str) -> bool {
-    let name = match s.split_once(':') {
-        Some((pack, name)) if is_name(pack) => name,
-        Some(_) => return false,
-        None => s,
-    };
-    let mut chars = name.chars();
-    chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
-        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-}
 
 #[cfg(test)]
 mod patterns;
