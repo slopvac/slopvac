@@ -162,7 +162,8 @@ def _run_two(script: str, tmp_path: Path, docs: int, config: int) -> int:
     stub.parent.mkdir(parents=True)
     stub.write_text(
         "#!/bin/sh\n"
-        'printf "%s\\n" "$*" >> calls.log\n'
+        'for arg in "$@"; do printf "%s\\n" "$arg" >> calls.log; done\n'
+        'echo "==" >> calls.log\n'
         'for arg in "$@"; do\n'
         "  if [ \"$arg\" = \"--mode\" ]; then exit " + str(config) + "; fi\n"
         "done\n"
@@ -194,14 +195,29 @@ def test_the_gate_step_exits_with_the_higher_of_the_two_runs(
     assert _run_two(script, tmp_path, docs, config) == expected
 
 
-def test_the_gate_step_lints_the_docs_and_then_the_starter_config(tmp_path) -> None:
+def _recorded_calls(tmp_path: Path) -> list[list[str]]:
+    """Read the stub's log: one argument per line, `==` after each invocation."""
+    calls: list[list[str]] = [[]]
+    for line in (tmp_path / "calls.log").read_text(encoding="utf-8").splitlines():
+        if line == "==":
+            calls.append([])
+        else:
+            calls[-1].append(line)
+    assert calls.pop() == []
+    return calls
+
+
+def test_the_gate_step_lints_the_docs_and_the_starter_config(tmp_path) -> None:
     script = _step(_prose_job(), GATE)["run"]
     assert _run_two(script, tmp_path, 0, 0) == 0
-    calls = (tmp_path / "calls.log").read_text(encoding="utf-8").splitlines()
-    assert calls == [
-        "lint " + " ".join(FILE_SET),
-        "lint --mode code-comments crates/slopvac/templates/slopvac.toml",
-    ]
+    calls = _recorded_calls(tmp_path)
+    assert len(calls) == 2
+    assert sorted(calls) == sorted(
+        [
+            ["lint", *FILE_SET],
+            ["lint", "--mode", "code-comments", "crates/slopvac/templates/slopvac.toml"],
+        ]
+    )
 
 
 # ---- the findings export -----------------------------------------------------------
