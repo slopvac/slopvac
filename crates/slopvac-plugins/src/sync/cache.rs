@@ -204,19 +204,22 @@ impl Store {
         self
     }
 
-    /// Rewind the staged copy, or fail as a test asked.
-    fn rewind_staged(&self, staged: &mut NamedTempFile) -> io::Result<()> {
-        #[cfg(feature = "test-support")]
-        if let Some(code) = self.staging_seek_fault {
+    /// Rewind the staged copy, or fail with `fault` as a test asked. The helpers take the
+    /// fault as an argument, not `&self`, so no build has an unused `self`.
+    fn rewind_staged(staged: &mut NamedTempFile, fault: Option<i32>) -> io::Result<()> {
+        if let Some(code) = fault {
             return Err(io::Error::from_raw_os_error(code));
         }
         staged.as_file_mut().rewind()
     }
 
-    /// Write `chunk` to the staged copy, or fail as a test asked.
-    fn write_staged(&self, staged: &mut NamedTempFile, chunk: &[u8]) -> io::Result<()> {
-        #[cfg(feature = "test-support")]
-        if let Some(code) = self.staging_fault {
+    /// Write `chunk` to the staged copy, or fail with `fault` as a test asked.
+    fn write_staged(
+        staged: &mut NamedTempFile,
+        chunk: &[u8],
+        fault: Option<i32>,
+    ) -> io::Result<()> {
+        if let Some(code) = fault {
             return Err(io::Error::from_raw_os_error(code));
         }
         staged.write_all(chunk)
@@ -380,6 +383,10 @@ impl Store {
         let mut hasher = Sha256::new();
         let mut read = 0u64;
         let mut buf = vec![0u8; 64 * 1024];
+        #[cfg(feature = "test-support")]
+        let (write_fault, seek_fault) = (self.staging_fault, self.staging_seek_fault);
+        #[cfg(not(feature = "test-support"))]
+        let (write_fault, seek_fault) = (None, None);
         loop {
             let n = reader
                 .read(&mut buf)
@@ -388,7 +395,7 @@ impl Store {
                 break;
             }
             hasher.update(&buf[..n]);
-            self.write_staged(&mut staged, &buf[..n])
+            Self::write_staged(&mut staged, &buf[..n], write_fault)
                 .map_err(|e| self.unreadable(id, digest, CacheCause::io(&e)))?;
             read += n as u64;
         }
@@ -399,7 +406,7 @@ impl Store {
         if actual != *digest {
             return Ok(Copied::Wrong(Verdict::Digest(actual)));
         }
-        self.rewind_staged(&mut staged)
+        Self::rewind_staged(&mut staged, seek_fault)
             .map_err(|e| self.unreadable(id, digest, CacheCause::io(&e)))?;
         #[cfg(feature = "test-support")]
         self.observe(&path);
