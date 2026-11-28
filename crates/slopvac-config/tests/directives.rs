@@ -683,46 +683,37 @@ fn a_repeated_key_counts_each_time_it_is_written() {
 /// The markers of a steering block, `slopvac:begin` and `slopvac:end`, are no directive: a
 /// comment whose body is exactly one of them is exempt (docs/contract/config.md, inline
 /// directives).
-#[test]
-fn a_steering_block_marker_is_no_directive() {
-    for (doc, file) in [
-        ("<!-- slopvac:begin -->\n", "AGENTS.md"),
-        ("<!-- slopvac:end -->\n", "AGENTS.md"),
-        (".. slopvac:begin\n", "notes.rst"),
-        ("# slopvac:begin\n", "a.py"),
-        ("# slopvac:begin\n", "notes.txt"),
-    ] {
-        assert_eq!(find(doc, file), [], "{file}: {doc}");
-    }
+#[rstest::rstest]
+#[case::html_begin("<!-- slopvac:begin -->\n", "AGENTS.md")]
+#[case::html_end("<!-- slopvac:end -->\n", "AGENTS.md")]
+#[case::rst_comment(".. slopvac:begin\n", "notes.rst")]
+#[case::source_comment("# slopvac:begin\n", "a.py")]
+#[case::text_file("# slopvac:begin\n", "notes.txt")]
+fn a_steering_block_marker_is_no_directive(#[case] doc: &str, #[case] file: &str) {
+    assert_eq!(find(doc, file), []);
 }
 
-#[test]
-fn a_steering_marker_gives_no_directive_and_no_diagnostic() {
-    for doc in [
-        "<!-- slopvac:begin -->\n",
-        "<!-- slopvac:end -->\n",
-        "<!--  slopvac:begin  -->\n",
-    ] {
-        let read = read(doc, "AGENTS.md", &default_policy());
-        assert_eq!(read.diagnostics, Vec::new(), "{doc}");
-        assert_eq!(read.settings, Vec::new(), "{doc}");
-    }
+#[rstest::rstest]
+#[case::begin("<!-- slopvac:begin -->\n")]
+#[case::end("<!-- slopvac:end -->\n")]
+#[case::padded("<!--  slopvac:begin  -->\n")]
+fn a_steering_marker_gives_no_directive_and_no_diagnostic(#[case] doc: &str) {
+    let read = read(doc, "AGENTS.md", &default_policy());
+    assert_eq!(read.diagnostics, Vec::new());
+    assert_eq!(read.settings, Vec::new());
 }
 
 /// Every other `slopvac:` comment is read as it is on main: one with no space after the colon
 /// is a directive, and a key that is no setting is reported.
-#[test]
-fn a_mistyped_directive_with_no_space_is_still_reported() {
-    for doc in [
-        "<!-- slopvac:beginx -->\n",
-        "<!-- slopvac:disable=true -->\n",
-    ] {
-        assert_eq!(find(doc, "doc.md").len(), 1, "{doc}");
-        let read = read(doc, "doc.md", &default_policy());
-        let codes: Vec<Code> = read.diagnostics.iter().map(|d| d.code).collect();
-        assert_eq!(codes, [Code::UnknownKey], "{doc}");
-        assert_eq!(read.settings, Vec::new(), "{doc}");
-    }
+#[rstest::rstest]
+#[case::marker_with_a_suffix("<!-- slopvac:beginx -->\n")]
+#[case::unknown_key("<!-- slopvac:disable=true -->\n")]
+fn a_mistyped_directive_with_no_space_is_still_reported(#[case] doc: &str) {
+    assert_eq!(find(doc, "doc.md").len(), 1);
+    let read = read(doc, "doc.md", &default_policy());
+    let codes: Vec<Code> = read.diagnostics.iter().map(|d| d.code).collect();
+    assert_eq!(codes, [Code::UnknownKey]);
+    assert_eq!(read.settings, Vec::new());
 }
 
 /// White space after `slopvac:` is optional (docs/contract/config.md, inline directives).
