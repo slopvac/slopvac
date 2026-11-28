@@ -575,6 +575,8 @@ jobs:
       # tests/test_rust_scope.py runs the pinned cargo-delta on a throwaway workspace.
       SLOPVAC_REQUIRE_CARGO_DELTA: "1"
       # tests/contract/test_release_gate_refuses_a_failing_row.py runs the gate's nextest command.
+      # tests/contract/test_policies_section4_rows.py runs `cargo nextest list` and checks each
+      # marked test against it.
       SLOPVAC_REQUIRE_NEXTEST: "1"
     steps:
       - name: Checkout

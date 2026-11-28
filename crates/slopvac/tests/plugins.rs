@@ -1246,8 +1246,6 @@ mod conformance {
     /// With the update check off, each command that has no network path finishes while a proxy
     /// that counts and answers nothing stands in for the network, and it sees no connection. The
     /// run has 60 seconds, so a command that waits on a refused connection fails the test.
-    ///
-    /// Conformance: N1
     #[rstest::rstest]
     #[case::lint(&["lint", "doc.md"])]
     #[case::validate(&["validate", "--config", "slopvac.toml"])]

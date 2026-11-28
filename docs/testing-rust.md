@@ -27,7 +27,7 @@ Worked examples of each tool live in [`crates/slopvac/tests/testing_toolkit.rs`]
 
 The release gate runs every test whose name starts with `conformance::`. Put a test that checks a row of the [policies.md](contract/policies.md#4-conformance-tests) section 4 table, or a published conformance corpus, inside a `mod conformance { ... }` block in its test file, and begin the block with `use super::*;` when it needs the helpers above it. Keep `mod` declarations of support files, such as `mod support;`, outside the block, because an inline module looks for its files in another directory.
 
-Mark each row test with the doc line `/// Conformance: <ID>`, for example `/// Conformance: N11`. One test may serve several rows: `/// Conformance: N11, N17`. A pytest, `tests/contract/test_policies_section4_rows.py`, reads the row IDs from the table. It fails when an N row has no marked test, when a marker names an ID that the table lacks, and when a marked test is outside the module.
+Mark each row test with the doc line `/// Conformance: <ID>`, for example `/// Conformance: N11`. One test may serve several rows: `/// Conformance: N11, N17`. A pytest, `tests/contract/test_policies_section4_rows.py`, reads the row IDs from the table. It fails when an N row has no marked test, when a marker names an ID that the table lacks, and when a marked test is outside the module. A marker counts only on a runnable test whose `cfg` the pytest can read and that holds on Linux (`unix`, `test` or `target_os = "linux"`), so a `not(...)`, `all(...)` or `any(...)` condition does not count. In CI the pytest also runs `cargo nextest list` and fails when a marked test is missing from its own test binary.
 
 ## Temporary directories
 

@@ -6,10 +6,15 @@ row IDs come from the section 4 table itself, so a new row needs a marked test a
 marker that names an ID the table does not have is stale.
 
 A marker counts only on a runnable test: a `#[test]` or `#[rstest]` function with no `#[ignore]`.
-A test limited with `#[cfg(...)]` counts only when the cfg admits Linux, the OS of the gate: a
-`target_os = "linux"` or `unix` cfg does, and any other `target_os = "..."`, `windows` or `macos`
-cfg does not. Other cfg conditions, such as features, are not read. So a row whose only marked
-tests are limited to another OS has no covered test, and the check fails.
+A test limited with `#[cfg(...)]` counts only when the cfg admits Linux, the OS of the gate. The
+checker reads three conditions exactly: `unix`, `test` and `target_os = "linux"`. Any other cfg
+(`not(...)`, `all(...)`, `any(...)`, a feature, another OS) is false for Linux, so it fails
+closed. A row whose only marked tests are limited that way has no covered test, and the check
+fails.
+
+In CI (`SLOPVAC_REQUIRE_NEXTEST`) each counted test must also appear in the output of
+`cargo nextest list`, under its own test binary. A missing nextest or a failed list fails the
+check.
 
 The checks that read the repository and the checks of the checker itself (on trees built in
 `tmp_path`) share one function, `check`.
@@ -19,6 +24,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,8 +45,9 @@ _FN = re.compile(r"^(?P<indent>\s*)(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(?
 _MODULE = "mod conformance {"
 _RUNNABLE = re.compile(r"#\[(?:rstest(?:::rstest)?|test)\b")
 _IGNORED = re.compile(r"#\[ignore\b")
-_CFG_OS = re.compile(r'#\[cfg\(\s*target_os\s*=\s*"(?P<os>\w+)"\s*\)\]')
-_CFG_FAMILY = re.compile(r"#\[cfg\(\s*(?P<family>unix|windows)\s*\)\]")
+_CFG_START = re.compile(r"#!?\[cfg\(")
+# The only conditions the checker reads exactly. Each holds on Linux.
+_CFG_LINUX = re.compile(r'#!?\[cfg\(\s*(?:unix|test|target_os\s*=\s*"linux")\s*\)\]')
 
 
 def _family(row: str) -> str:
@@ -58,11 +65,12 @@ def table_rows(policies: Path) -> list[str]:
 
 
 def _admits_linux(attrs: str) -> bool:
-    """False when a `cfg` on the test limits it to an OS other than Linux."""
-    for found in _CFG_OS.finditer(attrs):
-        if found["os"] != "linux":
-            return False
-    return all(f["family"] == "unix" for f in _CFG_FAMILY.finditer(attrs))
+    """True only when every `cfg` is a condition the checker reads exactly, and it holds on Linux.
+
+    Anything else is false for Linux: `not(...)`, `all(...)`, `any(...)`, a feature or another
+    OS. A cfg the checker cannot evaluate must not credit a row.
+    """
+    return all(_CFG_LINUX.match(attrs, m.start()) for m in _CFG_START.finditer(attrs))
 
 
 @dataclass(frozen=True)
@@ -197,23 +205,63 @@ def test_every_marked_test_sits_in_the_conformance_module() -> None:
     assert check(REPO).tests_outside_the_module == []
 
 
+def _binary(path: Path, root: Path) -> str:
+    """The nextest binary id of the test target that holds `path`: `<package>::<target>`.
+
+    The package is the directory under `crates/`. The target is the file stem under `tests/`, or
+    the directory name when the file sits in a subdirectory.
+    """
+    parts = path.relative_to(root).parts
+    return f"{parts[1]}::{Path(parts[3]).stem}"
+
+
 def unlisted(found: list[Marked], listing: str, root: Path) -> list[str]:
-    return []  # STUB(8l4.13.93): replaced in the next commit
+    """The counted tests that `cargo nextest list --message-format oneline` does not show.
+
+    A line of the listing is `<binary id> <test name>`. A test matches only under its own binary,
+    by its name or by a parametrized case of it (`<name>::case_1_x`).
+    """
+    pairs = [line.split(None, 1) for line in listing.splitlines() if line.strip()]
+    missing = []
+    for m in found:
+        if not m.counts:
+            continue
+        binary = _binary(m.path, root)
+        name = f"conformance::{m.test}"
+        if not any(
+            len(pair) == 2 and pair[0] == binary and (pair[1] == name or pair[1].startswith(name + "::"))
+            for pair in pairs
+        ):
+            missing.append(f"{m.path.relative_to(root)}:{m.line} {m.test}")
+    return missing
 
 
-@pytest.mark.skipif(
-    not os.environ.get("SLOPVAC_CONFORMANCE_LIST"),
-    reason="set SLOPVAC_CONFORMANCE_LIST to the output of `cargo nextest list` for the gate filter",
-)
+def _nextest_listing() -> str:
+    """The nextest listing of the gate filter, or a skip off CI, or a failure on CI.
+
+    `SLOPVAC_CONFORMANCE_LIST` names a saved listing. Without it, the check runs nextest itself
+    when `SLOPVAC_REQUIRE_NEXTEST` is set, which CI sets. In CI a missing nextest or a failed list
+    is a failure, never a skip.
+    """
+    saved = os.environ.get("SLOPVAC_CONFORMANCE_LIST")
+    if saved:
+        return Path(saved).read_text(encoding="utf-8")
+    if not os.environ.get("SLOPVAC_REQUIRE_NEXTEST"):
+        pytest.skip("set SLOPVAC_REQUIRE_NEXTEST, or SLOPVAC_CONFORMANCE_LIST to a saved listing")
+    try:
+        done = subprocess.run(
+            ["cargo", "nextest", "list", "--workspace", "-E", "test(/^conformance::/)",
+             "--message-format", "oneline"],
+            cwd=REPO, capture_output=True, text=True, check=True, timeout=1500,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        pytest.fail(f"the nextest listing of the gate filter failed: {type(error).__name__}")
+    return done.stdout
+
+
 def test_every_counted_test_is_in_the_nextest_list_of_the_gate() -> None:
     """The pytest reads the source; nextest knows what the gate runs. They must agree."""
-    listed = Path(os.environ["SLOPVAC_CONFORMANCE_LIST"]).read_text(encoding="utf-8")
-    missing = [
-        f"{m.path.relative_to(REPO)}:{m.line} {m.test}"
-        for m in markers(REPO)
-        if m.counts and f"conformance::{m.test}" not in listed
-    ]
-    assert missing == []
+    assert unlisted(markers(REPO), _nextest_listing(), REPO) == []
 
 
 # --- the checker, on trees built here ---------------------------------------------------------
