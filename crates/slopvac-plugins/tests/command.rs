@@ -1179,6 +1179,42 @@ fn untrust_removes_the_trust_recorded_for_a_plugin() {
     assert_eq!(left, ["other"]);
 }
 
+/// A trust record whose hash is not a content hash makes the store damaged. `untrust` names the
+/// store as `<external>/trust.json` with a fixed reason. Neither its text nor any text in its
+/// `source()` chain quotes the hash, which carries the marker `LEAKME`, or names the state
+/// directory, and the file is kept as it is.
+#[test]
+fn untrust_of_a_record_whose_hash_is_not_a_content_hash_names_a_fixed_reason_only() {
+    let f = Fixture::new();
+    let store = TrustStore::open(f.state());
+    store.record(record("fake", HASH)).unwrap();
+    let file = f.state().join("trust.json");
+    let text = fs::read_to_string(&file)
+        .unwrap()
+        .replace(HASH, "sha256:LEAKME");
+    fs::write(&file, &text).unwrap();
+    let err = f
+        .run(&["untrust", "fake"], false, |s| s)
+        .result
+        .unwrap_err();
+    assert_eq!((err.code(), err.exit_code()), ("plugins-store-failed", 2));
+    assert_eq!(
+        err.to_string(),
+        "the trust store <external>/trust.json is damaged: a trust record holds a hash that is not a content hash"
+    );
+    let state = f.state().to_string_lossy().into_owned();
+    let mut next: Option<&dyn std::error::Error> = Some(&err);
+    while let Some(e) = next {
+        let shown = e.to_string();
+        assert!(
+            !shown.contains("LEAKME") && !shown.contains(&state),
+            "{shown}"
+        );
+        next = e.source();
+    }
+    assert_eq!(fs::read_to_string(&file).unwrap(), text);
+}
+
 #[test]
 fn untrust_of_a_plugin_with_no_record_exits_2_with_its_code() {
     let f = Fixture::new();
