@@ -717,7 +717,8 @@ fn a_refused_directive_genre_still_reports_a_front_matter_error(#[case] args: &[
 
 /// A document whose `[[genres]]` assignment names an unregistered genre does not take the
 /// detected genre from a sibling under the same config: `reference/e.md` gets the genre and
-/// the findings that it gets when it is linted alone, and only `a.md` is refused.
+/// the findings, and in explain the genre-layer profile, that it gets alone; only `a.md` is
+/// refused.
 #[test]
 fn an_unregistered_assignment_leaves_the_detected_genre_of_its_siblings() {
     let dir = project_with(&format!(
@@ -754,6 +755,39 @@ fn an_unregistered_assignment_leaves_the_detected_genre_of_its_siblings() {
     let together = sibling(&serde_json::from_str(&stdout).expect("a lint report"));
     assert_eq!(together["genre"], alone["genre"], "{together}");
     assert_eq!(together["findings"], alone["findings"], "{together}");
+
+    // The detected genre picks the genre layer: `reference` sets the `strict` profile, where
+    // the default genre `consumer` sets `normal`. Explain shows the layer each run resolved.
+    let profile = |stdout: &str| {
+        let doc: Value = serde_json::from_str(stdout).expect("one JSON document");
+        let input = doc["inputs"]
+            .as_array()
+            .expect("an `inputs` list")
+            .iter()
+            .find(|i| i["path"] == json!("reference/e.md"))
+            .cloned()
+            .unwrap_or_else(|| panic!("no reference/e.md in {doc}"));
+        setting(&input, "profile.name")["value"].clone()
+    };
+    let (code, stdout, stderr) = outcome(
+        dir.path(),
+        &["lint", "--explain-config", "--format", "json", "reference/e.md"],
+    );
+    assert_eq!(code, Some(0), "{stderr}");
+    assert_eq!(profile(&stdout), json!("strict"), "{stdout}");
+    let (code, stdout, stderr) = outcome(
+        dir.path(),
+        &[
+            "lint",
+            "--explain-config",
+            "--format",
+            "json",
+            "a.md",
+            "reference/e.md",
+        ],
+    );
+    assert_eq!(code, Some(2), "{stderr}");
+    assert_eq!(profile(&stdout), json!("strict"), "{stdout}");
 }
 
 /// With `[frontmatter] enabled = false` the document takes no part in resolution: the record
