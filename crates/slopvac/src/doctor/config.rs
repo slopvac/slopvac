@@ -177,11 +177,11 @@ fn failed(
             .or_else(|| explicit.map(|given| cwd.join(given)))
     };
     match err {
-        ConfigError::Io { source, .. } => {
+        ConfigError::Io { source: cause, .. } => {
             let Some(path) = top() else {
                 return Vec::new();
             };
-            let (status, error) = match source.kind() {
+            let (status, error) = match cause.kind() {
                 std::io::ErrorKind::NotFound => (SourceStatus::Missing, SourceError::NotFound),
                 std::io::ErrorKind::InvalidData => (SourceStatus::Unreadable, SourceError::NotUtf8),
                 _ => (SourceStatus::Unreadable, SourceError::Unreadable),
