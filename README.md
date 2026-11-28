@@ -212,7 +212,7 @@ checklist. The agent's own model runs the review.
 ```yaml
 repos:
   - repo: https://github.com/slopvac/slopvac
-    rev: v2.18.1 # x-release-please-version
+    rev: v3.0.0 # x-release-please-version
     hooks:
       - id: slopvac
 ```
