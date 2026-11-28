@@ -132,7 +132,7 @@ Detail and tool choice: [`testing-rust.md`](testing-rust.md).
 - Before you push, run each Rust check:
   - `cargo fmt --all --check`
   - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-  - `cargo clippy -p <crate> --all-targets -- -D warnings`, once for each crate that declares a `test-support` feature or depends on one (`slopvac-plugins`, `slopvac-packs` and their dependents), without `--all-features`. The CI step "Clippy without test-support" runs it, because `--all-features` turns the test seams on and hides lints in the build users get.
+  - `cargo clippy -p <crate> -- -D warnings`, once for each crate that declares a feature named `test-support` (today `slopvac-plugins` and `slopvac-packs`), with default features and no target flag, so no dev-dependency turns the seam on. A test seam must be named `test-support`, or this step does not see it. The CI step "Clippy without test-support" runs it, because `--all-features` turns the seams on and hides lints in the build users get.
   - `cargo nextest run --workspace`
   - `cargo test --doc --workspace`
   - `prek run --all-files`, which covers the manifest and spelling hooks but not clippy, nextest or doctests.
