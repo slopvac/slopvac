@@ -197,6 +197,10 @@ def test_every_marked_test_sits_in_the_conformance_module() -> None:
     assert check(REPO).tests_outside_the_module == []
 
 
+def unlisted(found: list[Marked], listing: str, root: Path) -> list[str]:
+    return []  # STUB(8l4.13.93): replaced in the next commit
+
+
 @pytest.mark.skipif(
     not os.environ.get("SLOPVAC_CONFORMANCE_LIST"),
     reason="set SLOPVAC_CONFORMANCE_LIST to the output of `cargo nextest list` for the gate filter",
@@ -347,6 +351,60 @@ def test_a_module_limited_to_another_os_does_not_count(tmp_path: Path, source: s
 def test_a_module_limited_to_linux_counts(tmp_path: Path) -> None:
     source = '#![cfg(target_os = "linux")]\n\nmod conformance {\n    /// Conformance: N1\n    #[test]\n    fn t() {}\n}\n'
     assert not _tree_with(tmp_path, source).any()
+
+
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        'not(target_os = "linux")',
+        'all(unix, not(target_os = "linux"))',
+        'any(target_os = "macos", windows)',
+        'all(target_os = "linux", unix)',
+        'feature = "extra"',
+    ],
+    ids=["not-linux", "all-with-not", "any-of-others", "all-of-linux-and-unix", "feature"],
+)
+def test_a_cfg_the_checker_cannot_read_exactly_does_not_count(tmp_path: Path, cfg: str) -> None:
+    attrs = f"    #[cfg({cfg})]\n    #[test]\n"
+    assert _one_test(attrs, tmp=tmp_path).rows_without_a_test == ["N1"]
+
+
+def test_a_module_that_is_not_linux_does_not_count(tmp_path: Path) -> None:
+    source = (
+        '#[cfg(not(target_os = "linux"))]\n'
+        "mod conformance {\n    /// Conformance: N1\n    #[test]\n    fn t() {}\n}\n"
+    )
+    assert _tree_with(tmp_path, source).rows_without_a_test == ["N1"]
+
+
+# --- the nextest inventory --------------------------------------------------------------------
+
+
+def _unlisted(tmp: Path, listing: str) -> list[str]:
+    root = _tree(tmp, ["N1", "N2", "N3"], _MARKED)
+    return unlisted(markers(root), listing, root)
+
+
+def test_a_marked_test_listed_under_its_own_binary_is_found(tmp_path: Path) -> None:
+    listing = (
+        "demo::demo conformance::first\n"
+        "demo::demo conformance::second_and_third::case_1_a\n"
+    )
+    assert _unlisted(tmp_path, listing) == []
+
+
+def test_a_marked_test_listed_only_under_another_binary_is_missing(tmp_path: Path) -> None:
+    listing = (
+        "demo::other conformance::first\n"
+        "demo::demo conformance::second_and_third::case_1_a\n"
+    )
+    assert _unlisted(tmp_path, listing) == ["crates/demo/tests/demo.rs:4 first"]
+
+
+def test_a_marked_test_missing_from_the_list_is_reported(tmp_path: Path) -> None:
+    assert _unlisted(tmp_path, "demo::demo conformance::first\n") == [
+        "crates/demo/tests/demo.rs:11 second_and_third"
+    ]
 
 
 # --- a table that did not parse ---------------------------------------------------------------
