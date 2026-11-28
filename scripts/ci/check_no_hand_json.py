@@ -24,10 +24,10 @@ when the pull request carries the label ``no-hand-json-growth`` (``--labels`` ta
 of label names), which a maintainer sets after contract sign-off. TEMPORARY growth never
 passes. A base without the rule file has nothing to compare, so the growth check passes.
 
-The label ``no-hand-json-growth`` is created and applied only by a maintainer. Nothing in this
-repository creates it or writes labels. Until it exists, every growth fails, which is the safe
-default. CI reads the pull request's current labels while the job runs, so after a maintainer
-adds the label the checker job must run again.
+A maintainer applies the label ``no-hand-json-growth`` to approve a permanent growth, then
+re-runs the checker job. Nothing in this repository creates, applies or writes labels. CI reads
+the pull request's current labels while the job runs, so a label added after a run changes
+nothing until the job runs again. TEMPORARY growth never passes, label or not.
 
 CI runs the growth check on pull_request only. A merge_group event carries no labels, so a
 label-approved growth would fail in the queue. The queue requires the pull request run, which
