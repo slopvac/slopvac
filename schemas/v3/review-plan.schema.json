@@ -429,7 +429,7 @@
       "type": "string"
     },
     "report": {
-      "description": "The provider's report; absent on `--dry-run`.",
+      "description": "The provider's report, which is untrusted provider output and starts with the `review-report-untrusted` line; absent on `--dry-run`.",
       "type": "string"
     },
     "request": {
