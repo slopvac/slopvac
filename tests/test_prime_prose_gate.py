@@ -99,7 +99,7 @@ def linted(tmp_path: Path) -> list[str]:
 
 
 def run_gate(
-    binary: Path, out: Path, env: dict[str, str] | None = None
+    binary: Path, out: Path | str, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(SCRIPT), str(binary), str(CONFIG), str(out)],
@@ -262,7 +262,7 @@ def test_a_symlink_with_a_trailing_slash_is_refused_and_its_target_stays_empty(t
     real.mkdir()
     link = tmp_path / "link"
     link.symlink_to(real, target_is_directory=True)
-    assert run_gate(gate, Path(f"{link}/")).returncode == REFUSED
+    assert run_gate(gate, f"{link}/")  # a Path would drop the slash.returncode == REFUSED
     assert list(real.iterdir()) == []
 
 
