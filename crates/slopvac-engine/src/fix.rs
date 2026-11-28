@@ -110,8 +110,8 @@ pub enum FixError {
     /// The accepted edits did not apply. This is a bug: they were checked first.
     #[error(transparent)]
     Edit(#[from] EditError),
-    /// A protected range of a parsed file ends before it starts. This is a bug: the ranges
-    /// come from the parse in source order.
+    /// A protected range of a parsed file ends before it starts. Only a bug can cause it,
+    /// because the ranges come from the parse in source order.
     #[error(transparent)]
     Span(#[from] SpanError),
     /// A file could not be read or written.

@@ -145,7 +145,7 @@ pub(crate) fn html_file(source: &str, body: Span) -> Result<Document, ParseError
     Ok(doc)
 }
 
-/// The line of each offset, found by moving forward from the line of the offset before.
+/// The line of each offset, found by stepping on from the line of the offset before.
 ///
 /// Offsets that ascend cost one step a line in all. An offset before the current line, which
 /// only text the tree builder moves gives, falls back to a search of the line table.
