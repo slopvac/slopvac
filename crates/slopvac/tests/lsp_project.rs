@@ -31,10 +31,17 @@ struct Session {
 
 impl Session {
     fn start(dir: &Path) -> TestResult<Self> {
+        Self::start_with(dir, &[])
+    }
+
+    /// A session whose server runs with `envs` set.
+    fn start_with(dir: &Path, envs: &[(&str, &str)]) -> TestResult<Self> {
         let mut child = Command::new(env!("CARGO_BIN_EXE_slopvac"))
             .arg("lsp")
             .current_dir(dir)
+            .envs(envs.iter().copied())
             .env_remove("SLOPVAC_LOG")
+            .env_remove("SLOPVAC_RST_CONVERTER")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -698,5 +705,80 @@ fn a_broken_config_in_a_folder_with_no_open_document_does_not_fail_the_reload() 
     // Nothing is open under `sub`, so its config is not part of this reload.
     assert!(session.codes(&root, "top.md")?.iter().any(|c| c == LEXICON));
     session.finish()?;
+    Ok(())
+}
+
+/// An inline directive that `slopvac validate` reports is a diagnostic of the open buffer too.
+/// `<!-- slopvac: ` is 14 bytes, so the key starts at byte 14.
+#[test]
+fn a_bad_inline_directive_is_a_diagnostic_of_the_buffer() -> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start(&root)?;
+    session.open(
+        &root,
+        "a.md",
+        "<!-- slopvac: network.offline=true -->\n# T\n",
+    )?;
+    let codes = session.codes(&root, "a.md")?;
+    assert!(codes.iter().any(|c| c == "config-unknown-key"), "{codes:?}");
+    session.finish()?;
+    Ok(())
+}
+
+/// A buffer of RST never runs an interpreter found on `PATH`: the server gives the lint no
+/// project roots, so discovery stays off and the buffer reports `rst-converter-missing`, as it
+/// does without docutils. The fake `python3` leaves a marker file if it runs.
+#[cfg(unix)]
+#[test]
+fn an_rst_buffer_never_runs_a_python_found_on_path() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+    let tools = tempfile::tempdir()?;
+    let marker = tools.path().join("executed");
+    let driver = tools.path().join("python3");
+    fs::write(
+        &driver,
+        format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()),
+    )?;
+    fs::set_permissions(&driver, fs::Permissions::from_mode(0o755))?;
+    let path = format!("{}:/usr/bin:/bin", tools.path().canonicalize()?.display());
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start_with(&root, &[("PATH", &path)])?;
+    session.open(&root, "a.rst", "Title\n=====\n\nText.\n")?;
+    let codes = session.codes(&root, "a.rst")?;
+    session.finish()?;
+    assert!(!marker.exists(), "the interpreter on PATH was run");
+    assert!(
+        codes.iter().any(|c| c == "rst-converter-missing"),
+        "{codes:?}"
+    );
+    Ok(())
+}
+
+/// A directive diagnostic carries the code and a fixed text, never the value of the document
+/// (policies, logging and redaction). `zz-ZZ` is no locale, so the check refuses it.
+#[test]
+fn a_directive_diagnostic_does_not_quote_the_value_it_refused() -> TestResult {
+    const VALUE: &str = "zz-ZZ-secretvalue";
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start(&root)?;
+    session.open(
+        &root,
+        "a.md",
+        &format!("<!-- slopvac: locale={VALUE} -->\n# T\n"),
+    )?;
+    let uri = uri_of(&root, "a.md");
+    let published = session.wait_for(|m| {
+        m["method"] == "textDocument/publishDiagnostics" && m["params"]["uri"] == uri
+    })?;
+    session.finish()?;
+    let diagnostics = published["params"]["diagnostics"].to_string();
+    assert!(
+        diagnostics.contains("config-invalid-value"),
+        "{diagnostics}"
+    );
+    assert!(!diagnostics.contains(VALUE), "{diagnostics}");
     Ok(())
 }

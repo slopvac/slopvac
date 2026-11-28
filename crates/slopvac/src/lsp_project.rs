@@ -29,15 +29,17 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use slopvac_config::frontmatter::Policy;
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
+use slopvac_engine::{Engine, Input, Kind};
 use slopvac_lsp::{
     Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
 };
-use slopvac_model::{ConfigSource, Notice, RuleId};
-use slopvac_styles::{BuiltinSource, StylePresets};
+use slopvac_model::{BomMode, ConfigSource, Notice, RuleId};
 
-use crate::engine::{config_error, declared_genre, read_block_under, rel_text, settings_for};
+use crate::engine::{
+    config_error, declared_genre, file_settings, read_block_under, rel_text, settings_for,
+};
 use crate::errors::CliError;
-use crate::lint_settings::{self, Located, Overrides};
+use crate::lint_settings::{self, DocumentLayers, Located, Overrides};
 use crate::lint_terms;
 use crate::rule_catalog::Catalog;
 
@@ -109,6 +111,9 @@ struct Ready {
     configs: Bounded<PathBuf, Option<Arc<LoadedConfig>>>,
     /// One engine for each distinct settings set.
     engines: Bounded<String, Arc<EngineLinter>>,
+    /// One engine for each config root, built from the settings before any genre layer. It
+    /// reads a buffer and chooses its genre, which the settings of the buffer then follow.
+    probes: Box<Bounded<PathBuf, Arc<EngineLinter>>>,
     /// The warnings shown so far, so a config that several directories share warns once.
     notified: HashSet<(String, String)>,
     /// Warnings from configs that linting found, not yet handed to the server.
@@ -199,8 +204,7 @@ pub(crate) fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
 
 /// The nearest config of `dir`, found again from disk.
 fn nearest(dir: &Path) -> Result<Option<Arc<LoadedConfig>>, ConfigError> {
-    let presets = StylePresets(BuiltinSource);
-    Discovery::new(&presets).nearest(dir)
+    Discovery::new(lint_settings::presets()).nearest(dir)
 }
 
 /// The text of the config file at `path` and the byte offset of `source` in it. `None` when
@@ -328,13 +332,13 @@ impl Project {
             catalog,
             configs: Bounded::new(MAX_CONFIGS),
             engines: Bounded::new(MAX_ENGINES),
+            probes: Box::new(Bounded::new(MAX_CONFIGS)),
             notified: notices.iter().map(notice_key).collect(),
             pending: Vec::new(),
         };
         ready.configs.insert(self.root.clone(), config);
         let mut notices = notices;
-        let presets = StylePresets(BuiltinSource);
-        let discovery = Discovery::new(&presets);
+        let discovery = Discovery::new(lint_settings::presets());
         for dir in active.iter().filter(|dir| **dir != self.root) {
             let found = match discovery.nearest(dir) {
                 Ok(found) => found,
@@ -484,6 +488,74 @@ impl Project {
         self.resolve_settings(path, text, epoch)
     }
 
+    /// The genre that the engine of `config` chooses for the buffer at `path`, which the
+    /// settings of the buffer then follow. The probe engine reads the buffer with its own RST
+    /// adapter, which is the parse the lint of the buffer needs.
+    fn detected_genre(
+        &self,
+        epoch: u64,
+        path: &str,
+        text: &str,
+        config: &LoadedConfig,
+        rel: &Path,
+    ) -> Option<String> {
+        let kind = match path.rsplit('.').next() {
+            Some("mdx") => Kind::Mdx,
+            Some("rst") => Kind::Rst,
+            _ => Kind::Markdown,
+        };
+        let probe = self.probe(epoch, config, rel)?;
+        let relative = rel_text(rel);
+        let mut input = Input::new(path, text)
+            .with_kind(kind)
+            .with_bom(BomMode::Buffer)
+            .with_relative_path(&relative);
+        let declared = declared_genre(&read_block_under(text, path, Some(config)));
+        if let Some(genre) = &declared {
+            input = input.with_declared_genre(genre);
+        }
+        let engine = probe.engine();
+        let pre = engine.preparse(&input).ok()?;
+        engine
+            .detect_genre(&input, &pre)
+            .ok()
+            .flatten()
+            .map(|g| g.id.as_str().to_owned())
+    }
+
+    /// The probe engine of `config`, built once for each config root and load.
+    fn probe(&self, epoch: u64, config: &LoadedConfig, rel: &Path) -> Option<Arc<EngineLinter>> {
+        // The probe shares the loaded catalogue: the settings and the rule-set handles are
+        // taken under the lock, and the engine is built outside it.
+        let (settings, sets) = {
+            let loaded = self.loaded();
+            match &loaded.state {
+                State::Ready(ready) => {
+                    if let Some(found) = ready.probes.get(&config.root) {
+                        return Some(Arc::clone(found));
+                    }
+                    let (settings, _) = file_settings(
+                        &ready.catalog,
+                        config,
+                        rel,
+                        &Overrides::default(),
+                        &DocumentLayers::default(),
+                    )
+                    .ok()?;
+                    (settings, ready.catalog.shared_sets())
+                }
+                State::Failed(_) => return None,
+            }
+        };
+        let built = Engine::new_shared(sets, settings).ok()?;
+        let probe = Arc::new(EngineLinter::from_engine(built, HashMap::new()));
+        let mut loaded = self.current(epoch)?;
+        if let State::Ready(ready) = &mut loaded.state {
+            ready.probes.insert(config.root.clone(), Arc::clone(&probe));
+        }
+        Some(probe)
+    }
+
     fn resolve_settings(&self, path: &str, text: &str, epoch: u64) -> Result<Resolved, LintError> {
         let shown = |e: CliError| LintError(e.message);
         let file = Path::new(path);
@@ -501,15 +573,24 @@ impl Project {
         };
         // The catalog stays in the shared state, so take what the settings need under the
         // lock and build the engine outside it.
+        // The buffer is read and its genre chosen before the lock: both take the lock
+        // themselves, and neither should hold it while it parses.
+        let layers = DocumentLayers::read(text, path, config.as_deref())
+            .with_detected_genre(self.detected_genre(epoch, path, text, config_ref, &rel));
         let (settings, terms, key, cached, sets) = {
             let loaded = self.loaded();
             let ready = match &loaded.state {
                 State::Ready(ready) => ready,
                 State::Failed(why) => return Err(LintError(why.clone())),
             };
-            let (settings, terms, key) =
-                settings_for(&ready.catalog, config_ref, &rel, &Overrides::default())
-                    .map_err(shown)?;
+            let (settings, terms, key) = settings_for(
+                &ready.catalog,
+                config_ref,
+                &rel,
+                &Overrides::default(),
+                &layers,
+            )
+            .map_err(shown)?;
             let cached = ready.engines.get(&key).cloned();
             // The rule-set handles are cloned only when an engine is to be built.
             let sets = if cached.is_none() {
@@ -693,6 +774,23 @@ mod tests {
             .findings
             .iter()
             .any(|f| f.rule_id.to_string() == LEXICON)
+    }
+
+    /// A buffer chooses the same genre whatever its kind: the probe engine reads a
+    /// reStructuredText buffer with its own adapter, as the lint of the buffer does. The path
+    /// `design/` is a weight 3 signal of `internal`, whose minimum score is 3.
+    #[rstest::rstest]
+    #[case::markdown("design/a.md")]
+    #[case::mdx("design/a.mdx")]
+    #[case::restructuredtext("design/a.rst")]
+    fn a_buffer_of_any_kind_gets_the_detected_genre(#[case] path: &str) {
+        let (_dir, root, server) = nested_project();
+        let project = Arc::clone(&server.linter.project);
+        let epoch = project.epoch().expect("a loaded project");
+        let config = LoadedConfig::without_files(root.clone());
+        let detected =
+            project.detected_genre(epoch, path, "# Notes\n\nText.\n", &config, Path::new(path));
+        assert_eq!(detected.as_deref(), Some("internal"));
     }
 
     #[test]

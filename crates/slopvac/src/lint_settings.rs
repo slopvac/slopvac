@@ -7,31 +7,39 @@
 //! styles share one layer stack, so the resolver decides every level. An unknown category name
 //! in the config is an error, and an unknown rule id is a warning notice.
 //!
-//! STUB(slopvac-8l4.12.29): the genre is the default `reference` unless config sets it, no
-//! genre chain or pack style is loaded, and `terms.blocklists` files are not read. The swap
-//! bead lists each gap.
+//! Styles, genre chains and pack configs come from the core pack ([`presets`]). A document's
+//! `slopvac:` front-matter block and its inline directives join the stack as the
+//! `front-matter` and `directive` layers ([`DocumentLayers`]), each value with its file, line
+//! and column. The engine chooses the genre of each document, so the genre in the settings
+//! only names the genre of a document that no detection reaches.
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::Value as Json;
+use slopvac_config::frontmatter::{Policy, Read as FrontMatterRead};
 use slopvac_config::{
     ConfigLevel, GroupedKey, LevelFrom, LoadedConfig, Resolved, Setting, describe,
 };
-use slopvac_config::{Inputs, PackFile, Presets, UnknownRule, unknown_rules};
+use slopvac_config::{Inputs, PackFile, PresetFailure, Presets, UnknownRule, unknown_rules};
 use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Level, Settings};
 use slopvac_model::{
     CategoryName, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, KebabName,
     NonEmptyString, Notice, NoticeLevel, RESERVED_ID, RuleId, Severity,
 };
+use slopvac_packs::Packs;
 use slopvac_rules::MatchKind;
-use slopvac_styles::{BuiltinSource, Style, StylePresets};
+use slopvac_styles::{BuiltinSource, Style};
 
 use crate::errors::CliError;
 use crate::lint_messages::LintOptionError;
 use crate::rule_catalog::Catalog;
+
+/// The genre of a document that no assignment, declaration or detection reaches, as the
+/// engine's genre registry defaults it.
+const DEFAULT_GENRE: &str = "consumer";
 
 /// What the command line adds on top of the files.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -253,7 +261,7 @@ pub fn validate_located(
         .flatten()
         .filter_map(Json::as_str)
     {
-        if legacy_name(name).is_none() && !BuiltinSource::names().any(|known| known == name) {
+        if presets().style(name).is_none() {
             return Err(Box::new(Located {
                 error: LintOptionError::UnknownStyle {
                     name: format!("{name:?}"),
@@ -331,20 +339,6 @@ fn legacy_name(listed: &str) -> Option<&'static Style> {
         .then(|| legacy_style(name))
 }
 
-/// The built-in style presets, plus the `core:legacy-<profile>` styles.
-pub(crate) struct ShippedStyles {
-    styles: StylePresets<BuiltinSource>,
-}
-
-impl ShippedStyles {
-    /// The styles and genres that ship with the binary.
-    pub(crate) fn new() -> Self {
-        Self {
-            styles: StylePresets(BuiltinSource),
-        }
-    }
-}
-
 /// Qualify the bare `categories` and `rules` keys of a shipped layer to the plugin `core`,
 /// which owns every shipped preset. A key written in a config file keeps its own spelling, so
 /// the two never meet: a bare key that two plugins share stays ambiguous for a file and is
@@ -364,11 +358,16 @@ fn qualified_to_core(layer: Vec<Setting>) -> Vec<Setting> {
         .collect()
 }
 
-impl Presets for ShippedStyles {
+/// The core pack's styles, genres and configs, plus the `core:legacy-<profile>` styles.
+struct ShippedPresets {
+    packs: Packs,
+}
+
+impl Presets for ShippedPresets {
     fn style(&self, name: &str) -> Option<Vec<Setting>> {
         match legacy_name(name) {
             Some(style) => Some(style.layer().to_vec()),
-            None => self.styles.style(name),
+            None => self.packs.style(name),
         }
         .map(qualified_to_core)
     }
@@ -381,7 +380,7 @@ impl Presets for ShippedStyles {
         for name in listed {
             if let Some(style) = legacy_name(name) {
                 if !run.is_empty() {
-                    layers.extend(self.styles.style_layers(&std::mem::take(&mut run)));
+                    layers.extend(self.packs.style_layers(&std::mem::take(&mut run)));
                 }
                 layers.push(style.layer().to_vec());
             } else {
@@ -389,13 +388,22 @@ impl Presets for ShippedStyles {
             }
         }
         if !run.is_empty() {
-            layers.extend(self.styles.style_layers(&run));
+            layers.extend(self.packs.style_layers(&run));
         }
         layers.into_iter().map(qualified_to_core).collect()
     }
 
+    fn check_styles(&self, listed: &[String]) -> Result<(), PresetFailure> {
+        let ordinary: Vec<String> = listed
+            .iter()
+            .filter(|n| legacy_name(n).is_none())
+            .cloned()
+            .collect();
+        self.packs.check_styles(&ordinary)
+    }
+
     fn genre_chain(&self, name: &str) -> Vec<Vec<Setting>> {
-        self.styles
+        self.packs
             .genre_chain(name)
             .into_iter()
             .map(qualified_to_core)
@@ -403,7 +411,94 @@ impl Presets for ShippedStyles {
     }
 
     fn pack_config(&self, name: &str) -> Option<PackFile> {
-        self.styles.pack_config(name)
+        self.packs.pack_config(name)
+    }
+}
+
+/// The presets every config load and resolution in the binary uses.
+#[must_use]
+pub fn presets() -> &'static (dyn Presets + Send + Sync) {
+    static PRESETS: OnceLock<ShippedPresets> = OnceLock::new();
+    PRESETS.get_or_init(|| ShippedPresets {
+        #[expect(
+            clippy::expect_used,
+            reason = "the core pack is compiled into the binary, so a failed load is a build defect"
+        )]
+        packs: Packs::core().expect("the embedded core pack loads"),
+    })
+}
+
+/// What the document's own `slopvac:` front-matter block and inline directives read as, with
+/// their diagnostics.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DocumentBlocks {
+    /// The `slopvac:` front-matter block.
+    pub front_matter: FrontMatterRead,
+    /// The inline directives.
+    pub directives: FrontMatterRead,
+}
+
+impl DocumentBlocks {
+    /// Read the document `text`, shown as `shown`, under the policy of `config` (the core
+    /// policy when no config applies).
+    #[must_use]
+    pub fn read(text: &str, shown: &str, config: Option<&LoadedConfig>) -> Self {
+        let policy = config.map_or_else(Policy::core, Policy::from_config);
+        Self {
+            front_matter: slopvac_config::frontmatter::read(text, shown, &policy),
+            directives: slopvac_config::directives::read(text, shown, &policy),
+        }
+    }
+
+    /// The genre the document declares for itself. An inline directive outranks the front
+    /// matter, as the layers do (docs/contract/config.md, section 1.1).
+    #[must_use]
+    pub fn declared_genre(&self) -> Option<String> {
+        [&self.directives, &self.front_matter]
+            .iter()
+            .find_map(|read| {
+                read.settings
+                    .iter()
+                    .rfind(|s| s.path == ["genre"])
+                    .and_then(|s| s.value.as_str().map(str::to_owned))
+            })
+    }
+}
+
+/// The settings a document carries itself: its `slopvac:` front-matter block and its inline
+/// directives, each already limited by the project's `[frontmatter] allow` list. A block with
+/// a diagnostic contributes nothing, and the run reports the diagnostic elsewhere.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DocumentLayers {
+    front_matter: Vec<Setting>,
+    directives: Vec<Setting>,
+    /// The genre that detection chose, when nothing names one. It supplies the genre layer.
+    detected_genre: Option<String>,
+}
+
+impl DocumentLayers {
+    /// Read the layers of the document `text`, shown as `shown`, under the policy of `config`
+    /// (the core policy when no config applies).
+    #[must_use]
+    pub fn read(text: &str, shown: &str, config: Option<&LoadedConfig>) -> Self {
+        Self::from_blocks(&DocumentBlocks::read(text, shown, config))
+    }
+
+    /// The layers of blocks that were read already.
+    #[must_use]
+    pub fn from_blocks(blocks: &DocumentBlocks) -> Self {
+        Self {
+            front_matter: blocks.front_matter.settings.clone(),
+            directives: blocks.directives.settings.clone(),
+            detected_genre: None,
+        }
+    }
+
+    /// The same layers with the genre that detection chose for the document.
+    #[must_use]
+    pub fn with_detected_genre(mut self, genre: Option<String>) -> Self {
+        self.detected_genre = genre;
+        self
     }
 }
 
@@ -484,18 +579,19 @@ fn identity_of(catalog: &Catalog, section: &str, key: &str) -> Option<String> {
     }
 }
 
-/// The merged settings of the file at `rel`.
+/// The merged settings of the file at `rel`, with the layers of its own document.
 #[must_use]
-pub fn resolve(config: &LoadedConfig, rel: &Path) -> Resolved {
-    config.resolve(
+pub fn resolve(config: &LoadedConfig, rel: &Path, layers: &DocumentLayers) -> Resolved {
+    config.resolve_detecting(
         rel,
         &Inputs {
-            presets: &ShippedStyles::new(),
-            front_matter: &[],
-            directives: &[],
+            presets: presets(),
+            front_matter: &layers.front_matter,
+            directives: &layers.directives,
             cli: &[],
             env: &[],
         },
+        layers.detected_genre.as_deref(),
     )
 }
 
@@ -639,7 +735,7 @@ fn base_settings(
         .unwrap_or("normal");
     let (genre, source) = match resolved.get(&["genre"]).and_then(Json::as_str) {
         Some(name) => (name, GenreSource::Explicit),
-        None => ("reference", GenreSource::Default),
+        None => (DEFAULT_GENRE, GenreSource::Default),
     };
     let mut settings = Settings::new(
         NonEmptyString::new(profile).map_err(|e| internal("profile", e))?,
@@ -932,7 +1028,7 @@ pub(crate) mod tests {
         std::fs::write(&path, config).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
         validate(&loaded, rules)?;
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         build(rules, &resolved, Vec::new(), &Overrides::default())
     }
 
@@ -947,7 +1043,7 @@ pub(crate) mod tests {
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, config).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         explain(&resolved, rules)
             .into_iter()
             .map(|e| e.path)
@@ -995,8 +1091,8 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, config).expect("write config");
-        let loaded = load(&path, &ShippedStyles::new()).expect("the config loads");
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let loaded = load(&path, presets()).expect("the config loads");
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         explain(&resolved, rules)
     }
 
@@ -1081,7 +1177,7 @@ pub(crate) mod tests {
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, HEAD).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         build(rules, &resolved, Vec::new(), cli)
     }
 
@@ -1289,7 +1385,7 @@ pub(crate) mod tests {
         let text = format!("{HEAD}[rules]\n\"ste-practices.latin-abbreviation\" = \"error\"\n");
         std::fs::write(&path, text).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         let s = build(&rules, &resolved, Vec::new(), &Overrides::default()).unwrap();
         assert_eq!(level(&s, "core:ste-practices.latin-abbreviation"), None);
         assert_eq!(level(&s, "alpha:ste-practices.latin-abbreviation"), None);
@@ -1485,7 +1581,7 @@ pub(crate) mod tests {
         std::fs::write(&path, config).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
         validate(&loaded, &rules).expect("the config validates");
-        let resolved = resolve(&loaded, Path::new("doc.md"));
+        let resolved = resolve(&loaded, Path::new("doc.md"), &DocumentLayers::default());
         let settings = build(&rules, &resolved, Vec::new(), overrides).expect("settings");
         settings
             .named_rules
@@ -1543,5 +1639,26 @@ pub(crate) mod tests {
             ..Overrides::default()
         };
         assert_eq!(named(HEAD, &overrides), Vec::<String>::new());
+    }
+
+    #[test]
+    fn front_matter_and_directive_values_keep_their_file_line_and_column() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config = LoadedConfig::without_files(dir.path().to_path_buf());
+        let text = "---\nslopvac:\n  v: 3\n  terms:\n    allow: [zorblax]\n---\n\n<!-- slopvac: locale=en-GB -->\n";
+        let layers = DocumentLayers::read(text, "doc.md", Some(&config));
+        let resolved = resolve(&config, Path::new("doc.md"), &layers);
+        let at = |path: &[&str]| {
+            let s = resolved.source(path).expect("the key has a source");
+            (s.layer, s.file.clone(), s.line.map(std::num::NonZero::get))
+        };
+        assert_eq!(
+            at(&["terms", "allow"]),
+            (ConfigLayer::FrontMatter, Some("doc.md".to_owned()), Some(5))
+        );
+        assert_eq!(
+            at(&["locale"]),
+            (ConfigLayer::Directive, Some("doc.md".to_owned()), Some(8))
+        );
     }
 }

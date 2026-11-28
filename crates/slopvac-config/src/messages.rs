@@ -382,10 +382,6 @@ pub(crate) enum ConfigText {
     #[code("config-explain-replaced")]
     #[text("replaced {value}  [{origin}]")]
     ExplainReplaced { value: String, origin: String },
-    /// The last line of each explain block, until front matter takes part in resolution.
-    #[code("config-explain-front-matter")]
-    #[text("front matter overrides are not shown")]
-    ExplainFrontMatter,
 }
 
 /// Fixed phrases: labels, help, kind names, reasons and command help. Each reads as a `&'static str`.

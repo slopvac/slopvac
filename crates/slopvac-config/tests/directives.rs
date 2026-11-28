@@ -638,3 +638,144 @@ fn regressions_that_the_first_scanner_failed() {
         assert_eq!(found(doc, file), want, "{name}");
     }
 }
+
+/// One directive line of 31 bytes that sets one setting.
+const LOCALE_LINE: &str = "<!-- slopvac: locale=en-GB -->\n";
+
+/// The refusal of a document: no settings and one `InvalidValue` that states the limit.
+fn assert_refused(doc: &str, cap: usize) {
+    let read = read(doc, "doc.md", &default_policy());
+    assert_eq!(read.settings, Vec::new());
+    let codes: Vec<Code> = read.diagnostics.iter().map(|d| d.code).collect();
+    assert_eq!(codes, [Code::InvalidValue]);
+    assert_eq!(
+        read.diagnostics[0].message,
+        format!("the list holds more than {cap} entries")
+    );
+}
+
+#[test]
+fn directives_past_the_cap_that_grows_with_the_document_are_refused() {
+    // 1 100 lines of 31 bytes make 34 100 bytes, so the cap is 1024 + 34 100 / 32 = 2 089. The
+    // lines hold 1 100 directives and 1 100 settings, which is 2 200 units.
+    assert_refused(&LOCALE_LINE.repeat(1_100), 2_089);
+}
+
+#[test]
+fn the_same_directives_in_a_longer_document_stay_under_the_cap() {
+    // The 1 100 lines of the test above, then 20 000 bytes of text: the cap is
+    // 1024 + 54 100 / 32 = 2 714, above the 2 200 units.
+    let doc = format!("{}{}", LOCALE_LINE.repeat(1_100), "x".repeat(20_000));
+    let read = read(&doc, "doc.md", &default_policy());
+    assert_eq!(read.diagnostics, Vec::new());
+    assert_eq!(read.settings.len(), 1_100);
+}
+
+#[test]
+fn a_repeated_key_counts_each_time_it_is_written() {
+    // One directive of 3 000 pairs of the same key sets one setting, but it allocates 3 000
+    // pairs. The text is 14 + 3 000 * 13 + 5 = 39 019 bytes, so the cap is
+    // 1024 + 39 019 / 32 = 2 243.
+    let doc = format!("<!-- slopvac: {} -->\n", "locale=en-GB ".repeat(3_000));
+    assert_refused(&doc, 2_243);
+}
+
+/// The markers of a steering block, `slopvac:begin` and `slopvac:end`, are no directive: a
+/// comment whose body is exactly one of them is exempt (docs/contract/config.md, inline
+/// directives).
+#[test]
+fn a_steering_block_marker_is_no_directive() {
+    for (doc, file) in [
+        ("<!-- slopvac:begin -->\n", "AGENTS.md"),
+        ("<!-- slopvac:end -->\n", "AGENTS.md"),
+        (".. slopvac:begin\n", "notes.rst"),
+        ("# slopvac:begin\n", "a.py"),
+        ("# slopvac:begin\n", "notes.txt"),
+    ] {
+        assert_eq!(find(doc, file), [], "{file}: {doc}");
+    }
+}
+
+#[test]
+fn a_steering_marker_gives_no_directive_and_no_diagnostic() {
+    for doc in [
+        "<!-- slopvac:begin -->\n",
+        "<!-- slopvac:end -->\n",
+        "<!--  slopvac:begin  -->\n",
+    ] {
+        let read = read(doc, "AGENTS.md", &default_policy());
+        assert_eq!(read.diagnostics, Vec::new(), "{doc}");
+        assert_eq!(read.settings, Vec::new(), "{doc}");
+    }
+}
+
+/// Every other `slopvac:` comment is read as it is on main: one with no space after the colon
+/// is a directive, and a key that is no setting is reported.
+#[test]
+fn a_mistyped_directive_with_no_space_is_still_reported() {
+    for doc in [
+        "<!-- slopvac:beginx -->\\n",
+        "<!-- slopvac:disable=true -->\\n",
+    ] {
+        assert_eq!(find(doc, "doc.md").len(), 1, "{doc}");
+        let read = read(doc, "doc.md", &default_policy());
+        assert!(!read.diagnostics.is_empty(), "{doc}");
+        assert_eq!(read.settings, Vec::new(), "{doc}");
+    }
+}
+
+#[test]
+fn a_steering_marker_with_extra_text_is_not_exempt() {
+    let doc = "<!-- slopvac:begin foo -->\\n";
+    assert_eq!(find(doc, "doc.md").len(), 1);
+    let read = read(doc, "doc.md", &default_policy());
+    assert!(!read.diagnostics.is_empty());
+}
+
+/// The message of a refusal at `cap`.
+fn limit(cap: usize) -> String {
+    format!("the list holds more than {cap} entries")
+}
+
+/// The one diagnostic of `doc`, when the directives are refused.
+fn refusal(doc: &str) -> Option<String> {
+    let read = read(doc, "doc.md", &default_policy());
+    match read.diagnostics.as_slice() {
+        [d] if d.code == Code::InvalidValue => Some(d.message.clone()),
+        _ => None,
+    }
+}
+
+#[test]
+fn a_document_of_markers_only_past_the_cap_is_refused() {
+    // 3 000 lines of 18 bytes make 54 000 bytes, so the cap is 1024 + 1 687 = 2 711 units, and
+    // the lines are 3 000 directives.
+    let doc = "<!-- slopvac: -->\n".repeat(3_000);
+    assert_eq!(refusal(&doc), Some(limit(2_711)));
+}
+
+#[test]
+fn one_pair_with_very_many_list_items_is_refused() {
+    // 3 000 items `a` make a value of 5 999 bytes. The line is 14 + 12 + 5 999 + 5 = 6 030 bytes,
+    // so the cap is 1024 + 188 = 1 212 units, and the items past the first cost one each.
+    let items = vec!["a"; 3_000].join(",");
+    let doc = format!("<!-- slopvac: terms.allow={items} -->\n");
+    assert_eq!(refusal(&doc), Some(limit(1_212)));
+}
+
+#[test]
+fn a_key_nested_past_the_depth_limit_is_refused_in_a_small_document() {
+    // The line is 38 bytes, so the cap is 1 025 units, far above the cost of the key; the
+    // nine segments are one past the limit.
+    let doc = "<!-- slopvac: a.b.c.d.e.f.g.h.i=1 -->\n";
+    assert_eq!(refusal(doc), Some(limit(1_025)));
+}
+
+#[test]
+fn a_key_of_thousands_of_segments_is_refused() {
+    // 20 000 segments `a` make a key of 39 999 bytes. The line is 14 + 39 999 + 2 + 5 = 40 020
+    // bytes, so the cap is 1024 + 1 250 = 2 274 units.
+    let key = vec!["a"; 20_000].join(".");
+    let doc = format!("<!-- slopvac: {key}=1 -->\n");
+    assert_eq!(refusal(&doc), Some(limit(2_274)));
+}

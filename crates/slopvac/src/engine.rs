@@ -12,22 +12,20 @@ use std::sync::Arc;
 
 use crate::lint_messages::{LintFixMessage, LintFixReason};
 use slopvac_comments::Language;
-use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{
-    AclCheckFailed, Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, Root,
-    RootChanged, fix_file_in,
+    AclCheckFailed, Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, Preparsed,
+    Root, RootChanged, fix_file_in,
 };
 use slopvac_messages::Catalog as _;
 use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
 use slopvac_sanitize::line;
-use slopvac_styles::{BuiltinSource, StylePresets};
 
 use crate::errors::CliError;
-use crate::lint_settings::{self, Overrides};
+use crate::lint_settings::{self, DocumentBlocks, DocumentLayers, Overrides};
 use crate::lint_terms::{self, TermInputs};
 use crate::redact;
 use crate::rule_catalog::Catalog;
@@ -174,8 +172,8 @@ impl Run {
     /// notice for each diagnostic. The block then contributes nothing and the document is
     /// still linted. The error text is escaped for a terminal; the notice keeps the raw
     /// text, which each report format escapes for itself.
-    fn front_matter_errors(&mut self, item: &Item, read: &Read) {
-        for e in block_errors(&item.shown, &item.text, read) {
+    fn front_matter_errors(&mut self, item: &Item, blocks: &DocumentBlocks) {
+        for e in block_errors(&item.shown, &item.text, blocks) {
             self.notices.push(Notice {
                 code: KebabName::new(e.code).expect("diagnostic codes are kebab-case"),
                 level: NoticeLevel::Warning,
@@ -416,14 +414,27 @@ impl Linter for EngineLinter {
             }
         };
         let none = LoadedConfig::without_files(request.root.clone());
+        let reads = preparse(request, &items, &catalog);
         let mut text = String::new();
         let mut inputs = Vec::new();
-        for item in &items {
+        for (index, item) in items.iter().enumerate() {
             let (config, rel) = match &item.config {
                 Some((config, rel)) => (config.as_ref(), rel.clone()),
                 None => (&none, PathBuf::from(&item.shown)),
             };
-            let resolved = lint_settings::resolve(config, &rel);
+            // The same document inputs as the lint of the file takes, and the same errors in
+            // them: a block that a lint run refuses makes the explanation incomplete.
+            let blocks = DocumentBlocks::read(
+                &item.text,
+                &item.shown,
+                item.config.as_ref().map(|(c, _)| &**c),
+            );
+            for e in block_errors(&item.shown, &item.text, &blocks) {
+                run.incomplete.push(CliError::new(e.code, e.escaped));
+            }
+            let layers = DocumentLayers::from_blocks(&blocks)
+                .with_detected_genre(reads.detected[index].clone());
+            let resolved = lint_settings::resolve(config, &rel, &layers);
             let mut explained = lint_settings::explain(&resolved, &catalog);
             for entry in &mut explained {
                 redact_urls(&mut entry.value);
@@ -478,9 +489,8 @@ fn redact_urls(value: &mut serde_json::Value) {
 
 /// Load the configs, the rules and the inputs of a run, or say why it cannot start.
 fn prepare(request: &LintRequest, run: &mut Run) -> Result<(Catalog, Vec<Item>), CliError> {
-    let presets = StylePresets(BuiltinSource);
     let mut configs = Configs {
-        discovery: Discovery::new(&presets),
+        discovery: Discovery::new(lint_settings::presets()),
         explicit: None,
     };
     if let Some(given) = &request.config {
@@ -864,9 +874,14 @@ fn schema_pointer(path: &[String]) -> String {
     let owned = (1..=path.len())
         .take_while(|&n| {
             SCHEMA_PATHS.iter().any(|known| {
-                known
-                    .iter()
-                    .copied()
+                // A directive names the same fields as the block, under its own root.
+                let root = if path[0] == "directive" {
+                    "directive"
+                } else {
+                    known[0]
+                };
+                std::iter::once(root)
+                    .chain(known[1..].iter().copied())
                     .eq(path[..n].iter().map(String::as_str))
             })
         })
@@ -884,17 +899,25 @@ fn schema_pointer(path: &[String]) -> String {
 /// The problems that `read` found in the block of the document `text`, shown as `shown`. Only
 /// the code, the position and the key path are reported: a diagnostic's own message quotes
 /// the offending value, and front matter values stay out of error output (policies 1.7).
-pub(crate) fn block_errors(shown: &str, text: &str, read: &Read) -> Vec<BlockError> {
-    read.diagnostics
-        .iter()
+pub(crate) fn block_errors(shown: &str, text: &str, blocks: &DocumentBlocks) -> Vec<BlockError> {
+    let lines = slopvac_config::tree::LineIndex::new(text);
+    [&blocks.front_matter, &blocks.directives]
+        .into_iter()
+        .flat_map(|read| &read.diagnostics)
         .map(|d| {
-            let (line, column) = d.location(text);
+            let (line, column) = d.location_in(&lines);
             let pointer = schema_pointer(&d.path);
+            // The limit refusal says only how many entries fit, so its message is safe to
+            // show. Every other message may quote a value of the document.
+            let limit = slopvac_config::directives::is_over_cap(d).then_some(&d.message);
+            let raw_limit = limit.map_or_else(String::new, |m| format!(": {m}"));
+            let escaped_limit =
+                limit.map_or_else(String::new, |m| format!(": {}", slopvac_sanitize::line(m)));
             BlockError {
                 code: d.code.as_str(),
-                raw: format!("{shown}:{line}:{column}: {pointer}"),
+                raw: format!("{shown}:{line}:{column}: {pointer}{raw_limit}"),
                 escaped: format!(
-                    "{}:{line}:{column}: {}",
+                    "{}:{line}:{column}: {}{escaped_limit}",
                     slopvac_sanitize::line(shown),
                     slopvac_sanitize::line(&pointer)
                 ),
@@ -903,26 +926,26 @@ pub(crate) fn block_errors(shown: &str, text: &str, read: &Read) -> Vec<BlockErr
         .collect()
 }
 
-/// The `slopvac:` block of the item's front matter, read under the project's front matter
-/// policy. A top-level `genre` key is ordinary data and never counts.
-fn read_block(item: &Item) -> Read {
+/// The `slopvac:` block and the inline directives of the item, read under the project's front
+/// matter policy. A top-level `genre` key is ordinary data and never counts.
+fn read_block(item: &Item) -> DocumentBlocks {
     let config = item.config.as_ref().map(|(config, _)| &**config);
     read_block_under(&item.text, &item.shown, config)
 }
 
-/// Read the `slopvac:` block of `text` under the policy of `config`, or the core defaults
-/// when no config applies.
-pub(crate) fn read_block_under(text: &str, shown: &str, config: Option<&LoadedConfig>) -> Read {
-    let policy = config.map_or_else(Policy::core, Policy::from_config);
-    read_front_matter(text, shown, &policy)
+/// Read the `slopvac:` block and the inline directives of `text` under the policy of
+/// `config`, or the core defaults when no config applies.
+pub(crate) fn read_block_under(
+    text: &str,
+    shown: &str,
+    config: Option<&LoadedConfig>,
+) -> DocumentBlocks {
+    DocumentBlocks::read(text, shown, config)
 }
 
-/// The genre that a read block sets, when the policy allows it and the block is valid.
-pub(crate) fn declared_genre(read: &Read) -> Option<String> {
-    read.settings
-        .iter()
-        .rfind(|s| s.path == ["genre"])
-        .and_then(|s| s.value.as_str().map(str::to_owned))
+/// The genre that a document sets, when the policy allows it and the block is valid.
+pub(crate) fn declared_genre(blocks: &DocumentBlocks) -> Option<String> {
+    blocks.declared_genre()
 }
 
 /// A config-relative path as the forward-slash text that `files` patterns match against.
@@ -947,8 +970,9 @@ pub(crate) fn file_settings(
     config: &LoadedConfig,
     rel: &Path,
     overrides: &Overrides,
+    layers: &DocumentLayers,
 ) -> Result<(slopvac_engine::Settings, slopvac_config::Resolved), CliError> {
-    let resolved = lint_settings::resolve(config, rel);
+    let resolved = lint_settings::resolve(config, rel, layers);
     let files = config_files(config);
     let mut settings = lint_settings::build(
         rules,
@@ -960,27 +984,123 @@ pub(crate) fn file_settings(
     Ok((settings, resolved))
 }
 
-/// Group the items by their settings: one engine per distinct settings.
+/// The engine input of `item`, as the lint of the item builds it.
+fn input_of<'a>(item: &'a Item, rel: Option<&'a str>, declared: Option<&'a str>) -> Input<'a> {
+    let mut input = Input::new(&item.shown, &item.text).with_kind(item.kind);
+    if let Some(rel) = rel {
+        input = input.with_relative_path(rel);
+    }
+    if let Some(genre) = declared {
+        input = input.with_declared_genre(genre);
+    }
+    input
+}
+
+/// What reading the items once gives, for each item: its read, and the genre the engine
+/// chooses for it. Both are `None` for a document that cannot be read.
+struct Reads {
+    preparsed: Vec<Option<Preparsed>>,
+    detected: Vec<Option<String>>,
+}
+
+/// Read each item once, and ask the engine of its config for the genre of each.
+///
+/// The settings of an item follow its genre, and the engine needs the settings, so a probe
+/// engine per config reads and detects first. It is built from the settings of the config
+/// before any genre layer, which decide neither the genres nor the parse, and it is the only
+/// thing in the run that reads these documents: the engines of the groups take the reads.
+fn preparse(request: &LintRequest, items: &[Item], rules: &Catalog) -> Reads {
+    let none = LoadedConfig::without_files(request.root.clone());
+    let roots = project_roots(request, items);
+    let mut reads = Reads {
+        preparsed: items.iter().map(|_| None).collect(),
+        detected: vec![None; items.len()],
+    };
+    let mut by_config: BTreeMap<Option<usize>, Vec<usize>> = BTreeMap::new();
+    for (index, item) in items.iter().enumerate() {
+        let key = item.config.as_ref().map(|(c, _)| Arc::as_ptr(c) as usize);
+        by_config.entry(key).or_default().push(index);
+    }
+    for indexes in by_config.into_values() {
+        let first = &items[indexes[0]];
+        let (config, rel) = match &first.config {
+            Some((config, rel)) => (config.as_ref(), rel.clone()),
+            None => (&none, PathBuf::from(&first.shown)),
+        };
+        // The probe shares the run's one catalogue, as the engines of the groups do.
+        let probe = file_settings(
+            rules,
+            config,
+            &rel,
+            &request.overrides,
+            &DocumentLayers::default(),
+        )
+        .ok()
+        .and_then(|(settings, _)| {
+            Engine::new_shared(rules.shared_sets(), settings)
+                .ok()
+                .map(|engine| engine.with_project_roots(roots.clone()))
+        });
+        let Some(probe) = probe else {
+            continue;
+        };
+        let relatives: Vec<Option<String>> = indexes
+            .iter()
+            .map(|&i| items[i].config.as_ref().map(|(_, rel)| rel_text(rel)))
+            .collect();
+        let declared: Vec<Option<String>> = indexes
+            .iter()
+            .map(|&i| declared_genre(&read_block(&items[i])))
+            .collect();
+        let inputs: Vec<Input<'_>> = indexes
+            .iter()
+            .zip(relatives.iter().zip(&declared))
+            .map(|(&i, (rel, genre))| input_of(&items[i], rel.as_deref(), genre.as_deref()))
+            .collect();
+        for ((&i, input), read) in indexes.iter().zip(&inputs).zip(probe.preparse_all(&inputs)) {
+            if let Ok(pre) = read {
+                reads.detected[i] = probe
+                    .detect_genre(input, &pre)
+                    .ok()
+                    .flatten()
+                    .map(|genre| genre.id.as_str().to_owned());
+                reads.preparsed[i] = Some(pre);
+            }
+        }
+    }
+    reads
+}
+
+/// Group the items by their settings: one engine per distinct settings. Each item is read
+/// once, to choose the genre its settings follow, and the read comes back for the engine.
 fn group_by_settings(
     request: &LintRequest,
     items: &[Item],
     rules: &Catalog,
-) -> Result<Groups, CliError> {
+) -> Result<(Groups, Vec<Option<Preparsed>>), CliError> {
     let mut groups = Groups::new();
     let none = LoadedConfig::without_files(request.root.clone());
+    let reads = preparse(request, items, rules);
     for (index, item) in items.iter().enumerate() {
         let (config, rel) = match &item.config {
             Some((config, rel)) => (config.as_ref(), rel.clone()),
             None => (&none, PathBuf::from(&item.shown)),
         };
-        let (settings, terms, key) = settings_for(rules, config, &rel, &request.overrides)?;
+        let layers = DocumentLayers::read(
+            &item.text,
+            &item.shown,
+            item.config.as_ref().map(|(c, _)| &**c),
+        )
+        .with_detected_genre(reads.detected[index].clone());
+        let (settings, terms, key) =
+            settings_for(rules, config, &rel, &request.overrides, &layers)?;
         groups
             .entry(key)
             .or_insert_with(|| (settings, terms, Vec::new()))
             .2
             .push(index);
     }
-    Ok(groups)
+    Ok((groups, reads.preparsed))
 }
 
 /// The engine settings and term inputs for the file at `rel` under `config`, and the key
@@ -991,8 +1111,9 @@ pub(crate) fn settings_for(
     config: &LoadedConfig,
     rel: &Path,
     cli: &Overrides,
+    layers: &DocumentLayers,
 ) -> Result<(slopvac_engine::Settings, TermInputs, String), CliError> {
-    let (settings, resolved) = file_settings(rules, config, rel, cli)?;
+    let (settings, resolved) = file_settings(rules, config, rel, cli, layers)?;
     let terms = lint_terms::inputs(&resolved, &config.root);
     let key = format!("{settings:?}{terms:?}");
     Ok((settings, terms, key))
@@ -1159,11 +1280,15 @@ fn lint_items(
     rules: &Catalog,
     mut run: Run,
 ) -> RunOutcome {
-    let groups = match group_by_settings(request, &items, rules) {
-        Ok(groups) => groups,
+    let (groups, mut preparsed) = match group_by_settings(request, &items, rules) {
+        Ok(found) => found,
         Err(err) => return failed(request, run, &err),
     };
 
+    // A fix changes the text, so what was read of it no longer holds.
+    if root.is_some() {
+        preparsed.fill_with(|| None);
+    }
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
     for (settings, terms, indexes) in groups.into_values() {
         // Every group's engine shares the run's one catalogue.
@@ -1194,24 +1319,21 @@ fn lint_items(
         } else {
             (indexes, relatives)
         };
-        let reads: Vec<Read> = indexes.iter().map(|&i| read_block(&items[i])).collect();
+        let reads: Vec<DocumentBlocks> = indexes.iter().map(|&i| read_block(&items[i])).collect();
         for (&i, read) in indexes.iter().zip(&reads) {
             run.front_matter_errors(&items[i], read);
         }
-        let declared: Vec<Option<String>> = reads.iter().map(declared_genre).collect();
+        let declared: Vec<Option<String>> =
+            reads.iter().map(DocumentBlocks::declared_genre).collect();
         let inputs: Vec<Input<'_>> = indexes
             .iter()
             .zip(relatives.iter().zip(&declared))
             .map(|(&i, (rel, genre))| {
-                let mut input =
-                    Input::new(&items[i].shown, &items[i].text).with_kind(items[i].kind);
-                if let Some(rel) = rel {
-                    input = input.with_relative_path(rel);
+                let input = input_of(&items[i], rel.as_deref(), genre.as_deref());
+                match &preparsed[i] {
+                    Some(pre) => input.with_preparsed(pre),
+                    None => input,
                 }
-                if let Some(genre) = genre {
-                    input = input.with_declared_genre(genre);
-                }
-                input
             })
             .collect();
         for (&index, result) in indexes.iter().zip(engine.lint_all_with_notices(&inputs)) {

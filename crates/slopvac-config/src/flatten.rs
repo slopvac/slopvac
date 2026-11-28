@@ -23,9 +23,20 @@ pub struct Origin<'a> {
 /// field by field.
 #[must_use]
 pub fn flatten(node: &Node, origin: Origin<'_>, skip: &[&str]) -> Vec<Setting> {
-    let lines = LineIndex::new(origin.text);
+    flatten_with(node, origin, skip, &LineIndex::new(origin.text))
+}
+
+/// [`flatten`] with a line index of `origin.text` that the caller built, so many trees of one
+/// document share one index.
+#[must_use]
+pub fn flatten_with(
+    node: &Node,
+    origin: Origin<'_>,
+    skip: &[&str],
+    lines: &LineIndex<'_>,
+) -> Vec<Setting> {
     let mut out = Vec::new();
-    walk(node, &mut Vec::new(), skip, origin, &lines, &mut out);
+    walk(node, &mut Vec::new(), skip, origin, lines, &mut out);
     out
 }
 
