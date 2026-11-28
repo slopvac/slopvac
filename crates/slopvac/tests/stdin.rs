@@ -67,23 +67,6 @@ fn rst_is_accepted_and_checked_when_a_converter_exists() {
     assert!(!String::from_utf8_lossy(&out.stderr).contains("error[usage]"));
 }
 
-// STUB(slopvac-8l4.3.84): the engine has no parser for plain text or HTML yet, so these inputs
-// are accepted by the options and then reported as unsupported (exit 2), never skipped
-// silently.
-#[test]
-fn inputs_without_an_engine_parser_are_an_incomplete_run() {
-    let cases: [&[&str]; 2] = [&["--language", "text"], &["--language", "html"]];
-    for args in cases {
-        stdin_lint(args)
-            .write_stdin("words\n")
-            .assert()
-            .code(2)
-            .stderr(predicate::str::starts_with(
-                "error[input-unsupported]: <stdin>",
-            ));
-    }
-}
-
 fn comments_report(source: &str) -> (Option<i32>, serde_json::Value) {
     let out = stdin_lint(&[
         "--mode",

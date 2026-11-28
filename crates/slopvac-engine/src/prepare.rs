@@ -7,7 +7,8 @@ use std::ops::Range;
 use slopvac_model::SourceIndex;
 use slopvac_model::Span;
 use slopvac_parse::{
-    Block, BlockKind, Document, ParseError, Projection, TokenKind, parse_html_segments,
+    Block, BlockKind, Document, ParseError, Projection, Token, TokenKind, parse_html,
+    parse_html_segments,
 };
 use slopvac_rules::Scope;
 use slopvac_text::{Sentence, cell_sentence, split_sentences_within};
@@ -83,6 +84,243 @@ pub(crate) fn with_html_prose(
         .sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
     doc.code_spans.sort_by_key(Span::start);
     Ok(doc)
+}
+
+/// A standalone HTML file read as 2.x reads it (`_parse_html`).
+///
+/// The visible text of each source line is one paragraph of the kind `Paragraph`, whatever
+/// elements it came from, so a heading, list item or table cell is a paragraph too, and a
+/// sentence never runs over a line end. The text of all the elements on one line joins into
+/// that line's paragraph. Inline code (`<code>`, `<kbd>`, `<samp>`) joins the code spans and is
+/// left out of the prose, `<pre>` stays a code block, and the hidden elements of
+/// [`parse_html`] give nothing. A Markdown fence in the file is plain text. A line ends at LF,
+/// CRLF or a lone CR, as everywhere else in the engine.
+///
+/// # Errors
+/// Returns a [`ParseError`] when the file is too large or needs more work than the parse
+/// budget allows.
+pub(crate) fn html_file(source: &str, body: Span) -> Result<Document, ParseError> {
+    let mut doc = parse_html(source, body)?;
+    let lines = Lines::new(source);
+    let mut cursor = LineCursor::new(&lines);
+    let mut pieces = Vec::new();
+    let mut blocks = Vec::new();
+    for mut block in std::mem::take(&mut doc.blocks) {
+        match &block.projection {
+            Some(projection) if !projection.text().is_empty() => {
+                line_pieces(source, &mut cursor, projection, &mut pieces);
+            }
+            _ => {
+                block.containers.clear();
+                blocks.push(block);
+            }
+        }
+    }
+    // The blocks come in source order, so the lines of their pieces ascend. Only text that
+    // the tree builder moves, such as text fostered out of a table, needs the sort, and a line
+    // with such text has its tokens merged back into source order.
+    if !pieces.is_sorted_by_key(|(line, _)| *line) {
+        pieces.sort_by_key(|(line, _)| *line);
+    }
+    for group in pieces.chunk_by(|(a, _), (b, _)| a == b) {
+        let projection = if in_source_order(group) {
+            join(group.iter().map(|(_, piece)| piece))
+        } else {
+            merge_in_source_order(source, group)
+        };
+        let extents = projection.extents();
+        let (Some(first), Some(last)) = (
+            extents.iter().map(Span::start).min(),
+            extents.iter().map(Span::end).max(),
+        ) else {
+            continue;
+        };
+        let Ok(span) = Span::new(first, last) else {
+            continue;
+        };
+        blocks.push(Block {
+            kind: BlockKind::Paragraph,
+            span,
+            projection: Some(projection),
+            containers: Vec::new(),
+        });
+    }
+    blocks.sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
+    doc.blocks = blocks;
+    Ok(doc)
+}
+
+/// The line of each offset, found by stepping on from the line of the offset before.
+///
+/// An offset on the current line or the next one costs one step. Any other offset, such as
+/// one that text the tree builder moves gives, is found by a search of the line table, so
+/// offsets out of order never make the cursor walk over many lines.
+struct LineCursor<'l, 'a> {
+    lines: &'l Lines<'a>,
+    /// The one-based line of the last offset.
+    line: usize,
+}
+
+impl<'l, 'a> LineCursor<'l, 'a> {
+    const fn new(lines: &'l Lines<'a>) -> Self {
+        Self { lines, line: 1 }
+    }
+
+    /// The one-based line that holds `offset`.
+    fn line_of(&mut self, offset: usize) -> usize {
+        let count = self.lines.len();
+        if count == 0 {
+            return 1;
+        }
+        let far = self.line + 2 <= count && self.lines.start(self.line + 2) <= offset;
+        if offset < self.lines.start(self.line) || far {
+            self.line = self.lines.line_of(offset);
+        } else if self.line < count && self.lines.start(self.line + 1) <= offset {
+            self.line += 1;
+        }
+        self.line
+    }
+}
+
+/// Whether the real tokens of a line's pieces, read piece by piece, ascend in the source.
+fn in_source_order(group: &[(usize, Projection)]) -> bool {
+    let mut end = 0;
+    for token in group
+        .iter()
+        .flat_map(|(_, piece)| piece.tokens())
+        .filter(|t| t.kind.is_real())
+    {
+        if token.src.start() < end {
+            return false;
+        }
+        end = token.src.end();
+    }
+    true
+}
+
+/// The pieces of one line merged into one projection in source order, as 2.x reads the line.
+///
+/// The tree builder can move text out of a table to the front of it, so a line's pieces can
+/// overlap in the source. The merge drops the synthetic spaces, sorts the tokens by source
+/// offset and adds a space again wherever a tag or comment sits between two words. A space
+/// between tokens of two different pieces bridges the source between them.
+fn merge_in_source_order(source: &str, group: &[(usize, Projection)]) -> Projection {
+    let mut tokens: Vec<(usize, &Token)> = group
+        .iter()
+        .enumerate()
+        .flat_map(|(at, (_, piece))| piece.tokens().iter().map(move |t| (at, t)))
+        .filter(|(_, t)| !(t.kind == TokenKind::Wrap && t.src.is_empty()))
+        .collect();
+    tokens.sort_by_key(|(_, t)| (t.src.start(), t.src.end()));
+    let mut merged = Projection::new();
+    let mut last: Option<(usize, &Token)> = None;
+    for (piece, token) in tokens {
+        if let Some((before, previous)) = last
+            && tag_between(source, previous, token)
+        {
+            let at = Span::empty(previous.src.end());
+            if before == piece {
+                merged.push_unordered(TokenKind::Wrap, " ", at);
+            } else {
+                merged.push_bridge(TokenKind::Wrap, " ", at);
+            }
+        }
+        merged.push_unordered(token.kind, &token.text, token.src);
+        last = Some((piece, token));
+    }
+    merged
+}
+
+/// Append to `out` the pieces of `projection` that sit on one source line each, with the
+/// line number.
+///
+/// A whitespace run that holds a line end cuts the text, and so does a token that starts on a
+/// later line than the piece. Masked code is left out, as 2.x skips `<code>`, `<kbd>` and
+/// `<samp>`: it adds no word and no placeholder, and a line with nothing else is no paragraph.
+fn line_pieces(
+    source: &str,
+    cursor: &mut LineCursor<'_, '_>,
+    projection: &Projection,
+    out: &mut Vec<(usize, Projection)>,
+) {
+    fn finish(out: &mut Vec<(usize, Projection)>, line: usize, mut tokens: Vec<Token>) {
+        while tokens
+            .last()
+            .is_some_and(|t| matches!(t.kind, TokenKind::Collapse | TokenKind::Wrap))
+        {
+            tokens.pop();
+        }
+        let mut piece = Projection::new();
+        for t in &tokens {
+            piece.push_unordered(t.kind, &t.text, t.src);
+        }
+        out.push((line, piece));
+    }
+
+    let mut current: Option<(usize, Vec<Token>)> = None;
+    for token in projection.tokens() {
+        if token.kind == TokenKind::Masked {
+            continue;
+        }
+        let ends_line = token.kind == TokenKind::Collapse
+            && source
+                .get(token.src.start()..token.src.end())
+                .is_some_and(|run| run.contains(['\n', '\r']));
+        if ends_line {
+            if let Some((line, tokens)) = current.take() {
+                finish(out, line, tokens);
+            }
+            continue;
+        }
+        let line = cursor.line_of(token.src.start());
+        let spills = token.kind != TokenKind::Wrap
+            && current.as_ref().is_some_and(|(open, _)| *open != line);
+        if spills && let Some((open, tokens)) = current.take() {
+            finish(out, open, tokens);
+        }
+        match &mut current {
+            Some((_, tokens)) => {
+                if let Some(last) = tokens.last()
+                    && tag_between(source, last, token)
+                {
+                    // The space 2.x puts at a tag or comment: no source text of its own, empty
+                    // at the end of the word before it, as every synthetic space is.
+                    let at = last.src.end();
+                    tokens.push(Token {
+                        kind: TokenKind::Wrap,
+                        text: " ".to_owned(),
+                        src: Span::empty(at),
+                    });
+                }
+                tokens.push(token.clone());
+            }
+            // A piece starts at a word.
+            None if matches!(token.kind, TokenKind::Collapse | TokenKind::Wrap) => {}
+            None => current = Some((line, vec![token.clone()])),
+        }
+    }
+    if let Some((line, tokens)) = current {
+        finish(out, line, tokens);
+    }
+}
+
+/// Whether 2.x puts a space between the adjacent tokens `before` and `after` of one line.
+///
+/// `_HtmlTextExtractor` flags a boundary at every start tag, end tag and comment, and adds a
+/// space at the next character when neither side is white space. An entity is no boundary.
+fn tag_between(source: &str, before: &Token, after: &Token) -> bool {
+    let spaced = |c: Option<char>| c.is_none_or(char::is_whitespace);
+    if spaced(before.text.chars().next_back()) || spaced(after.text.chars().next()) {
+        return false;
+    }
+    source
+        .as_bytes()
+        .get(before.src.end()..after.src.start())
+        .is_some_and(|between| {
+            between
+                .windows(2)
+                .any(|w| matches!(w, [b'<', b'a'..=b'z' | b'A'..=b'Z' | b'/' | b'!']))
+        })
 }
 
 /// The fence character and marker length when `line` opens or closes a Markdown fence:
@@ -615,5 +853,23 @@ mod tests {
         let at = units[0].text.find("Right").unwrap();
         let exact = units[0].span(&(at..at + 5));
         assert_eq!((exact.start(), exact.end()), (20, 25));
+    }
+
+    proptest::proptest! {
+        /// Text the tree builder moves gives offsets out of source order, so the cursor must
+        /// find the right line after a step back or a jump forward.
+        #[test]
+        fn the_line_cursor_finds_the_line_of_offsets_in_any_order(
+            lines in proptest::collection::vec("[a-z]{0,3}(\n|\r\n|\r)?", 0..20),
+            picks in proptest::collection::vec(proptest::arbitrary::any::<proptest::sample::Index>(), 0..40),
+        ) {
+            let source = lines.concat();
+            let table = Lines::new(&source);
+            let mut cursor = LineCursor::new(&table);
+            for pick in picks {
+                let offset = pick.index(source.len() + 1);
+                proptest::prop_assert_eq!(cursor.line_of(offset), table.line_of(offset));
+            }
+        }
     }
 }

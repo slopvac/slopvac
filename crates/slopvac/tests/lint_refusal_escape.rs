@@ -106,14 +106,15 @@ fn a_non_utf8_document_is_refused_with_an_escaped_name(#[case] raw: &str, #[case
 #[case::newline(FORGE_RAW, FORGE_SAFE)]
 #[case::bidi(BIDI_RAW, BIDI_SAFE)]
 fn an_unsupported_file_type_is_refused_with_an_escaped_name(#[case] raw: &str, #[case] safe: &str) {
-    let file = format!("{raw}.txt");
+    // A source file named in a prose run is a kind that run does not lint.
+    let file = format!("{raw}.py");
     let err = refusal(
-        |dir| std::fs::write(dir.join(&file), "text\n").expect("write"),
+        |dir| std::fs::write(dir.join(&file), "x = 1\n").expect("write"),
         &[&file],
     );
     assert_eq!(
         err,
-        format!("error[input-unsupported]: {safe}.txt: this file type has no engine parser yet\n")
+        format!("error[input-unsupported]: {safe}.py: not a file kind this run lints\n")
     );
 }
 

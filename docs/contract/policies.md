@@ -178,6 +178,7 @@ Owners: `slopvac-8l4.12.1` for the logging setup, `slopvac-8l4.12.9` for stdin.
 - Code that needs to serialize writers takes an exclusive lock through standard-library file locking, on a separate guard file next to the data. It does not lock the data file. A lock is separate from the write.
 - An atomic write replaces a file through a new temporary file in the same directory. Slopvac syncs that file to disk, checks that it is still the file it created, renames it over the target, and then syncs the directory. The write itself takes no lock.
 - Slopvac writes only to the per-user cache, data and state directories, the project's `.slopvac/` directory, and paths the user names. The data directory holds the plugin store. The state directory holds the trust store and the reporting record. For example, `slopvac migrate` keeps its backup of the files it changes in `.slopvac/migrate-backup/<UTC timestamp>/` inside the project. Its record of that backup stays in the per-user cache.
+- In a standalone HTML file, findings carry no fix. `--fix` leaves the file unchanged, and no report format or language server code action has an edit for it. When a finding in the file would otherwise carry a fix, `--fix` reports one `fix-html-unavailable` notice at level `info` for the file. JSON carries the notice with its code, level and path. SARIF carries its code and level, with the path in the message text. The Markdown and HTML reports carry its code and message. The notice does not change the exit code.
 
 Owners: `slopvac-8l4.9.3`, `slopvac-8l4.9.4`.
 

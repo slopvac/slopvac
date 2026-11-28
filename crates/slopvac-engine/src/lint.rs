@@ -41,7 +41,7 @@ use crate::matching::{
 };
 use crate::messages::EngineNotice;
 use crate::metrics::{self, Subject};
-use crate::prepare::{Prepared, Unit, with_html_prose};
+use crate::prepare::{Prepared, Unit, html_file, with_html_prose};
 use crate::rst::{RstAdapter, RstError, RstOptions};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
@@ -69,6 +69,9 @@ pub enum Kind {
     Mdx,
     /// reStructuredText, read through docutils (see [`crate::rst`]).
     Rst,
+    /// A standalone HTML file. As in 2.x, the visible text of each source line is one
+    /// paragraph, and front matter is not read: see [`Input::html`].
+    Html,
     /// A source file in this language. Only its comments are prose: see
     /// [`Input::comments`].
     Comments(Language),
@@ -189,6 +192,23 @@ impl<'a> Input<'a> {
     pub const fn rst(path: &'a str, source: &'a str) -> Self {
         Self {
             kind: Kind::Rst,
+            ..Self::markdown(path, source)
+        }
+    }
+
+    /// A standalone HTML file read from disk.
+    ///
+    /// The visible text of each source line is one paragraph, whatever elements it comes
+    /// from, so a sentence never runs over a line end. The text of all the elements on one line
+    /// joins, and a tag or comment between two words adds a space that maps to no source
+    /// bytes. `<pre>` is a code block, and inline `<code>`, `<kbd>` and `<samp>` are code
+    /// spans that add no words. `<script>`, `<style>`, `<noscript>`, `<template>`, `<head>`
+    /// and `<title>` give no prose. A decoded entity maps to the whole entity. Front matter
+    /// is not read.
+    #[must_use]
+    pub const fn html(path: &'a str, source: &'a str) -> Self {
+        Self {
+            kind: Kind::Html,
             ..Self::markdown(path, source)
         }
     }
@@ -518,6 +538,33 @@ pub(crate) fn notice(level: NoticeLevel, message: &EngineNotice) -> Notice {
     let message = slopvac_model::NoticeMessage::try_from_catalog(message)
         .expect("the private engine catalog supplies valid notice messages");
     Notice::from_catalog(level, message)
+}
+
+/// The result of one lint run, as [`Engine::lint_outcome`] returns it.
+pub(crate) struct Linted {
+    /// The report of the document.
+    pub(crate) document: Document,
+    /// The run-level notices, as [`Engine::lint_with_notices`] returns them.
+    pub(crate) notices: Vec<Notice>,
+    /// How many reported findings had a fix that the run dropped, because the input is a
+    /// standalone HTML file. A fix run reports `fix-html-unavailable` when this is not zero.
+    pub(crate) withheld_fixes: usize,
+}
+
+/// Drop the fix of every finding in a standalone HTML file, and return how many it dropped.
+///
+/// The rule lives only here, so the fix run, every report format and the language
+/// server's quick fixes all see no edit for such a file. It runs on the findings
+/// the report keeps, after suppressions and genre settings, so the count covers only
+/// findings the user sees. Other kinds keep their fixes.
+fn withhold_fixes(kind: Kind, findings: &mut [Finding]) -> usize {
+    if kind != Kind::Html {
+        return 0;
+    }
+    findings
+        .iter_mut()
+        .filter_map(|finding| finding.fix.take())
+        .count()
 }
 
 /// A notice for a typed code. The code comes from `data`, which only a constructor of one
@@ -972,6 +1019,8 @@ impl Engine {
 
     /// Lint one input and also return its run-level notices.
     ///
+    /// A finding in a standalone HTML file carries no fix.
+    ///
     /// The notices are about the run, not about a check that failed to run. An extractor
     /// emits one at level `info` for unsupported content inside a supported input: the
     /// content is not read, and the run is still complete. A caller adds them to the root
@@ -982,6 +1031,12 @@ impl Engine {
         &self,
         input: &Input<'_>,
     ) -> Result<(Document, Vec<Notice>), EngineError> {
+        self.lint_outcome(input)
+            .map(|linted| (linted.document, linted.notices))
+    }
+
+    /// [`Engine::lint_with_notices`], with the number of fixes the run withheld.
+    pub(crate) fn lint_outcome(&self, input: &Input<'_>) -> Result<Linted, EngineError> {
         let owned;
         let pre = if let Some(pre) = input.preparsed {
             pre.check(input)?;
@@ -1013,7 +1068,9 @@ impl Engine {
                 masked.as_ref().map_or("", |(masked, _)| masked.as_str()),
                 lookup,
             ),
-            _ => scan(parsed, &lines, front_span, lookup),
+            Kind::Markdown | Kind::Mdx | Kind::Rst | Kind::Html => {
+                scan(parsed, &lines, front_span, lookup)
+            }
         };
         let subject = Subject::new(&prepared, parsed, &lines, front_span);
         let run = Run {
@@ -1053,6 +1110,7 @@ impl Engine {
         }
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
         self.apply_genre(&genre, &mut findings);
+        let withheld_fixes = withhold_fixes(input.kind, &mut findings);
         // Notices about rules that cannot run come first, then the ones the parse raised.
         // Code-comment mode lists every rule it cannot read in one notice of its own.
         let mut notices = if matches!(input.kind, Kind::Comments(_)) {
@@ -1062,7 +1120,11 @@ impl Engine {
         };
         notices.extend(extra);
         let document = self.document(input, &prepared, seen, genre, findings, notices);
-        Ok((document, diagram_notices))
+        Ok(Linted {
+            document,
+            notices: diagram_notices,
+            withheld_fixes,
+        })
     }
 
     /// The genre of one document and its context tags. The genre comes first: the contexts
@@ -2505,8 +2567,8 @@ impl Preparsed {
     fn read(input: &Input<'_>, rst: &RstAdapter) -> Result<Self, EngineError> {
         // Front matter is metadata, not prose: the parser reads only what follows it.
         let front = match input.kind {
-            Kind::Diagram(_) | Kind::Rst | Kind::Comments(_) => None,
-            _ => detect(input.source),
+            Kind::Diagram(_) | Kind::Rst | Kind::Html | Kind::Comments(_) => None,
+            Kind::Markdown | Kind::Mdx => detect(input.source),
         };
         let body_start = front.as_ref().map_or(0, |b| b.body_start);
         let body = Span::new(body_start, input.source.len())?;
@@ -2516,6 +2578,7 @@ impl Preparsed {
             Kind::Markdown => parse_markdown(input.source, body)?,
             Kind::Mdx => parse_mdx(input.source, body)?,
             Kind::Rst => parse_rst(rst, input, &mut extra),
+            Kind::Html => html_file(input.source, body)?,
             Kind::Diagram(_) => Parsed::default(),
             Kind::Comments(language) => {
                 let text = comments::read(input.source, language)?;

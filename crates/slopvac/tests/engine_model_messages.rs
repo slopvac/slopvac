@@ -502,6 +502,11 @@ use slopvac_messages::Kind;
     "the {cap} limit of {limit} was reached; the diagram was not fully checked"
 )]
 #[case::extract_output("extract-output-invalid", Kind::Notice, "{reason}")]
+#[case::fix_html_unavailable(
+    "fix-html-unavailable",
+    Kind::Notice,
+    "{path}: fixes are not applied in HTML files"
+)]
 #[case::fix_outside("fix-outside-root", Kind::Error, "fix-outside-root")]
 #[case::fix_symlink("fix-symlink", Kind::Error, "fix-symlink")]
 #[case::fix_regular("fix-not-regular", Kind::Error, "fix-not-regular")]
