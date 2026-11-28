@@ -87,7 +87,7 @@ Owners: `slopvac-8l4.12.1` for the global flag and environment, `slopvac-8l4.4.2
   - The `source` of a configured plugin names a different source from its lock entry. For an `oci://` source, only the registry and the repository are compared, and a tag or digest on either side is ignored, because the locked `version` and `digest` pin the content. A `git+https://` or `https://` source is compared as text. A path source is resolved against the directory of the config file that declares it, and compared with the locked path, which is relative to the project root.
   - The locked `version` of a configured plugin does not satisfy the plugin's configured `version` requirement. An entry with no requirement accepts any version.
 
-  A plugin that is locked only because a configured plugin requires it has no config entry, so only the second case applies to it. The message lists each difference by plugin id. For a source, it says that the source differs and does not repeat the configured value (section 1.7). Outside CI, `plugins sync` does not make this comparison.
+  For a plugin that is locked only as another plugin's requirement, the comparison checks only that a configured plugin still requires it. The message lists each difference by plugin id. For a source, it says that the source differs and does not repeat the configured value (section 1.7). Outside CI, `plugins sync` does not make this comparison.
 - A GitHub Action run that needs plugins runs `plugins sync` as a separate, named step. The lint step runs with `--offline`.
 
 Owners: `slopvac-8l4.9.3` for lockfile behavior, `slopvac-8l4.13.6` for the Action.
