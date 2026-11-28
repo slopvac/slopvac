@@ -684,6 +684,37 @@ fn an_unregistered_genre_is_refused_by_lint_and_explain_without_its_value(
     assert_eq!(headings, ["docs/a.md"], "{stdout}");
 }
 
+/// A document whose directive names an unregistered genre still has its other errors
+/// reported: the unknown front-matter key `zorp` (line 4, column 3) and the refused genre
+/// (line 6, at column 15 after `<!-- slopvac: `) both reach stderr, from lint and from explain
+/// alike, and the run is incomplete.
+#[rstest]
+#[case::lint(&["lint", "--format", "json", "a.md"])]
+#[case::explain(&["lint", "--explain-config", "--format", "json", "a.md"])]
+fn a_refused_directive_genre_still_reports_a_front_matter_error(#[case] args: &[&str]) {
+    let dir = project_with("schema_version = 3\n");
+    fs::write(
+        dir.path().join("a.md"),
+        format!(
+            "{}<!-- slopvac: genre={UNREGISTERED} -->\n# Title\n\nText.\n",
+            "---\nslopvac:\n  v: 3\n  zorp: 1\n---\n"
+        ),
+    )
+    .expect("write document");
+    let (code, _, stderr) = outcome(dir.path(), args);
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(
+        stderr.contains("error[config-unknown-key]: a.md:4:3: "),
+        "{stderr}"
+    );
+    assert!(
+        stderr
+            .lines()
+            .any(|l| l.starts_with("error[config-invalid-value]") && l.contains("a.md:6:15")),
+        "{stderr}"
+    );
+}
+
 /// A document whose `[[genres]]` assignment names an unregistered genre does not take the
 /// detected genre from a sibling under the same config: `reference/e.md` gets the genre and
 /// the findings that it gets when it is linted alone, and only `a.md` is refused.
