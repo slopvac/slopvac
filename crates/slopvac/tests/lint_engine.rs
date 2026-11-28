@@ -1646,7 +1646,7 @@ fn a_malformed_argument_is_a_usage_error_before_an_unreadable_config_is_read() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(2), "{stderr}");
     assert!(stderr.starts_with("error[usage]: "), "{stderr}");
-    assert!(!stderr.contains("config-unreadable"), "{stderr}");
+    assert!(!stderr.contains("error[config-"), "{stderr}");
 }
 
 #[test]

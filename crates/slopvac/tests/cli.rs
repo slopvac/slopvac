@@ -595,19 +595,21 @@ fn version_json_accepts_flags_in_any_order() {
     }
 }
 
-#[test]
-fn unreadable_project_config_exits_two_before_any_command_runs() {
-    // A directory, an oversize file and (on unix) a FIFO all fail the same way and never hang.
-    let mut cases: Vec<(&str, &str, tempfile::TempDir)> = Vec::new();
+/// The bytes of a `slopvac.toml` that is not valid UTF-8.
+const NOT_UTF8: &[u8] = &[0xff, 0xfe, 0x00];
 
+/// The bytes of a `slopvac.toml` one byte over the 1 MiB config cap.
+fn oversize() -> Vec<u8> {
+    vec![b'#'; 1024 * 1024 + 1]
+}
+
+#[test]
+fn a_directory_or_fifo_named_slopvac_toml_is_not_a_config() {
+    // Discovery takes only a regular file, so the walk passes over these (config.md, 2.2).
+    let mut cases: Vec<tempfile::TempDir> = Vec::new();
     let dir_case = tempfile::tempdir().unwrap();
     fs::create_dir(dir_case.path().join("slopvac.toml")).unwrap();
-    cases.push(("config-unreadable", "not a regular file", dir_case));
-
-    let big = tempfile::tempdir().unwrap();
-    fs::write(big.path().join("slopvac.toml"), vec![b'#'; 1024 * 1024 + 1]).unwrap();
-    cases.push(("update-policy-too-large", "larger than 1048576 bytes", big));
-
+    cases.push(dir_case);
     #[cfg(unix)]
     {
         let fifo_case = tempfile::tempdir().unwrap();
@@ -616,29 +618,168 @@ fn unreadable_project_config_exits_two_before_any_command_runs() {
             .status()
             .expect("mkfifo");
         assert!(status.success());
-        cases.push(("config-unreadable", "not a regular file", fifo_case));
+        cases.push(fifo_case);
     }
-
-    for (code, message, dir) in &cases {
-        for args in [
-            &["--version", "--json"][..],
-            &["self", "update"],
-            &["--help"],
-        ] {
+    for dir in &cases {
+        let cache = tempfile::tempdir().unwrap();
+        for args in [&["--version", "--json"][..], &["rules"]] {
             slopvac()
                 .current_dir(dir.path())
+                .env("SLOPVAC_CACHE_DIR", cache.path())
                 .timeout(std::time::Duration::from_secs(20))
                 .args(args)
                 .assert()
-                .code(2)
-                .stderr(predicate::str::contains(format!("error[{code}]")))
-                .stderr(predicate::str::contains(*message));
+                .code(0);
         }
     }
 }
 
+#[rstest::rstest]
+#[case::version_json(&["--version", "--json"])]
+#[case::self_update(&["self", "update"])]
+#[case::rules(&["rules"])]
+fn an_oversize_project_config_stops_a_command_with_config_too_large(#[case] args: &[&str]) {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("slopvac.toml"), oversize()).unwrap();
+    slopvac()
+        .current_dir(dir.path())
+        .timeout(std::time::Duration::from_secs(20))
+        .args(args)
+        .assert()
+        .code(2)
+        .stdout("")
+        .stderr(predicate::str::starts_with(
+            "error[config-too-large]: slopvac.toml is larger than 1048576 bytes",
+        ));
+}
+
+#[rstest::rstest]
+#[case::not_toml("{{{\n", "error[config-parse]")]
+#[case::unknown_key("schema_version = 3\nbogus = 1\n", "error[config-unknown-key]")]
+#[case::legacy("schema_version = 2\n", "error[config-legacy-version]")]
+fn version_json_stops_on_a_config_that_does_not_resolve(#[case] body: &str, #[case] code: &str) {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("slopvac.toml"), body).unwrap();
+    slopvac()
+        .current_dir(dir.path())
+        .args(["--version", "--json"])
+        .assert()
+        .code(2)
+        .stdout("")
+        .stderr(predicate::str::starts_with(code));
+}
+
 #[test]
-fn config_read_errors_do_not_print_absolute_paths() {
+fn version_json_reads_update_check_from_an_extended_file() {
+    let cache = cache_with_newer_release();
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"base.toml\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("base.toml"),
+        "schema_version = 3\n[network]\nupdate_check = false\n",
+    )
+    .unwrap();
+    let doc = version_json(update_enabled().current_dir(dir.path()), cache.path());
+    assert_eq!(doc["notices"], serde_json::json!([]));
+}
+
+#[test]
+fn offline_in_an_extended_file_blocks_self_update_and_a_later_false_does_not_undo_it() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"base.toml\"]\n[network]\noffline = false\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("base.toml"),
+        "schema_version = 3\n[network]\noffline = true\n",
+    )
+    .unwrap();
+    slopvac()
+        .current_dir(dir.path())
+        .env("AXOUPDATER_CONFIG_PATH", "/nonexistent")
+        .args(["self", "update"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error[offline-network-needed]: offline: self update needs the network",
+        ));
+}
+
+/// A directory whose `slopvac.toml` is not valid UTF-8, with a `doc.md` and a 2.x project in
+/// `old/` beside it.
+fn broken_project() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("slopvac.toml"), NOT_UTF8).unwrap();
+    fs::create_dir(dir.path().join("old")).unwrap();
+    fs::write(
+        dir.path().join("old/slopvac.toml"),
+        "[vale]\nbinary = \"vale\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("ok.toml"), "schema_version = 3\n").unwrap();
+    dir
+}
+
+#[rstest::rstest]
+#[case::no_arguments(&[])]
+#[case::help(&["--help"])]
+#[case::short_help(&["-h"])]
+#[case::help_command(&["help", "lint"])]
+#[case::command_help(&["lint", "--help"])]
+#[case::version(&["--version"])]
+#[case::short_version(&["-V"])]
+#[case::completions(&["completions", "bash"])]
+#[case::man(&["man"])]
+#[case::cli_reference(&["cli-reference"])]
+#[case::init(&["init", "--path", "new.toml", "--skip-agents"])]
+#[case::validate(&["validate", "--config", "ok.toml"])]
+#[case::migrate(&["migrate", "old"])]
+#[case::report(&["report", "consent", "show"])]
+fn invocations_that_skip_the_preflight_run_on_a_broken_config(#[case] args: &[&str]) {
+    let dir = broken_project();
+    let state = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .current_dir(dir.path())
+        .env("XDG_STATE_HOME", state.path())
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .args(args)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{args:?}: {stderr}");
+    assert!(!stderr.contains("error["), "{args:?}: {stderr}");
+}
+
+#[test]
+fn lsp_skips_the_preflight_on_a_broken_config() {
+    let dir = broken_project();
+    let input = [
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}"#,
+        r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]
+    .map(frame)
+    .concat();
+    slopvac()
+        .current_dir(dir.path())
+        .arg("lsp")
+        .write_stdin(input)
+        .timeout(std::time::Duration::from_secs(20))
+        .assert()
+        .code(0);
+}
+
+#[rstest::rstest]
+#[case::not_utf8(NOT_UTF8.to_vec(), "error[config-io]: cannot read {file}: not valid UTF-8")]
+#[case::oversize(oversize(), "error[config-too-large]: {file} is larger than 1048576 bytes")]
+fn config_read_errors_do_not_print_absolute_paths(#[case] body: Vec<u8>, #[case] line: &str) {
     // policies.md 1.7: paths in errors are relative to the project root, or `<external>/<name>`.
     let base = tempfile::Builder::new()
         .prefix("sentinel-secret-")
@@ -650,41 +791,29 @@ fn config_read_errors_do_not_print_absolute_paths() {
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    fs::create_dir(base.path().join("slopvac.toml")).unwrap();
+    fs::write(base.path().join("slopvac.toml"), body).unwrap();
     let sub = base.path().join("sub");
     fs::create_dir(&sub).unwrap();
 
-    // The config sits above the working directory, so it is outside the root.
-    let outside = slopvac()
-        .current_dir(&sub)
-        .arg("--version")
-        .assert()
-        .code(2)
-        .get_output()
-        .stderr
-        .clone();
-    let outside = String::from_utf8(outside).unwrap();
-    assert!(!outside.contains(&sentinel), "{outside}");
-    assert!(
-        outside.contains("error[config-unreadable]: <external>/slopvac.toml: not a regular file"),
-        "{outside}"
-    );
-
-    // The config sits in the working directory: shown relative to it.
-    let inside = slopvac()
-        .current_dir(base.path())
-        .arg("--version")
-        .assert()
-        .code(2)
-        .get_output()
-        .stderr
-        .clone();
-    let inside = String::from_utf8(inside).unwrap();
-    assert!(!inside.contains(&sentinel), "{inside}");
-    assert!(
-        inside.contains("error[config-unreadable]: slopvac.toml: not a regular file"),
-        "{inside}"
-    );
+    for (cwd, file) in [
+        // The config sits above the working directory, so it is outside the root.
+        (sub.as_path(), "<external>/slopvac.toml"),
+        // The config sits in the working directory: shown relative to it.
+        (base.path(), "slopvac.toml"),
+    ] {
+        let err = slopvac()
+            .current_dir(cwd)
+            .args(["--version", "--json"])
+            .assert()
+            .code(2)
+            .get_output()
+            .stderr
+            .clone();
+        let err = String::from_utf8(err).unwrap();
+        assert!(!err.contains(&sentinel), "{err}");
+        let want = line.replace("{file}", file);
+        assert!(err.starts_with(&want), "{err}\nwant: {want}");
+    }
 }
 
 fn frame(body: &str) -> String {

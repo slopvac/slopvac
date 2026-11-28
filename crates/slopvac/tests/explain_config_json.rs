@@ -469,8 +469,9 @@ fn explain_config_shows_an_extended_config_outside_the_root_as_external() {
     assert!(!text.contains("../"), "{doc}");
 }
 
-/// A `slopvac.toml` above the working directory that cannot be read is found by the update
-/// policy check, which runs before any command. It stops `--explain-config` as it stops `lint`.
+/// A `slopvac.toml` above the working directory that cannot be read is found by the command
+/// preflight, which runs before any command. It stops `--explain-config` as it stops `lint`,
+/// and both print the lint report (config.md, section 2.2).
 #[test]
 fn an_unreadable_parent_config_stops_explain_config_as_it_stops_lint_with_json() {
     let outer = tempfile::tempdir().expect("tempdir");
@@ -484,10 +485,11 @@ fn an_unreadable_parent_config_stops_explain_config_as_it_stops_lint_with_json()
         &["lint", "--explain-config", "--format", "json", "a.md"],
     );
     assert_eq!(lint.0, Some(2), "{lint:?}");
-    assert_eq!(lint.1, "", "{lint:?}");
+    let report: Value = serde_json::from_str(&lint.1).expect("lint prints its report");
+    assert_eq!(report["notices"][0]["code"], "config-io", "{lint:?}");
     assert!(
         lint.2
-            .starts_with("error[config-unreadable]: <external>/slopvac.toml: "),
+            .starts_with("error[config-io]: cannot read <external>/slopvac.toml: "),
         "{lint:?}"
     );
     assert_eq!(explain, lint);
