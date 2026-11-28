@@ -1378,6 +1378,86 @@ fn a_key_pinned_with_plugins_pin_verifies_a_signed_sync() {
     );
 }
 
+/// Pin the key `b64` with fingerprint `fingerprint` for `acme` on `registry` through the binary.
+fn pin_text_through_the_binary(sandbox: &Sandbox, b64: &str, fingerprint: &str, registry: &str) {
+    let file = sandbox.dir.path().join(format!("acme-{registry}.pub"));
+    fs::write(&file, format!("untrusted comment: test key\n{b64}\n")).unwrap();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "pin", "acme", fingerprint, "--key"])
+        .arg(&file)
+        .args(["--registry", registry])
+        .assert()
+        .success();
+}
+
+/// Two registries pin keys that share one minisign key id, and the key on the other registry
+/// is pinned first. `plugins trust` of a signed code plugin from [`SIGNED_REGISTRY`] records,
+/// in the trust store itself, the fingerprint of the key that its own registry pins.
+#[test]
+fn trust_records_the_fingerprint_of_the_key_pinned_on_the_plugins_own_registry() {
+    let sandbox = Sandbox::new();
+    let key = signed_fixture::Key::primary();
+    let scoped = key.public();
+    let twin = {
+        let mut bytes = minisign::PublicKey::from_base64(&scoped.to_base64())
+            .unwrap()
+            .to_bytes();
+        let last = bytes.len() - 1;
+        bytes[last] ^= 0x01;
+        minisign::PublicKey::from_bytes(&bytes).unwrap().to_base64()
+    };
+    let twin_pk = slopvac_plugins::sign::PublicKey::from_base64(&twin).unwrap();
+    assert_eq!(twin_pk.key_id(), scoped.key_id());
+    assert_ne!(twin_pk.fingerprint(), scoped.fingerprint());
+    pin_text_through_the_binary(&sandbox, &twin, &twin_pk.fingerprint(), "ghcr.io");
+    pin_text_through_the_binary(
+        &sandbox,
+        &scoped.to_base64(),
+        &scoped.fingerprint(),
+        SIGNED_REGISTRY,
+    );
+
+    let p = signed_fixture::publish(
+        &key,
+        "acme",
+        "fmt",
+        "1.0.0",
+        SIGNED_NOT_BEFORE,
+        &[
+            ("bin/fmt", b""),
+            ("slopvac-plugin.toml", PLUGIN_MANIFEST.as_bytes()),
+        ],
+    );
+    p.cache_into(&plugin_store(&sandbox));
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"oci://{SIGNED_REGISTRY}/acme/fmt:1.0.0\"\ndigest = \"{}\"\n\n\
+         [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{SIGNED_NOT_BEFORE}\"\n",
+        p.digest, p.key_id
+    ));
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .success();
+
+    let records =
+        slopvac_plugins::trust::TrustStore::open(sandbox.dir.path().join("home/state/slopvac"))
+            .records()
+            .unwrap();
+    let recorded: Vec<(&str, Option<&str>)> = records
+        .iter()
+        .map(|r| (r.name.as_str(), r.key_fingerprint.as_deref()))
+        .collect();
+    assert_eq!(recorded, [("fmt", Some(scoped.fingerprint().as_str()))]);
+}
+
 /// K16: once a rotation replaces the pin, the cached entry that the old key signed no longer
 /// verifies, and sync refuses it with `signature-invalid`.
 #[test]
