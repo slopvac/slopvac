@@ -49,6 +49,52 @@
       }
     ]
   },
+  "request": {
+    "task": "update",
+    "model": "gpt-5",
+    "items": [
+      {
+        "id": "1",
+        "instruction": "A sentence the revision changed. The next item holds the sentence before the change.",
+        "text": "The default timeout is 60 seconds."
+      },
+      {
+        "id": "1-original",
+        "instruction": "The sentence before the change in the previous item. It is context: reply with empty text.",
+        "text": "The default timeout is 30 seconds."
+      },
+      {
+        "id": "2",
+        "instruction": "A sentence the revision changed. The next item holds the sentence before the change.",
+        "text": "Slopvac retries a failed download once."
+      },
+      {
+        "id": "2-original",
+        "instruction": "The sentence before the change in the previous item. It is context: reply with empty text.",
+        "text": "Slopvac never retries a failed download."
+      },
+      {
+        "id": "3",
+        "instruction": "A sentence the revision added.",
+        "text": "Use `--refresh` to force a download."
+      },
+      {
+        "id": "4",
+        "instruction": "A sentence of the original that the revision dropped.",
+        "text": "Entries expire after 24 hours."
+      },
+      {
+        "id": "5",
+        "instruction": "A sentence of the original that the revision dropped.",
+        "text": "Each pack carries a minisign signature."
+      },
+      {
+        "id": "6",
+        "instruction": "A sentence of the original that the revision dropped.",
+        "text": "The directory must be writable."
+      }
+    ]
+  },
   "uses_provider": true,
   "author_model": "gpt-5",
   "reviewer_model": "gpt-5",
