@@ -1347,4 +1347,24 @@ mod conformance {
             .stderr(predicate::str::contains("--yes"));
         assert_eq!(trust_records(&sandbox), 0);
     }
+
+    /// In CI, a locked path plugin whose files no longer hash to the lock's digest stops the run
+    /// with exit 2, and the lock stays as it was.
+    ///
+    /// Conformance: N7
+    #[test]
+    fn sync_in_ci_exits_2_on_a_digest_mismatch_and_leaves_the_lock() {
+        let sandbox = Sandbox::new();
+        lock_path_plugin(&sandbox);
+        fs::write(sandbox.project().join("plugins/style/rules.yml"), "a: c\n").unwrap();
+        let before = lock_bytes(&sandbox);
+        sandbox
+            .slopvac()
+            .env("CI", "true")
+            .args(["--offline", "plugins", "sync"])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::starts_with("error[digest-mismatch]: "));
+        assert_eq!(lock_bytes(&sandbox), before);
+    }
 }
