@@ -391,13 +391,18 @@ impl Packs {
     /// order. File kinds and harnesses are not part of a pack, so no data pack can add one.
     ///
     /// # Errors
-    /// [`SyncedError`] as for [`load_synced`], and for the registries of [`Packs::new`].
+    /// [`SyncedError`] as for [`load_synced`], and for the registries of [`Packs::new`]. That
+    /// includes [`PackError::Artifact`] with [`crate::ArtifactFault::Invalid`] for a plugin tagger that
+    /// emits a tag in `reserved`, the context tags the project's config declares, arriving as
+    /// `SyncedError::Pack(PackError::Artifact { .. })`. That refusal has no stable code:
+    /// [`PackError::code`] returns `None`. A caller with no such contexts passes `&[]`.
     pub fn with_synced(
         requested: &[PackId],
         lock: &Lockfile,
         store: &Store,
+        reserved: &[String],
     ) -> Result<Self, SyncedError> {
-        Self::with_synced_within(requested, lock, store, Limits::default())
+        Self::with_synced_within(requested, lock, store, Limits::default(), reserved)
     }
 
     /// Like [`Packs::with_synced`], under `limits` for the run. The core pack counts toward the
@@ -410,6 +415,7 @@ impl Packs {
         lock: &Lockfile,
         store: &Store,
         limits: Limits,
+        reserved: &[String],
     ) -> Result<Self, SyncedError> {
         let mut budget = Budget::new(limits);
         let mut packs = vec![LoadedPack::load_within(
@@ -418,6 +424,6 @@ impl Packs {
             &mut budget,
         )?];
         packs.extend(load_synced_within(requested, lock, store, &mut budget)?);
-        Ok(Self::new_within(packs, limits)?)
+        Ok(Self::new_within(packs, limits, reserved)?)
     }
 }

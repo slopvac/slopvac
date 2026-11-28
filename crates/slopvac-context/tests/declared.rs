@@ -215,3 +215,13 @@ fn top_level_front_matter_reads_in_every_format(#[case] front: &str) {
     let doc = PlainDocument::from_markdown("a.md", &format!("{front}# Body\n\nText.\n"));
     assert_eq!(doc.front_matter("title"), Some("Notes"));
 }
+
+#[test]
+fn the_declared_tagger_reports_the_tags_of_the_genre_it_serves() {
+    let genres = builtin_genres().unwrap();
+    let tagger = DeclaredContextTagger::for_genre_parts(&genres, "security", None)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(slopvac_context::Tagger::emitted_tags(&tagger), ["security"]);
+}

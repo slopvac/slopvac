@@ -15,6 +15,16 @@ pub struct DeclaredContextTagger {
 }
 
 impl DeclaredContextTagger {
+    /// The id this tagger reports. The engine runs it outside the tagger registry, so a plugin
+    /// tagger must not take it.
+    pub const ID: &'static str = "declared-contexts";
+
+    /// Every context tag that a built-in genre declares, sorted and without duplicates. This is
+    /// what the tagger can emit for the built-in genres, so a plugin tagger must not emit them.
+    pub fn builtin_tags() -> Result<Vec<String>, Error> {
+        crate::builtin_genres()?.declared_context_tags()
+    }
+
     /// Build the tagger for a resolved genre. `None` when the genre declares no context.
     pub fn for_genre(registry: &GenreRegistry, genre: &GenreResult) -> Result<Option<Self>, Error> {
         Self::from_ids(registry, &genre.id, genre.assigned.as_deref())
@@ -56,8 +66,15 @@ impl DeclaredContextTagger {
 }
 
 impl Tagger for DeclaredContextTagger {
-    fn id(&self) -> &'static str {
-        "declared-contexts"
+    fn id(&self) -> &str {
+        Self::ID
+    }
+
+    fn emitted_tags(&self) -> Vec<&str> {
+        self.contexts
+            .iter()
+            .map(|(kind, _)| kind.as_str())
+            .collect()
     }
 
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {

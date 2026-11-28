@@ -784,6 +784,16 @@ impl GenreRegistry {
         Ok(out)
     }
 
+    /// Every context tag the registry declares for any genre, from the genre files and from
+    /// [`GenreRegistry::with_contexts`], sorted and without duplicates.
+    pub fn declared_context_tags(&self) -> Result<Vec<String>, Error> {
+        let mut tags = std::collections::BTreeSet::new();
+        for id in self.ids() {
+            tags.extend(self.contexts(id)?);
+        }
+        Ok(tags.into_iter().collect())
+    }
+
     /// Declared context tags for a genre, lowest first, without duplicates.
     pub fn contexts(&self, id: &str) -> Result<Vec<String>, Error> {
         let mut out: Vec<String> = Vec::new();

@@ -47,7 +47,7 @@ fn load_then_register(genres: &[(&str, String)]) -> PackError {
     }
     match LoadedPack::load(&DirSource::new(dir.path()), Source::Pack) {
         Err(error) => error,
-        Ok(pack) => Packs::new(vec![pack]).expect_err("the genres are invalid"),
+        Ok(pack) => Packs::new(vec![pack], &[]).expect_err("the genres are invalid"),
     }
 }
 

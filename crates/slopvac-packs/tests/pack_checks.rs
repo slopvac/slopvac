@@ -83,7 +83,7 @@ fn packs_with(genres: &[(&str, &str)]) -> Result<Packs, PackError> {
         .map(|(n, t)| (n.as_str(), t.as_str()))
         .collect();
     let dir = pack("acme", &format!("genres = [{list}]"), &refs);
-    Packs::new(vec![load(&dir, Source::Pack).unwrap()])
+    Packs::new(vec![load(&dir, Source::Pack).unwrap()], &[])
 }
 
 #[rstest]
@@ -117,7 +117,7 @@ fn a_diamond_of_parents_is_not_a_cycle() {
 fn a_genre_setting_keeps_the_line_and_column_of_its_key() {
     let text = "schema_version: 3\nid: g\nprofile: strict\ncategories:\n  prose:\n    weight: 2\nrules:\n  acme:r: off\n";
     let dir = pack("acme", "genres = [\"g.yaml\"]", &[("g.yaml", text)]);
-    let packs = Packs::new(vec![load(&dir, Source::Pack).unwrap()]).unwrap();
+    let packs = Packs::new(vec![load(&dir, Source::Pack).unwrap()], &[]).unwrap();
 
     let chain = packs.genre_chain("g");
 
