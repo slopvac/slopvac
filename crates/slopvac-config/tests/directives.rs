@@ -714,19 +714,37 @@ fn a_steering_marker_gives_no_directive_and_no_diagnostic() {
 #[test]
 fn a_mistyped_directive_with_no_space_is_still_reported() {
     for doc in [
-        "<!-- slopvac:beginx -->\\n",
-        "<!-- slopvac:disable=true -->\\n",
+        "<!-- slopvac:beginx -->\n",
+        "<!-- slopvac:disable=true -->\n",
     ] {
         assert_eq!(find(doc, "doc.md").len(), 1, "{doc}");
         let read = read(doc, "doc.md", &default_policy());
-        assert!(!read.diagnostics.is_empty(), "{doc}");
+        let codes: Vec<Code> = read.diagnostics.iter().map(|d| d.code).collect();
+        assert_eq!(codes, [Code::UnknownKey], "{doc}");
         assert_eq!(read.settings, Vec::new(), "{doc}");
     }
 }
 
+/// White space after `slopvac:` is optional (docs/contract/config.md, inline directives).
+#[test]
+fn a_directive_with_no_space_after_the_colon_sets_its_field() {
+    let read = read(
+        "<!-- slopvac:locale=en-GB -->\n",
+        "doc.md",
+        &default_policy(),
+    );
+    assert_eq!(read.diagnostics, Vec::new());
+    let settings: Vec<(Vec<String>, serde_json::Value)> = read
+        .settings
+        .into_iter()
+        .map(|s| (s.path, s.value))
+        .collect();
+    assert_eq!(settings, [(vec!["locale".to_owned()], json!("en-GB"))]);
+}
+
 #[test]
 fn a_steering_marker_with_extra_text_is_not_exempt() {
-    let doc = "<!-- slopvac:begin foo -->\\n";
+    let doc = "<!-- slopvac:begin foo -->\n";
     assert_eq!(find(doc, "doc.md").len(), 1);
     let read = read(doc, "doc.md", &default_policy());
     assert!(!read.diagnostics.is_empty());

@@ -30,7 +30,7 @@ The order comes from the plan, section "Layer order". Environment switches (`SLO
 
 #### 1.1.1 Inline directives
 
-A `slopvac:` comment in a document sets fields for that document, in the `directive` layer. A comment whose body is exactly `slopvac:begin` or `slopvac:end` is a steering marker, not a directive.
+A `slopvac:` comment in a document sets fields for that document, in the `directive` layer. White space after `slopvac:` is optional, so `<!-- slopvac:locale=en-GB -->` sets `locale`. A comment whose body is exactly `slopvac:begin` or `slopvac:end` is a steering marker, not a directive.
 
 ### 1.2 Merge rules
 
