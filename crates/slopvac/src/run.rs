@@ -395,32 +395,32 @@ fn plugins(
     out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     let cwd = std::env::current_dir().map_err(|e| plugins_setup_failed(&e.kind().to_string()))?;
-    with_plugin_runner(offline, env, &cwd, |runner, _| {
+    let presets = slopvac_styles::StylePresets(slopvac_styles::BuiltinSource);
+    let config = slopvac_config::Discovery::new(&presets)
+        .nearest(&cwd)
+        .map_err(|e| crate::engine::config_error(&e, &cwd))?;
+    with_plugin_runner(offline, env, &cwd, config.as_deref(), |runner, _| {
         slopvac_plugins::run(m, runner, out).map_err(|e| CliError::new(e.code(), e.to_string()))
     })
 }
 
 /// Build the plugins runner for the project around `cwd` and hand it to `f`, with the loader
 /// of installed code plugins. `slopvac plugins` and the model provider of `slopvac review`
-/// share it, so both read the same lock, store, trust store, revocations and keys.
+/// share it, so both read the same lock, store, trust store, revocations and keys. `config` is
+/// the project config the caller resolved, so one run reads its config files once.
 pub(crate) fn with_plugin_runner<T>(
     offline: bool,
     env: &dyn Env,
     cwd: &std::path::Path,
+    config: Option<&slopvac_config::LoadedConfig>,
     f: impl FnOnce(
         &slopvac_plugins::Runner<'_>,
         &crate::plugin_loader::InstalledPlugins<'_>,
     ) -> Result<T, CliError>,
 ) -> Result<T, CliError> {
     use slopvac_plugins::{Runner, oci, revoke, sign, sync};
-    let presets = slopvac_styles::StylePresets(slopvac_styles::BuiltinSource);
-    let config = slopvac_config::Discovery::new(&presets)
-        .nearest(cwd)
-        .map_err(|e| crate::engine::config_error(&e, cwd))?;
-    let root = config
-        .as_ref()
-        .map_or_else(|| cwd.to_path_buf(), |c| c.root.clone());
-    let offline = offline::project(offline, env, config.as_deref());
+    let root = config.map_or_else(|| cwd.to_path_buf(), |c| c.root.clone());
+    let offline = offline::project(offline, env, config);
     let dirs = plugin_dirs(env, root.clone())?;
     let dirs_state = dirs.state_dir.clone();
     let store_dir = dirs.cache_dir.clone();
@@ -439,7 +439,7 @@ pub(crate) fn with_plugin_runner<T>(
         .and_then(|file| std::path::Path::new(file).parent())
         .map_or_else(|| root.clone(), |dir| root.join(dir));
     if let Some(serde_json::Value::Array(entries)) =
-        config.as_ref().and_then(|c| c.project_value(&["plugins"]))
+        config.and_then(|c| c.project_value(&["plugins"]))
     {
         for (index, entry) in entries.iter().enumerate() {
             let Some(id) = entry.get("id").and_then(|v| v.as_str()) else {

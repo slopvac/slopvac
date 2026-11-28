@@ -355,6 +355,20 @@ pub(crate) enum AgentsText {
     #[code("review-provider-items-failed")]
     #[text("the model provider failed on payload items {items}, so the review is incomplete")]
     ProviderItemsFailed { items: String },
+    /// The provider failed the whole request. Its own message is not shown, because it can
+    /// quote the document (policies.md section 1.7).
+    #[code("review-provider-request-failed")]
+    #[text(
+        "the model provider failed the request with {code}. Its own message is not shown, because it can quote the document."
+    )]
+    ProviderRequestFailed { code: String },
+    /// The provider answered, then broke the protocol while it shut down, so the review is
+    /// incomplete.
+    #[code("review-provider-shutdown-failed")]
+    #[text(
+        "the model provider did not shut down cleanly ({code}), so the review is incomplete"
+    )]
+    ProviderShutdownFailed { code: String },
     /// One failed payload item: its position, counted from 1, and its code.
     #[code("review-provider-item-failed")]
     #[text("{position} ({code})")]

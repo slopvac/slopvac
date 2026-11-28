@@ -465,6 +465,31 @@ pub fn reply_invalid(count: usize) -> AgentsError {
     AgentsError::coded(&AgentsMessage::ProviderReplyInvalid { count })
 }
 
+/// A failure of the whole request under the host's `code`, with the provider's own message
+/// withheld, because it can quote the document (policies.md section 1.7).
+#[must_use]
+pub fn request_failed(code: &'static str) -> AgentsError {
+    AgentsError::new_coded(
+        code,
+        AgentsText::ProviderRequestFailed {
+            code: code.to_owned(),
+        }
+        .to_string(),
+    )
+}
+
+/// A provider that answered and then did not shut down cleanly, under the host's `code`.
+#[must_use]
+pub fn shutdown_failed(code: &'static str) -> AgentsError {
+    AgentsError::new_coded(
+        code,
+        AgentsText::ProviderShutdownFailed {
+            code: code.to_owned(),
+        }
+        .to_string(),
+    )
+}
+
 /// The `review-provider-missing` refusal, for a plugin named under `[review] provider` that
 /// declares no provider hook, so it is not a model provider.
 #[must_use]
@@ -927,7 +952,7 @@ fn call_provider(
     let provider = env
         .provider
         .ok_or_else(|| AgentsError::coded(&AgentsMessage::ProviderMissing))?;
-    let (model, model_source) = requested_model(plan.reviewer_model.as_deref(), sources.reviewer)?;
+    // A payload with nothing to send makes no call, so it needs no reviewer model.
     let Some(task) = plan.review_type.task() else {
         return Ok(None);
     };
@@ -935,6 +960,7 @@ fn call_provider(
     if items.is_empty() {
         return Ok(None);
     }
+    let (model, model_source) = requested_model(plan.reviewer_model.as_deref(), sources.reviewer)?;
     let reply = provider.review(&ProviderRequest {
         task,
         model,
@@ -942,13 +968,23 @@ fn call_provider(
     })?;
     let answers = check_reply(&reply, &items)?;
     refuse_failed_items(&answers, &items)?;
-    let answered: Vec<(&SentItem, &str, &str)> = items
+    // The text and the model a provider reports are plugin-origin text. They are escaped once,
+    // here, for the JSON plan, so the report and the notices carry no live control.
+    let escaped: Vec<(&SentItem, String, String)> = items
         .iter()
         .zip(&answers)
         .filter_map(|(sent, answer)| match answer {
-            Answer::Text { text, model } => Some((sent, text.as_str(), model.as_str())),
+            Answer::Text { text, model } => Some((
+                sent,
+                slopvac_sanitize::structured(text),
+                slopvac_sanitize::structured(model),
+            )),
             Answer::Failed { .. } => None,
         })
+        .collect();
+    let answered: Vec<(&SentItem, &str, &str)> = escaped
+        .iter()
+        .map(|(sent, text, model)| (*sent, text.as_str(), model.as_str()))
         .collect();
     let notices = reported_notices(plan, sources.author, model, model_source, &answered)?;
     plan.notices.extend(notices);

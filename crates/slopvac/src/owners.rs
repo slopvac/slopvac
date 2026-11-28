@@ -262,8 +262,9 @@ pub fn review(
             .and_then(|c| c.project_value(&["review", key]))
             .and_then(|v| v.as_str().map(str::to_owned))
     };
-    let provider = value("provider")
-        .map(|id| crate::review_provider::PluginProvider::new(id, offline, env, &root));
+    let provider = value("provider").map(|id| {
+        crate::review_provider::PluginProvider::new(id, offline, env, &root, config.as_deref())
+    });
     let review_env = ReviewEnv {
         offline: crate::offline::project(offline, env, config.as_deref()),
         provider: provider.as_ref().map(|p| p as &dyn review::ModelProvider),

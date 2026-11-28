@@ -1631,6 +1631,8 @@ review-provider-item-failed text
 review-provider-items-failed text
 review-provider-missing error
 review-provider-reply-invalid error
+review-provider-request-failed text
+review-provider-shutdown-failed text
 review-reason-chosen text
 review-reason-fact text
 review-reason-genre text

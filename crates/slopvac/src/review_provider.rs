@@ -5,14 +5,15 @@
 //! mechanical, offline, provider and reviewer-model gates, and the trust gate then refuses an
 //! untrusted or revoked plugin before a process is spawned (policies.md N11 and N12). The
 //! plugin is found, loaded and started through the same runner and loader as
-//! `slopvac plugins`.
+//! `slopvac plugins`, built from the project config that `review` resolved once.
 
 use std::path::{Path, PathBuf};
 
 use slopvac_agents::AgentsError;
 use slopvac_agents::review::{self, ModelProvider, ProviderReply, ProviderRequest, ReplyItem};
+use slopvac_config::LoadedConfig;
 use slopvac_plugins::hooks::CompleteItem;
-use slopvac_plugins::{CompleteError, HookKind, HostConfig, PluginError};
+use slopvac_plugins::{CompleteError, HookKind, HostConfig, PluginError, Shutdown};
 
 use crate::env::Env;
 use crate::errors::CliError;
@@ -25,16 +26,25 @@ pub(crate) struct PluginProvider<'a> {
     offline: bool,
     env: &'a dyn Env,
     cwd: PathBuf,
+    config: Option<&'a LoadedConfig>,
 }
 
 impl<'a> PluginProvider<'a> {
-    /// The provider plugin `id` of the project around `cwd`.
-    pub(crate) fn new(id: String, offline: bool, env: &'a dyn Env, cwd: &Path) -> Self {
+    /// The provider plugin `id` of the project around `cwd`, with the project config that
+    /// `review` already resolved. The runner reads the same snapshot, never the files again.
+    pub(crate) fn new(
+        id: String,
+        offline: bool,
+        env: &'a dyn Env,
+        cwd: &Path,
+        config: Option<&'a LoadedConfig>,
+    ) -> Self {
         Self {
             id,
             offline,
             env,
             cwd: cwd.to_path_buf(),
+            config,
         }
     }
 
@@ -43,6 +53,18 @@ impl<'a> PluginProvider<'a> {
     fn failure(&self, code: &'static str, text: &str) -> AgentsError {
         let shown = redact::redact_absolute(text, &self.cwd);
         AgentsError::new_coded(code, slopvac_sanitize::line(&shown))
+    }
+
+    /// A failure of the call itself. The host's text is shown, except where it carries the
+    /// plugin's own free text: an error answer to the request and the standard error tail of an
+    /// exit. That text can quote the document (policies.md section 1.7), so only the code shows.
+    fn call_failure(&self, error: &PluginError) -> AgentsError {
+        match error {
+            PluginError::Rpc(_) | PluginError::Exited { .. } => {
+                review::request_failed(error.slopvac_code())
+            }
+            _ => self.failure(error.slopvac_code(), &error.to_string()),
+        }
     }
 
     fn ask(
@@ -57,50 +79,76 @@ impl<'a> PluginProvider<'a> {
         let (plugin, spec) = loader
             .try_load(&locked)
             .map_err(|e| self.failure(e.code(), &e.to_string()))?;
-        // Before the start: a plugin that declares no provider hook is not a model provider. The
-        // first one it declares answers, as the declaration lists them.
-        let hook = spec
+        // Before the start: a plugin that declares no provider hook is not a model provider.
+        if !spec
             .declaration
             .hooks
             .iter()
-            .find(|h| h.kind == HookKind::Provider.as_str())
-            .map(|h| h.id.clone())
-            .ok_or_else(review::not_a_provider)?;
+            .any(|h| h.kind == HookKind::Provider.as_str())
+        {
+            return Err(review::not_a_provider());
+        }
         let host = runner
             .start(&plugin, spec, &HostConfig::default())
             .map_err(|e| self.failure(e.code(), &e.to_string()))?;
-        let items: Vec<CompleteItem> = request
-            .items
+        // After the handshake: the first provider hook the plugin offered answers.
+        let hook = host
+            .negotiated()
+            .hooks
             .iter()
-            .map(|item| CompleteItem {
-                id: item.id.clone(),
-                instruction: Some(item.instruction.to_owned()),
-                text: item.text.clone(),
-            })
-            .collect();
-        let answers = host.complete_checked(&hook, request.task, request.model, &items);
+            .find(|h| h.kind == HookKind::Provider.as_str())
+            .map(|h| h.id.clone());
+        let answers = hook.as_deref().map(|hook| {
+            let items: Vec<CompleteItem> = request
+                .items
+                .iter()
+                .map(|item| CompleteItem {
+                    id: item.id.clone(),
+                    instruction: Some(item.instruction.to_owned()),
+                    text: item.text.clone(),
+                })
+                .collect();
+            host.complete_checked(hook, request.task, request.model, &items)
+        });
         let shutdown = host.shutdown();
-        if !shutdown.clean() {
-            tracing::debug!(plugin = %self.id, "the model provider did not shut down cleanly");
-        }
-        match answers {
-            Ok(answers) => Ok(ProviderReply::new(
-                answers
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, answer)| match answer {
-                        Ok(done) => ReplyItem::text(index, done.text, done.model),
-                        Err(failed) => ReplyItem::failed(index, failed.code_name()),
-                    })
-                    .collect(),
-            )),
-            // The one stage that plugin-protocol.md section 5.3 reports under the review code.
-            Err(CompleteError::Refused(_)) => Err(review::reply_invalid(items.len())),
-            Err(other) => {
-                let error = PluginError::from(other);
-                Err(self.failure(error.slopvac_code(), &error.to_string()))
+        // A failure of the request comes first; the shutdown can only add to a clean reply.
+        let answers = match answers {
+            None => return Err(review::not_a_provider()),
+            Some(Err(CompleteError::Refused(_))) => {
+                // The one stage that plugin-protocol.md section 5.3 reports under the review code.
+                return Err(review::reply_invalid(request.items.len()));
             }
+            Some(Err(other)) => return Err(self.call_failure(&PluginError::from(other))),
+            Some(Ok(answers)) => answers,
+        };
+        if let Some(code) = shutdown_code(&shutdown) {
+            return Err(review::shutdown_failed(code));
         }
+        Ok(ProviderReply::new(
+            answers
+                .into_iter()
+                .enumerate()
+                .map(|(index, answer)| match answer {
+                    Ok(done) => ReplyItem::text(index, done.text, done.model),
+                    Err(failed) => ReplyItem::failed(index, failed.code_name()),
+                })
+                .collect(),
+        ))
+    }
+}
+
+/// The host code for a shutdown that was not clean, or `None` for a clean one: a protocol
+/// violation, no answer to `shutdown` within its timer, or an exit that was not the clean
+/// status 0 after `shutdown` and `exit` (plugin-protocol.md sections 3 and 6.3).
+fn shutdown_code(shutdown: &Shutdown) -> Option<&'static str> {
+    if shutdown.clean() {
+        None
+    } else if shutdown.violation.is_some() {
+        Some("plugin-protocol-violation")
+    } else if !shutdown.acknowledged {
+        Some("plugin-timeout")
+    } else {
+        Some("plugin-exited")
     }
 }
 
@@ -114,9 +162,13 @@ impl ModelProvider for PluginProvider<'_> {
     }
 
     fn review(&self, request: &ProviderRequest<'_>) -> Result<ProviderReply, AgentsError> {
-        crate::run::with_plugin_runner(self.offline, self.env, &self.cwd, |runner, loader| {
-            Ok(self.ask(runner, loader, request))
-        })
+        crate::run::with_plugin_runner(
+            self.offline,
+            self.env,
+            &self.cwd,
+            self.config,
+            |runner, loader| Ok(self.ask(runner, loader, request)),
+        )
         .map_err(|e: CliError| AgentsError::new_coded(e.code, e.message))?
     }
 }
