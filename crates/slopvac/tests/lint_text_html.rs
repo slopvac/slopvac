@@ -32,6 +32,17 @@ fn slopvac(dir: &Path) -> Command {
 fn run(cmd: Command, code: i32) -> (String, String) {
     let assert = cmd.assert().code(code);
     let out = assert.get_output();
+    // The checks below read text, so invalid bytes must fail here and not turn into U+FFFD.
+    assert!(
+        std::str::from_utf8(&out.stdout).is_ok(),
+        "stdout is not UTF-8: {:?}",
+        out.stdout
+    );
+    assert!(
+        std::str::from_utf8(&out.stderr).is_ok(),
+        "stderr is not UTF-8: {:?}",
+        out.stderr
+    );
     (
         String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
