@@ -1892,6 +1892,40 @@ mod unix_only {
         }
     }
 
+    #[rstest::rstest]
+    #[case::inside_the_project("", "`interp/python`")]
+    #[case::outside_the_project("project", "`<external>/python`")]
+    fn a_changed_interpreter_shows_under_the_project_root(
+        #[case] project: &str,
+        #[case] expected: &str,
+    ) {
+        let s = Scratch::new(&format!("u-interp-root-{}", project.len()));
+        let root = fs::canonicalize(&s.0).unwrap().join(project);
+        let w = s.dir("interp/python");
+        let text =
+            |tag: &str| format!("#!/bin/sh\n# {tag}\nexec '{}' \"$@\"\n", python().display());
+        write_exec(&w, &text("first"));
+        let wheels = demo();
+        let vp = install(&s, &lock_text(&wheels), &wheels);
+        let fake = Fake {
+            interpreter: w.clone(),
+            ..Fake::real()
+        };
+        let uv = fake_uv(&s.dir("envs-bin"), &fake);
+        let env = EnvStore::open(s.dir("envs"))
+            .with_project_root(&root)
+            .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+            .unwrap();
+        let b = Built { vp, env };
+        let (g, sp) = trusted(&s, &b);
+        write_exec(&w, &text("upgraded"));
+        let full = chain_texts(&b.env.verify_full().unwrap_err()).join("\n");
+        let quick = chain_texts(&g.check(&sp).unwrap_err()).join("\n");
+        for shown in [full, quick] {
+            assert!(shown.contains(expected), "{shown}");
+        }
+    }
+
     #[test]
     fn an_unreadable_interpreter_is_reported_without_its_absolute_path() {
         let s = Scratch::new("u-interp-unreadable");
