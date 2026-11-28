@@ -21,7 +21,6 @@ pub mod issue;
 pub mod messages;
 pub mod scrub;
 
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use clap::{Arg, ArgAction, ArgMatches, Command, value_parser};
@@ -30,7 +29,7 @@ use crate::env::Env;
 use crate::errors::CliError;
 use crate::exit;
 
-use self::messages::ReportError;
+use self::messages::{ReportError, ReportPhrase, ReportText, phrase, say};
 use slopvac_messages::Catalog as _;
 use slopvac_update::messages::UpdateMessage;
 
@@ -165,74 +164,65 @@ pub fn categories() -> Vec<Category> {
 pub fn command() -> Command {
     let keys: Vec<&'static str> = categories().iter().map(|c| c.key).collect();
     Command::new("report")
-        .about("Preview an issue report, and file it with the GitHub CLI.")
+        .about(ReportPhrase::About.as_static())
         .args_conflicts_with_subcommands(true)
         .subcommand_negates_reqs(true)
         .subcommand(consent::command())
-        .long_about(
-            "Preview an issue report for the slopvac repository. The command prints the exact \
-             target, title and body, with paths, user and host names and secrets removed \
-             as far as it can tell, and warns about text that may still hold a credential. It \
-             posts nothing. It prints a prefilled issue-form URL. --body-file writes the body to a \
-             file, --gh prints the exact `gh issue create` command for that file, and --gh --yes \
-             runs it through the GitHub CLI after you have read the preview. Slopvac never reads \
-             a token: `gh` holds the login. Run `slopvac prime report` for the workflow an agent \
-             follows, including the user's approval of the exact text.",
-        )
+        .long_about(ReportPhrase::LongAbout.as_static())
         .arg(
             Arg::new("category")
                 .value_name("CATEGORY")
                 .required(true)
                 .value_parser(keys)
-                .help("The kind of report; it picks the issue form."),
+                .help(ReportPhrase::CategoryHelp.as_static()),
         )
         .arg(
             Arg::new("title")
                 .long("title")
                 .value_name("TEXT")
                 .required(true)
-                .help("The issue title, without the category prefix."),
+                .help(ReportPhrase::TitleHelp.as_static()),
         )
         .arg(
             Arg::new("field")
                 .long("field")
                 .value_name("ID=VALUE")
                 .action(ArgAction::Append)
-                .help("A form field. Repeat for several fields, or several dropdown options."),
+                .help(ReportPhrase::FieldHelp.as_static()),
         )
         .arg(
             Arg::new("include-text")
                 .long("include-text")
                 .value_name("FILE")
                 .value_parser(value_parser!(PathBuf))
-                .help("Read the document sample for the `input` field from this file."),
+                .help(ReportPhrase::IncludeTextHelp.as_static()),
         )
         .arg(
             Arg::new("body-file")
                 .long("body-file")
                 .value_name("FILE")
                 .value_parser(value_parser!(PathBuf))
-                .help("Write the previewed body to this file. The write replaces the file in one step."),
+                .help(ReportPhrase::BodyFileHelp.as_static()),
         )
         .arg(
             Arg::new("gh")
                 .long("gh")
                 .action(ArgAction::SetTrue)
                 .requires("body-file")
-                .help("Print the exact `gh issue create` command for the body file."),
+                .help(ReportPhrase::GhHelp.as_static()),
         )
         .arg(
             Arg::new("yes")
                 .long("yes")
                 .action(ArgAction::SetTrue)
                 .requires("gh")
-                .help("With --gh: run that command after the preview. Offline mode refuses it."),
+                .help(ReportPhrase::YesHelp.as_static()),
         )
         .arg(
             Arg::new("open")
                 .long("open")
                 .action(ArgAction::SetTrue)
-                .help("Open the prefilled issue form in a browser."),
+                .help(ReportPhrase::OpenHelp.as_static()),
         )
 }
 
@@ -274,7 +264,7 @@ pub fn run(
     if body_file.is_some_and(|p| p.as_os_str() == "-") {
         // `gh --body-file -` reads standard input, so the body would be lost.
         return Err(ReportError::BodyFile {
-            reason: "`-` means standard input to gh; write ./- for a file of that name".into(),
+            reason: phrase(ReportPhrase::BodyFileStdin),
         }
         .into());
     }
@@ -304,22 +294,26 @@ pub fn run(
     preview.push_str("\n---\n");
     write_all(out, preview.as_bytes())?;
     for warning in &report.warnings {
-        write_all(err_out, format!("warning: {warning}\n").as_bytes())?;
+        let line = say(&ReportText::Warning {
+            text: warning.clone(),
+        });
+        write_all(err_out, format!("{line}\n").as_bytes())?;
     }
 
     if let Some(path) = body_file {
         write_body(path, &report.body)?;
-        write_all(out, b"Wrote the body to the file you named.\n")?;
+        let line = phrase(ReportPhrase::BodyWritten);
+        write_all(out, format!("{line}\n").as_bytes())?;
     }
     if m.get_flag("gh") {
         let path = body_file.expect("clap: --gh requires --body-file");
         let line = gh::command_line(&report.title, path).ok_or_else(|| {
             CliError::from(ReportError::BodyFile {
-                reason: "the path must be UTF-8 without control characters, so the command can be printed"
-                    .to_owned(),
+                reason: phrase(ReportPhrase::BodyFileNotUtf8),
             })
         })?;
-        write_all(out, format!("GitHub CLI command:\n{line}\n").as_bytes())?;
+        let heading = say(&ReportText::GhCommand);
+        write_all(out, format!("{heading}\n{line}\n").as_bytes())?;
         if run_gh {
             create_with_gh(deps, &report.title, path, out)?;
         }
@@ -346,19 +340,22 @@ fn create_with_gh(
     let created = deps.gh.create(title, body_file).map_err(|e| {
         CliError::from(ReportError::GhFailed {
             reason: match e {
-                gh::GhError::Failed(Some(code)) => format!("exit {code}"),
-                _ => "it failed or timed out".to_owned(),
+                gh::GhError::Failed(Some(code)) => say(&ReportText::GhExit {
+                    code: code.to_string(),
+                }),
+                _ => phrase(ReportPhrase::GhTimedOut),
             },
         })
     })?;
-    write_all(out, format!("Created: {created}\n").as_bytes())
+    let heading = say(&ReportText::Created);
+    write_all(out, format!("{heading} {created}\n").as_bytes())
 }
 
 /// Replace `path` with `body` in one step: a temporary file in the same directory, then a rename.
 fn write_body(path: &Path, body: &str) -> Result<(), CliError> {
-    let fail = |why: &str| {
+    let fail = |why: ReportPhrase| {
         CliError::from(ReportError::BodyFile {
-            reason: why.to_owned(),
+            reason: phrase(why),
         })
     };
     let dir = path
@@ -368,32 +365,34 @@ fn write_body(path: &Path, body: &str) -> Result<(), CliError> {
     let mut tmp = tempfile::Builder::new()
         .prefix(".slopvac-report-")
         .tempfile_in(dir)
-        .map_err(|_| fail("cannot create a file there"))?;
+        .map_err(|_| fail(ReportPhrase::BodyFileCreate))?;
     std::io::Write::write_all(&mut tmp, body.as_bytes())
-        .map_err(|_| fail("cannot write the file"))?;
+        .map_err(|_| fail(ReportPhrase::BodyFileWrite))?;
     tmp.persist(path)
-        .map_err(|_| fail("cannot replace that path"))?;
+        .map_err(|_| fail(ReportPhrase::BodyFileReplace))?;
     Ok(())
 }
 
 /// `labels` are the form's own, the ones its issue template sets. `agent-reported` is not among
 /// them: the form never adds it.
 fn footer(url: &github::FormUrl, labels: &[&str]) -> String {
-    let mut text = String::from(
-        "Nothing was posted. Add --body-file FILE --gh to print the GitHub CLI command, and --yes to run it.\n",
-    );
-    let _ = writeln!(text, "Prefilled issue form: {}", url.url);
-    let _ = writeln!(
-        text,
-        "The issue form adds the labels: {}",
-        labels.join(", ")
-    );
-    if !url.omitted.is_empty() {
-        let _ = writeln!(
-            text,
-            "The URL is too long to hold these fields; paste them from the preview: {}",
-            url.omitted.join(", ")
-        );
+    let mut text = phrase(ReportPhrase::FooterNotPosted);
+    text.push('\n');
+    text.push_str(&say(&ReportText::FooterUrl));
+    text.push(' ');
+    text.push_str(&url.url);
+    text.push('\n');
+    let lines = [
+        Some(ReportText::FooterLabels {
+            labels: labels.join(", "),
+        }),
+        (!url.omitted.is_empty()).then(|| ReportText::FooterOmitted {
+            fields: url.omitted.join(", "),
+        }),
+    ];
+    for line in lines.iter().flatten() {
+        text.push_str(&say(line));
+        text.push('\n');
     }
     text
 }
@@ -412,7 +411,9 @@ fn write_all(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<(), CliError>
         .map_err(|e| {
             CliError::new(
                 "output-failed",
-                format!("cannot write output: {}", e.kind()),
+                say(&ReportText::OutputFailed {
+                    kind: e.kind().to_string(),
+                }),
             )
         })
 }

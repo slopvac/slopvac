@@ -40,6 +40,8 @@ pub static ALL: &[Registered] = &[
     ("slopvac-terms-phrases", slopvac_terms::phrase_entries),
     ("slopvac-text", slopvac_text::message_entries),
     ("report issue", report_entries),
+    ("report phrases", crate::report::messages::phrase_entries),
+    ("report text", crate::report::messages::text_entries),
     ("report consent", crate::report::consent::text_entries),
     ("report state", crate::report::consent::state_entries),
     ("slopvac-migrate", slopvac_migrate::error_entries),
