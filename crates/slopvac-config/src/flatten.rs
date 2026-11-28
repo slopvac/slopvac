@@ -106,6 +106,29 @@ mod tests {
         )
     }
 
+    /// Many keys on one line cost one lookup each, and a lookup reads at most one byte of the
+    /// text: the provenance of a key never rescans the line before it. 2 000 keys on one line
+    /// make 2 001 lookups (the keys and `t`). A lookup that rescanned the line prefix would
+    /// read about 2 000 x 15 000 bytes.
+    #[test]
+    fn many_keys_on_one_line_read_the_text_once_per_key() {
+        const KEYS: usize = 2_000;
+        let pairs: Vec<String> = (0..KEYS).map(|i| format!("k{i} = {i}")).collect();
+        let text = format!("t = {{ {} }}\n", pairs.join(", "));
+        crate::tree::TEXT_BYTES_READ.with(|n| n.set(0));
+        let s = settings(&text);
+        let read = crate::tree::TEXT_BYTES_READ.with(std::cell::Cell::get);
+        assert_eq!(s.len(), KEYS);
+        assert!(read <= KEYS + 1, "{read} bytes read for {} lookups", KEYS + 1);
+        // The last key sits at its byte offset on line 1: the text is ASCII.
+        let last = format!("k{}", KEYS - 1);
+        let column = text.find(&format!("{last} =")).unwrap() + 1;
+        assert_eq!(
+            find(&s, &["t", &last]).source.column,
+            NonZeroUsize::new(column)
+        );
+    }
+
     fn find<'a>(s: &'a [Setting], path: &[&str]) -> &'a Setting {
         s.iter()
             .find(|x| x.path == path)

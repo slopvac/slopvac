@@ -315,6 +315,13 @@ fn yaml_key(k: &MarkedYaml<'_>) -> String {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The bytes of the indexed text that [`LineIndex::line_col`] has read on this thread, so a
+    /// test can count the work of a lookup instead of timing it.
+    pub(crate) static TEXT_BYTES_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// Maps byte offsets to one-based lines and columns, as `docs/contract/positions.md` defines.
 ///
 /// A line ends at LF, CRLF or a CR that does not precede LF. Nothing else ends a line. A leading
@@ -344,6 +351,9 @@ impl<'a> LineIndex<'a> {
     pub fn line_col(&self, offset: usize) -> (usize, usize) {
         let at = self.index.line_col(offset);
         let clamped = offset.min(self.text.len());
+        // The boundary check reads at most one byte of the text.
+        #[cfg(test)]
+        TEXT_BYTES_READ.with(|n| n.set(n.get() + 1));
         if self.text.is_char_boundary(clamped) {
             (at.line, at.column)
         } else {
