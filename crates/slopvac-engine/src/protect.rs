@@ -15,7 +15,7 @@ use std::ops::Range;
 
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 use slopvac_model::{Span, SpanError};
-use slopvac_parse::{Document, TokenKind};
+use slopvac_parse::{Document, Projection, TokenKind};
 
 const OPTIONS: Options = Options::ENABLE_TABLES
     .union(Options::ENABLE_STRIKETHROUGH)
@@ -97,7 +97,7 @@ pub(crate) fn html_destinations(source: &str, doc: &Document) -> Result<Vec<Span
         .blocks
         .iter()
         .filter_map(|b| b.projection.as_ref())
-        .flat_map(|p| p.tokens())
+        .flat_map(Projection::tokens)
         .filter(|t| {
             matches!(
                 t.kind,
