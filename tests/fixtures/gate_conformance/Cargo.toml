@@ -1,0 +1,10 @@
+# A package outside the repository workspace. The pytest
+# `tests/contract/test_release_gate_refuses_a_failing_row.py` copies it to a scratch directory
+# and runs the release gate's conformance command there.
+[package]
+name = "gate-conformance-fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]

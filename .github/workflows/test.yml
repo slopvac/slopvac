@@ -574,6 +574,10 @@ jobs:
       SLOPVAC_REQUIRE_BIN: "1"
       # tests/test_rust_scope.py runs the pinned cargo-delta on a throwaway workspace.
       SLOPVAC_REQUIRE_CARGO_DELTA: "1"
+      # tests/contract/test_release_gate_refuses_a_failing_row.py runs the gate's nextest command.
+      # tests/contract/test_policies_section4_rows.py runs `cargo nextest list` and checks each
+      # marked test against it.
+      SLOPVAC_REQUIRE_NEXTEST: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -582,6 +586,12 @@ jobs:
 
       - name: Install the pinned toolchain
         run: bash scripts/ci/install-rust-toolchain.sh
+
+      - name: Install cargo-nextest
+        if: github.event_name != 'push'
+        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: nextest@0.9.152
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3

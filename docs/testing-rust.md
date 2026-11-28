@@ -23,6 +23,12 @@ Worked examples of each tool live in [`crates/slopvac/tests/testing_toolkit.rs`]
 - Never edit a snapshot or an expected value just to pass. Read the diff, decide which side is wrong, then change that side.
 - Do not snapshot text that changes with every edit, such as timestamps or absolute paths. Redact it first.
 
+## Conformance tests
+
+The release gate runs every test whose name starts with `conformance::`. Put a test that checks a row of the [policies.md](contract/policies.md#4-conformance-tests) section 4 table, or a published conformance corpus, inside a `mod conformance { ... }` block in its test file, and begin the block with `use super::*;` when it needs the helpers above it. Keep `mod` declarations of support files, such as `mod support;`, outside the block, because an inline module looks for its files in another directory.
+
+Mark each row test with the doc line `/// Conformance: <ID>`, for example `/// Conformance: N11`. One test may serve several rows: `/// Conformance: N11, N17`. A pytest, `tests/contract/test_policies_section4_rows.py`, reads the row IDs from the table. It fails when an N row has no marked test, when a marker names an ID that the table lacks, and when a marked test is outside the module. A marker counts only on a runnable test whose `cfg` the pytest can read and that holds on Linux (`unix`, `test` or `target_os = "linux"`), so a `not(...)`, `all(...)` or `any(...)` condition does not count. In CI the pytest also runs `cargo nextest list` and fails when a marked test is missing from its own test binary.
+
 ## Temporary directories
 
 A test that creates files gets its directory from `tempfile` and holds the guard until the test ends. Do not call `into_path()`, `keep()` or `mem::forget`, do not bind the guard to `_`, and do not store it in a `static`, which is never dropped. A directory that every test process shares, such as an empty working directory, has one fixed name under the temp directory.

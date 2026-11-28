@@ -2241,3 +2241,108 @@ fn trust_with_an_invalid_lock_exits_2_with_its_code_and_records_nothing() {
     assert_eq!(err.exit_code(), 2);
     assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
 }
+
+// ---- conformance (policies.md section 4) ---------------------------------------------------
+
+mod conformance {
+    use std::collections::HashMap;
+
+    use slopvac_plugins::oci::MEDIA_MANIFEST;
+
+    use super::*;
+
+    const FLOOR: &str = "2026-11-01T00:00:00Z";
+    const LATER: &str = "2026-11-10T00:00:00Z";
+
+    /// A registry that lists and serves `acme/style` at every release of `releases`.
+    fn style_registry(releases: &[(&str, &signed_fixture::Published)]) -> Server {
+        let manifests: Vec<(String, String, Vec<u8>)> = releases
+            .iter()
+            .map(|(tag, p)| ((*tag).to_owned(), p.digest.clone(), p.manifest.clone()))
+            .collect();
+        let blobs: HashMap<String, Vec<u8>> =
+            releases.iter().flat_map(|(_, p)| p.blobs.clone()).collect();
+        Server::start(move |req| {
+            let Some(rest) = req.path.strip_prefix("/v2/acme/style/") else {
+                return Response::new(404);
+            };
+            if rest.starts_with("tags/list") {
+                let tags: Vec<&str> = manifests.iter().map(|(t, _, _)| t.as_str()).collect();
+                return Response::new(200).json(&serde_json::json!({ "tags": tags }));
+            }
+            if let Some(reference) = rest.strip_prefix("manifests/") {
+                return manifests
+                    .iter()
+                    .find(|(t, d, _)| t == reference || d == reference)
+                    .map_or_else(
+                        || Response::new(404),
+                        |(_, _, body)| {
+                            Response::new(200)
+                                .header("Content-Type", MEDIA_MANIFEST)
+                                .body(body.clone())
+                        },
+                    );
+            }
+            let blob = rest.rsplit('/').next().unwrap_or_default();
+            blobs.get(blob).map_or_else(
+                || Response::new(404),
+                |b| Response::new(200).body(b.clone()),
+            )
+        })
+    }
+
+    /// `plugins update` moves a locked code plugin to the newer release in its range, and records
+    /// no trust for it.
+    ///
+    /// Conformance: N8
+    #[test]
+    fn update_moves_the_pin_and_records_no_trust() {
+        let f = Fixture::new();
+        let key = signed_fixture::Key::primary();
+        let old = signed_fixture::publish(
+            &key,
+            "acme",
+            "style",
+            "1.0.0",
+            FLOOR,
+            &[("plugin", b"#!/bin/sh\n")],
+        );
+        let new = signed_fixture::publish(
+            &key,
+            "acme",
+            "style",
+            "1.1.0",
+            LATER,
+            &[("plugin", b"#!/bin/sh\nexit 0\n")],
+        );
+        let server = style_registry(&[("1.0.0", &old), ("1.1.0", &new)]);
+        f.write_lock(&[format!(
+            "\n[[plugins]]\nid = \"style\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"oci://{}/acme/style:1.0.0\"\ndigest = \"{}\"\n\n\
+             [plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{FLOOR}\"\n",
+            server.registry(),
+            old.digest,
+            old.key_id
+        )]);
+        let policy = KeyPolicy {
+            pinned: BTreeMap::from([("acme".to_owned(), vec![key.public()])]),
+            ..KeyPolicy::default()
+        };
+
+        let ran = f.run(&["update"], true, |s| {
+            s.range("style", "^1.0").policy(policy)
+        });
+
+        assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
+        let lock = fs::read_to_string(f.project().join(".slopvac/plugins.lock")).unwrap();
+        assert!(
+            lock.contains("version = \"1.1.0\""),
+            "the pin did not move:\n{lock}"
+        );
+        assert!(
+            lock.contains(&new.digest),
+            "the digest did not move:\n{lock}"
+        );
+        assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
+    }
+}
