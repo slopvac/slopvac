@@ -652,6 +652,18 @@ impl TrustStore {
         f: impl FnOnce(&mut StoreFile) -> Result<T, TrustError>,
     ) -> Result<T, TrustError> {
         let lock = self.lock()?;
+        let out = self.update_held(&lock, f);
+        drop(lock);
+        out
+    }
+
+    /// [`Self::update`] for a caller that already holds the store lock (`_lock`, from
+    /// [`Self::lock`]) and keeps it after the write.
+    fn update_held<T>(
+        &self,
+        _lock: &File,
+        f: impl FnOnce(&mut StoreFile) -> Result<T, TrustError>,
+    ) -> Result<T, TrustError> {
         let mut file = self.read()?;
         let before = serde_json::to_vec_pretty(&file).map_err(|e| TrustError::Corrupt {
             path: self.path(),
@@ -664,7 +676,6 @@ impl TrustStore {
         })?;
         if bytes == before && self.path().exists() {
             // Nothing changed: the file is not rewritten, so a version 1 file keeps its form.
-            drop(lock);
             return Ok(out);
         }
         if bytes.len() as u64 > MAX_STORE_BYTES {
@@ -684,7 +695,6 @@ impl TrustStore {
             what: TrustPhrase::ReplaceStore.as_static().into(),
             source: e.error,
         })?;
-        drop(lock);
         Ok(out)
     }
 
@@ -821,7 +831,8 @@ impl TrustStore {
     /// The steps run in this order, and the first failure stops the call: a reserved
     /// namespace is refused before any file is read; each file is read under
     /// [`MAX_ROTATION_FILE_BYTES`], and the statement's `newKey` must parse; its fingerprint
-    /// must equal `fingerprint`; the cached revocation list is read, and a machine that never
+    /// must equal `fingerprint`; the store lock and then the revocation cache lock are taken and
+    /// held through the pin write; the cached revocation list is read, and a machine that never
     /// fetched one is refused; then [`Self::rotate_key`] checks the pin, the proof and the
     /// revocation list, and replaces the pin.
     ///
@@ -845,6 +856,11 @@ impl TrustStore {
         let new_key =
             crate::sign::rotation_new_key(statement.as_bytes()).map_err(TrustError::Rotation)?;
         check_fingerprint(fingerprint, &new_key)?;
+        // The list is read under the store lock and the cache lock, and both are held through
+        // the pin write, so a refresh that caches a newer list while this call waits is the
+        // list it checks.
+        let store_lock = self.lock()?;
+        let cache_lock = revocations.lock().map_err(TrustError::Revocation)?;
         let current = revocations.cached().map_err(TrustError::Revocation)?;
         if current.fetched_at.is_none() {
             return Err(TrustError::RevocationsMissing);
@@ -855,7 +871,9 @@ impl TrustStore {
             new_signature: &new_signature,
             new_key: &new_key,
         };
-        let (old, pin) = self.rotate(scope, &proof, &current.list, now)?;
+        let (old, pin) = self.rotate_held(&store_lock, scope, &proof, &current.list, now)?;
+        drop(cache_lock);
+        drop(store_lock);
         Ok(Rotated {
             pin,
             old_fingerprint: old.fingerprint,
@@ -884,12 +902,18 @@ impl TrustStore {
         revoked: &RevocationList,
         now: &str,
     ) -> Result<KeyPin, TrustError> {
-        self.rotate(scope, proof, revoked, now).map(|(_, new)| new)
+        reject_reserved(scope)?;
+        let lock = self.lock()?;
+        let out = self.rotate_held(&lock, scope, proof, revoked, now);
+        drop(lock);
+        out.map(|(_, new)| new)
     }
 
-    /// The rotation itself: the pin before and the pin after.
-    fn rotate(
+    /// The rotation itself, under the store lock the caller holds: the pin before and the pin
+    /// after.
+    fn rotate_held(
         &self,
+        lock: &File,
         scope: &PinScope,
         proof: &RotationProof<'_>,
         revoked: &RevocationList,
@@ -898,7 +922,7 @@ impl TrustStore {
         reject_reserved(scope)?;
         let namespace = scope.namespace();
         let path = self.path();
-        self.update(|f| {
+        self.update_held(lock, |f| {
             let Some(slot) = f.pins.iter_mut().find(|p| p.scope() == *scope) else {
                 return Err(TrustError::NotPinned {
                     registry: scope.registry().to_owned(),
