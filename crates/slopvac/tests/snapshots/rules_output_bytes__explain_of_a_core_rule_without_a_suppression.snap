@@ -1,0 +1,44 @@
+---
+source: crates/slopvac/tests/rules_output_bytes.rs
+expression: "raw(&[\"explain\", \"core:terms.casing\", \"--format\", \"json\"])"
+---
+{
+  "ai_signal": "none",
+  "ai_signal_source": "unmeasured",
+  "category": "terms",
+  "citation": {
+    "note": "A term matches case-insensitively at word boundaries. Plurals and possessives need no declaration. Inline code, paths, domains and handles are never flagged.",
+    "source": "slopvac-8l4.8.2"
+  },
+  "effective_severity": "warning",
+  "examples": [
+    {
+      "bad": "Open the repository on Github.",
+      "good": "Open the repository on GitHub.",
+      "note": "the finding replaces Github with GitHub"
+    },
+    {
+      "bad": "The Javascript runtime starts first.",
+      "good": "The JavaScript runtime starts first."
+    }
+  ],
+  "exclude_blocks": [
+    "code",
+    "front-matter"
+  ],
+  "fix": "Use the canonical spelling from the terms list. Declare a variant for a spelling the project accepts.",
+  "id": "core:terms.casing",
+  "kind": "vocabulary",
+  "match": {
+    "check": "term-casing",
+    "kind": "vocabulary"
+  },
+  "message": "\"{match}\" is not the canonical spelling: write \"{replacement}\".",
+  "name": "Spell a term the way its owner does",
+  "plugin": "core",
+  "schema_version": 3,
+  "scope": "prose",
+  "severity": "warning",
+  "text_type": "any",
+  "url": "https://slopvac.github.io/slopvac/v3/rules/terms/casing/"
+}

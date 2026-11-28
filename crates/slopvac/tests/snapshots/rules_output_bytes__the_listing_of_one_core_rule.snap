@@ -1,0 +1,389 @@
+---
+source: crates/slopvac/tests/rules_output_bytes.rs
+expression: "raw(&[\"rules\", \"--category\", \"ai-residue\", \"--format\", \"json\"])"
+---
+{
+  "categories": [
+    {
+      "description": "Artifacts of the generating session that reached a shipped document. Never a style judgement: a cutoff disclaimer or a tool citation token is a defect in every genre.",
+      "id": "ai-residue",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "internal",
+        "change-comms"
+      ],
+      "title": "AI residue",
+      "weight": 1.5
+    },
+    {
+      "description": "The formulae an agent reaches for when it has to name a section and has no fact to name it with: a universal claim about a whole class, standing in for a title. The shape is the tell, not the vocabulary, so these rules match syntax and a rewritten slogan does not escape by swapping words.",
+      "id": "ai-tells-agentic",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "internal",
+        "change-comms"
+      ],
+      "title": "AI tells -- agentic slogan formulae",
+      "weight": 1.5
+    },
+    {
+      "description": "Defects in what the prose contains rather than how it is arranged: fabricated citations, fake specificity, vaporware description, dilution, and rationale nobody asked for.",
+      "id": "ai-tells-content-shape",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "AI tells -- content shape",
+      "weight": 1.5
+    },
+    {
+      "description": "A verb doing rhetorical work in place of an observation. The generated register reaches for a spatial or athletic metaphor where the literal relation was available: what something is, where it is, what it lacks.",
+      "id": "ai-tells-figurative",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "internal",
+        "change-comms"
+      ],
+      "title": "AI tells -- figurative verbs",
+      "weight": 1.2
+    },
+    {
+      "description": "Markup and punctuation tells. These decay slowly, but em-dash suppression shipped in late-2025 frontier models, so ABSENCE proves nothing while density still signals.",
+      "id": "ai-tells-formatting",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "AI tells -- formatting and punctuation",
+      "weight": 1.0
+    },
+    {
+      "description": "The chat-assistant voice that survived lexical patching. Each entry is a voice, not a word: synonym-swapping does not remove it. Per-model fingerprints inside this register drift fast, so treat model attributions as snapshots.",
+      "id": "ai-tells-register",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "AI tells -- the chat-assistant register",
+      "weight": 1.5
+    },
+    {
+      "description": "Structure tells endure across model generations because preference training produces them: raters reward length, markdown, bulleted symmetry, and confident even-handedness, so every generation reconverges on the same shapes even as the vocabulary changes. Weight these above any word list.",
+      "id": "ai-tells-structure",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "AI tells -- rhetorical structure",
+      "weight": 1.5
+    },
+    {
+      "description": "Deterministic consumer-document rules: describe the released artifact at HEAD, with no status claims, delta narration, or internal references. Change communications, migrations, decision records, plans/specs, and historical reports are routed to their own genres rather than judged by these consumer-doc rules.",
+      "id": "docs-discipline",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer"
+      ],
+      "title": "Docs discipline",
+      "weight": 1.0
+    },
+    {
+      "description": "Objective restatements of the six rules from \"Politics and the English Language\" (1946), plus extensions the essay warrants.",
+      "id": "orwell",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms",
+        "informal"
+      ],
+      "title": "Orwell's rules, modernized",
+      "weight": 1.5
+    },
+    {
+      "description": "Every rule here restores a deleted actor. An abstraction promoted to subject, a machine granted a mind, a passive with the agent removed, a recommendation with nobody behind it.",
+      "id": "prose-agency",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "internal",
+        "change-comms"
+      ],
+      "title": "Prose agency",
+      "weight": 1.2
+    },
+    {
+      "description": "Mechanical craft defects with one correct answer and no house-style position: article agreement, initialism form, link text, directional references, tense, spacing, wordiness. Most are accessibility or copy-edit rules rather than generated-text signals.",
+      "id": "prose-craft",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "internal",
+        "change-comms"
+      ],
+      "title": "Prose craft",
+      "weight": 0.8
+    },
+    {
+      "description": "Referential consistency, sentence load, and constructions that hide the verb or the claim.",
+      "id": "prose-discipline",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "Prose discipline",
+      "weight": 1.5
+    },
+    {
+      "description": "Markup and typography defects. Two are house bans with one correct answer; one measures paragraph mass.",
+      "id": "prose-format",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "internal",
+        "change-comms"
+      ],
+      "title": "Prose format",
+      "weight": 0.8
+    },
+    {
+      "description": "Terms that exclude a reader and have a settled plain replacement. The bar for inclusion is a documented industry replacement, not a contested etymology.",
+      "id": "prose-inclusive",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "internal",
+        "change-comms"
+      ],
+      "title": "Prose inclusive",
+      "weight": 0.8
+    },
+    {
+      "description": "Claims larger than the evidence: marketing lexicon, stacked hedges, degree adverbs, nominalisations, and quantity words standing in for a number nobody counted.",
+      "id": "prose-inflation",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "internal",
+        "change-comms"
+      ],
+      "title": "Prose inflation",
+      "weight": 1.2
+    },
+    {
+      "description": "Promotional register: travel-brochure puffery, strategy-deck vocabulary, and the adjective-noun and verb habits that carry a claim no measurement backs.",
+      "id": "prose-promotion",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "change-comms"
+      ],
+      "title": "Prose promotion",
+      "weight": 1.2
+    },
+    {
+      "description": "Over-writing: real content in the wrong document. A rejected alternative defended in place, an implementation cost the reader cannot act on, a reassurance answering a worry nobody raised, a closing flourish.",
+      "id": "prose-scope",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "Prose scope",
+      "weight": 1.0
+    },
+    {
+      "description": "Governs information order, connective structure, sentence length, and paragraph shape in explanatory text.",
+      "id": "ste-descriptive",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "STE Descriptive Writing",
+      "weight": 1.0
+    },
+    {
+      "description": "Caps the length of noun stacks and requires a short form for longer domain terms.",
+      "id": "ste-nouns",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "STE Multi-word Nouns",
+      "weight": 1.0
+    },
+    {
+      "description": "Covers rewriting when substitution fails, correct word sense, phrasal verbs, consistency, and the eight general recommendations.",
+      "id": "ste-practices",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "STE Writing Practices",
+      "weight": 0.8
+    },
+    {
+      "description": "Governs instruction length, one action per step, imperative mood, condition order, and notes.",
+      "id": "ste-procedural",
+      "plugin": "core",
+      "recommended_for": [
+        "reference"
+      ],
+      "title": "STE Procedural Writing",
+      "weight": 1.2
+    },
+    {
+      "description": "Bans the semicolon, constrains hyphens and parentheses, and defines what counts as one word.",
+      "id": "ste-punctuation",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "STE Punctuation and Word Count",
+      "weight": 1.0
+    },
+    {
+      "description": "Governs how a document marks a risk, orders the command, and explains the consequence.",
+      "id": "ste-safety",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "STE Safety Instructions",
+      "weight": 1.5
+    },
+    {
+      "description": "Governs sentence structure, omitted words, vertical lists, connectors, and determiners.",
+      "id": "ste-sentences",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "STE Sentences",
+      "weight": 1.0
+    },
+    {
+      "description": "Restricts verb tense and form to simple constructions and requires the active voice.",
+      "id": "ste-verbs",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "STE Verbs",
+      "weight": 1.0
+    },
+    {
+      "description": "Restricts which words a document may use, in which part of speech, and in which spelling.",
+      "id": "ste-words",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "reference",
+        "internal",
+        "change-comms"
+      ],
+      "title": "STE Words",
+      "weight": 1.0
+    },
+    {
+      "description": "Product names, languages, protocols and acronyms spelled the way their owners spell them.",
+      "id": "terms",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer"
+      ],
+      "title": "Project terms",
+      "weight": 1.0
+    }
+  ],
+  "plugin": "core",
+  "plugins": [
+    "core"
+  ],
+  "rules": [
+    {
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "category": "ai-residue",
+      "citation": {
+        "note": "E5 in the retired slop-lint.py. Enforced at every tier because the match is never a register question. No published Vale style covers it: checked tbhb/vale-ai-tells v1.25.0, where SycophancyMarkers is praise only and SelfReference is cross-references only. The .vale.ini keeps it at error for source files too. Go->Python regex conversion: the Vale source wrote the CJK bracket citation range as `\\x{3010}`, `\\x{2020}`, `\\x{3011}`; rewritten as `【`, `†`, `】` for the Python `regex` module.",
+        "source": "vale-styles/ai-residue/ChatLeakage.yml",
+        "url": "https://github.com/srobroek/slopvac/blob/f4b4e47289fa16e850c681e7db8ebbb8952a05c0/packages/slopvac-lint/vale-styles/README.md"
+      },
+      "effective_severity": "error",
+      "examples": [
+        {
+          "bad": "As of my last update, the loader retried twice.",
+          "good": "The loader retries twice."
+        },
+        {
+          "bad": "As a large language model, I cannot browse the internet.",
+          "good": "The documentation describes the supported behaviour."
+        }
+      ],
+      "exceptions": [
+        {
+          "detector": "quotation",
+          "name": "quotation"
+        }
+      ],
+      "fix": "Delete the artifact, then re-read the surrounding paragraphs, which came from the same session.",
+      "id": "core:ai-residue.chat-leakage",
+      "kind": "pattern",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(\\bas an AI\\b|\\bas a large language model\\b|\\bI'?m an AI\\b|\\bas of my (last )?(update|knowledge cut[- ]?off)\\b|\\bmy (training data|knowledge) (only )?(goes up to|extends to|cut[- ]?off)\\b|\\bI (cannot|can'?t|am unable to) (browse|access the internet|provide)\\b|\\bI (apologi[sz]e|hope this helps)\\b|\\bfeel free to ask\\b|\\bthis section would (contain|describe|explain)\\b|\\b(insert|your) [a-z ]{3,20} here\\b|oaicite|contentReference|\\[cite:\\s*\\d+\\]|grok_card|【\\d+†[^】]*】)"
+      },
+      "message": "chat-session leakage: {match} -- delete it, then audit the surrounding prose",
+      "name": "Delete chat-session leakage",
+      "plugin": "core",
+      "scope": "prose",
+      "severity": "error",
+      "text_type": "any",
+      "url": "https://slopvac.github.io/slopvac/v3/rules/ai-residue/chat-leakage/"
+    }
+  ],
+  "schema_version": 3
+}

@@ -1,0 +1,47 @@
+---
+source: crates/slopvac/tests/rules_output_bytes.rs
+expression: "raw(&[\"explain\", \"core:ai-residue.chat-leakage\", \"--format\", \"json\"])"
+---
+{
+  "ai_signal": "none",
+  "ai_signal_source": "unmeasured",
+  "category": "ai-residue",
+  "citation": {
+    "note": "E5 in the retired slop-lint.py. Enforced at every tier because the match is never a register question. No published Vale style covers it: checked tbhb/vale-ai-tells v1.25.0, where SycophancyMarkers is praise only and SelfReference is cross-references only. The .vale.ini keeps it at error for source files too. Go->Python regex conversion: the Vale source wrote the CJK bracket citation range as `\\x{3010}`, `\\x{2020}`, `\\x{3011}`; rewritten as `【`, `†`, `】` for the Python `regex` module.",
+    "source": "vale-styles/ai-residue/ChatLeakage.yml",
+    "url": "https://github.com/srobroek/slopvac/blob/f4b4e47289fa16e850c681e7db8ebbb8952a05c0/packages/slopvac-lint/vale-styles/README.md"
+  },
+  "effective_severity": "error",
+  "examples": [
+    {
+      "bad": "As of my last update, the loader retried twice.",
+      "good": "The loader retries twice."
+    },
+    {
+      "bad": "As a large language model, I cannot browse the internet.",
+      "good": "The documentation describes the supported behaviour."
+    }
+  ],
+  "exceptions": [
+    {
+      "detector": "quotation",
+      "name": "quotation"
+    }
+  ],
+  "fix": "Delete the artifact, then re-read the surrounding paragraphs, which came from the same session.",
+  "id": "core:ai-residue.chat-leakage",
+  "kind": "pattern",
+  "match": {
+    "kind": "pattern",
+    "pattern": "(\\bas an AI\\b|\\bas a large language model\\b|\\bI'?m an AI\\b|\\bas of my (last )?(update|knowledge cut[- ]?off)\\b|\\bmy (training data|knowledge) (only )?(goes up to|extends to|cut[- ]?off)\\b|\\bI (cannot|can'?t|am unable to) (browse|access the internet|provide)\\b|\\bI (apologi[sz]e|hope this helps)\\b|\\bfeel free to ask\\b|\\bthis section would (contain|describe|explain)\\b|\\b(insert|your) [a-z ]{3,20} here\\b|oaicite|contentReference|\\[cite:\\s*\\d+\\]|grok_card|【\\d+†[^】]*】)"
+  },
+  "message": "chat-session leakage: {match} -- delete it, then audit the surrounding prose",
+  "name": "Delete chat-session leakage",
+  "plugin": "core",
+  "schema_version": 3,
+  "scope": "prose",
+  "severity": "error",
+  "suppression": "<!-- slopvac-allow: rule=core:ai-residue.chat-leakage reason=quotation -->",
+  "text_type": "any",
+  "url": "https://slopvac.github.io/slopvac/v3/rules/ai-residue/chat-leakage/"
+}
