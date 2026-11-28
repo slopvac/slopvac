@@ -713,14 +713,15 @@ mod tests {
         assert!(text.contains(id), "{text}");
     }
 
-    /// The catalog of a full run plus a plugin `acme` that ships the category `terms` and the
-    /// rule `acme:terms.casing`, which has the same category id as a core category.
+    /// A catalogue of two plugins, built here so no shipped rule changes what the tests see.
+    /// Both ship a category `terms`, which the contract allows, and the rule ids differ, which
+    /// it requires. `core` also ships a category `other`, and `acme` has none of that id.
     fn core_and_acme() -> Catalog {
-        let mut sets = Catalog::load().expect("the rules load").into_sets();
-        sets.extend(
-            crate::rule_catalog::catalog_with_rules(&[("acme", "terms", "casing")]).into_sets(),
-        );
-        Catalog::from_sets(sets)
+        crate::rule_catalog::catalog_with_rules(&[
+            ("core", "terms", "casing"),
+            ("core", "other", "hit"),
+            ("acme", "terms", "spelling"),
+        ])
     }
 
     fn run(command: &str, args: &[&str]) -> String {
@@ -745,7 +746,7 @@ mod tests {
         serde_json::from_str(&run(command, &words)).unwrap()
     }
 
-    const ACME_RULE: &str = "acme:terms.casing";
+    const ACME_RULE: &str = "acme:terms.spelling";
     const CORE_RULE: &str = "core:terms.casing";
 
     #[test]
@@ -797,12 +798,15 @@ mod tests {
         };
         assert_eq!(ids("core:terms"), [CORE_RULE]);
         assert_eq!(ids("acme:terms"), [ACME_RULE]);
-        assert_eq!(ids("acme:ai-residue"), Vec::<String>::new());
+        // `other` exists in `core` only, so the filter has something to leave out.
+        assert_eq!(ids("core:other"), ["core:other.hit"]);
+        assert_eq!(ids("acme:other"), Vec::<String>::new());
     }
 
     #[test]
     fn a_rule_of_another_plugin_has_no_url_in_json_and_a_core_rule_keeps_its_page() {
         let listed = run_json("rules", &["--category", "acme:terms"]);
+        assert_eq!(listed["rules"][0]["id"], ACME_RULE, "{listed}");
         assert!(listed["rules"][0].get("url").is_none(), "{listed}");
         let explained = run_json("explain", &[ACME_RULE]);
         assert_eq!(explained["id"], ACME_RULE, "{explained}");
