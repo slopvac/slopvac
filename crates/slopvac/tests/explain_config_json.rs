@@ -771,7 +771,13 @@ fn an_unregistered_assignment_leaves_the_detected_genre_of_its_siblings() {
     };
     let (code, stdout, stderr) = outcome(
         dir.path(),
-        &["lint", "--explain-config", "--format", "json", "reference/e.md"],
+        &[
+            "lint",
+            "--explain-config",
+            "--format",
+            "json",
+            "reference/e.md",
+        ],
     );
     assert_eq!(code, Some(0), "{stderr}");
     assert_eq!(profile(&stdout), json!("strict"), "{stdout}");
