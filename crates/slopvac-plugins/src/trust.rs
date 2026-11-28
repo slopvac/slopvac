@@ -207,6 +207,11 @@ impl TrustError {
     pub fn code(&self) -> Option<&'static str> {
         match self {
             Self::ReservedNamespace { .. } => Some(codes::NAMESPACE_RESERVED),
+            // SCRATCH: an over-cap key file reports another code.
+            Self::KeyInvalid {
+                cause: FileCause::Read(slopvac_fs::InputKind::TooLarge),
+                ..
+            } => Some(codes::ROTATION_INVALID),
             Self::KeyInvalid { .. } => Some(codes::KEY_INVALID),
             Self::FingerprintMismatch { .. } => Some(codes::KEY_FINGERPRINT_MISMATCH),
             Self::NamespaceBound { .. } => Some(codes::NAMESPACE_BOUND),
