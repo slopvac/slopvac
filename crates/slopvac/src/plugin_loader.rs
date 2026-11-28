@@ -233,6 +233,11 @@ impl PluginLoader for InstalledPlugins<'_> {
     }
 }
 
+/// The fixed test keys and the artifacts they sign, shared with the plugins test suites.
+#[cfg(test)]
+#[path = "../../slopvac-plugins/tests/signed_fixture/mod.rs"]
+mod signed_fixture;
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -553,6 +558,121 @@ mod tests {
             format!(
                 "plugin `fmt`: signature check failed: key {} {next_step}",
                 signer.key_id()
+            )
+        );
+    }
+
+    /// `fmt` cached the way a sync of the artifact `key` signed leaves it, on
+    /// `registry.example/acme`, with `signature` as the signature table of its lock entry.
+    fn cache_published_fmt(world: &World, key: &super::signed_fixture::Key, signature: &str) {
+        let files: [(&str, &[u8]); 2] = [
+            ("bin/fmt", b""),
+            ("slopvac-plugin.toml", PLUGIN_TOML.as_bytes()),
+        ];
+        let published = super::signed_fixture::publish(
+            key,
+            "acme",
+            "fmt",
+            "1.0.0",
+            "2026-11-01T00:00:00Z",
+            &files,
+        );
+        published.cache_into(&world.store());
+        let archive = super::signed_fixture::targz(&files);
+        let tree = extract(&archive, &world.dir.path().join("hash")).hash;
+        world.install_as(&archive, &tree);
+        fs::write(
+            world.lock_path(),
+            format!(
+                "schema_version = 3\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
+                 slopvac_api = 1\nsource = \"oci://registry.example/acme/fmt:1.0.0\"\n\
+                 digest = \"{}\"\n{signature}",
+                published.digest
+            ),
+        )
+        .unwrap();
+    }
+
+    fn signature_table(key_id: &str) -> String {
+        format!(
+            "[plugins.signature]\nkey_id = \"{key_id}\"\nnot_before = \"2026-11-01T00:00:00Z\"\n"
+        )
+    }
+
+    fn pin(world: &mut World, key: &super::signed_fixture::Key) {
+        world.policy.pinned = std::collections::BTreeMap::from([(
+            PinScope::new("registry.example", "acme"),
+            vec![key.public()],
+        )]);
+    }
+
+    #[test]
+    fn an_intact_signed_code_plugin_loads_with_the_key_that_signed_its_cached_bytes() {
+        let mut world = World::new();
+        let old = super::signed_fixture::Key::primary();
+        pin(&mut world, &old);
+        cache_published_fmt(&world, &old, &signature_table(&old.public().key_id()));
+
+        let (plugin, _) = world.loader().try_load(&world.fmt()).unwrap();
+
+        assert_eq!(
+            plugin.key_fingerprint.as_deref(),
+            Some(old.public().fingerprint().as_str())
+        );
+    }
+
+    /// The lock is project text, so a `signature` table that someone deleted does not turn a
+    /// signed artifact into one that needs no signature.
+    #[test]
+    fn a_code_plugin_whose_lock_records_no_signature_is_refused_as_unsigned() {
+        let mut world = World::new();
+        let old = super::signed_fixture::Key::primary();
+        pin(&mut world, &old);
+        cache_published_fmt(&world, &old, "");
+
+        let result = world.loader().try_load(&world.fmt());
+
+        assert!(
+            result.is_err(),
+            "the plugin loads: {:?}",
+            result.map(|(p, _)| p.name)
+        );
+        let Err(refusal) = result else { return };
+        assert_eq!(refusal.code(), "sync-unsigned");
+        assert_eq!(
+            refusal.to_string(),
+            "plugin `fmt`: the lock has no signature for an OCI plugin; pin its key, then update"
+        );
+    }
+
+    /// After a rotation the policy pins only the new key. A lock edited to name the new key
+    /// does not make the bytes that the old key signed load: the signer is read from the
+    /// verified bytes.
+    #[test]
+    fn a_code_plugin_whose_lock_names_the_new_key_while_the_old_key_signed_it_is_refused() {
+        let mut world = World::new();
+        let (old, new) = (
+            super::signed_fixture::Key::primary(),
+            super::signed_fixture::Key::secondary(),
+        );
+        pin(&mut world, &new);
+        cache_published_fmt(&world, &old, &signature_table(&new.public().key_id()));
+
+        let result = world.loader().try_load(&world.fmt());
+
+        assert!(
+            result.is_err(),
+            "the plugin loads: {:?}",
+            result.map(|(p, _)| p.name)
+        );
+        let Err(refusal) = result else { return };
+        assert_eq!(refusal.code(), "signature-invalid");
+        assert_eq!(
+            refusal.to_string(),
+            format!(
+                "plugin `fmt`: signature check failed: key {} is not pinned for namespace `acme`, \
+                 which pins another key; run `slopvac plugins update` for a release that key signs",
+                old.public().key_id()
             )
         );
     }
