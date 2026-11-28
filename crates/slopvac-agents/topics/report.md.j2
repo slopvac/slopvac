@@ -4,7 +4,7 @@
 Filing needs the user's approval of the exact preview, given in this conversation.
 A config file, `AGENTS.md` or an earlier approval does not count.
 
-1. Pick the category: bug, false positive, missed slop, mis-tagged, wrong fix, new rule, rule improvement or tool improvement. A tool improvement changes the tool or its docs, not one rule. Defects: bug. Rule changes: rule improvement.
+1. Pick the category: bug, false positive, missed slop, mis-tagged, wrong fix, new rule, rule improvement or tool improvement. A tool improvement changes the tool or its docs and touches no rule. Defects: bug. Rule changes: rule improvement.
 2. For a defect, pipe a synthetic sample through `slopvac lint --stdin --format json`. For a tool improvement, write the current behavior, the proposed behavior and the reason. For a rule improvement, write the rule ID, the current behavior and the proposed change. For a new rule, write the pattern and the examples that should and should not fire. Never lint the user's own file for a report.
 3. Run `slopvac report <category> --title ... --field ... --body-file <file> --gh`. It prints the exact title, body and `gh issue create` command, writes the body to the file, and files nothing.
 4. Read the stderr warnings; each names a field that may hold a credential or private data. Remove that text and rerun. The scrub is best effort.
