@@ -1582,25 +1582,50 @@ fn tree_of(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
     files
 }
 
+/// The code of the first `error[<code>]` line of `stderr`.
+fn error_code(stderr: &str) -> Option<&str> {
+    stderr.strip_prefix("error[")?.split_once(']').map(|(code, _)| code)
+}
+
 /// While the config does not resolve, its offline setting is unknown, so `report --gh --yes`
-/// takes no network action and writes and prints nothing first (policies.md, section 1.5).
-/// The extended file is missing, which `lint` reports as `config-io` (policies.md, the read
-/// failure of a config file).
+/// takes no network action, writes and prints nothing, and exits 2 with the code that `lint`
+/// reports for the same failure (policies.md, section 1.5). The extended file is missing:
+/// `config-extends-missing` in `docs/reference/error-codes.lock`.
 #[cfg(unix)]
 #[test]
 fn the_binary_gh_yes_refuses_and_runs_no_gh_while_the_config_does_not_resolve() {
     let bin_dir = tempfile::tempdir().unwrap();
     let log = counting_gh(bin_dir.path());
     let work = offline_project(None, true);
+    let linted = slopvac()
+        .current_dir(work.path())
+        .args(["lint", "--stdin"])
+        .write_stdin("Plain.\n")
+        .output()
+        .unwrap();
+    let lint_stderr = String::from_utf8_lossy(&linted.stderr).into_owned();
     let before = tree_of(work.path());
     let out = report_gh_yes(work.path(), bin_dir.path());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(2), "{stderr}");
-    assert!(stderr.starts_with("error[config-io]"), "{stderr}");
+    assert_eq!(error_code(&stderr), Some("config-extends-missing"), "{stderr}");
+    assert_eq!(
+        error_code(&stderr),
+        error_code(&lint_stderr),
+        "the code `lint` reports: {lint_stderr}"
+    );
     assert!(!stderr.contains("private-config-sentinel"), "{stderr}");
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "", "nothing is printed");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "",
+        "nothing is printed"
+    );
     assert!(!log.exists(), "gh ran");
-    assert_eq!(tree_of(work.path()), before, "no file is written or changed");
+    assert_eq!(
+        tree_of(work.path()),
+        before,
+        "no file is written or changed"
+    );
 }
 
 /// Without `--yes`, `report --gh` takes no network action, so a config that does not
@@ -1664,7 +1689,10 @@ fn the_binary_gh_yes_honours_offline_from_a_config_that_resolves() {
     let out = report_gh_yes(work.path(), bin_dir.path());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(2), "{stderr}");
-    assert!(stderr.starts_with("error[offline-network-needed]"), "{stderr}");
+    assert!(
+        stderr.starts_with("error[offline-network-needed]"),
+        "{stderr}"
+    );
     assert!(!log.exists(), "gh ran");
 }
 
