@@ -864,6 +864,42 @@ fn no_allow_action_is_offered_for_mdx_which_rejects_html_comments() {
 }
 
 #[test]
+fn an_html_finding_is_shown_and_offers_no_fix_action() {
+    let html = "file:///work/page.html";
+    let mut client = Client::engine(None);
+    client.open_at(html, "<p>We utilize it.</p>\n");
+    let diagnostics = client.diagnostics()["diagnostics"].clone();
+    // `<p>We ` is 6 characters, so `utilize` runs from 6 to 13.
+    assert_eq!(
+        diagnostics
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(range_of)
+            .collect::<Vec<_>>(),
+        [[0, 6, 0, 13]],
+        "{diagnostics}"
+    );
+    let found = client.request(
+        "textDocument/codeAction",
+        &json!({"textDocument": {"uri": html},
+                "range": {"start": {"line": 0, "character": 7}, "end": {"line": 0, "character": 7}},
+                "context": {"diagnostics": []}}),
+    );
+    let titles: Vec<&str> = found
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["title"].as_str().unwrap())
+        .collect();
+    assert!(
+        !titles.iter().any(|t| t.starts_with("Apply slopvac fix")),
+        "{titles:?}"
+    );
+    client.finish().unwrap();
+}
+
+#[test]
 fn only_markdown_files_get_allow_reasons() {
     let linter = engine_linter();
     let rule = RuleId::new("core:cat.swap").unwrap();
