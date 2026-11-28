@@ -262,7 +262,8 @@ def test_a_symlink_with_a_trailing_slash_is_refused_and_its_target_stays_empty(t
     real.mkdir()
     link = tmp_path / "link"
     link.symlink_to(real, target_is_directory=True)
-    assert run_gate(gate, f"{link}/")  # a Path would drop the slash.returncode == REFUSED
+    # A Path would drop the slash, so pass text.
+    assert run_gate(gate, f"{link}/").returncode == REFUSED
     assert list(real.iterdir()) == []
 
 
