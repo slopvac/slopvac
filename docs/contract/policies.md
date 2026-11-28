@@ -608,6 +608,8 @@ Owner: `slopvac-8l4.2.50`.
 
 The 3.0 binary must pass these tests. Each runs the installed binary with an isolated home and cache directory. `slopvac-8l4.13.9` blocks the release until all pass.
 
+Each row has at least one Rust test under the `conformance::` module path, with the doc comment `/// Conformance: <ID>` on the test. A pytest in `tests/contract` fails when a row has no such test, or when a marker names an ID that the table does not have.
+
 | ID | Test | Owner |
 |---|---|---|
 | N1 | With the update check disabled, `lint`, `validate`, `rules`, `explain`, `prime`, `reference`, and `claims` each finish under a network sandbox that fails any connection. | `slopvac-8l4.12.1` |

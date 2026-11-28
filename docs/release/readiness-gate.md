@@ -43,7 +43,7 @@ Each item runs one trusted command. The `run` array of its entry in `scripts/rel
 | `golden` | `cargo nextest run --workspace --no-tests=fail -E 'test(/^golden::/)'` | Fails until Rust tests with that prefix exist. |
 | `accuracy` | the same, with `test(/^accuracy::/)` | Fails until they exist. |
 | `compat-preserve` | the same, with `test(/^compat::preserve/)` | Fails until they exist. The matrix marks preserve rows `pending`. |
-| `conformance` | the same, with `test(/^conformance::/)` | Fails until they exist. |
+| `conformance` | the same, with `test(/^conformance::/)` | Runs the tests inside each `mod conformance` block, in library and binary test files alike. |
 | `conformance-contract` | `python3 -m pytest -q tests/contract` | Runs today. |
 | `migration-e2e` | the same nextest form, with `test(/^migration_e2e::/)` | Fails until they exist. |
 | `perf-budgets` | the same nextest form, with `test(/^perf_budget::/)` | Fails until they exist. |
@@ -86,7 +86,7 @@ The Rust suite items select tests by module path prefix. An epic that owns a sui
 - `golden::` for golden corpus tests.
 - `accuracy::` for the precision and recall gate.
 - `compat::preserve` for compatibility matrix rows with the `preserve` disposition.
-- `conformance::` for the tests described in `docs/contract/*.md`.
+- `conformance::` for the tests described in `docs/contract/*.md`. Put them in a `mod conformance { ... }` block in the test file, which gives the test the path prefix. A test that covers a row of the policies.md section 4 table carries the doc line `/// Conformance: <ID>`, with several IDs separated by commas when one test serves several rows. `tests/contract/test_policies_section4_rows.py` reads the row IDs from the table and fails when a row has no marked test, when a marker names an ID that the table lacks, or when a marked test sits outside the module.
 - `migration_e2e::` for migration end-to-end tests on fixture repositories.
 - `perf_budget::` for budget measurements. These tests run the installed CLI.
 
