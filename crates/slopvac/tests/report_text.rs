@@ -605,9 +605,7 @@ const CONSENT_HELP: &str = concat!(
 #[case::consent(&["report", "consent", "--help"], CONSENT_HELP)]
 fn the_long_help_reads_as_published(#[case] args: &[&str], #[case] help: &str) {
     let dir = tempfile::tempdir().unwrap();
-    command(dir.path())
-        .args(args)
-        .assert()
-        .success()
-        .stdout_eq(help);
+    // The bytes are compared as they are: `stdout_eq` would accept CRLF line endings.
+    let assert = command(dir.path()).args(args).assert().success();
+    assert_eq!(assert.get_output().stdout.as_slice(), help.as_bytes());
 }
