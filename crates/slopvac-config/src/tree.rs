@@ -361,7 +361,12 @@ mod counted {
             self.0.is_char_boundary(index)
         }
 
-        /// Hands out the bytes of `range`, so each of them counts as read.
+        /// Hands out the bytes of `range`, so each of them counts as read. The wrapper reads no
+        /// range today; a rescan of the line prefix would, and the many-keys test counts it.
+        #[expect(
+            dead_code,
+            reason = "the counted read that a rescan of the line prefix would make"
+        )]
         pub(crate) fn get(self, range: Range<usize>) -> Option<&'a str> {
             let slice = self.0.get(range);
             charge(slice.map_or(0, str::len));
