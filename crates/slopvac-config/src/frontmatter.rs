@@ -176,8 +176,8 @@ impl Policy {
     #[must_use]
     pub fn core() -> Self {
         Self {
-            enabled: true,
-            allow: ["genre", "locale", "terms"]
+            enabled: crate::schema::DEFAULT_FRONTMATTER_ENABLED,
+            allow: crate::schema::DEFAULT_ALLOW
                 .iter()
                 .map(|s| (*s).to_owned())
                 .collect(),
@@ -190,7 +190,7 @@ impl Policy {
         let enabled = config
             .project_value(&["frontmatter", "enabled"])
             .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+            .unwrap_or(crate::schema::DEFAULT_FRONTMATTER_ENABLED);
         let allow = config
             .project_value(&["frontmatter", "allow"])
             .and_then(|v| v.as_array().cloned())
@@ -210,16 +210,6 @@ pub struct Read {
     /// Everything wrong with the block, in document order.
     pub diagnostics: Vec<Diagnostic>,
 }
-
-const SETTING_FIELDS: &[&str] = &[
-    "genre",
-    "profile",
-    "locale",
-    "thresholds",
-    "categories",
-    "rules",
-    "terms",
-];
 
 /// Read the `slopvac:` block of `doc`. `file` is the path shown in provenance.
 ///
@@ -307,7 +297,7 @@ pub(crate) fn denied(block: &Node, policy: &Policy, root: &str) -> Vec<Diagnosti
     };
     entries
         .iter()
-        .filter(|e| SETTING_FIELDS.contains(&e.key.as_str()))
+        .filter(|e| crate::schema::SETTINGS_KEYS.contains(&e.key.as_str()))
         .filter(|e| !policy.allow.contains(&e.key))
         .map(|e| Diagnostic {
             code: Code::FrontmatterFieldDenied,

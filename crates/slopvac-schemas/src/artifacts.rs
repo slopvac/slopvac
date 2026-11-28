@@ -2,7 +2,7 @@ use schemars::generate::Contract;
 use schemars::{JsonSchema, SchemaGenerator};
 use serde_json::{Map, Value};
 use slopvac_model::{
-    ApiVersion, ConfigSource, ContextTag, Edit, LineCol, PackId, RESERVED_ID, Report, RuleId,
+    ApiVersion, ConfigSource, ContextTag, Edit, LineCol, PackId, PluginId, Report, RuleId,
     RuleProvenance, SchemaVersion, Severity, Span, schema_settings,
 };
 use slopvac_rules::{Category, RuleFile, schema_generator};
@@ -42,6 +42,24 @@ pub const ARTIFACTS: &[Artifact] = &[
         inline: &[],
         keep: &[],
         build: common,
+    },
+    Artifact {
+        file: "config.schema.json",
+        title: "slopvac v3 configuration (slopvac.toml)",
+        description: None,
+        imports: &["common.schema.json"],
+        inline: &[],
+        keep: &[],
+        build: config,
+    },
+    Artifact {
+        file: "frontmatter.schema.json",
+        title: "slopvac v3 front matter",
+        description: None,
+        imports: &["common.schema.json", "config.schema.json"],
+        inline: &[],
+        keep: &[],
+        build: frontmatter,
     },
     Artifact {
         file: "rule.schema.json",
@@ -346,17 +364,6 @@ fn define<T: JsonSchema>(generator: &mut SchemaGenerator) {
     generator.subschema_for::<T>();
 }
 
-/// Identifier of a plugin, or of the namespace a publisher signs for. Same character set as
-/// `PackId`. `core` is reserved for the built-in plugin that is compiled into the binary, so
-/// no manifest, lock entry, index entry or config entry may use it as an id or a namespace.
-/// Semantics: docs/contract/plugins.md, section 9.
-#[derive(JsonSchema)]
-// Schema only. No crate has a Rust type for it yet: the plugin lock and index readers and the
-// config validator check the value themselves. The generator owns this definition until a model
-// type replaces it.
-#[schemars(with = "String", extend("pattern" = plugin_id_pattern()))]
-pub(crate) struct PluginId;
-
 /// Semantic version 2.0.0 without build metadata. Numeric prerelease identifiers have no
 /// leading zeros.
 #[derive(JsonSchema)]
@@ -367,9 +374,16 @@ pub(crate) struct PluginId;
 #[schemars(with = "String", extend("pattern" = r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?![\s\S])"))]
 pub(crate) struct Semver;
 
-/// Slug pattern that refuses the reserved id.
-fn plugin_id_pattern() -> String {
-    format!(r"^(?!{RESERVED_ID}(?![\s\S]))[a-z][a-z0-9-]*(?![\s\S])")
+/// The project config, which the reader accepts as input. The types are schema-only
+/// (`slopvac_config::config_schema`), and the reader validates with its own shape tree.
+fn config() -> Value {
+    slopvac_config::config_schema()
+}
+
+/// The front-matter block, which the reader accepts as input. Its settings refer to the
+/// config schema, which `slopvac-schemas` links.
+fn frontmatter() -> Value {
+    slopvac_config::frontmatter_schema()
 }
 
 fn rule() -> Value {

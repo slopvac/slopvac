@@ -1,498 +1,55 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://slopvac.github.io/slopvac/schemas/v3/config.schema.json",
-  "title": "slopvac v3 configuration (slopvac.toml)",
-  "description": "Project config. Unknown keys are errors; keys that start with `x-` are ignored. Semantics: docs/contract/config.md. Owner: slopvac-8l4.2.5.",
-  "allOf": [
-    {
-      "$ref": "#/$defs/Settings"
-    }
-  ],
-  "type": "object",
-  "properties": {
-    "schema_version": {
-      "$ref": "common.schema.json#/$defs/SchemaVersion"
-    },
-    "mode": {
-      "description": "Input surface.",
-      "enum": [
-        "prose",
-        "code-comments"
-      ],
-      "default": "prose"
-    },
-    "extends": {
-      "description": "Config files merged below this one, lowest first. A path relative to this file or `<plugin>:<name>` for a plugin config.",
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "styles": {
-      "description": "Ordered style presets. The last listed wins.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/Ref"
-      }
-    },
-    "exclude": {
-      "description": "Files never linted.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/Glob"
-      }
-    },
-    "plugins": {
-      "description": "Data plugins and code plugins the project uses, in one list. Each id appears once, and `core` is reserved for the built-in plugin. A code plugin also needs `slopvac plugins trust`; one that is not trusted never starts.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/Source"
-      }
-    },
-    "index": {
-      "$ref": "#/$defs/IndexConfig"
-    },
-    "genres": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/GenreBlock"
-      }
-    },
-    "frontmatter": {
-      "$ref": "#/$defs/FrontmatterPolicy"
-    },
-    "guidance": {
-      "$ref": "#/$defs/Guidance"
-    },
-    "overrides": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/Override"
-      }
-    },
-    "network": {
-      "$ref": "#/$defs/Network"
-    },
-    "review": {
-      "$ref": "#/$defs/Review"
-    }
-  },
-  "required": [
-    "schema_version"
-  ],
-  "patternProperties": {
-    "^x-": {}
-  },
-  "unevaluatedProperties": false,
   "$defs": {
-    "Glob": {
-      "description": "A gitignore-style pattern, matched against the path relative to the directory of the nearest config, the one that applies to the file, even when an extended file holds the pattern. A leading `!` negates. The last matching pattern wins.",
-      "type": "string",
-      "minLength": 1
-    },
-    "Ref": {
-      "description": "A style or genre name. A bare name resolves against the active plugins and must be unambiguous; `<plugin>:<name>` is exact.",
-      "type": "string",
-      "pattern": "^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\\s\\S])"
-    },
-    "RuleLevel": {
-      "description": "The level a rule or category reports at. `off` disables it.",
-      "enum": [
-        "error",
-        "warning",
-        "suggestion",
-        "off"
-      ]
-    },
-    "RuleKey": {
-      "description": "A rule or category name: qualified `<plugin>:<id>` or a bare name that is unambiguous across the active plugins. Keys of maps in this file are data, so the `x-` convention does not apply to them.",
-      "type": "string",
-      "pattern": "^([a-z][a-z0-9-]*:)?[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"
-    },
-    "Locale": {
-      "description": "Spelling target. `und` disables the spelling check.",
-      "enum": [
-        "en-US",
-        "en-GB",
-        "und"
-      ]
-    },
-    "Thresholds": {
-      "description": "Document-level gates, evaluated after every finding is collected.",
-      "type": "object",
-      "properties": {
-        "max_total_per_100_words": {
-          "description": "Severity-weighted error and warning density per 100 words; errors count 1.0 and warnings 0.5.",
-          "type": "number",
-          "minimum": 0
-        },
-        "max_errors": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "max_warnings": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "min_score": {
-          "description": "Floor on the 0-100 quality score.",
-          "type": "number",
-          "minimum": 0,
-          "maximum": 100
-        },
-        "max_unicode_dashes": {
-          "description": "Ceiling on Unicode em and en dashes in the source.",
-          "type": "integer",
-          "minimum": 0
-        }
-      },
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "Profile": {
-      "description": "A built-in strictness tier, as a name or as a table that adds a severity shift. A profile sets gate thresholds and shifts severities, and nothing else.",
-      "if": {
-        "type": "object"
-      },
-      "then": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "enum": [
-              "strict",
-              "normal",
-              "relaxed"
-            ]
-          },
-          "severity_shift": {
-            "description": "Steps to move the inherited severity of each rule along suggestion, warning, error. Inherited means the level from rule definitions, styles and the genre chain. Positive is stricter. A level that a rules or categories entry sets is final and does not move. `off` never moves, and results clamp at the ends.",
-            "type": "integer",
-            "minimum": -2,
-            "maximum": 2
-          }
-        },
-        "patternProperties": {
-          "^x-": {}
-        },
-        "additionalProperties": false
-      },
-      "else": {
-        "enum": [
-          "strict",
-          "normal",
-          "relaxed"
-        ]
-      }
-    },
     "CategorySettings": {
       "description": "Per-category dials. A bare level stands for `{ severity = <level> }`.",
+      "else": {
+        "$ref": "#/$defs/RuleLevel"
+      },
       "if": {
         "type": "object"
       },
       "then": {
-        "type": "object",
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x-": true
+        },
         "properties": {
-          "severity": {
-            "$ref": "#/$defs/RuleLevel"
-          },
-          "minimum_severity": {
-            "description": "Lowest level that inherited rules in this category may report at. `off` means no floor, and it cancels a floor set in a lower layer.",
-            "$ref": "#/$defs/RuleLevel"
-          },
           "max_per_100_words": {
             "description": "Density budget; above it the category fails even with no error finding. The string none clears a budget that a lower layer set, so the category has no budget.",
             "oneOf": [
               {
-                "type": "number",
-                "minimum": 0
+                "minimum": 0,
+                "type": "number"
               },
               {
                 "const": "none"
               }
             ]
           },
+          "minimum_severity": {
+            "$ref": "#/$defs/RuleLevel",
+            "description": "Lowest level that inherited rules in this category may report at. `off` means no floor, and it cancels a floor set in a lower layer."
+          },
+          "severity": {
+            "$ref": "#/$defs/RuleLevel"
+          },
           "weight": {
             "description": "Multiplier on this category's share of the score. 0 makes it informational.",
-            "type": "number",
-            "minimum": 0
+            "minimum": 0,
+            "type": "number"
           }
         },
-        "patternProperties": {
-          "^x-": {}
-        },
-        "additionalProperties": false
-      },
-      "else": {
-        "$ref": "#/$defs/RuleLevel"
+        "type": "object"
       }
-    },
-    "Terms": {
-      "description": "Project vocabulary.",
-      "type": "object",
-      "properties": {
-        "allow": {
-          "description": "Words this project spells or uses its own way. The spelling check and identifier checks skip them.",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "files": {
-          "description": "Terms files, relative to the config file.",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "blocklists": {
-          "description": "Word blocklist files, relative to the config file. Each entry names a word, a part of speech and a reason.",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      },
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "Settings": {
-      "description": "Settings that a layer below the project config, an override, a genre block and front matter can all set. Each layer patches the one below field by field. Maps merge by key. Lists and scalars replace.",
-      "type": "object",
-      "properties": {
-        "profile": {
-          "$ref": "#/$defs/Profile"
-        },
-        "locale": {
-          "$ref": "#/$defs/Locale"
-        },
-        "thresholds": {
-          "$ref": "#/$defs/Thresholds"
-        },
-        "categories": {
-          "type": "object",
-          "propertyNames": {
-            "$ref": "#/$defs/RuleKey"
-          },
-          "additionalProperties": {
-            "$ref": "#/$defs/CategorySettings"
-          }
-        },
-        "rules": {
-          "description": "Rule levels by rule name.",
-          "type": "object",
-          "propertyNames": {
-            "$ref": "#/$defs/RuleKey"
-          },
-          "additionalProperties": {
-            "$ref": "#/$defs/RuleLevel"
-          }
-        },
-        "terms": {
-          "$ref": "#/$defs/Terms"
-        }
-      }
-    },
-    "Source": {
-      "description": "A data plugin or code plugin the project depends on. The lockfile pins the digest and records the kind.",
-      "type": "object",
-      "properties": {
-        "id": {
-          "$ref": "common.schema.json#/$defs/PluginId"
-        },
-        "source": {
-          "description": "An `oci://` reference, a `git+https://` URL with a commit, or a path relative to the config file.",
-          "type": "string",
-          "minLength": 1
-        },
-        "version": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": [
-        "id",
-        "source"
-      ],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "IndexConfig": {
-      "description": "Which plugin indexes `slopvac plugins search` reads. Project-scoped: no user config, environment variable, front matter or override sets it. Naming an index grants it no trust. Semantics: docs/contract/plugin-index.md, sections 5 and 6.",
-      "type": "object",
-      "properties": {
-        "default": {
-          "description": "Read the signed first-party index, named `slopvac`.",
-          "type": "boolean",
-          "default": true
-        },
-        "extra": {
-          "description": "Extra unsigned indexes, at most 16, read in this order after the default index. Each `name` appears once; the config validator checks that, because JSON Schema cannot.",
-          "type": "array",
-          "maxItems": 16,
-          "items": {
-            "$ref": "#/$defs/IndexExtra"
-          }
-        }
-      },
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "IndexExtra": {
-      "description": "An extra plugin index. Search results say `listed by <name>`. Its publisher keys are for display only.",
-      "type": "object",
-      "properties": {
-        "name": {
-          "$ref": "#/$defs/IndexName"
-        },
-        "source": {
-          "$ref": "#/$defs/IndexExtraSource"
-        }
-      },
-      "required": [
-        "name",
-        "source"
-      ],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
-    "IndexName": {
-      "description": "The name of an extra index: a plugin-id-shaped slug. `core` is reserved for the built-in plugin and `slopvac` names the default index.",
-      "type": "string",
-      "pattern": "^(?!(core|slopvac)(?![\\s\\S]))[a-z][a-z0-9-]*(?![\\s\\S])"
-    },
-    "IndexExtraSource": {
-      "description": "Where to fetch an extra index: an `oci://` reference or an `https://` URL. The URL carries no user-info. `http://`, `git+https://` and path sources are invalid.",
-      "type": "string",
-      "maxLength": 2048,
-      "pattern": "^(oci|https)://[^\\s/?#@]+([/?#]\\S*)?(?![\\s\\S])"
-    },
-    "Override": {
-      "description": "A glob-scoped patch. Every matching block applies in file order and the last writer of a field wins.",
-      "allOf": [
-        {
-          "$ref": "#/$defs/Settings"
-        }
-      ],
-      "properties": {
-        "files": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/Glob"
-          }
-        }
-      },
-      "required": [
-        "files"
-      ],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "unevaluatedProperties": false
-    },
-    "GenreBlock": {
-      "description": "Assigns a genre to the files it matches and patches their settings. Genre definitions live in genre files.",
-      "allOf": [
-        {
-          "$ref": "#/$defs/Settings"
-        }
-      ],
-      "properties": {
-        "genre": {
-          "$ref": "#/$defs/Ref"
-        },
-        "files": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/Glob"
-          }
-        }
-      },
-      "required": [
-        "genre",
-        "files"
-      ],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "unevaluatedProperties": false
-    },
-    "Guidance": {
-      "description": "Agent steering. Project-wide: overrides, genre blocks and front matter cannot set it.",
-      "type": "object",
-      "properties": {
-        "level": {
-          "description": "Detail of the rendered `prime` topics.",
-          "enum": [
-            "brief",
-            "standard",
-            "full"
-          ],
-          "default": "standard"
-        },
-        "write": {
-          "enum": [
-            "auto",
-            "off"
-          ],
-          "default": "auto"
-        },
-        "review": {
-          "enum": [
-            "auto",
-            "ask",
-            "off"
-          ],
-          "default": "auto"
-        },
-        "review_depth": {
-          "enum": [
-            "self",
-            "subagent",
-            "adversary"
-          ],
-          "default": "subagent"
-        },
-        "report": {
-          "enum": [
-            "ask",
-            "off"
-          ],
-          "default": "ask"
-        }
-      },
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
     },
     "FrontmatterPolicy": {
+      "additionalProperties": false,
       "description": "Which fields of a document's `slopvac:` block take effect. A block field outside the allowed set is an error at its line and column.",
-      "type": "object",
+      "patternProperties": {
+        "^x-": true
+      },
       "properties": {
-        "enabled": {
-          "description": "When false, `slopvac:` is plain data and is not read.",
-          "type": "boolean",
-          "default": true
-        },
         "allow": {
-          "type": "array",
-          "uniqueItems": true,
           "default": [
             "genre",
             "locale",
@@ -508,55 +65,498 @@
               "rules",
               "terms"
             ]
-          }
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "enabled": {
+          "default": true,
+          "description": "When false, `slopvac:` is plain data and is not read.",
+          "type": "boolean"
         }
       },
+      "type": "object"
+    },
+    "GenreBlock": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Settings"
+        }
+      ],
+      "description": "Assigns a genre to the files it matches and patches their settings. Genre definitions live in genre files.",
       "patternProperties": {
         "^x-": {}
       },
-      "additionalProperties": false
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/Glob"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "genre": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "genre",
+        "files"
+      ],
+      "unevaluatedProperties": false
+    },
+    "Glob": {
+      "description": "A gitignore-style pattern, matched against the path relative to the directory of the nearest config, the one that applies to the file, even when an extended file holds the pattern. A leading `!` negates. The last matching pattern wins.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "Guidance": {
+      "additionalProperties": false,
+      "description": "Agent steering. Project-wide: overrides, genre blocks and front matter cannot set it.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "level": {
+          "default": "standard",
+          "description": "Detail of the rendered `prime` topics.",
+          "enum": [
+            "brief",
+            "standard",
+            "full"
+          ]
+        },
+        "report": {
+          "default": "ask",
+          "enum": [
+            "ask",
+            "off"
+          ]
+        },
+        "review": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "ask",
+            "off"
+          ]
+        },
+        "review_depth": {
+          "default": "subagent",
+          "enum": [
+            "self",
+            "subagent",
+            "adversary"
+          ]
+        },
+        "write": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "off"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "IndexConfig": {
+      "additionalProperties": false,
+      "description": "Which plugin indexes `slopvac plugins search` reads. Project-scoped: no user config, environment variable, front matter or override sets it. Naming an index grants it no trust. Semantics: docs/contract/plugin-index.md, sections 5 and 6.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "default": {
+          "default": true,
+          "description": "Read the signed first-party index, named `slopvac`.",
+          "type": "boolean"
+        },
+        "extra": {
+          "description": "Extra unsigned indexes, at most 16, read in this order after the default index. Each `name` appears once; the config validator checks that, because JSON Schema cannot.",
+          "items": {
+            "$ref": "#/$defs/IndexExtra"
+          },
+          "maxItems": 16,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "IndexExtra": {
+      "additionalProperties": false,
+      "description": "An extra plugin index. Search results say `listed by <name>`. Its publisher keys are for display only.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/IndexName"
+        },
+        "source": {
+          "$ref": "#/$defs/IndexExtraSource"
+        }
+      },
+      "required": [
+        "name",
+        "source"
+      ],
+      "type": "object"
+    },
+    "IndexExtraSource": {
+      "description": "Where to fetch an extra index: an `oci://` reference or an `https://` URL. The URL carries no user-info. `http://`, `git+https://` and path sources are invalid.",
+      "maxLength": 2048,
+      "pattern": "^(oci|https)://[^\\s/?#@]+([/?#]\\S*)?(?![\\s\\S])",
+      "type": "string"
+    },
+    "IndexName": {
+      "description": "The name of an extra index: a plugin-id-shaped slug. `core` is reserved for the built-in plugin and `slopvac` names the default index.",
+      "pattern": "^(?!(core|slopvac)(?![\\s\\S]))[a-z][a-z0-9-]*(?![\\s\\S])",
+      "type": "string"
+    },
+    "Locale": {
+      "description": "Spelling target. `und` disables the spelling check.",
+      "enum": [
+        "en-US",
+        "en-GB",
+        "und"
+      ]
     },
     "Network": {
+      "additionalProperties": false,
       "description": "Network policy. `offline = true` is sticky: no other source can unset it, so `false` only restates the default. See docs/contract/policies.md.",
-      "type": "object",
+      "patternProperties": {
+        "^x-": true
+      },
       "properties": {
         "offline": {
-          "type": "boolean",
-          "default": false
+          "default": false,
+          "type": "boolean"
         },
         "update_check": {
-          "type": "boolean",
-          "default": true
+          "default": true,
+          "type": "boolean"
         }
       },
+      "type": "object"
+    },
+    "Override": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Settings"
+        }
+      ],
+      "description": "A glob-scoped patch. Every matching block applies in file order and the last writer of a field wins.",
       "patternProperties": {
         "^x-": {}
       },
-      "additionalProperties": false
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/Glob"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "unevaluatedProperties": false
+    },
+    "Profile": {
+      "description": "A built-in strictness tier, as a name or as a table that adds a severity shift. A profile sets gate thresholds and shifts severities, and nothing else.",
+      "else": {
+        "enum": [
+          "strict",
+          "normal",
+          "relaxed"
+        ]
+      },
+      "if": {
+        "type": "object"
+      },
+      "then": {
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x-": true
+        },
+        "properties": {
+          "name": {
+            "enum": [
+              "strict",
+              "normal",
+              "relaxed"
+            ]
+          },
+          "severity_shift": {
+            "description": "Steps to move the inherited severity of each rule along suggestion, warning, error. Inherited means the level from rule definitions, styles and the genre chain. Positive is stricter. A level that a rules or categories entry sets is final and does not move. `off` never moves, and results clamp at the ends.",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "Ref": {
+      "description": "A style or genre name. A bare name resolves against the active plugins and must be unambiguous; `<plugin>:<name>` is exact.",
+      "pattern": "^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\\s\\S])",
+      "type": "string"
     },
     "Review": {
+      "additionalProperties": false,
       "description": "Agent review. The provider is a trusted plugin; it stays idle during lint.",
-      "type": "object",
+      "patternProperties": {
+        "^x-": true
+      },
       "properties": {
-        "provider": {
-          "description": "Plugin id of the model provider.",
-          "$ref": "common.schema.json#/$defs/PackId"
+        "author_model": {
+          "description": "Model name of the author. The review refuses a reviewer with the same name.",
+          "minLength": 1,
+          "type": "string"
         },
         "model": {
           "description": "Model name the reviewer must report.",
-          "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "type": "string"
         },
-        "author_model": {
-          "description": "Model name of the author. The review refuses a reviewer with the same name.",
-          "type": "string",
-          "minLength": 1
+        "provider": {
+          "$ref": "common.schema.json#/$defs/PackId",
+          "description": "Plugin id of the model provider."
         }
       },
-      "patternProperties": {
-        "^x-": {}
+      "type": "object"
+    },
+    "RuleKey": {
+      "description": "A rule or category name: qualified `<plugin>:<id>` or a bare name that is unambiguous across the active plugins. Keys of maps in this file are data, so the `x-` convention does not apply to them.",
+      "pattern": "^([a-z][a-z0-9-]*:)?[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])",
+      "type": "string"
+    },
+    "RuleLevel": {
+      "description": "The level a rule or category reports at. `off` disables it.",
+      "enum": [
+        "error",
+        "warning",
+        "suggestion",
+        "off"
+      ]
+    },
+    "Settings": {
+      "description": "Settings that a layer below the project config, an override, a genre block and front matter can all set. Each layer patches the one below field by field. Maps merge by key. Lists and scalars replace.",
+      "properties": {
+        "categories": {
+          "additionalProperties": {
+            "$ref": "#/$defs/CategorySettings"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/RuleKey"
+          },
+          "type": "object"
+        },
+        "locale": {
+          "$ref": "#/$defs/Locale"
+        },
+        "profile": {
+          "$ref": "#/$defs/Profile"
+        },
+        "rules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RuleLevel"
+          },
+          "description": "Rule levels by rule name.",
+          "propertyNames": {
+            "$ref": "#/$defs/RuleKey"
+          },
+          "type": "object"
+        },
+        "terms": {
+          "$ref": "#/$defs/Terms"
+        },
+        "thresholds": {
+          "$ref": "#/$defs/Thresholds"
+        }
       },
-      "additionalProperties": false
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "description": "A data plugin or code plugin the project depends on. The lockfile pins the digest and records the kind.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/PluginId"
+        },
+        "source": {
+          "description": "An `oci://` reference, a `git+https://` URL with a commit, or a path relative to the config file.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "source"
+      ],
+      "type": "object"
+    },
+    "Terms": {
+      "additionalProperties": false,
+      "description": "Project vocabulary.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "allow": {
+          "description": "Words this project spells or uses its own way. The spelling check and identifier checks skip them.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "blocklists": {
+          "description": "Word blocklist files, relative to the config file. Each entry names a word, a part of speech and a reason.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "files": {
+          "description": "Terms files, relative to the config file.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Thresholds": {
+      "additionalProperties": false,
+      "description": "Document-level gates, evaluated after every finding is collected.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "max_errors": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_total_per_100_words": {
+          "description": "Severity-weighted error and warning density per 100 words; errors count 1.0 and warnings 0.5.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "max_unicode_dashes": {
+          "description": "Ceiling on Unicode em and en dashes in the source.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_warnings": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_score": {
+          "description": "Floor on the 0-100 quality score.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "type": "object"
     }
-  }
+  },
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "$ref": "#/$defs/Settings"
+    }
+  ],
+  "description": "Project config. Unknown keys are errors; keys that start with `x-` are ignored. Semantics: docs/contract/config.md.",
+  "patternProperties": {
+    "^x-": {}
+  },
+  "properties": {
+    "exclude": {
+      "description": "Files never linted.",
+      "items": {
+        "$ref": "#/$defs/Glob"
+      },
+      "type": "array"
+    },
+    "extends": {
+      "description": "Config files merged below this one, lowest first. A path relative to this file or `<plugin>:<name>` for a plugin config.",
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "frontmatter": {
+      "$ref": "#/$defs/FrontmatterPolicy"
+    },
+    "genres": {
+      "items": {
+        "$ref": "#/$defs/GenreBlock"
+      },
+      "type": "array"
+    },
+    "guidance": {
+      "$ref": "#/$defs/Guidance"
+    },
+    "index": {
+      "$ref": "#/$defs/IndexConfig"
+    },
+    "mode": {
+      "default": "prose",
+      "description": "Input surface.",
+      "enum": [
+        "prose",
+        "code-comments"
+      ]
+    },
+    "network": {
+      "$ref": "#/$defs/Network"
+    },
+    "overrides": {
+      "items": {
+        "$ref": "#/$defs/Override"
+      },
+      "type": "array"
+    },
+    "plugins": {
+      "description": "Data plugins and code plugins the project uses, in one list. Each id appears once, and `core` is reserved for the built-in plugin. A code plugin also needs `slopvac plugins trust`; one that is not trusted never starts.",
+      "items": {
+        "$ref": "#/$defs/Source"
+      },
+      "type": "array"
+    },
+    "review": {
+      "$ref": "#/$defs/Review"
+    },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "styles": {
+      "description": "Ordered style presets. The last listed wins.",
+      "items": {
+        "$ref": "#/$defs/Ref"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "title": "slopvac v3 configuration (slopvac.toml)",
+  "type": "object",
+  "unevaluatedProperties": false
 }

@@ -9,9 +9,9 @@
 
 use schemars::{JsonSchema, Schema};
 use serde_json::json;
-use slopvac_model::{ApiVersion, PackId, SchemaVersion, absent_not_null, x_extensions};
+use slopvac_model::{ApiVersion, PackId, PluginId, SchemaVersion, absent_not_null, x_extensions};
 
-use crate::artifacts::{PluginId, Semver};
+use crate::artifacts::Semver;
 
 /// The characters that count as white space in a source, spelled out because the engines read
 /// `\s` differently. It is the union of what Python and ECMA-262 read as `\s`, so the pattern

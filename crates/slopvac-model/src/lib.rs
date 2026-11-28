@@ -39,7 +39,8 @@ pub use report::{
     GenreReason, GenreResult, GenreSource, Notice, NoticeLevel, Report, RuleProvenance, RunSummary,
 };
 pub use reserved::{
-    FIRST_PARTY_NAMESPACE, RESERVED_ID, RESERVED_NAMESPACES, is_reserved_namespace,
+    FIRST_PARTY_NAMESPACE, PluginId, RESERVED_ID, RESERVED_NAMESPACES, is_reserved_namespace,
+    plugin_id_pattern,
 };
 pub use schema::{
     KEBAB, SLUG, absent_not_null, id as schema_id, if_then, settings as schema_settings,
