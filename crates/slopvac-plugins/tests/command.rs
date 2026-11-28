@@ -2559,6 +2559,38 @@ fn rotate_with_a_signature_file_over_its_cap_names_the_file() {
     );
 }
 
+/// A rotation file that is a FIFO is refused at once, with the regular-file text. The run
+/// happens on its own thread, so a read that blocks fails the deadline instead of hanging.
+#[test]
+fn rotate_with_a_signature_file_that_is_a_fifo_is_refused_at_once() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let f = Fixture::new();
+        let args = f.rotation();
+        let sig = f.base.path().join("old.minisig");
+        fs::remove_file(&sig).unwrap();
+        let made = std::process::Command::new("mkfifo")
+            .arg(&sig)
+            .status()
+            .unwrap();
+        assert!(made.success(), "mkfifo");
+        let words: Vec<&str> = args.iter().map(String::as_str).collect();
+        let err = f.run(&words, false, |s| s).result.unwrap_err();
+        // The receiver is gone only when the deadline has already failed the test.
+        let _ = tx.send((err.code(), err.to_string(), f.pinned()));
+    });
+    let (code, text, pinned) = rx
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .expect("rotate finished within 20 s");
+    assert_eq!(code, "rotation-invalid");
+    assert_eq!(
+        text,
+        "rotation refused: <external>/old.minisig cannot be used: it is not a regular file; save it to a regular file and pass that path"
+    );
+    let old = pub_key(OLD_PUB).fingerprint();
+    assert_eq!(pinned, [("ghcr.io".to_owned(), "acme".to_owned(), old)]);
+}
+
 #[test]
 fn rotate_whose_new_key_did_not_sign_says_the_signature_does_not_verify() {
     let f = Fixture::new();
