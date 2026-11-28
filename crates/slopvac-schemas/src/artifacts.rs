@@ -316,8 +316,12 @@ pub const ARTIFACTS: &[Artifact] = &[
              This is an output document, so it is not valid input for a rule or category file. \
              Unknown keys are errors, and keys that start with `x-` are ignored.",
         ),
+        // Not lint-report.schema.json: it inlines `Genre`, which rule.schema.json publishes,
+        // and importing both would inline `Genre` here too.
         imports: &["common.schema.json", "rule.schema.json"],
-        inline: &[],
+        // Written in place: lint-report.schema.json publishes `CategoryId`, which a definition
+        // name allows one file to do. `tests/shared_category_id.rs` holds the two equal.
+        inline: &["CategoryId"],
         keep: &["ExplainOutput"],
         build: rules_output,
     },
