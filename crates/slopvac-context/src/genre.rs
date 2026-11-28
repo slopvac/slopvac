@@ -7,12 +7,14 @@ use std::fmt;
 use std::path::Path;
 
 use globset::{GlobBuilder, GlobMatcher};
+use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::de::{self, Visitor};
-use slopvac_config::{FilesError, FilesMatcher};
+use slopvac_config::{BUDGET_MINIMUM, FilesError, FilesMatcher};
 
 use crate::schema::{
-    Extensions, GENRE_SCHEMA_VERSION, check_schema_version, is_name, is_ref, is_rule_key, present,
+    DEFAULT_MIN_SCORE, DEFAULT_WEIGHT, EXCLUSIVE_MINIMUM, Extensions, GENRE_SCHEMA_VERSION,
+    MIN_SIGNALS, check_schema_version, is_name, is_ref, is_rule_key, present,
 };
 use crate::{BlockKind, DocumentView, Error, Pattern, normalize_path};
 
@@ -30,9 +32,10 @@ pub enum RuleLevel {
     Off,
 }
 
-/// Strictness profile that a genre selects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+/// Strictness profile that the genre selects when no other layer sets one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline)]
 pub enum Profile {
     /// Strict.
     Strict,
@@ -150,8 +153,9 @@ impl CategoryTable {
 }
 
 /// Which text a detection signal reads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
 pub enum SignalKind {
     /// A glob over the project-relative path.
     Path,
@@ -164,7 +168,8 @@ pub enum SignalKind {
 }
 
 impl SignalKind {
-    fn as_str(self) -> &'static str {
+    /// The kind as written in data files.
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Path => "path",
             Self::FrontMatter => "front-matter",
@@ -229,11 +234,11 @@ pub struct Signal {
 }
 
 fn default_weight() -> f64 {
-    1.0
+    f64::from(DEFAULT_WEIGHT)
 }
 
 fn default_min_score() -> f64 {
-    1.0
+    f64::from(DEFAULT_MIN_SCORE)
 }
 
 /// Signals that suggest the genre. A document scores the sum of the weights of the signals
@@ -365,7 +370,7 @@ impl Detect {
         if !above_zero(self.min_score) {
             return Err(fail("`min_score` must be greater than 0"));
         }
-        if self.signals.is_empty() {
+        if self.signals.len() < MIN_SIGNALS {
             return Err(fail("`detect.signals` needs at least one signal"));
         }
         for s in &self.signals {
@@ -397,39 +402,68 @@ impl Detect {
     }
 }
 
-/// A finite number of at least 0. NaN and infinity fail, as does anything below 0.
+/// A finite number of at least the budget minimum, which config and the schema share. NaN and
+/// infinity fail, as does anything below it.
 fn at_least_zero(n: f64) -> bool {
-    n.is_finite() && n >= 0.0
+    n.is_finite() && n >= f64::from(BUDGET_MINIMUM)
 }
 
-/// A finite number above 0 (`exclusiveMinimum: 0`).
+/// A finite number above the exclusive minimum (`exclusiveMinimum` in the schema).
 fn above_zero(n: f64) -> bool {
-    n.is_finite() && n > 0.0
+    n.is_finite() && n > f64::from(EXCLUSIVE_MINIMUM)
 }
+
+/// What one group of signal kinds takes. A kind needs one field and accepts that field and the
+/// ones in `takes`; any other field of the four is refused. The reader and the schema's
+/// per-kind conditions both read [`SIGNAL_RULES`].
+pub(crate) struct SignalRule {
+    /// The kinds this row covers.
+    pub(crate) kinds: &'static [SignalKind],
+    /// The field that the kind needs.
+    pub(crate) needs: &'static str,
+    /// Every field that the kind accepts, `needs` included.
+    pub(crate) takes: &'static [&'static str],
+}
+
+/// The fields that depend on the signal kind, in the order the schema lists them.
+pub(crate) const SIGNAL_FIELDS: [&str; 4] = ["glob", "key", "equals", "pattern"];
+
+/// The row of each signal kind.
+pub(crate) const SIGNAL_RULES: &[SignalRule] = &[
+    SignalRule {
+        kinds: &[SignalKind::Path],
+        needs: "glob",
+        takes: &["glob"],
+    },
+    SignalRule {
+        kinds: &[SignalKind::FrontMatter],
+        needs: "key",
+        takes: &["key", "equals"],
+    },
+    SignalRule {
+        kinds: &[SignalKind::Heading, SignalKind::Text],
+        needs: "pattern",
+        takes: &["pattern"],
+    },
+];
 
 impl Signal {
     /// Whether the field that the kind needs is set, and the first field it does not take.
     fn fields(&self) -> (bool, Option<&'static str>) {
         let set = [
-            ("glob", self.glob.is_some()),
-            ("key", self.key.is_some()),
-            ("equals", self.equals.is_some()),
-            ("pattern", self.pattern.is_some()),
+            self.glob.is_some(),
+            self.key.is_some(),
+            self.equals.is_some(),
+            self.pattern.is_some(),
         ];
-        let takes: &[&str] = match self.kind {
-            SignalKind::Path => &["glob"],
-            SignalKind::FrontMatter => &["key", "equals"],
-            SignalKind::Heading | SignalKind::Text => &["pattern"],
+        let Some(rule) = SIGNAL_RULES.iter().find(|r| r.kinds.contains(&self.kind)) else {
+            return (false, None);
         };
-        let required = match self.kind {
-            SignalKind::Path => "glob",
-            SignalKind::FrontMatter => "key",
-            SignalKind::Heading | SignalKind::Text => "pattern",
-        };
-        let has_required = set.iter().any(|(n, on)| *n == required && *on);
-        let stray = set
+        let fields: Vec<(&str, bool)> = SIGNAL_FIELDS.into_iter().zip(set).collect();
+        let has_required = fields.iter().any(|(n, on)| *n == rule.needs && *on);
+        let stray = fields
             .iter()
-            .find(|(n, on)| *on && !takes.contains(n))
+            .find(|(n, on)| *on && !rule.takes.contains(n))
             .map(|(n, _)| *n);
         (has_required, stray)
     }

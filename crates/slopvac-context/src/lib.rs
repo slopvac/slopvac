@@ -18,6 +18,7 @@ mod schema;
 mod structural;
 mod tag;
 mod view;
+mod wire;
 mod work;
 
 use messages::ContextMessage;
@@ -49,6 +50,7 @@ pub use view::{
     BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, sentence_budget,
     split_sentences, split_sentences_within,
 };
+pub use wire::genre_schema;
 #[cfg(feature = "work-counters")]
 #[doc(hidden)]
 pub use work::{

@@ -63,6 +63,19 @@ pub(crate) fn check_schema_version(what: &str, v: u32, expected: u32) -> Result<
     }
 }
 
+/// A signal weight and the `min_score` of a genre must be greater than this. The reader checks
+/// it and the schema states it as `exclusiveMinimum`.
+pub(crate) const EXCLUSIVE_MINIMUM: u32 = 0;
+
+/// The weight of a signal that sets none.
+pub(crate) const DEFAULT_WEIGHT: u32 = 1;
+
+/// The score a genre needs to be a candidate when its `detect` sets none.
+pub(crate) const DEFAULT_MIN_SCORE: u32 = 1;
+
+/// The fewest signals of a `detect` block.
+pub(crate) const MIN_SIGNALS: usize = 1;
+
 /// `^[a-z][a-z0-9-]*$`: genre ids, tagger ids and `ContextTag`. The schemas state the same
 /// rule as `slopvac_model::SLUG`.
 pub(crate) fn is_name(s: &str) -> bool {

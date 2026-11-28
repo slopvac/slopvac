@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use rstest::rstest;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use slopvac_context::GenreSpec;
 use slopvac_schemas::generate;
 

@@ -112,6 +112,25 @@ pub const ARTIFACTS: &[Artifact] = &[
         build: rule,
     },
     Artifact {
+        file: "genre.schema.json",
+        title: "slopvac v3 genre",
+        description: Some(
+            "A document purpose class as data. A genre may extend other genres, so a content \
+             type such as how-to extends a broader genre. Detection signals score a document, \
+             and the genre with the highest score at or above its threshold wins. A config \
+             [[genres]] block or front matter overrides detection. Semantics are specified in \
+             docs/contract/plugins.md.",
+        ),
+        imports: &[
+            "common.schema.json",
+            "rule.schema.json",
+            "config.schema.json",
+        ],
+        inline: &[],
+        keep: &[],
+        build: genre,
+    },
+    Artifact {
         file: "category.schema.json",
         title: "slopvac v3 category",
         description: None,
@@ -438,6 +457,12 @@ fn blocklist() -> Value {
 /// refer to the config schema, which `slopvac-schemas` links.
 fn style() -> Value {
     slopvac_config::style_schema()
+}
+
+/// A genre file, which the reader accepts as input. The types are schema-only
+/// (`slopvac_context::genre_schema`), and the reader checks the file itself.
+fn genre() -> Value {
+    slopvac_context::genre_schema().to_value()
 }
 
 fn rule() -> Value {
