@@ -389,8 +389,9 @@ fn check_requirements(pack: &LoadedPack, loaded: &[LoadedPack]) -> Result<(), Sy
 /// # Errors
 /// [`SyncedError`]: a plugin the lock does not pin ([`SyncedError::NotLocked`]), a tree that is
 /// absent or differs from its digest, an unsupported extension API, a manifest that disagrees
-/// with the lock, a code plugin that `trust` does not trust ([`SyncedError::Untrusted`]) or
-/// that changed after trust ([`SyncedError::ChangedAfterTrust`]), an unmet requirement, a
+/// with the lock, a code plugin that `trust` does not trust ([`SyncedError::Untrusted`]),
+/// that changed after trust ([`SyncedError::ChangedAfterTrust`]) or that `trust` cannot answer
+/// for ([`SyncedError::TrustUnchecked`]), an unmet requirement, a
 /// `requires` cycle, or a file that does not load.
 pub fn load_synced(
     requested: &[PackId],
@@ -525,14 +526,16 @@ fn load_inner(
         // `check_manifest` compares the manifest with the lock, and then `check_trust` runs. The
         // trust check runs before any parsing past the manifest, compiling, registering or
         // budget charge, but not before the integrity pass reads the files from disk. An
-        // unreadable file in an untrusted plugin reports `StoreUnreadable`, because the install
-        // is damaged whatever its trust state.
-        // STUB(wip): the red step reads the manifest from disk a second time.
-        let on_disk = std::fs::read(tree.dir.join(crate::MANIFEST_FILE)).unwrap_or_default();
-        let pack = LoadedPack::load_checked(&MemorySource::new(files), origin, budget, |m| {
+        // unreadable file in an untrusted plugin reports `SyncedError::StoreUnreadable`,
+        // because the install is damaged whatever its trust state.
+        let source = MemorySource::new(files);
+        // `load_checked` reads the manifest before it calls the check, so the captured bytes
+        // are there whenever the check runs.
+        let manifest_bytes = source.bytes(crate::MANIFEST_FILE).unwrap_or_default();
+        let pack = LoadedPack::load_checked(&source, origin, budget, |m| {
             check_manifest(&locked, m)?;
             check_trust(
-                &TrustSubject::new(&locked, &tree.dir, &tree.hash, &on_disk, m),
+                &TrustSubject::new(&locked, &tree.dir, &tree.hash, manifest_bytes, m),
                 trust,
             )
         })?;

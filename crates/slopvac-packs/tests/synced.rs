@@ -18,9 +18,8 @@ use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
     ArtifactFault, Budget, Limits, LoadedPack, PackError, Packs, Reference, RuleFault, Source,
-    SourceError,
-    SyncedError, TooLargePart, Trust, TrustQuery, TrustQueryError, TrustSubject, core_source,
-    load_synced, load_synced_within,
+    SourceError, SyncedError, TooLargePart, Trust, TrustQuery, TrustQueryError, TrustSubject,
+    core_source, load_synced, load_synced_within,
 };
 use slopvac_plugins::extract::{TreeHash, tree_hash};
 use slopvac_plugins::lock::Lockfile;
@@ -32,9 +31,9 @@ const MIB: usize = 1024 * 1024;
 mod trust_conformance;
 
 /// A trust store double: the installation recorded as trusted for each plugin id, as its root
-/// and tree hash. A plugin with no record is untrusted, and one recorded at another root or
-/// hash changed after trust, as the spawn gate reports a moved tree. A failing store answers
-/// nothing.
+/// and tree hash. Trust covers one installation, so a plugin with no record at this root is
+/// untrusted, and one recorded at this root with another hash changed after trust. A failing
+/// store answers nothing.
 struct Recorded {
     records: Vec<(String, PathBuf, TreeHash)>,
     fails: bool,
@@ -69,9 +68,13 @@ impl TrustQuery for Recorded {
             return Err(TrustQueryError::StoreUnreadable);
         }
         let id = subject.locked.id.as_str();
-        Ok(match self.records.iter().find(|(known, ..)| known == id) {
+        let record = self
+            .records
+            .iter()
+            .find(|(known, root, _)| known == id && root == subject.root);
+        Ok(match record {
             None => Trust::Untrusted,
-            Some((_, root, tree)) if root == subject.root && tree == subject.tree => Trust::Trusted,
+            Some((.., tree)) if tree == subject.tree => Trust::Trusted,
             Some(_) => Trust::Changed,
         })
     }
@@ -957,8 +960,14 @@ fn a_trust_store_that_cannot_answer_stops_the_load_before_any_file_compiles() {
     let mut w = World::new();
     w.install(&code_plugin(&["("]));
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &Recorded::failing(), &[])
-        .unwrap_err();
+    let err = Packs::with_synced(
+        &ids(&["acme"]),
+        &w.lock(),
+        &w.store(),
+        &Recorded::failing(),
+        &[],
+    )
+    .unwrap_err();
 
     assert!(refused_for_store_failure(&err), "{err:?}");
     assert_eq!(err.code(), Some("plugins-store-failed"));
@@ -1017,7 +1026,10 @@ fn an_unparseable_rule_file_in_a_trusted_code_plugin_is_a_file_error() {
         SyncedError::Pack(PackError::Rules { problems }) => {
             assert_eq!(problems.len(), 1, "{problems:?}");
             assert_eq!(problems[0].file, "categories/c.json");
-            assert!(matches!(problems[0].fault, RuleFault::Parse), "{problems:?}");
+            assert!(
+                matches!(problems[0].fault, RuleFault::Parse),
+                "{problems:?}"
+            );
         }
         other => panic!("{other:?}"),
     }
@@ -1104,7 +1116,8 @@ fn a_synced_tagger_over_the_pattern_cap_is_refused() {
     ));
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
+    let err =
+        Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert_eq!(err.code(), Some("tagger-pattern-too-long"), "{err}");
     assert!(
@@ -1568,7 +1581,8 @@ fn a_synced_tagger_that_takes_a_core_tagger_id_is_refused() {
         &format!("schema_version: 3\nid: {id}\ntag: acme-tag\nmatch:\n  - pattern: 'a'\n"),
     ));
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
+    let err =
+        Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
 }
@@ -1582,7 +1596,8 @@ fn a_synced_tagger_that_emits_a_core_tag_is_refused() {
         &format!("schema_version: 3\nid: acme-t\ntag: {tag}\nmatch:\n  - pattern: 'a'\n"),
     ));
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
+    let err =
+        Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
 }
@@ -1778,7 +1793,8 @@ fn a_plugin_style_over_one_mebibyte_is_refused_as_too_large(
 ) {
     let w = plugin_with_style_of(len, utf8);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
+    let err =
+        Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     let SyncedError::Pack(PackError::Source(SourceError::StyleTooLarge { style, cap })) = &err
     else {
@@ -1817,7 +1833,8 @@ fn an_oversized_category_that_is_not_utf8_is_refused_as_too_large() {
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
+    let err =
+        Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     let SyncedError::Pack(PackError::Source(SourceError::TooLarge { cap })) = &err else {
         panic!("{err:?}");
@@ -1875,7 +1892,8 @@ fn a_plugin_rule_with_a_core_rule_id_is_refused_with_its_own_code() {
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
+    let err =
+        Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
     assert_eq!(
@@ -1973,7 +1991,8 @@ fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_for_the_rule_
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
+    let err =
+        Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert!(
         matches!(
@@ -2051,7 +2070,8 @@ fn two_core_clashes_in_one_plugin_name_the_lowest_rule_in_either_order(#[case] l
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
+    let err =
+        Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert!(
         matches!(
