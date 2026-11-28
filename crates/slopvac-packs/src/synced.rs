@@ -3,8 +3,11 @@
 //! The config decides which plugins load (threat model X6). The lock pins each one. The load
 //! derives the trusted tree hash from the lock and the cached archive (`Store::verified_tree`),
 //! hashes the installed tree again and compares the two before the loader reads a file.
+//! A code plugin loads only when the caller's [`TrustQuery`] records trust for that verified
+//! hash. Until then none of its files is read past the manifest, compiled or charged.
 //! A plugin the lock lacks, a tree that is absent or differs from its digest, an extension API
-//! this build does not implement and a `requires` loop each stop the run.
+//! this build does not implement, a code plugin without trust and a `requires` loop each stop
+//! the run.
 
 use std::collections::HashSet;
 #[cfg(feature = "test-support")]
@@ -12,9 +15,9 @@ use std::path::Path;
 
 use semver::Version;
 use slopvac_model::{ApiVersion, PackId};
+use slopvac_plugins::PluginError;
 #[cfg(feature = "test-support")]
 use slopvac_plugins::extract::tree_hash_capturing_files_observed;
-use slopvac_plugins::PluginError;
 use slopvac_plugins::extract::{
     ExtractError, Limits as ExtractLimits, TreeHash, tree_hash_capturing_files,
 };
@@ -270,6 +273,24 @@ fn check_manifest(locked: &LockedPack, manifest: &Manifest) -> Result<(), Synced
     Ok(())
 }
 
+/// Refuse a code plugin unless `trust` records its verified tree hash. A data plugin needs no
+/// answer. Run after [`check_manifest`], so the manifest kind agrees with the lock kind.
+fn check_trust(
+    locked: &LockedPack,
+    tree: &TreeHash,
+    trust: &dyn TrustQuery,
+) -> Result<(), SyncedError> {
+    if locked.kind == LockKind::Data {
+        return Ok(());
+    }
+    let id = locked.id.to_string();
+    match trust.trust(&locked.id, tree) {
+        Trust::Trusted => Ok(()),
+        Trust::Untrusted => Err(SyncedError::Untrusted { id }),
+        Trust::Changed => Err(SyncedError::ChangedAfterTrust { id }),
+    }
+}
+
 /// Check that each plugin the manifest requires is loaded already, at a satisfying version.
 fn check_requirements(pack: &LoadedPack, loaded: &[LoadedPack]) -> Result<(), SyncedError> {
     let manifest = pack.manifest();
@@ -302,7 +323,9 @@ fn check_requirements(pack: &LoadedPack, loaded: &[LoadedPack]) -> Result<(), Sy
 /// # Errors
 /// [`SyncedError`]: a plugin the lock does not pin ([`SyncedError::NotLocked`]), a tree that is
 /// absent or differs from its digest, an unsupported extension API, a manifest that disagrees
-/// with the lock, an unmet requirement, a `requires` cycle, or a file that does not load.
+/// with the lock, a code plugin that `trust` does not trust ([`SyncedError::Untrusted`]) or
+/// that changed after trust ([`SyncedError::ChangedAfterTrust`]), an unmet requirement, a
+/// `requires` cycle, or a file that does not load.
 pub fn load_synced(
     requested: &[PackId],
     lock: &Lockfile,
@@ -365,7 +388,6 @@ fn load_inner(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
-    #[expect(unused_variables, reason = "wip: the trust check lands in the next commit")]
     trust: &dyn TrustQuery,
     budget: &mut Budget,
     #[cfg(feature = "test-support")] mut after_hash: Option<HashObserver<'_>>,
@@ -434,10 +456,12 @@ fn load_inner(
             LockKind::Code => Source::Plugin,
         };
         // The integrity pass above has read every file once. From the captured bytes,
-        // `check_manifest` compares the manifest with the lock before the load reads any other
-        // file, compiles anything or charges the budget.
+        // `check_manifest` compares the manifest with the lock, and `check_trust` refuses a code
+        // plugin whose tree is not trusted, before the load reads any other file, compiles
+        // anything or charges the budget.
         let pack = LoadedPack::load_checked(&MemorySource::new(files), origin, budget, |m| {
-            check_manifest(&locked, m)
+            check_manifest(&locked, m)?;
+            check_trust(&locked, &tree.hash, trust)
         })?;
         check_requirements(&pack, &loaded)?;
         loaded.push(pack);
