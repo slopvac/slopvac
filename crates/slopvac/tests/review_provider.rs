@@ -1118,7 +1118,10 @@ mod conformance {
     #[rstest]
     #[case::c0_escape("Fine.\u{1b}[31m Red.", "Fine.\\u{1b}[31m Red.")]
     #[case::c1_introducer("Fine.\u{9b}31m Red.", "Fine.\\u{9b}31m Red.")]
-    fn a_control_in_provider_text_reaches_the_report_escaped(#[case] text: &str, #[case] shown: &str) {
+    fn a_control_in_provider_text_reaches_the_report_escaped(
+        #[case] text: &str,
+        #[case] shown: &str,
+    ) {
         let world = World::new(REWRITE, &configured());
         world.trust();
         world.script(&json!({"text": {"1": text}}));
