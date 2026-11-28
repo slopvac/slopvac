@@ -68,8 +68,11 @@ impl TrustKey {
         &self.id
     }
 
-    /// The commitment to one environment variable: HMAC-SHA256 over its name
-    /// and value, as lowercase hex.
+    /// The commitment to one environment variable, as lowercase hex: HMAC-SHA256 under this
+    /// key of the bytes `slopvac trust env v1`, a NUL byte, the name, a NUL byte and the value.
+    /// The label and its NUL separate this use of the key from the key id. The NUL after the
+    /// name ends it without ambiguity, because the gate refuses a name that holds a NUL, so
+    /// two distinct name and value pairs never give the same input.
     pub(super) fn commit_env(&self, name: &str, value: &str) -> String {
         hex(&mac(
             &self.bytes,
