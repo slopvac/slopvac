@@ -1097,6 +1097,45 @@ mod python_env {
         assert_eq!(TrustStore::open(p.f.state()).records().unwrap().len(), 0);
     }
 
+    /// Rewrites `pyvenv.cfg` of the environment in `dir` with other bytes of the same length and
+    /// the old modification time, so only the full check, which hashes content, sees it.
+    fn change_content_keeping_size_and_time(dir: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let file = dir.join("pyvenv.cfg");
+        let before = fs::metadata(&file).unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&file, vec![b'#'; usize::try_from(before.len()).unwrap()]).unwrap();
+        let open = fs::File::options().write(true).open(&file).unwrap();
+        open.set_modified(before.modified().unwrap()).unwrap();
+        drop(open);
+        fs::set_permissions(&file, before.permissions()).unwrap();
+    }
+
+    #[test]
+    fn trust_names_the_hash_mismatch_code_beside_the_withheld_sentence_for_a_changed_environment() {
+        let p = project();
+        p.f.run(&["sync"], false, |s| s.python(p.build()))
+            .result
+            .unwrap();
+        let tree = tree_hash(&p.f.project().join("plugins/py")).unwrap();
+        let env = p
+            .envs
+            .load(&tree, "3.12")
+            .unwrap()
+            .expect("sync built the environment");
+        change_content_keeping_size_and_time(env.root());
+        let root = p.f.project().join("plugins/py");
+        let err =
+            p.f.run(&["trust", "py"], false, |s| {
+                s.envs(&p.envs).loader(PyLoader { root })
+            })
+            .result
+            .unwrap_err();
+        assert_eq!(err.code(), "plugin-hash-mismatch");
+        assert_eq!(err.to_string(), format!("plugin-hash-mismatch: {WITHHELD}"));
+        assert_eq!(TrustStore::open(p.f.state()).records().unwrap().len(), 0);
+    }
+
     #[test]
     fn status_reports_a_built_environment_as_verified() {
         let p = project();
@@ -1438,6 +1477,19 @@ const STORE_WITHHELD: &str =
     "plugins-store-failed: details are withheld because they can name paths outside the project";
 
 #[test]
+fn trust_names_the_hash_mismatch_code_beside_the_withheld_sentence_for_a_changed_tree() {
+    let f = code_fixture();
+    let loader = ChangesTreeAfterHashing(TreeLoader::new(f.base.path(), "fake"));
+    let err = f
+        .run(&["trust", "fake"], false, |s| s.loader(loader))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugin-hash-mismatch");
+    assert_eq!(err.to_string(), format!("plugin-hash-mismatch: {WITHHELD}"));
+    assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
+}
+
+#[test]
 fn trust_names_the_code_beside_a_withheld_damaged_store() {
     let f = Fixture::new();
     f.write_lock(&[fake_code_entry()]);
@@ -1588,6 +1640,23 @@ fn run_with_missing_env(f: &Fixture, command: &str) -> String {
     }))
 }
 
+/// A loader whose tree changes after it hashed it, as a cached tree can between the load and
+/// the check that `trust` runs before it records anything.
+struct ChangesTreeAfterHashing(TreeLoader);
+
+impl PluginLoader for ChangesTreeAfterHashing {
+    fn load(&self, locked: &LockedPack) -> Result<(VerifiedPlugin, PluginSpec), LoadError> {
+        let loaded = self.0.load(locked)?;
+        fs::write(self.0.root.join("plugin.py"), "print('changed')\n").unwrap();
+        Ok(loaded)
+    }
+}
+
+fn run_with_changed_tree(f: &Fixture, command: &str) -> String {
+    let loader = ChangesTreeAfterHashing(TreeLoader::new(f.base.path(), "fake"));
+    seen(&f.run(&command_args(command), false, |s| s.loader(loader)))
+}
+
 fn run_with_program_outside(f: &Fixture, command: &str) -> String {
     let loader = OutsideProgram {
         inner: TreeLoader::new(f.base.path(), "fake"),
@@ -1679,6 +1748,11 @@ fn store_sites() -> Vec<Site> {
             },
         },
         Site {
+            name: "changed tree, trust",
+            code: "plugin-hash-mismatch",
+            reach: || run_with_changed_tree(&code_fixture(), "trust"),
+        },
+        Site {
             name: "refused program, trust",
             code: "plugin-usage",
             reach: || run_with_program_outside(&code_fixture(), "trust"),
@@ -1737,9 +1811,16 @@ fn every_withheld_sentence_shows_the_code_of_its_failure() {
     for site in sites() {
         let shown = (site.reach)();
         let expected = format!("{}: {WITHHELD}", site.code);
+        // The code must be the whole token: a longer code that ends in it does not count.
+        let whole = shown.match_indices(&expected).any(|(at, _)| {
+            !shown[..at]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '-')
+        });
         assert!(
-            shown.contains(&expected),
-            "{}: expected `{expected}` in `{shown}`",
+            whole,
+            "{}: expected `{expected}` as a whole code in `{shown}`",
             site.name
         );
     }
