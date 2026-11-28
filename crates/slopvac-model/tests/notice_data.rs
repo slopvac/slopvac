@@ -261,7 +261,7 @@ fn data_json(message: &Message, data: NoticeData) -> String {
 )]
 #[case::same_model_reported_lists_its_items(
     &Message::ModelSame,
-    NoticeData::review_model_same("m", AuthorSource::None, "n", ReviewerSource::Reported, items()).unwrap(),
+    NoticeData::review_model_same("m", AuthorSource::Unset, "n", ReviewerSource::Reported, items()).unwrap(),
     r#"{"author":"m","author_source":"none","reviewer":"n","reviewer_source":"reported","items":[{"role":"original_document","line":1},{"role":"revised_document","line":2}]}"#
 )]
 #[case::mismatch(
