@@ -158,6 +158,15 @@ pub(crate) enum TrustText {
         path: String,
         why: String,
     },
+    /// The store is a version 1 store that holds key pins, which name no registry host.
+    #[code("plugins-trust-store-pins-without-host")]
+    #[text(
+        "the trust store holds key pins without a registry host. Remove the `pins` list from {file}, then pin each key again with `slopvac plugins pin <namespace> <fingerprint> --key <file> --registry <host>`"
+    )]
+    PinsWithoutHost {
+        #[display_path]
+        file: String,
+    },
     /// A file system operation failed.
     #[code("plugins-trust-io")]
     #[text("{what}: {cause}")]
@@ -842,6 +851,10 @@ pub(crate) fn store_damaged(path: &Path, why: &str) -> String {
         why: esc(why),
     }
     .to_string()
+}
+
+pub(crate) fn pins_without_host(file: &str) -> String {
+    TrustText::PinsWithoutHost { file: esc(file) }.to_string()
 }
 
 pub(crate) fn trust_io(what: &str, cause: &str) -> String {
@@ -1584,6 +1597,12 @@ mod tests {
                     why: s("bad"),
                 },
                 "the trust store /s/trust.json is damaged: bad",
+            ),
+            (
+                TrustText::PinsWithoutHost {
+                    file: s("<external>/trust.json"),
+                },
+                "the trust store holds key pins without a registry host. Remove the `pins` list from <external>/trust.json, then pin each key again with `slopvac plugins pin <namespace> <fingerprint> --key <file> --registry <host>`",
             ),
             (
                 TrustText::Io {

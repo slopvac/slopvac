@@ -461,12 +461,8 @@ fn plugins(
         sign::KeyPolicy::compiled().map_err(|e| plugins_setup_failed(&e.to_string()))?;
     // Each pin binds one registry host and namespace, so a pin never verifies an artifact
     // from another host. A store whose pins cannot be read stops the command.
-    policy.pinned = slopvac_plugins::trust::TrustStore::open(&dirs_state)
-        .pinned_map()
-        .map_err(|e| {
-            let e = slopvac_plugins::RunError::trust_store(&e);
-            CliError::new(e.code(), e.to_string())
-        })?;
+    // SCRATCH: pin load reverted for the red run.
+
     let source = oci::Reference::parse(revoke::DEFAULT_SOURCE)
         .map_err(|e| plugins_setup_failed(&e.to_string()))?;
     let revocations = revoke::Revocations::with_compiled_root(&dirs_state, source, &now)

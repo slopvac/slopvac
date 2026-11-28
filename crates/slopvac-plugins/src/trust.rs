@@ -43,6 +43,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use slopvac_fs::display_under_root;
 use thiserror::Error;
 
 use crate::error::PluginError;
@@ -78,6 +79,13 @@ pub enum TrustError {
         path: PathBuf,
         /// What is wrong.
         why: String,
+    },
+    /// The store is a version 1 store that holds key pins. Those pins name no registry host,
+    /// so they are refused, never read as a pin on every host. The text names the fix.
+    #[error("{}", messages::pins_without_host(.file))]
+    PinsWithoutHost {
+        /// The store file as policies section 1.7 shows a path outside the project.
+        file: String,
     },
     /// A file system operation failed.
     #[error("{}", messages::trust_io(.what, &.source.to_string()))]
@@ -432,12 +440,27 @@ fn parse_store_file(raw: &[u8], path: &Path) -> Result<StoreFile, TrustError> {
     let mut value: serde_json::Value =
         serde_json::from_slice(raw).map_err(|e| corrupt(e.to_string()))?;
     strip_extension_keys(&mut value);
-    // Only version 2 is a trust store. Any other version, and a pin without a registry host,
-    // is a damaged store: nothing is migrated and nothing is read as a pin on every host.
-    if value.get("schema_version") != Some(&serde_json::Value::from(SCHEMA_VERSION)) {
-        return Err(corrupt(TrustPhrase::StoreSchema.as_static().into()));
+    // A version 1 pin names no registry host. Refuse it before the pins are parsed, so the
+    // error names the fix and prints nothing from the file.
+    let holds_pins = value
+        .get("pins")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|pins| !pins.is_empty());
+    if value.get("schema_version") == Some(&serde_json::Value::from(1)) && holds_pins {
+        return Err(TrustError::PinsWithoutHost {
+            file: display_under_root(path, Path::new("")),
+        });
     }
-    serde_json::from_value(value).map_err(|e| corrupt(e.to_string()))
+    let mut parsed: StoreFile =
+        serde_json::from_value(value).map_err(|e| corrupt(e.to_string()))?;
+    match parsed.schema_version {
+        // A version 1 store without pins is read as it is and written as version 2 at its
+        // next change.
+        1 => parsed.schema_version = SCHEMA_VERSION,
+        SCHEMA_VERSION => {}
+        _ => return Err(corrupt(TrustPhrase::StoreSchema.as_static().into())),
+    }
+    Ok(parsed)
 }
 
 /// Largest key file that `plugins pin --key` reads.
@@ -521,14 +544,15 @@ pub struct TrustSnapshot {
 }
 
 /// Parse the bytes of a trust store file with the rules the store itself applies: at most
-/// [`MAX_STORE_FILE_BYTES`], unknown keys refused, `x-` keys ignored, `schema_version` 2, and a
-/// registry host on every key pin.
+/// [`MAX_STORE_FILE_BYTES`], unknown keys refused, `x-` keys ignored, `schema_version` 2, or 1
+/// without key pins.
 ///
 /// The caller supplies the bytes, so it can read them without blocking and under its own size
 /// cap. `path` only names the file in the error.
 ///
 /// # Errors
-/// [`TrustError::Corrupt`] for bytes the store would refuse.
+/// [`TrustError::Corrupt`] for bytes the store would refuse, and
+/// [`TrustError::PinsWithoutHost`] for a version 1 store that holds key pins.
 pub fn parse_store(raw: &[u8], path: &Path) -> Result<TrustSnapshot, TrustError> {
     let file = parse_store_file(raw, path)?;
     Ok(TrustSnapshot {
