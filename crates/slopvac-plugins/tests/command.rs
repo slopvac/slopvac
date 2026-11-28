@@ -1372,7 +1372,9 @@ fn trust_reports_a_tree_without_a_location_as_a_trust_input_failure() {
     let searchable = fs::canonicalize(&loader.inner.root).is_ok();
     loader.set_mode(0o755);
     if searchable {
-        eprintln!("skipped: this user resolves a path below a mode 000 directory (running as root)");
+        eprintln!(
+            "skipped: this user resolves a path below a mode 000 directory (running as root)"
+        );
         return;
     }
     let err = ran.result.unwrap_err();

@@ -1975,7 +1975,10 @@ mod unix_only {
     /// The full and the quick check each refuse with exactly this change, and the error has no
     /// source to carry another text.
     fn assert_changed(env: &ManagedEnv, path: &str, why: &str) {
-        for err in [env.verify_full().unwrap_err(), env.check_quick().unwrap_err()] {
+        for err in [
+            env.verify_full().unwrap_err(),
+            env.check_quick().unwrap_err(),
+        ] {
             assert_eq!(
                 err.to_string(),
                 format!(

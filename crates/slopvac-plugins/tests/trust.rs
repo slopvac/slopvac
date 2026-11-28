@@ -1401,7 +1401,9 @@ mod unix_only {
         let result = g.state(&vp, &spec);
         fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
         if searchable {
-            eprintln!("skipped: this user resolves a path below a mode 000 directory (running as root)");
+            eprintln!(
+                "skipped: this user resolves a path below a mode 000 directory (running as root)"
+            );
             return;
         }
         let err = result.unwrap_err();
