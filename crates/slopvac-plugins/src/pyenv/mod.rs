@@ -637,27 +637,21 @@ struct Limits {
 
 impl EnvStore {
     /// A store in `root`. Nothing is created until a build.
+    ///
+    /// Its errors, and the errors of the environments it loads or builds, show a path relative
+    /// to the `project` root when it lies under it, and as `<external>/<file name>` otherwise
+    /// (policies section 1.7).
     #[must_use]
-    pub fn open(root: impl Into<PathBuf>) -> Self {
+    pub fn open(root: impl Into<PathBuf>, project: impl Into<PathBuf>) -> Self {
         Self {
             root: root.into(),
-            project: PathBuf::from("."),
+            project: project.into(),
             fail_record_writes: false,
             limits: Limits {
                 walk: WalkBounds::default(),
                 step: STEP_DEADLINE,
             },
         }
-    }
-
-    /// Show the paths in this store's errors, and in the errors of the environments it loads
-    /// or builds, relative to the project `root` when they lie under it, and as
-    /// `<external>/<file name>` otherwise (policies section 1.7). Without it, every absolute
-    /// path shows as `<external>/<file name>`.
-    #[must_use]
-    pub fn with_project_root(mut self, root: impl Into<PathBuf>) -> Self {
-        self.project = root.into();
-        self
     }
 
     /// Test seam: make every record write fail, as a full disk would.
@@ -1232,7 +1226,7 @@ mod tests {
 
     #[test]
     fn test_bounds_only_tighten_the_production_limits() {
-        let loose = EnvStore::open("/nonexistent").with_test_bounds(
+        let loose = EnvStore::open("/nonexistent", "/nonexistent-project").with_test_bounds(
             usize::MAX,
             usize::MAX,
             u64::MAX,
@@ -1244,7 +1238,7 @@ mod tests {
             (20_000, 32, 1 << 30, Duration::from_secs(600))
         );
         let tight =
-            EnvStore::open("/nonexistent").with_test_bounds(5, 3, 7, Duration::from_millis(9));
+            EnvStore::open("/nonexistent", "/nonexistent-project").with_test_bounds(5, 3, 7, Duration::from_millis(9));
         let t = tight.limits;
         assert_eq!(
             (t.walk.nodes, t.walk.depth, t.walk.bytes, t.step),

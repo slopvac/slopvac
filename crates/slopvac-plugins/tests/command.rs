@@ -977,7 +977,7 @@ mod python_env {
              source = \"plugins/py\"\ndigest = \"{digest}\"\n"
         )]);
         let uv = fake_uv(&f.base.path().join("uv-bin"), &Fake::real());
-        let envs = EnvStore::open(f.base.path().join("envs"));
+        let envs = EnvStore::open(f.base.path().join("envs"), f.project());
         Project { f, uv, envs }
     }
 
@@ -1643,7 +1643,7 @@ fn command_args(command: &str) -> Vec<&str> {
 fn run_with_missing_env(f: &Fixture, command: &str) -> String {
     let loader = TreeLoader::new(f.base.path(), "fake");
     fs::write(loader.root.join("slopvac-plugin.toml"), PY_MANIFEST).unwrap();
-    let envs = EnvStore::open(f.base.path().join("envs"));
+    let envs = EnvStore::open(f.base.path().join("envs"), f.project());
     seen(&f.run(&command_args(command), false, |s| {
         s.loader(loader).envs(&envs)
     }))
