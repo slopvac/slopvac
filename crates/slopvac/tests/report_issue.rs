@@ -1541,36 +1541,93 @@ fn offline_project(base: Option<&str>, offline: bool) -> tempfile::TempDir {
     work
 }
 
-/// `report --gh --yes` in `work` with the fake `gh` of `bin_dir` on `PATH`.
+/// `report` with `args` and the report arguments in `work`, with the fake `gh` of `bin_dir`
+/// on `PATH`. The body file is `b.md` in `work`.
 #[cfg(unix)]
-fn report_gh_yes(work: &Path, bin_dir: &Path) -> std::process::Output {
+fn report_in(work: &Path, bin_dir: &Path, args: &[&str]) -> std::process::Output {
     let body = work.join("b.md");
-    let args = bug(&["--body-file", body.to_str().unwrap(), "--gh", "--yes"]);
+    let mut all = vec!["--body-file", body.to_str().unwrap()];
+    all.extend_from_slice(args);
     slopvac()
         .current_dir(work)
         .env("PATH", bin_dir)
         .arg("report")
-        .args(&args)
+        .args(bug(&all))
         .output()
         .unwrap()
 }
 
-/// While the config does not resolve, its offline setting is unknown, so `report` takes no
-/// network action. The extended file is missing, which `lint` reports as `config-io`
-/// (policies.md, the read failure of a config file).
+/// `report --gh --yes` in `work` with the fake `gh` of `bin_dir` on `PATH`.
+#[cfg(unix)]
+fn report_gh_yes(work: &Path, bin_dir: &Path) -> std::process::Output {
+    report_in(work, bin_dir, &["--gh", "--yes"])
+}
+
+/// Every file under `dir` with its bytes.
+#[cfg(unix)]
+fn tree_of(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    let mut files = std::collections::BTreeMap::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(next) = pending.pop() {
+        for entry in std::fs::read_dir(&next).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let bytes = std::fs::read(&path).unwrap();
+                files.insert(path, bytes);
+            }
+        }
+    }
+    files
+}
+
+/// While the config does not resolve, its offline setting is unknown, so `report --gh --yes`
+/// takes no network action and writes and prints nothing first (policies.md, section 1.5).
+/// The extended file is missing, which `lint` reports as `config-io` (policies.md, the read
+/// failure of a config file).
 #[cfg(unix)]
 #[test]
 fn the_binary_gh_yes_refuses_and_runs_no_gh_while_the_config_does_not_resolve() {
     let bin_dir = tempfile::tempdir().unwrap();
     let log = counting_gh(bin_dir.path());
     let work = offline_project(None, true);
+    let before = tree_of(work.path());
     let out = report_gh_yes(work.path(), bin_dir.path());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(2), "{stderr}");
     assert!(stderr.starts_with("error[config-io]"), "{stderr}");
-    let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(!stderr.contains("private-config-sentinel"), "{stderr}");
-    assert!(!stdout.contains("private-config-sentinel"), "{stdout}");
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "", "nothing is printed");
+    assert!(!log.exists(), "gh ran");
+    assert_eq!(tree_of(work.path()), before, "no file is written or changed");
+}
+
+/// Without `--yes`, `report --gh` takes no network action, so a config that does not
+/// resolve does not stop it: it writes the body file and prints the `gh` command.
+#[cfg(unix)]
+#[test]
+fn the_binary_gh_without_yes_still_previews_while_the_config_does_not_resolve() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_gh(bin_dir.path());
+    let work = offline_project(None, true);
+    let out = report_in(work.path(), bin_dir.path(), &["--gh"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("gh issue create -R github.com/slopvac/slopvac --title"),
+        "{stdout}"
+    );
+    assert!(
+        std::fs::read_to_string(work.path().join("b.md"))
+            .unwrap()
+            .starts_with("### Reporter\n")
+    );
     assert!(!log.exists(), "gh ran");
 }
 
