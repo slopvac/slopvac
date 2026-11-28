@@ -35,6 +35,12 @@ bin=$(realpath "$1")
 config=$(realpath "$2")
 out=$3
 
+# A trailing slash makes `-L` test the link's target, so strip trailing separators first.
+# A bare `/` stays as it is.
+while [ "${#out}" -gt 1 ] && [ "${out%/}" != "$out" ]; do
+  out=${out%/}
+done
+
 # Use only a missing path or an empty directory that this user can list, search and write.
 # Fail closed: a path the script cannot inspect is refused. A symlink is refused even when
 # it dangles or points at an empty directory, because the script would write through it.
