@@ -160,20 +160,20 @@ fn strings() -> Shape {
     list(Shape::NonEmptyStr)
 }
 
-fn is_pack_id(s: &str) -> bool {
+pub(crate) fn is_pack_id(s: &str) -> bool {
     let mut chars = s.chars();
     chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-fn is_ref(s: &str) -> bool {
+pub(crate) fn is_ref(s: &str) -> bool {
     match s.split_once(':') {
         Some((pack, name)) => is_pack_id(pack) && is_pack_id(name),
         None => is_pack_id(s),
     }
 }
 
-fn is_rule_key(s: &str) -> bool {
+pub(crate) fn is_rule_key(s: &str) -> bool {
     let name = match s.split_once(':') {
         Some((pack, name)) if is_pack_id(pack) => name,
         Some(_) => return false,

@@ -64,3 +64,26 @@ pub const BUDGET_NONE: &str = schema::BUDGET_NONE;
 /// inclusive: the value itself is accepted. This is the one source for the config and style
 /// readers and for the `minimum` keyword of the schemas.
 pub const BUDGET_MINIMUM: u32 = schema::MINIMUM;
+
+/// Whether `s` is a plugin, category, genre or context-tag name: a lower-case letter, then
+/// lower-case letters, digits and hyphens. This is the one check for the config reader and
+/// every other reader of such a name, and the property test in `schema/patterns.rs` holds it
+/// to the `^[a-z][a-z0-9-]*` pattern that the schemas publish.
+#[must_use]
+pub fn is_name(s: &str) -> bool {
+    schema::is_pack_id(s)
+}
+
+/// Whether `s` is a `Ref` of `config.schema.json`: a style or genre name, bare or qualified as
+/// `<plugin>:<name>`. This is the one check for every reader of such a name.
+#[must_use]
+pub fn is_ref(s: &str) -> bool {
+    schema::is_ref(s)
+}
+
+/// Whether `s` is a `RuleKey` of `config.schema.json`: a rule or category name, bare or
+/// qualified as `<plugin>:<id>`. This is the one check for every reader of such a name.
+#[must_use]
+pub fn is_rule_key(s: &str) -> bool {
+    schema::is_rule_key(s)
+}
