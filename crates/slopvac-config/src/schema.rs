@@ -9,6 +9,7 @@ use std::ops::Range;
 use crate::diag::{Code, Diagnostic, closest};
 use crate::messages::{ConfigPhrase, ConfigText};
 use crate::tree::{Entry, Node, Value};
+use crate::version::SUPPORTED;
 use slopvac_model::{RESERVED_ID, RESERVED_NAMESPACES, is_reserved_namespace};
 
 /// The shape a value must have.
@@ -301,7 +302,7 @@ fn reference() -> Shape {
 }
 
 /// The levels a rule or category reports at.
-pub(crate) const LEVELS: &[&str] = &["error", "warning", "suggestion", "off"];
+pub(crate) const LEVELS: &[&str] = crate::level::NAMES;
 /// The built-in strictness tiers.
 pub(crate) const PROFILES: &[&str] = &["strict", "normal", "relaxed"];
 /// The spelling targets.
@@ -588,10 +589,16 @@ pub fn config_shape() -> Shape {
     )
 }
 
+/// The pattern of a path relative to the file that names it, as the style schema publishes it:
+/// no leading slash or backslash, no drive letter, no backslash and no `..` segment. A property
+/// test in `schema/patterns.rs` holds `is_rel_path` and this pattern to one verdict.
+pub(crate) const REL_PATH_PATTERN: &str =
+    r"^(?![/\\])(?![A-Za-z]:)(?!.*\\)(?!(.*/)?\.\.(/|(?![\s\S])))";
+
 fn is_rel_path(s: &str) -> bool {
     let drive = s.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
         && s.as_bytes().get(1) == Some(&b':');
-    !s.is_empty()
+    s.chars().take(MIN_STRING).count() >= MIN_STRING
         && !s.starts_with(['/', '\\'])
         && !drive
         && !s.contains('\\')
@@ -864,15 +871,18 @@ fn check_map(
 
 fn check_version_value(ctx: &mut Ctx<'_>, node: &Node, path: &[String]) {
     match node.value {
-        Value::Int(3) => {}
-        Value::Int(n) if n > 3 => ctx.value_error(
+        Value::Int(n) if n == SUPPORTED => {}
+        Value::Int(n) if n > SUPPORTED => ctx.value_error(
             node,
             path,
             ConfigText::VersionNewer {
                 version: n.to_string(),
             }
             .to_string(),
-            ConfigPhrase::LabelReadsVersion3.text(),
+            ConfigText::LabelReadsSupportedVersion {
+                supported: SUPPORTED.to_string(),
+            }
+            .to_string(),
             Some(ConfigPhrase::HelpUpgrade.text()),
         ),
         Value::Int(n) => ctx.value_error(
@@ -880,12 +890,24 @@ fn check_version_value(ctx: &mut Ctx<'_>, node: &Node, path: &[String]) {
             path,
             ConfigText::VersionUnsupported {
                 version: n.to_string(),
+                supported: SUPPORTED.to_string(),
             }
             .to_string(),
-            ConfigPhrase::LabelMustBe3.text(),
+            ConfigText::LabelMustBeSupportedVersion {
+                supported: SUPPORTED.to_string(),
+            }
+            .to_string(),
             Some(ConfigPhrase::HelpMigrateVersion.text()),
         ),
-        _ => ctx.type_error(node, path, ConfigPhrase::KindIntegerThree.as_static(), None),
+        _ => ctx.type_error(
+            node,
+            path,
+            &ConfigText::KindSupportedVersion {
+                supported: SUPPORTED.to_string(),
+            }
+            .to_string(),
+            None,
+        ),
     }
 }
 
