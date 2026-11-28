@@ -300,6 +300,12 @@ jobs:
           ast-grep test
           ast-grep scan
 
+      # The checker reads the rule file with PyYAML, which uv.lock pins, so it runs under uv.
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
       # The no-hand-json allow list is closed and can only shrink. Every event runs the file
       # checks (annotations, totals, counts against the scan). A pull request also compares
       # the list with its base and fails on any growth. A permanent growth passes only while
@@ -327,18 +333,12 @@ jobs:
             labels="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '[.labels[].name]' || echo '[]')"
             args=(--base "$BASE_SHA" --labels "$labels")
           fi
-          python3 scripts/ci/check_no_hand_json.py "${args[@]}"
+          uv run --locked --extra dev python scripts/ci/check_no_hand_json.py "${args[@]}"
 
       # The checker's own tests, including the ones that run the rule. The pytest job has no
       # ast-grep, so they run here, and REQUIRE_AST_GREP makes a missing binary a failure.
       # pytest comes from the locked environment, so uv.lock pins it with hashes.
       # A push to main skips them: the merge-queue run already ran them on the same tree.
-      - name: Install uv
-        if: github.event_name != 'push'
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          enable-cache: true
-
       - name: No-hand-json checker tests
         if: github.event_name != 'push'
         env:

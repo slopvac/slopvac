@@ -70,7 +70,14 @@ rule:
         - kind: macro_invocation
         - has:
             field: macro
-            regex: (^|::)json$
+            any:
+              - kind: identifier
+                regex: ^json$
+              - kind: scoped_identifier
+                has:
+                  field: name
+                  kind: identifier
+                  regex: ^json$
     # `json!` inside another macro's token tree (`vec![json!(1)]`) is no macro invocation, so
     # the `json` identifier followed by `!` is matched. A `json!` inside the arguments of a
     # `json!` call, or inside an attribute (matched whole below), adds no second finding.
@@ -95,13 +102,32 @@ rule:
                     - kind: macro_invocation
                     - has:
                         field: macro
-                        regex: (^|::)json$
+                        any:
+                          - kind: identifier
+                            regex: ^json$
+                          - kind: scoped_identifier
+                            has:
+                              field: name
+                              kind: identifier
+                              regex: ^json$
               stopBy: end
     # `json!` inside an attribute such as `#[schemars(extend(...))]` is a token tree, not a
-    # macro invocation, so the attribute is matched as a whole.
+    # macro invocation, so the attribute is matched as a whole: one finding for the attribute,
+    # whatever the number of calls in it. A comment may sit between `json` and `!`.
     - all:
         - kind: attribute_item
-        - regex: '(^|[^A-Za-z0-9_])json!'
+        - has:
+            stopBy: end
+            all:
+              - kind: identifier
+                regex: ^json$
+              - precedes:
+                  regex: ^!$
+                  stopBy:
+                    not:
+                      any:
+                        - kind: line_comment
+                        - kind: block_comment
     # An import that renames `json` (`json as j`) or globs `serde_json` hides the call sites.
     - all:
         - kind: use_declaration

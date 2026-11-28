@@ -408,17 +408,6 @@ def render(p: tuple) -> str:
     return f"{p[0]}({', '.join(render(a) for a in p[1])})"
 
 
-def requires_by_rule(p: tuple) -> bool:
-    """The rule's reading: `test`; all() with a requiring argument; any() of only such."""
-    if p[0] == "atom":
-        return p[1] == "test"
-    if p[0] == "all":
-        return any(requires_by_rule(a) for a in p[1])
-    if p[0] == "any":
-        return all(requires_by_rule(a) for a in p[1])
-    return False
-
-
 def holds(p: tuple, env: dict[str, bool]) -> bool:
     if p[0] == "atom":
         return env[p[1]]
@@ -440,22 +429,28 @@ CFG = re.compile(gate.cfg_test_regex())
 PREDICATES = predicates(2)
 
 
-def test_the_regex_matches_the_predicates_that_require_test() -> None:
-    wrong = [
-        render(p)
-        for p in PREDICATES
-        if bool(CFG.match(f"#[cfg({render(p)})]")) != requires_by_rule(p)
-    ]
-    assert wrong == []
+def matches(p: tuple) -> bool:
+    return CFG.match(f"#[cfg({render(p)})]") is not None
 
 
 def test_every_predicate_the_regex_exempts_is_false_whenever_test_is_false() -> None:
-    unsound = [
+    # Soundness, by brute force over the truth table, with no mirror of the regex's structure.
+    unsound = [render(p) for p in PREDICATES if matches(p) and not false_whenever_test_is_false(p)]
+    assert unsound == []
+
+
+def test_without_not_the_regex_exempts_every_predicate_that_requires_test() -> None:
+    # Completeness for the formulas that have no `not`. Such a formula only gets truer when an
+    # atom turns true, so it requires `test` exactly when it is false with `test` false and
+    # every other atom true. A formula with `not` may be missed, which is the safe side.
+    missed = [
         render(p)
         for p in PREDICATES
-        if CFG.match(f"#[cfg({render(p)})]") and not false_whenever_test_is_false(p)
+        if "not(" not in render(p)
+        and not holds(p, {"test": False, "unix": True, 'feature = "x"': True})
+        and not matches(p)
     ]
-    assert unsound == []
+    assert missed == []
 
 
 @pytest.mark.parametrize(
@@ -470,6 +465,24 @@ def test_every_predicate_the_regex_exempts_is_false_whenever_test_is_false() -> 
         ('#[cfg_attr(feature = "x", cfg(test))]', False),
         ("#[cfg(testing)]", False),
         ('#[cfg(feature = "test")]', False),
+        # Lexical edge cases, each worked out by hand.
+        ("#[cfg(test)]", True),
+        ("#[cfg( test )]", True),
+        ("#[cfg(\n    test\n)]", True),
+        ("#[cfg(all(\n    unix,\n    test,\n))]", True),  # a trailing comma is valid cfg
+        ("#[cfg(all(\n    unix,\n    test\n))]", True),
+        ("#[cfg(all(unix,test))]", True),
+        ("#[cfg(any(test,test))]", True),
+        ("#[cfg(Test)]", False),
+        ("#[cfg(test_)]", False),
+        ("#[cfg(r#test)]", False),
+        ("#[cfg(all(test_support, unix))]", False),
+        ("#[cfg(all(feature = \"x\", test))]", True),
+        ("#[cfg(all(any(all(unix, test), test), unix))]", False),
+        ("#[cfg(all(any(all(unix, test), test), test))]", True),
+        ("#![cfg(test)]", False),
+        ("#[cfg(test)] fn f() {}", False),
+        ("#[cfg(test)]\n#[cfg(unix)]", False),
     ],
 )
 def test_named_predicates(attribute: str, exempt: bool) -> None:
@@ -479,3 +492,98 @@ def test_named_predicates(attribute: str, exempt: bool) -> None:
 def test_the_rule_file_carries_the_generated_regex_at_both_exemption_sites() -> None:
     found = re.findall(r"regex: '(\^#\\\[cfg.*)'$", REAL, flags=re.MULTILINE)
     assert found == [gate.cfg_test_regex()] * 2
+
+
+# --- suppression comments ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("comment", "hides"),
+    [
+        ("// ast-grep-ignore", True),
+        ("// ast-grep-ignore: no-hand-json", True),
+        ("// ast-grep-ignore:no-hand-json", True),
+        ("// ast-grep-ignore: user-text-literal, no-hand-json", True),
+        ("// ast-grep-ignore: no-hand-json, user-text-literal", True),
+        ("// ast-grep-ignore : no-hand-json", True),
+        ("//ast-grep-ignore", True),
+        ("/// ast-grep-ignore", True),
+        ("/* ast-grep-ignore */", True),
+        ("/* ast-grep-ignore: no-hand-json */", True),
+        ("// ast-grep-ignore:", True),
+        ("// ast-grep-ignore: user-text-literal", False),
+        ("// ast-grep-ignore: user-text-literal, derive-without-catalog", False),
+        ("/* ast-grep-ignore: user-text-literal */", False),
+        ("// ast-grep-ignore: no-hand-json-v2", False),
+        ("// a plain comment", False),
+    ],
+)
+def test_only_a_suppression_that_can_hide_this_rule_is_refused(comment: str, hides: bool) -> None:
+    assert gate.suppresses_rule(comment) is hides
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "// ast-grep-ignore",
+        "// ast-grep-ignore: no-hand-json",
+        "/* ast-grep-ignore */",
+    ],
+)
+def test_a_suppression_comment_in_production_code_fails_the_check(
+    ast_grep: None, tmp_path: Path, line: str
+) -> None:
+    root = scratch(tmp_path, rule_text([], {}), f"{line}\nfn f() {{ json!(1); }}\n")
+    errors = gate.check(root)
+    assert len(errors) == 1
+    assert "crates/a/src/lib.rs:1: a suppression comment hides findings" in errors[0]
+
+
+def test_a_suppression_of_another_rule_stays_legal(ast_grep: None, tmp_path: Path) -> None:
+    source = "// ast-grep-ignore: user-text-literal\nfn f() { println!(\"cannot read\"); }\n"
+    assert gate.check(scratch(tmp_path, rule_text([], {}), source)) == []
+
+
+# --- the ignores that ast-grep reads ----------------------------------------------------------
+
+
+def restyle(text: str, old: str, new: str) -> str:
+    assert old in text
+    return text.replace(old, new)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda t: restyle(t, "ignores:\n  - ", "ignores:\n- "), id="first-entry-unindented"),
+        pytest.param(
+            lambda t: re.sub(r"(?m)^  - ", "- ", t), id="whole-sequence-unindented"
+        ),
+        pytest.param(
+            lambda t: restyle(t, "rule:\n", 'ignores: ["crates/**"]\nrule:\n'), id="second-key"
+        ),
+        pytest.param(
+            lambda t: re.sub(r"(?ms)^ignores:\n.*?^rule:", 'ignores: ["crates/**"]\nrule:', t),
+            id="flow-style",
+        ),
+        pytest.param(
+            lambda t: restyle(t, "ignores:\n", "ignores:\n  - crates/a/src/lib.rs # allow digest-input 1\n- crates/b/src/lib.rs\n"),
+            id="entry-after-the-block-in-another-style",
+        ),
+    ],
+)
+def test_an_ignores_list_that_ast_grep_reads_but_the_line_parser_misses_fails(mutate) -> None:
+    text = mutate(rule_text([entry("digest-input", 1)], {"digest-input": 1}))
+    assert gate.parse(text).errors
+
+
+def test_a_reordered_ignore_list_fails() -> None:
+    annotated = ["a", "b"]
+    assert gate.effective_ignores_problems("ignores: [b, a]\n", annotated)
+    assert gate.effective_ignores_problems("ignores: [a, a, b]\n", annotated)
+    assert gate.effective_ignores_problems("ignores: [a, b, c]\n", annotated)
+    assert gate.effective_ignores_problems("ignores: [a, b]\n", annotated) == []
+
+
+def test_a_repeated_yaml_key_fails() -> None:
+    assert any("duplicate key" in e for e in gate.effective_ignores_problems("ignores: [a]\nignores: [a]\n", ["a"]))

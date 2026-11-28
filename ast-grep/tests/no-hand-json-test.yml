@@ -83,7 +83,19 @@ valid:
     #[allow(dead_code)]
     // a line comment
     const X: &str = r#"{"a":1}"#;
+  - |
+    #[doc = "uses json!(x) in prose"]
+    struct S;
 invalid:
+  - 'fn f() { let v = serde_json:: json!(1); }'
+  - 'fn f() { let v = ::serde_json::  json!(1); }'
+  - 'fn f() { let v = serde_json::json /* x */ !(1); }'
+  - |
+    #[schemars(extend("allOf" = [&serde_json:: json!({"a": 1})]))]
+    struct S;
+  - |
+    #[schemars(extend("allOf" = [&json /* x */ !({"a": 1})]))]
+    struct S;
   - |
     #[cfg(any(test, unix))]
     fn f() { json!(1); }

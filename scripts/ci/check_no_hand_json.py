@@ -15,7 +15,12 @@ compares what it finds with the list:
 * every pinned count equals the number of findings, so removing some sites needs a lower count;
 * every category has exactly one ``# total <category> <n>`` line, and it equals the sum of
   the entries;
-* a TEMPORARY category names a bead as ``TEMPORARY(slopvac-...)``.
+* a TEMPORARY category names a bead as ``TEMPORARY(slopvac-...)``;
+* the ``ignores`` list that a YAML parser loads from the file equals the annotated entries, in
+  order, so a sequence written in another style cannot add an entry;
+* no comment in crates/*/src suppresses this rule: ``// ast-grep-ignore`` with no rule list
+  hides every rule, and ``// ast-grep-ignore: no-hand-json`` hides this one. A suppression that
+  names only other rules, as the message-registry rule allows, stays legal.
 
 Growth check (``--base <ref>``). The file checks alone compare the file with itself, so raising
 a pin along with a new ``json!`` would pass. With a base, the check reads the rule file at that
@@ -48,6 +53,8 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 from typing import NamedTuple
+
+import yaml
 
 RULE = Path("ast-grep") / "rules" / "no-hand-json.yml"
 LABEL = "no-hand-json-growth"
@@ -113,6 +120,47 @@ def is_temporary(category: str) -> bool:
     return TEMPORARY.fullmatch(category) is not None
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """A safe loader that refuses a repeated mapping key, which PyYAML would resolve silently."""
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict:
+        seen: set[object] = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"duplicate key {key!r}", key_node.start_mark
+                )
+            seen.add(key)
+        return super().construct_mapping(node, deep)
+
+
+def effective_ignores_problems(text: str, annotated: list[str]) -> list[str]:
+    """Compare the ignore list ast-grep reads with the entries the annotation parser saw.
+
+    The line parser only sees ``  - path`` lines under ``ignores:``. A YAML sequence can be
+    written other ways (unindented, in flow style), and ast-grep reads all of them. The loaded
+    list must equal the annotated entries, in order, so no entry escapes its annotation.
+    """
+    try:
+        data = yaml.load(text, Loader=_UniqueKeyLoader)  # noqa: S506 - a safe loader subclass
+    except yaml.YAMLError as error:
+        return [f"the rule file is not valid YAML: {error}"]
+    effective = data.get("ignores") if isinstance(data, dict) else None
+    if effective == annotated:
+        return []
+    if not isinstance(effective, list):
+        return ["'ignores' is not a list of paths"]
+    extra = [path for path in effective if path not in annotated]
+    missing = [path for path in annotated if path not in effective]
+    detail = (
+        f"extra {extra}, missing {missing}"
+        if extra or missing
+        else "same entries in a different order or count"
+    )
+    return [f"the ignores ast-grep reads differ from the annotated entries: {detail}"]
+
+
 def parse(text: str) -> Rule:
     """Parse the ignore list strictly: an unannotated or odd line is an error."""
     entries: list[Entry] = []
@@ -120,6 +168,7 @@ def parse(text: str) -> Rule:
     globs: list[str] = []
     modules: list[str] = []
     errors: list[str] = []
+    order: list[str] = []
     in_ignores = False
     ignores_seen = 0
     for number, line in enumerate(text.splitlines(), start=1):
@@ -145,6 +194,7 @@ def parse(text: str) -> Rule:
             errors.append(f"line {number}: ignore entry is not '  - <path> # <annotation>'")
             continue
         path = match["path"].strip('"')
+        order.append(path)
         note = match["note"] or ""
         if allow := ALLOW.fullmatch(note):
             category = allow["category"]
@@ -166,6 +216,7 @@ def parse(text: str) -> Rule:
             )
     if ignores_seen != 1:
         errors.append(f"expected one 'ignores:' key, found {ignores_seen}")
+    errors.extend(effective_ignores_problems(text, order))
     return Rule(entries, totals, globs, modules, errors)
 
 
@@ -343,6 +394,56 @@ def has_label(labels_json: str | None) -> bool:
     return isinstance(names, list) and LABEL in names
 
 
+SUPPRESSION = re.compile(r"ast-grep-ignore")
+THIS_RULE = re.compile(r"(?<![\w-])no-hand-json(?![\w-])")
+
+
+def suppresses_rule(comment: str) -> bool:
+    """Whether a comment holds an ast-grep suppression that can hide a no-hand-json finding.
+
+    ast-grep honours ``ast-grep-ignore`` (every rule) and ``ast-grep-ignore: a, b`` (the named
+    rules), in line and block comments, above the line or at its end. Naming another rule is
+    fine. A suppression with no rule list, an odd form, or this rule's id is not.
+    """
+    for found in SUPPRESSION.finditer(comment):
+        rest = comment[found.end() :]
+        if not rest.startswith(":"):
+            return True
+        if not rest[1:].strip(" \t*/\n") or THIS_RULE.search(rest):
+            return True
+    return False
+
+
+def suppression_problems(root: Path) -> list[str]:
+    """List the comments in crates/*/src that suppress this rule, or every rule."""
+    rule = {
+        "id": "suppression-comment",
+        "language": "rust",
+        "files": ["crates/*/src/**"],
+        "rule": {
+            "any": [{"kind": "line_comment"}, {"kind": "block_comment"}],
+            "regex": SUPPRESSION.pattern,
+        },
+    }
+    done = subprocess.run(
+        ["ast-grep", "scan", "--inline-rules", json.dumps(rule), "--json=compact"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if done.returncode not in (0, 1):
+        raise RuntimeError(f"ast-grep exited {done.returncode}: {done.stderr.strip()}")
+    if not done.stdout.strip():
+        return []
+    return [
+        f"{item['file']}:{item['range']['start']['line'] + 1}: a suppression comment hides "
+        "findings of this rule; name another rule or remove it"
+        for item in json.loads(done.stdout)
+        if suppresses_rule(item["text"])
+    ]
+
+
 def scan(root: Path, rule_text: str) -> Counter[str]:
     """Run the rule from ``root`` and count its findings by file."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -394,6 +495,7 @@ def check(root: Path, base: str | None = None, labels: str | None = None) -> lis
         else file_problems(rule, scan(root, without_allow_list(text)))
     )
     errors += exempt_problems(root, rule)
+    errors += suppression_problems(root)
     if base is not None:
         before = base_text(root, base)
         if before is not None:
