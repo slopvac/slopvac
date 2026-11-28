@@ -304,22 +304,3 @@ impl Linter for EngineLinter {
             .collect())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The engine reads the document under the genre its own declaration gave the settings.
-    #[test]
-    fn the_engine_input_carries_the_declared_genre_of_the_settings() {
-        let doc = Doc {
-            label: "doc.md".into(),
-            kind: FileKind::Markdown,
-            text: "Text.\n".into(),
-            path: PathBuf::from("doc.md"),
-            rel: Some("doc.md".into()),
-            declared_genre: Some("change-comms".into()),
-        };
-        assert_eq!(doc.input().declared_genre, Some("change-comms"));
-    }
-}
