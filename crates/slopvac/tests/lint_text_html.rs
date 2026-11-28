@@ -202,30 +202,47 @@ fn a_fix_run_reports_one_notice_only_when_a_fix_was_dropped(
     assert_eq!(std::fs::read(&page).expect("read"), html.as_bytes());
 }
 
-#[rstest]
-#[case::json("json")]
-#[case::sarif("sarif")]
-#[case::markdown("markdown")]
-#[case::html("html")]
-fn each_format_that_shows_root_notices_carries_the_notice(#[case] format: &str) {
+/// The message of the notice for `page.html`, with the path in it.
+const MESSAGE: &str = "page.html: fixes are not applied in HTML files";
+
+/// The report of a fix run of [`FIXABLE`] in `format`.
+fn fix_report(format: &str) -> String {
     let dir = tempfile::tempdir().expect("temp dir");
     std::fs::write(dir.path().join("page.html"), FIXABLE).expect("write");
-    let (out, _) = run(
-        slopvac(dir.path()).args(["lint", "--fix", "--format", format, "page.html"]),
-        1,
+    let cmd = slopvac(dir.path()).args(["lint", "--fix", "--format", format, "page.html"]);
+    run(cmd, 1).0
+}
+
+#[test]
+fn json_carries_the_notice_with_its_code_level_and_path() {
+    let want = vec![("info".to_owned(), "page.html".to_owned())];
+    assert_eq!(fix_notices(&fix_report("json")), want);
+}
+
+#[test]
+fn sarif_carries_the_notice_code_and_level_with_the_path_in_the_message() {
+    let out = fix_report("sarif");
+    let sarif: Value = serde_json::from_str(&out).expect("SARIF");
+    let notes = sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+        .as_array()
+        .expect("notifications");
+    let found: Vec<(&Value, &Value)> = notes
+        .iter()
+        .filter(|n| n["descriptor"]["id"] == NOTICE)
+        .map(|n| (&n["level"], &n["message"]["text"]))
+        .collect();
+    assert_eq!(
+        found,
+        [(&Value::from("note"), &Value::from(MESSAGE))],
+        "{out}"
     );
+}
+
+#[rstest]
+#[case::markdown("markdown")]
+#[case::html("html")]
+fn a_report_page_carries_the_notice_code_and_message(#[case] format: &str) {
+    let out = fix_report(format);
     assert_eq!(out.matches(NOTICE).count(), 1, "{out}");
-    let message = "page.html: fixes are not applied in HTML files";
-    assert!(out.contains(message), "{out}");
-    if format == "sarif" {
-        let sarif: Value = serde_json::from_str(&out).expect("SARIF");
-        let notes = &sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"];
-        let note = notes
-            .as_array()
-            .expect("notifications")
-            .iter()
-            .find(|n| n["descriptor"]["id"] == NOTICE)
-            .expect("the notice");
-        assert_eq!(note["level"], "note", "{note}");
-    }
+    assert_eq!(out.matches(MESSAGE).count(), 1, "{out}");
 }
