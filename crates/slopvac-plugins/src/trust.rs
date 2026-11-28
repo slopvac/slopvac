@@ -130,7 +130,6 @@ pub enum TrustError {
     #[error("{}", messages::rotation_statement_refused(*.cause))]
     RotationStatement {
         /// Why, as a kind with a fixed text.
-        #[source]
         cause: RotationCause,
     },
     /// A rotation file cannot be read or is over its cap.
