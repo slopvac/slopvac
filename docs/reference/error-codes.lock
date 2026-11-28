@@ -95,6 +95,7 @@ cli-report-kind-local-name text
 cli-report-kind-path text
 cli-report-kind-repository text
 cli-report-long-about text
+cli-report-no-response text
 cli-report-open-help text
 cli-report-output-failed text
 cli-report-possible text
