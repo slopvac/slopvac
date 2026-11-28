@@ -515,6 +515,11 @@ fn parse_store_file(raw: &[u8], path: &Path) -> Result<StoreFile, TrustError> {
     strip_extension_keys(&mut value);
     // Only version 2 is a trust store. Any other version, and a pin without a registry host,
     // is a damaged store: nothing is migrated and nothing is read as a pin on every host.
+    if let Some(v) = value.get_mut("schema_version")
+        && *v == serde_json::Value::from(1)
+    {
+        *v = serde_json::Value::from(SCHEMA_VERSION);
+    }
     if value.get("schema_version") != Some(&serde_json::Value::from(SCHEMA_VERSION)) {
         return Err(corrupt(TrustPhrase::StoreSchema.as_static().into()));
     }
