@@ -1138,7 +1138,6 @@ pub(crate) fn settings_for(
 /// A repository outside the working directory is untrusted code, and a `python` it ships on
 /// `PATH` must not run.
 fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
-    let mut roots: Vec<PathBuf> = vec![request.root.clone()];
     let mut starts: Vec<PathBuf> = items.iter().filter_map(|i| i.dir.clone()).collect();
     for target in &request.targets {
         let absolute = request.root.join(target);
@@ -1148,6 +1147,14 @@ fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
             starts.push(dir);
         }
     }
+    rst_roots(&request.root, starts)
+}
+
+/// The directories an RST interpreter is never taken from, for a run in `cwd` that reads files
+/// in the directories `starts`: `cwd`, each start, and the repository root above each start,
+/// sorted and without duplicates.
+pub(crate) fn rst_roots(cwd: &Path, starts: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = vec![cwd.to_path_buf()];
     for start in starts {
         if let Some(repo) = start.ancestors().find(|d| d.join(".git").exists()) {
             roots.push(repo.to_path_buf());
