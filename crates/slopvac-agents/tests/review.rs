@@ -407,7 +407,7 @@ fn prime_review_documents_scope_approval_and_the_reviewer_rule() {
     let ask = review_topic(None, Level::Default);
     assert!(ask.contains("ask the user to confirm the exact scope"));
     assert!(ask.contains("--scope-approved"));
-    assert!(ask.contains("should differ from the author's"));
+    assert!(ask.contains("Use a reviewer model that differs from the author's"));
 }
 
 /// The flag is the only way to approve a larger scope: no config key can approve it for
@@ -781,7 +781,7 @@ fn prime_review_verdict_reports_both_models_and_forbids_guessing() {
     assert!(text.contains(
         "Reviewer: <model the harness used, or unknown>; author <model or unknown>; different: yes | no | not checked"
     ));
-    assert!(text.contains("name the model the harness actually ran, or `unknown`; never guess."));
+    assert!(text.contains("name the model the harness ran, or `unknown`. Do not guess."));
 }
 #[test]
 fn the_author_flag_overrides_the_config_author_at_the_provider_check() {

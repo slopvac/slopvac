@@ -711,7 +711,7 @@ pub(crate) enum AgentsPhrase {
     /// What users read while no reviewer model is recommended.
     #[code("models-pending")]
     #[text(
-        "Reviewer model recommendations are pending re-evaluation. Until they are published, pick a model from a different family than the author's."
+        "Reviewer model recommendations are not available yet. Pick a model from a different family than the author's."
     )]
     ModelsPending,
     /// The line when no review type has eval results.
