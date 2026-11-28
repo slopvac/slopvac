@@ -491,6 +491,21 @@ pub(crate) enum SyncText {
     #[code("plugins-lock-diff-digest")]
     #[text("digest {locked} -> {resolved}")]
     DiffDigest { locked: String, resolved: String },
+    /// A configured source that names a different source from the lock. It names the plugin
+    /// only: the configured value can carry a credential.
+    #[code("plugins-lock-diff-config-source")]
+    #[text("source: {id} is configured with a different source from its lock entry")]
+    DiffConfigSource { id: String },
+    /// A locked version that the configured requirement does not allow.
+    #[code("plugins-lock-diff-out-of-range")]
+    #[text(
+        "out of range: {id} is locked at {locked}, which the configured requirement {range} does not allow"
+    )]
+    DiffOutOfRange {
+        id: String,
+        locked: String,
+        range: String,
+    },
     /// A version comparator has the wrong shape.
     #[code("plugins-lock-comparator-invalid")]
     #[text("`{comparator}` is not a version comparator in `{text}`")]
@@ -708,6 +723,13 @@ pub(crate) enum SyncPhrase {
     #[code("plugins-lock-oci-whitespace")]
     #[text("an oci:// source needs a reference without whitespace")]
     OciWhitespace,
+    /// An `oci://` source in the config is not a registry and a repository with an optional
+    /// valid tag or digest.
+    #[code("plugins-lock-oci-reference-invalid")]
+    #[text(
+        "an oci:// source needs a registry and a repository, and a valid tag or digest if it names one"
+    )]
+    OciReferenceInvalid,
     /// An `https://` source has whitespace or no URL.
     #[code("plugins-lock-https-whitespace")]
     #[text("an https:// source needs a URL without whitespace")]
@@ -1365,6 +1387,25 @@ pub(crate) fn diff_unlocked(id: &impl Display) -> String {
     SyncText::DiffUnlocked { id: s(id) }.to_string()
 }
 
+/// The diff line for a configured source that differs from the lock. It names the id only.
+pub(crate) fn diff_config_source(id: &impl Display) -> String {
+    SyncText::DiffConfigSource { id: s(id) }.to_string()
+}
+
+/// The diff line for a locked version outside the configured requirement.
+pub(crate) fn diff_out_of_range(
+    id: &impl Display,
+    locked: &impl Display,
+    range: &impl Display,
+) -> String {
+    SyncText::DiffOutOfRange {
+        id: s(id),
+        locked: s(locked),
+        range: s(range),
+    }
+    .to_string()
+}
+
 /// The start of the diff line for a changed pack.
 pub(crate) fn diff_changed(id: &impl Display) -> String {
     SyncText::DiffChanged { id: s(id) }.to_string()
@@ -1977,6 +2018,18 @@ mod tests {
             ),
             (SyncText::DiffChanged { id: s("a") }, "changed: a"),
             (
+                SyncText::DiffConfigSource { id: s("a") },
+                "source: a is configured with a different source from its lock entry",
+            ),
+            (
+                SyncText::DiffOutOfRange {
+                    id: s("a"),
+                    locked: s("1.0.0"),
+                    range: s("^2"),
+                },
+                "out of range: a is locked at 1.0.0, which the configured requirement ^2 does not allow",
+            ),
+            (
                 SyncText::DiffVersion {
                     locked: s("1.0.0"),
                     resolved: s("1.1.0"),
@@ -2171,6 +2224,10 @@ mod tests {
             (
                 SyncPhrase::OciWhitespace,
                 "an oci:// source needs a reference without whitespace",
+            ),
+            (
+                SyncPhrase::OciReferenceInvalid,
+                "an oci:// source needs a registry and a repository, and a valid tag or digest if it names one",
             ),
             (
                 SyncPhrase::HttpsWhitespace,

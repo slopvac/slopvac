@@ -414,6 +414,285 @@ fn sync_in_ci_exits_2_when_a_locked_plugin_is_no_longer_configured() {
         .stderr(predicate::str::contains("removed: style"));
 }
 
+/// The lock bytes, to show that a refused CI sync leaves the file as it found it.
+fn lock_bytes(sandbox: &Sandbox) -> Vec<u8> {
+    fs::read(sandbox.project().join(".slopvac/plugins.lock")).unwrap()
+}
+
+/// Writes each `(path, text)` under the project. A path may climb out of it with `..`.
+fn write_files(sandbox: &Sandbox, files: &[(&str, &str)]) {
+    for (name, text) in files {
+        let path = sandbox.project().join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+}
+
+/// A config entry for `style` with `source` and an optional version requirement.
+fn style_entry(source: &str, version: Option<&str>) -> String {
+    let version = version.map_or_else(String::new, |v| format!("version = \"{v}\"\n"));
+    format!("schema_version = 3\n[[plugins]]\nid = \"style\"\nsource = \"{source}\"\n{version}")
+}
+
+/// In CI, a configured source that names another source than the lock, or a locked version
+/// that the configured requirement does not allow, fails before any fetch. The line names the
+/// plugin, and the lockfile is unchanged.
+#[rstest::rstest]
+#[case::other_repository(
+    style_entry("oci://registry.invalid/acme/other", None),
+    "source: style is configured with a different source from its lock entry"
+)]
+#[case::other_registry_port(
+    style_entry("oci://registry.invalid:5000/acme/style", None),
+    "source: style is configured with a different source from its lock entry"
+)]
+#[case::path_against_oci(
+    style_entry("plugins/style", None),
+    "source: style is configured with a different source from its lock entry"
+)]
+#[case::out_of_range(
+    style_entry("oci://registry.invalid/acme/style", Some("^2")),
+    "out of range: style is locked at 1.0.0, which the configured requirement ^2 does not allow"
+)]
+fn sync_in_ci_exits_2_on_config_drift_and_leaves_the_lock(
+    #[case] config: String,
+    #[case] line: &str,
+) {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    fs::write(sandbox.project().join("slopvac.toml"), config).unwrap();
+    let before = lock_bytes(&sandbox);
+    sandbox
+        .slopvac()
+        .env("CI", "true")
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[lock-mismatch]: "))
+        .stderr(predicate::str::contains(line));
+    assert_eq!(lock_bytes(&sandbox), before);
+}
+
+/// The documented config form names an OCI repository with no tag, and the lock pins the tag
+/// of the version. They match, so the run goes on to the cache, which here has no copy.
+#[rstest::rstest]
+#[case::untagged(style_entry("oci://registry.invalid/acme/style", None))]
+#[case::untagged_with_a_requirement(style_entry(
+    "oci://registry.invalid/acme/style",
+    Some("1.0.0")
+))]
+#[case::other_tag(style_entry("oci://registry.invalid/acme/style:latest", None))]
+fn sync_in_ci_matches_an_untagged_oci_source_with_the_locked_tag(#[case] config: String) {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    fs::write(sandbox.project().join("slopvac.toml"), config).unwrap();
+    sandbox
+        .slopvac()
+        .env("CI", "true")
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[offline-plugin-missing]: ",
+        ));
+}
+
+/// Outside CI, sync does not compare the config with the lock.
+#[test]
+fn sync_outside_ci_ignores_a_configured_source_that_differs() {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        style_entry("oci://registry.invalid/acme/other", Some("^2")),
+    )
+    .unwrap();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[offline-plugin-missing]: ",
+        ));
+}
+
+/// A project plugin at `plugins/style`, locked by its tree hash at that root-relative path.
+fn lock_path_plugin(sandbox: &Sandbox) {
+    let plugin = sandbox.project().join("plugins/style");
+    fs::create_dir_all(&plugin).unwrap();
+    fs::write(plugin.join("rules.yml"), "a: b\n").unwrap();
+    let digest = slopvac_plugins::extract::tree_hash(&plugin).unwrap();
+    sandbox.write_lock(&format!(
+        "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"plugins/style\"\ndigest = \"{digest}\"\n"
+    ));
+}
+
+/// A config path is relative to the file that declares it. Read that way, each of these names
+/// the locked `plugins/style`, so CI sync installs it in place.
+#[rstest::rstest]
+#[case::root_config(&[("slopvac.toml", "schema_version = 3\n[[plugins]]\nid = \"style\"\nsource = \"plugins/style\"\n")])]
+#[case::extends_from_a_subdirectory(&[
+    ("slopvac.toml", "schema_version = 3\nextends = [\"config/base.toml\"]\n"),
+    ("config/base.toml", "schema_version = 3\n[[plugins]]\nid = \"style\"\nsource = \"../plugins/style\"\n"),
+])]
+#[case::extends_from_outside_the_project(&[
+    ("slopvac.toml", "schema_version = 3\nextends = [\"../shared/base.toml\"]\n"),
+    ("../shared/base.toml", "schema_version = 3\n[[plugins]]\nid = \"style\"\nsource = \"../project/plugins/style\"\n"),
+])]
+fn sync_in_ci_resolves_a_path_source_against_its_config_file(#[case] files: &[(&str, &str)]) {
+    let sandbox = Sandbox::new();
+    lock_path_plugin(&sandbox);
+    write_files(&sandbox, files);
+    sandbox
+        .slopvac()
+        .env("CI", "true")
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("style 1.0.0: in place\n"));
+}
+
+/// A path that resolves to another directory than the locked one is drift.
+#[rstest::rstest]
+#[case::other_directory(&[("slopvac.toml", "schema_version = 3\n[[plugins]]\nid = \"style\"\nsource = \"plugins/other\"\n")])]
+#[case::root_path_in_a_subdirectory_file(&[
+    ("slopvac.toml", "schema_version = 3\nextends = [\"config/base.toml\"]\n"),
+    ("config/base.toml", "schema_version = 3\n[[plugins]]\nid = \"style\"\nsource = \"plugins/style\"\n"),
+])]
+fn sync_in_ci_exits_2_when_a_path_source_resolves_elsewhere(#[case] files: &[(&str, &str)]) {
+    let sandbox = Sandbox::new();
+    lock_path_plugin(&sandbox);
+    write_files(&sandbox, files);
+    let before = lock_bytes(&sandbox);
+    sandbox
+        .slopvac()
+        .env("CI", "true")
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[lock-mismatch]: "))
+        .stderr(predicate::str::contains(
+            "source: style is configured with a different source from its lock entry",
+        ));
+    assert_eq!(lock_bytes(&sandbox), before);
+}
+
+/// A source that the lock would refuse makes the config invalid for every `plugins` command,
+/// in CI or not. The message names the plugin, never the value.
+#[rstest::rstest]
+#[case::sync_in_ci(&["--offline", "plugins", "sync"], true)]
+#[case::sync(&["--offline", "plugins", "sync"], false)]
+#[case::status(&["--offline", "plugins", "status"], false)]
+#[case::list(&["--offline", "plugins", "list"], false)]
+fn an_invalid_source_in_the_config_fails_every_plugins_command(
+    #[case] args: &[&str],
+    #[case] ci: bool,
+) {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        style_entry("http://registry.invalid/acme/style.tar.gz", None),
+    )
+    .unwrap();
+    let mut cmd = sandbox.slopvac();
+    if ci {
+        cmd.env("CI", "true");
+    }
+    cmd.args(args)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[config-invalid-value]: "))
+        .stderr(predicate::str::contains("plugin `style`"))
+        .stderr(predicate::str::contains("registry.invalid").not());
+}
+
+/// An `oci://` source with no repository, or with an empty tag, is malformed. The config may
+/// leave out the tag or digest, but not get one wrong.
+#[rstest::rstest]
+#[case::host_only("oci://registry.invalid")]
+#[case::empty_tag("oci://registry.invalid/acme/style:")]
+#[case::empty_tag_and_a_digest(
+    "oci://registry.invalid/acme/style:@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+)]
+fn a_malformed_oci_source_in_the_config_is_invalid(#[case] source: &str) {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        style_entry(source, None),
+    )
+    .unwrap();
+    sandbox
+        .slopvac()
+        .env("CI", "true")
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[config-invalid-value]: "))
+        .stderr(predicate::str::contains("plugin `style`"));
+}
+
+/// An online CI sync refuses drift before it opens any connection, the revocation fetch
+/// included, and leaves the lock as it found it. The control above shows that an online sync
+/// does reach the tally.
+#[test]
+fn an_online_sync_in_ci_refuses_drift_before_any_request() {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        style_entry("oci://registry.invalid/acme/other", None),
+    )
+    .unwrap();
+    let before = lock_bytes(&sandbox);
+    let tally = NetworkTally::start();
+    let mut cmd = sandbox.slopvac();
+    tally.route(&mut cmd);
+    cmd.env("CI", "true")
+        .args(["plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[lock-mismatch]: "));
+    assert_eq!(tally.requests(), 0, "a refused sync opened a connection");
+    assert_eq!(lock_bytes(&sandbox), before);
+}
+
+/// A configured source can carry a credential, as user-info (an invalid source) or in a query
+/// (a valid one that differs from the lock). Neither output stream repeats it.
+#[rstest::rstest]
+#[case::user_info(
+    "https://reader:hunter2-secret@registry.invalid/style.tar.gz",
+    "error[config-invalid-value]: "
+)]
+#[case::query_token(
+    "https://registry.invalid/style.tar.gz?token=hunter2-secret",
+    "error[lock-mismatch]: "
+)]
+fn sync_in_ci_never_prints_a_configured_credential(#[case] source: &str, #[case] start: &str) {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(&SIGNED_UNCACHED.replace(
+        "oci://registry.invalid/acme/style:1.0.0",
+        "https://registry.invalid/style.tar.gz",
+    ));
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        style_entry(source, None),
+    )
+    .unwrap();
+    sandbox
+        .slopvac()
+        .env("CI", "true")
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(start))
+        .stderr(predicate::str::contains("hunter2-secret").not())
+        .stdout(predicate::str::contains("hunter2-secret").not());
+}
+
 /// The plugin host starts this executable as the plugin launcher. The binary has to run that
 /// mode, or no git plugin source can be fetched.
 #[test]

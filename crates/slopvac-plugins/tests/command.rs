@@ -24,7 +24,9 @@ use std::path::{Path, PathBuf};
 use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
 use slopvac_plugins::extract::tree_hash;
-use slopvac_plugins::lock::{LockedPack, PackId, VersionReq, parse_version_req};
+use slopvac_plugins::lock::{
+    ConfiguredPack, ConfiguredSource, LockedPack, PackId, parse_version_req,
+};
 use slopvac_plugins::oci::{Anonymous, Client};
 use slopvac_plugins::pyenv::EnvStore;
 use slopvac_plugins::revoke::Revocations;
@@ -146,8 +148,7 @@ impl Fixture {
         };
         let dirs = Dirs::new(self.project(), self.cache(), self.state());
         let mut runner = Runner::new(dirs, network, &policy, &revocations, NOW)
-            .with_ranges(setup.ranges)
-            .with_configured(setup.configured)
+            .with_configured_packs(setup.packs)
             .with_core_version("3.0.0");
         if let Some(loader) = &setup.loader {
             runner = runner.with_loader(loader.as_ref());
@@ -169,8 +170,7 @@ impl Fixture {
 
 #[derive(Default)]
 struct Setup<'a> {
-    ranges: BTreeMap<PackId, VersionReq>,
-    configured: Vec<String>,
+    packs: Vec<ConfiguredPack>,
     loader: Option<Box<dyn PluginLoader + 'a>>,
     policy: Option<KeyPolicy>,
     executables: BTreeMap<PackId, std::collections::HashSet<String>>,
@@ -195,14 +195,26 @@ impl<'a> Setup<'a> {
         self
     }
 
-    fn range(mut self, id: &str, req: &str) -> Self {
-        self.ranges
-            .insert(id.parse().unwrap(), parse_version_req(req).unwrap());
-        self
+    /// A configured `id` with the version requirement `req`.
+    fn range(self, id: &str, req: &str) -> Self {
+        self.pack(id, Some(req))
     }
 
-    fn configured(mut self, ids: &[&str]) -> Self {
-        self.configured = ids.iter().map(ToString::to_string).collect();
+    /// Configured entries for `ids`, with no version requirement.
+    fn configured(self, ids: &[&str]) -> Self {
+        ids.iter().fold(self, |s, id| s.pack(id, None))
+    }
+
+    /// A configured entry for `id` from the OCI repository `r.example/acme/<id>`.
+    fn pack(mut self, id: &str, range: Option<&str>) -> Self {
+        let root = Path::new("/work/project");
+        let source =
+            ConfiguredSource::parse(&format!("oci://r.example/acme/{id}"), root, root).unwrap();
+        self.packs.push(ConfiguredPack::new(
+            id.parse().unwrap(),
+            source,
+            range.map(|r| parse_version_req(r).unwrap()),
+        ));
         self
     }
 
@@ -651,6 +663,22 @@ fn sync_in_ci_refuses_a_locked_plugin_that_is_no_longer_configured() {
             .contains("removed: old is locked but was not resolved"),
         "{err}"
     );
+}
+
+/// The configured entries are the one list of configured plugins: a caller that passes only
+/// them gets the same id check as from the config, so a configured and locked plugin is not
+/// reported as no longer needed.
+#[test]
+fn sync_in_ci_reads_the_configured_ids_from_the_configured_entries() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
+    let err = f
+        .run(&["sync"], false, |s| s.locked().pack("style", Some("^1.2")))
+        .result
+        .unwrap_err();
+    // The drift check passes, so sync goes on to the entry itself, which `oci_entry` locks
+    // with no signature record.
+    assert_eq!(err.code(), "sync-unsigned", "{err}");
 }
 
 // ---- outdated and update ------------------------------------------------------------

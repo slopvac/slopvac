@@ -1,11 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::path::Path;
 
-use semver::Version;
+use semver::{Version, VersionReq};
 
-use crate::messages::sync as messages;
+use slopvac_fs::lexical_normalize;
 
-use super::model::{Digest, Lockfile, PackId, Source};
+use crate::messages::sync::{self as messages, SyncPhrase};
+use crate::oci::Reference;
+
+use super::model::{Digest, Lockfile, PackId, Source, SourceKind, ValueError};
 
 /// One pack as the sync code resolved it, before comparing to the lock.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +64,189 @@ pub struct LockDiff {
     pub unlocked: Vec<PackId>,
     /// In both, with a different version, source or digest.
     pub changed: Vec<Change>,
+    /// Configured with a source that names a different source from the lock entry. Only
+    /// [`entry_drift`] fills it. It keeps the id alone, because a configured source can carry a
+    /// credential and must not reach a message.
+    pub source_differs: Vec<PackId>,
+    /// Locked at a version that the configured requirement does not allow. Only
+    /// [`entry_drift`] fills it.
+    pub out_of_range: Vec<OutOfRange>,
+}
+
+/// A configured pack whose locked version is outside its configured requirement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct OutOfRange {
+    /// Pack id.
+    pub id: PackId,
+    /// The version in the lock file.
+    pub locked: Version,
+    /// The requirement in the config.
+    pub range: VersionReq,
+}
+
+impl OutOfRange {
+    /// `id` is locked at `locked`, which `range` does not allow.
+    #[must_use]
+    pub fn new(id: PackId, locked: Version, range: VersionReq) -> Self {
+        Self { id, locked, range }
+    }
+}
+
+/// The `source` of a `[[plugins]]` entry in the config, as the drift check compares it.
+///
+/// `Debug` shows the kind of source and, for a URL or an OCI reference, only the host and port,
+/// because the rest can carry a credential (policies.md, section 1.7).
+#[derive(Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ConfiguredSource {
+    /// A source of a form the lock accepts. A path is relative to the project root.
+    Named(Source),
+    /// A path that resolves outside the project root. No lock entry can hold it, so it never
+    /// matches.
+    OutsideProject,
+}
+
+impl ConfiguredSource {
+    /// Parses the configured source `text` with the lock's own source parser. `root` is the
+    /// project root, and `dir` the directory of the config file that declares the source. A
+    /// path is resolved against `dir` and made relative to `root` first, because a config path
+    /// is relative to its own file and the lock's path to the root. Both are absolute; the
+    /// resolution is lexical and reads nothing.
+    ///
+    /// # Errors
+    /// [`ValueError`] when `text` is not an `oci://` reference, an `https://` archive URL, a
+    /// `git+https://` URL pinned to a commit or a relative path. The message never repeats the
+    /// text, which can carry a credential.
+    pub fn parse(text: &str, root: &Path, dir: &Path) -> Result<Self, ValueError> {
+        let parsed = text.parse::<Source>();
+        if let Ok(source) = &parsed {
+            match source.kind() {
+                SourceKind::Path(_) => {}
+                // The lock reads an `oci://` source as text. The config may leave out the
+                // tag or digest, but the rest must parse as the registry client parses it.
+                SourceKind::Oci(oci) if oci_name(oci).is_none() => {
+                    return Err(ValueError::new(SyncPhrase::OciReferenceInvalid.as_static()));
+                }
+                _ => return Ok(Self::Named(source.clone())),
+            }
+        }
+        // The lock refuses `..`, which a config path may use to reach the root from its own
+        // file. Every other rule of the lock applies to the text as written.
+        let probe = text
+            .split('/')
+            .map(|segment| if segment == ".." { "_" } else { segment })
+            .collect::<Vec<_>>()
+            .join("/");
+        match (parsed, probe.parse::<Source>()) {
+            (Ok(_), _) | (Err(_), Ok(_)) => Ok(Self::resolve(text, root, dir)),
+            (Err(e), Err(_)) => Err(e),
+        }
+    }
+
+    /// The path `text`, which the lock's rules accept but for `..`, resolved against `dir` and
+    /// written relative to `root` with `/` between segments.
+    fn resolve(text: &str, root: &Path, dir: &Path) -> Self {
+        let resolved = lexical_normalize(&dir.join(text));
+        let Ok(relative) = resolved.strip_prefix(lexical_normalize(root)) else {
+            return Self::OutsideProject;
+        };
+        let segments: Option<Vec<&str>> = relative.iter().map(|s| s.to_str()).collect();
+        segments
+            .and_then(|s| s.join("/").parse::<Source>().ok())
+            .map_or(Self::OutsideProject, Self::Named)
+    }
+
+    /// True when this names the source `locked` holds. An `oci://` source compares its
+    /// registry and repository only, because the locked version and digest pin the content,
+    /// and the registry name without regard to case. A path compares after both sides are
+    /// normalised, so `./a/` and `a` name the same directory.
+    fn names(&self, locked: &Source) -> bool {
+        let Self::Named(source) = self else {
+            return false;
+        };
+        match (source.kind(), locked.kind()) {
+            (SourceKind::Oci(a), SourceKind::Oci(b)) => match (oci_name(a), oci_name(b)) {
+                (Some((ra, pa)), Some((rb, pb))) => same_registry(&ra, &rb) && pa == pb,
+                _ => false,
+            },
+            (SourceKind::Path(a), SourceKind::Path(b)) => {
+                lexical_normalize(Path::new(a)) == lexical_normalize(Path::new(b))
+            }
+            _ => source == locked,
+        }
+    }
+}
+
+impl fmt::Debug for ConfiguredSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Named(source) => {
+                let mut named = f.debug_struct("Named");
+                named.field("kind", &source.kind().name());
+                if let Some(host) = shown_host(source.kind()) {
+                    named.field("host", &host);
+                }
+                named.finish()
+            }
+            Self::OutsideProject => f.write_str("OutsideProject"),
+        }
+    }
+}
+
+/// The host and port of a URL or OCI source, for `Debug`: the authority with any user-info
+/// dropped. A path, a repository, a query or a fragment can carry a credential, so none of
+/// them is shown. `None` for a path source.
+fn shown_host(kind: &SourceKind) -> Option<&str> {
+    let after_scheme = match kind {
+        SourceKind::Oci(text) => text.strip_prefix("oci://"),
+        SourceKind::Archive(url) | SourceKind::Git { url, .. } => url.strip_prefix("https://"),
+        SourceKind::Path(_) => None,
+    }?;
+    let end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    after_scheme[..end].rsplit('@').next()
+}
+
+/// The registry and the repository of an `oci://` source, parsed as the registry client
+/// parses a reference, with any tag or digest dropped. `None` when the reference is malformed.
+fn oci_name(text: &str) -> Option<(String, String)> {
+    let reference = text.strip_prefix("oci://")?;
+    let (registry, repository, _) = Reference::parse_parts(reference).ok()?;
+    Some((registry, repository))
+}
+
+/// True when two registries name the same machine and port. The name is not case sensitive;
+/// the port must be the same.
+fn same_registry(a: &str, b: &str) -> bool {
+    fn split(registry: &str) -> (&str, Option<&str>) {
+        registry
+            .rsplit_once(':')
+            .map_or((registry, None), |(name, port)| (name, Some(port)))
+    }
+    let ((name_a, port_a), (name_b, port_b)) = (split(a), split(b));
+    name_a.eq_ignore_ascii_case(name_b) && port_a == port_b
+}
+
+/// One `[[plugins]]` entry of the config, as the drift check reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ConfiguredPack {
+    /// Pack id.
+    pub id: PackId,
+    /// The configured source.
+    pub source: ConfiguredSource,
+    /// The configured version requirement, when the entry sets one.
+    pub range: Option<VersionReq>,
+}
+
+impl ConfiguredPack {
+    /// An entry for `id` with its source and optional version requirement.
+    #[must_use]
+    pub fn new(id: PackId, source: ConfiguredSource, range: Option<VersionReq>) -> Self {
+        Self { id, source, range }
+    }
 }
 
 impl LockDiff {
@@ -70,6 +257,8 @@ impl LockDiff {
             && self.removed.is_empty()
             && self.unlocked.is_empty()
             && self.changed.is_empty()
+            && self.source_differs.is_empty()
+            && self.out_of_range.is_empty()
     }
 }
 
@@ -102,6 +291,16 @@ impl fmt::Display for LockDiff {
                 write!(f, "{}", messages::diff_digest(&d.locked, &d.resolved))?;
             }
             writeln!(f)?;
+        }
+        for id in &self.source_differs {
+            writeln!(f, "{}", messages::diff_config_source(id))?;
+        }
+        for pack in &self.out_of_range {
+            writeln!(
+                f,
+                "{}",
+                messages::diff_out_of_range(&pack.id, &pack.locked, &pack.range)
+            )?;
         }
         Ok(())
     }
@@ -170,4 +369,33 @@ pub fn config_drift(lock: &Lockfile, configured: &[PackId]) -> LockDiff {
             .collect(),
         ..LockDiff::default()
     }
+}
+
+/// The drift between the configured `[[plugins]]` entries and the lock that [`config_drift`]
+/// leaves out: a configured source that names a different source from its lock entry, and a
+/// locked version outside the configured requirement. An entry with no lock entry is
+/// [`config_drift`]'s `unlocked` case, so it is skipped here. Pure: it reads only its inputs.
+#[must_use]
+pub fn entry_drift(lock: &Lockfile, configured: &[ConfiguredPack]) -> LockDiff {
+    let mut out = LockDiff::default();
+    for entry in configured {
+        let Some(locked) = lock.get(&entry.id) else {
+            continue;
+        };
+        if !entry.source.names(&locked.source) {
+            out.source_differs.push(entry.id.clone());
+        }
+        if let Some(range) = &entry.range
+            && !range.matches(&locked.version)
+        {
+            out.out_of_range.push(OutOfRange::new(
+                entry.id.clone(),
+                locked.version.clone(),
+                range.clone(),
+            ));
+        }
+    }
+    out.source_differs.sort();
+    out.out_of_range.sort_by(|a, b| a.id.cmp(&b.id));
+    out
 }

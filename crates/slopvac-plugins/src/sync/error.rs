@@ -211,7 +211,7 @@ pub enum SyncError {
     Revocation(#[from] RevocationError),
     /// The resolved packs differ from the lock.
     #[error("{}", messages::lock_mismatch(.0))]
-    LockMismatch(LockDiff),
+    LockMismatch(Box<LockDiff>),
 }
 
 impl SyncError {

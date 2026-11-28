@@ -93,10 +93,11 @@ pub(crate) enum TransportText {
     #[code("plugins-oci-media-type")]
     #[text("unsupported media type `{media_type}`")]
     OciMediaType { media_type: String },
-    /// A reference is malformed.
+    /// A reference is malformed. It names the reason only: the reference can carry a
+    /// credential (policies.md, section 1.7).
     #[code("plugins-oci-reference")]
-    #[text("reference `{reference}`: {reason}")]
-    OciReference { reference: String, reason: String },
+    #[text("invalid OCI reference: {reason}")]
+    OciReference { reason: String },
     /// A digest uses another algorithm.
     #[code("plugins-oci-digest-algorithm")]
     #[text("digest `{digest}` is not sha256")]
@@ -629,6 +630,10 @@ pub(crate) enum TransportPhrase {
     #[code("plugins-oci-bad-tag")]
     #[text("bad tag")]
     OciBadTag,
+    /// A digest in a reference is not `sha256:` and 64 lowercase hex digits.
+    #[code("plugins-oci-bad-digest")]
+    #[text("bad digest")]
+    OciBadDigest,
     /// A reference needs a target.
     #[code("plugins-oci-target-required")]
     #[text("needs a tag or a digest")]
@@ -1211,11 +1216,8 @@ mod tests {
                 "unsupported media type `x`",
             ),
             (
-                T::OciReference {
-                    reference: s("x"),
-                    reason: s("y"),
-                },
-                "reference `x`: y",
+                T::OciReference { reason: s("y") },
+                "invalid OCI reference: y",
             ),
             (
                 T::OciDigestAlgorithm { digest: s("x") },
@@ -1556,6 +1558,7 @@ mod tests {
             (P::OciBadHost, "bad registry host"),
             (P::OciBadRepository, "bad repository name"),
             (P::OciBadTag, "bad tag"),
+            (P::OciBadDigest, "bad digest"),
             (P::OciTargetRequired, "needs a tag or a digest"),
             (P::OciLocationUnusable, "unusable Location"),
             (P::OciTargetInsecure, "target is not HTTPS"),

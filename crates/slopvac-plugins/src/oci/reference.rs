@@ -79,17 +79,44 @@ impl Reference {
     /// # Errors
     /// [`OciError::Invalid`] for any malformed part.
     pub fn parse(s: &str) -> Result<Self, OciError> {
-        let bad = |why: &str| {
-            OciError::Invalid(
-                TransportText::OciReference {
-                    reference: s.to_owned(),
-                    reason: why.to_owned(),
-                }
-                .to_string(),
-            )
-        };
+        let (registry, repository, target) = Self::parse_parts(s)?;
+        let target =
+            target.ok_or_else(|| Self::invalid(TransportPhrase::OciTargetRequired.as_static()))?;
+        Ok(Self {
+            registry,
+            repository,
+            target,
+        })
+    }
+
+    /// A refusal that names the reason only. The reference can carry a credential, so the
+    /// error never repeats it (policies.md, section 1.7).
+    fn invalid(why: &str) -> OciError {
+        OciError::Invalid(
+            TransportText::OciReference {
+                reason: why.to_owned(),
+            }
+            .to_string(),
+        )
+    }
+
+    /// Parse `registry/repository[:tag][@sha256:...]` under the same rules as [`parse`], with
+    /// the tag and digest optional. Returns the registry, the repository and the target, if
+    /// any. A config names a repository this way and leaves the version to the lock.
+    ///
+    /// # Errors
+    /// [`OciError::Invalid`] for any malformed part, a present but malformed tag or digest
+    /// included.
+    ///
+    /// [`parse`]: Self::parse
+    pub(crate) fn parse_parts(s: &str) -> Result<(String, String, Option<Target>), OciError> {
+        let bad = Self::invalid;
         let (rest, digest) = match s.split_once('@') {
-            Some((r, d)) => (r, Some(Digest::parse(d)?)),
+            Some((r, d)) => {
+                let digest =
+                    Digest::parse(d).map_err(|_| bad(TransportPhrase::OciBadDigest.as_static()))?;
+                (r, Some(digest))
+            }
             None => (s, None),
         };
         let (registry, path) = rest
@@ -105,17 +132,17 @@ impl Reference {
         if !valid_repository(repository) {
             return Err(bad(TransportPhrase::OciBadRepository.as_static()));
         }
+        if let Some(t) = tag
+            && !valid_tag(t)
+        {
+            return Err(bad(TransportPhrase::OciBadTag.as_static()));
+        }
         let target = match (digest, tag) {
-            (Some(d), _) => Target::Digest(d),
-            (None, Some(t)) if valid_tag(t) => Target::Tag(t.to_owned()),
-            (None, Some(_)) => return Err(bad(TransportPhrase::OciBadTag.as_static())),
-            (None, None) => return Err(bad(TransportPhrase::OciTargetRequired.as_static())),
+            (Some(d), _) => Some(Target::Digest(d)),
+            (None, Some(t)) => Some(Target::Tag(t.to_owned())),
+            (None, None) => None,
         };
-        Ok(Self {
-            registry: registry.to_owned(),
-            repository: repository.to_owned(),
-            target,
-        })
+        Ok((registry.to_owned(), repository.to_owned(), target))
     }
 
     /// The same repository with another target.
@@ -170,6 +197,37 @@ mod tests {
         assert_eq!(r.registry, "127.0.0.1:5000");
         assert_eq!(r.host(), "127.0.0.1");
         assert!(matches!(r.target, Target::Digest(_)));
+    }
+
+    #[rstest::rstest]
+    #[case::empty("")]
+    #[case::leading_hyphen("-x")]
+    #[case::space("a b")]
+    fn a_digest_does_not_excuse_a_malformed_tag(#[case] tag: &str) {
+        let text = format!("ghcr.io/a/b:{tag}@{D}");
+        assert!(Reference::parse(&text).is_err(), "{text}");
+    }
+
+    /// A refused reference can carry a credential, so no part of the error chain repeats the
+    /// input: only the reason is kept (policies.md, section 1.7).
+    #[rstest::rstest]
+    #[case::token_in_a_tag_beside_a_digest(&format!("reg.example/acme/x:tok3n!secret@{D}"))]
+    #[case::user_info("reader:tok3n-secret@reg.example/acme/x:1")]
+    #[case::token_in_the_digest("reg.example/acme/x:1@sha256:tok3n-secret")]
+    #[case::token_in_the_repository("reg.example/acme/Tok3n-secret:1")]
+    #[case::token_without_a_target("reg.example/acme/tok3n-secret")]
+    fn a_refused_reference_keeps_the_input_out_of_the_error_chain(#[case] text: &str) {
+        let err = Reference::parse(text).unwrap_err();
+        let mut shown = vec![err.to_string(), format!("{err:?}")];
+        let mut cause = std::error::Error::source(&err);
+        while let Some(e) = cause {
+            shown.push(e.to_string());
+            shown.push(format!("{e:?}"));
+            cause = e.source();
+        }
+        for part in shown {
+            assert!(!part.to_lowercase().contains("tok3n"), "{part}");
+        }
     }
 
     #[test]
