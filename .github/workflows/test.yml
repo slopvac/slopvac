@@ -312,9 +312,11 @@ jobs:
       needs.changes.outputs.force_all == 'true' ||
       needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
-    # The slowest legs (macos-x64, linux-x64-musl) build and run the whole suite in the
-    # merge queue in up to about 32 minutes, so 30 ejected passing groups. nextest's ci
-    # profile still ends a hung test on its own, so the higher limit does not hide a hang.
+    # In the merge queue, the slowest legs (macos-x64, linux-x64-musl) build and run the
+    # whole suite in up to about 32 minutes, an estimate from the slowest observed build
+    # and test run. At 30 minutes, jobs were cancelled while their tests were still
+    # running. nextest's ci profile still ends a hung test on its own, so the higher limit
+    # does not hide a hang.
     timeout-minutes: 45
     env:
       RUST_AFFECTED: ${{ needs.changes.outputs.rust_affected }}
