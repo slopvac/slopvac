@@ -1,5 +1,103 @@
 id: user-text-literal
 snapshots:
+  "fn f() { CliError::escaping(\"usage\", \"bad value\"); }":
+    labels:
+    - source: CliError::escaping("usage", "bad value")
+      style: primary
+      start: 9
+      end: 49
+    - source: CliError::escaping
+      style: secondary
+      start: 9
+      end: 27
+    - source: "\"bad value\""
+      style: secondary
+      start: 37
+      end: 48
+    - source: "\"bad value\""
+      style: secondary
+      start: 37
+      end: 48
+  "fn f() { CliError::escaping(code, format!(\"bad {}\", v)); }":
+    labels:
+    - source: CliError::escaping(code, format!("bad {}", v))
+      style: primary
+      start: 9
+      end: 55
+    - source: CliError::escaping
+      style: secondary
+      start: 9
+      end: 27
+    - source: format
+      style: secondary
+      start: 34
+      end: 40
+    - source: format!("bad {}", v)
+      style: secondary
+      start: 34
+      end: 54
+    - source: format!("bad {}", v)
+      style: secondary
+      start: 34
+      end: 54
+  "fn f() { CliError::new(\"usage\", \"pass paths\"); }":
+    labels:
+    - source: CliError::new("usage", "pass paths")
+      style: primary
+      start: 9
+      end: 45
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: "\"pass paths\""
+      style: secondary
+      start: 32
+      end: 44
+    - source: "\"pass paths\""
+      style: secondary
+      start: 32
+      end: 44
+  "fn f() { CliError::new(\"usage\", format!(\"cannot read {}\", name)); }":
+    labels:
+    - source: CliError::new("usage", format!("cannot read {}", name))
+      style: primary
+      start: 9
+      end: 64
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: format
+      style: secondary
+      start: 32
+      end: 38
+    - source: format!("cannot read {}", name)
+      style: secondary
+      start: 32
+      end: 63
+    - source: format!("cannot read {}", name)
+      style: secondary
+      start: 32
+      end: 63
+  "fn f() { CliError::new(code, \"x\"); }":
+    labels:
+    - source: CliError::new(code, "x")
+      style: primary
+      start: 9
+      end: 33
+    - source: CliError::new
+      style: secondary
+      start: 9
+      end: 22
+    - source: "\"x\""
+      style: secondary
+      start: 29
+      end: 32
+    - source: "\"x\""
+      style: secondary
+      start: 29
+      end: 32
   "fn f() { Command::new(\"x\").about(\"Lint prose\"); }":
     labels:
     - source: Command::new("x").about("Lint prose")

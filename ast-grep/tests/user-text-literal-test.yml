@@ -6,6 +6,12 @@ valid:
   - 'fn f() { panic!("never reached here"); }'
   - 'fn f() { cmd.arg("--flag"); }'
   - 'fn f() { cmd.help(HELP.as_static()); }'
+  - 'fn f() { CliError::new("usage", text(&Msg::A)); }'
+  - 'fn f() { CliError::new(code, message); }'
+  - 'fn f() { CliError::new("usage", render(&m)); }'
+  - 'fn f() { CliError::escaping("usage", raw); }'
+  - 'fn f() { CliError::new("pass paths", message); }'
+  - 'fn f() { Other::new("usage", "not a cli error"); }'
   - |
     #[cfg(test)]
     mod tests {
@@ -18,6 +24,11 @@ invalid:
   - 'fn f() { let s = format!("cannot read {}", name); }'
   - 'fn f() { Command::new("x").help("Print the report"); }'
   - 'fn f() { Command::new("x").about("Lint prose"); }'
+  - 'fn f() { CliError::new("usage", "pass paths"); }'
+  - 'fn f() { CliError::new("usage", format!("cannot read {}", name)); }'
+  - 'fn f() { CliError::escaping("usage", "bad value"); }'
+  - 'fn f() { CliError::escaping(code, format!("bad {}", v)); }'
+  - 'fn f() { CliError::new(code, "x"); }'
   - |
     mod tests {
         fn f() { println!("not marked as test code"); }
