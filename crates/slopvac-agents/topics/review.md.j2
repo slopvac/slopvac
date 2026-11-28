@@ -1,9 +1,9 @@
 <!-- summary: Review prose before hand-off, by review type -->
 # Prime: review
 
-Run before you hand off prose. Someone other than the author checks the change.
+Before you hand off prose, review it. Someone other than the author checks the change.
 {% if review_depth == "self" %}
-Depth: `self`. You review the change yourself; no separate reviewer pass runs.
+Depth: `self`. You review the change yourself. No separate reviewer pass runs.
 {% elif review_depth == "adversary" %}
 Depth: `adversary`. Complete the adversary loop: rounds with a new reviewer each, until a round reports no finding you accept.
 {% endif %}
@@ -51,17 +51,17 @@ Run `slopvac prime review --type <type>` for the steps of one type.
 ## Scope
 
 - Fact checking covers changed claims and lost-fact candidates. Nothing else is in scope.
-- You may add 5 checks, plus half the required checks rounded up, without asking.
+- Do not ask before you add up to 5 checks, plus half the required checks rounded up.
 - Above that, ask the user to confirm the exact scope. Then rerun with `--scope-approved`.
 
 ## Reviewer
 
 {{ model_guidance }}
 
-- The reviewer model should differ from the author's. A match adds the notice `review-model-same`.
+- Use a reviewer model that differs from the author's. A match adds the notice `review-model-same`.
 - A model provider is a plugin. It runs only after `slopvac plugins trust` and a `[review] provider` entry.
 - `slopvac review --dry-run` prints the text a provider would get and calls nothing. Offline mode blocks every provider.
-- `mechanical` calls no provider. `update` sends changed passages with originals, plus added and dropped sentences. `rewrite` sends both documents.
+- `mechanical` needs no provider. `update` sends changed passages with originals, plus added and dropped sentences. `rewrite` sends both documents.
 {% if level != "minimal" %}
 
 ## Verdict
@@ -78,5 +78,5 @@ Action:  <the single highest-value change, or none>
 
 Report REVISE for lint exit 1 or 2, a failed claim, a lost fact or an open reviewer finding.
 
-In the Reviewer line, name the model the harness actually ran, or `unknown`; never guess.
+In the Reviewer line, name the model the harness ran, or `unknown`. Do not guess.
 {% endif %}

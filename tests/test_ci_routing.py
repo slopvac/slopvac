@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tomllib
@@ -1079,3 +1080,184 @@ def test_a_change_to_the_generated_rules_reference_alone_runs_its_drift_check():
     assert evaluate(JOBS["lint-package"]["if"], outputs) is True
     commands = [step.get("run", "") for step in JOBS["lint-package"]["steps"]]
     assert any("slopvac reference --write" in c and "--check" in c for c in commands)
+
+
+# --- the prime prose gate --------------------------------------------------
+
+PRIME_GATE_SCRIPT = "scripts/ci/gate_prime_prose.sh"
+OPERATORS = {"&&", "||", ";", "|", "&"}
+
+
+def commands(run: str) -> list[list[str]]:
+    """The commands of a `run:` block, each as its words.
+
+    Comments are dropped, a trailing backslash joins lines, and `&&`, `||`, `;` and `|`
+    end a command. An `echo` line is a command named `echo`, so its arguments never read
+    as a command of their own.
+    """
+    found: list[list[str]] = []
+    for line in re.sub(r"\\\n", " ", run).splitlines():
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        words: list[str] = []
+        for word in [*lexer, ";"]:
+            if word in OPERATORS:
+                if words:
+                    found.append(words)
+                words = []
+            else:
+                words.append(word)
+    return found
+
+
+def runs_script(step: dict) -> bool:
+    """True when the step runs the gate script: `bash <script>`, `sh <script>` or `<script>`."""
+    for words in commands(step.get("run", "")):
+        if words[:2] in (["bash", PRIME_GATE_SCRIPT], ["sh", PRIME_GATE_SCRIPT]):
+            return True
+        if words[0] == PRIME_GATE_SCRIPT:
+            return True
+    return False
+
+
+def builds_the_binary(step: dict) -> bool:
+    """True when the step runs `cargo build` for the `slopvac` package."""
+    for words in commands(step.get("run", "")):
+        if words[:2] != ["cargo", "build"] or "--release" in words:
+            continue
+        packages = [words[i + 1] for i, w in enumerate(words[:-1]) if w in {"-p", "--package"}]
+        if "slopvac" in packages:
+            return True
+    return False
+
+
+def runs_whole_pytest_suite(step: dict) -> bool:
+    return any(w == ["python3", "-m", "pytest"] for w in commands(step.get("run", "")))
+
+
+def gate_location() -> tuple[str, dict]:
+    """The test.yml job that calls the job whose steps run the gate script, and that job."""
+    for name, job in JOBS.items():
+        uses = job.get("uses", "")
+        if not uses.startswith("./.github/workflows/"):
+            continue
+        for called in load(uses.rsplit("/", 1)[1])["jobs"].values():
+            if any(runs_script(s) for s in called.get("steps", [])):
+                return name, called
+    pytest.fail(f"no workflow called from test.yml runs {PRIME_GATE_SCRIPT}")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # The topics and the messages they render.
+        "crates/slopvac-agents/topics/review.md.j2",
+        "crates/slopvac-agents/topics/write.md.j2",
+        "crates/slopvac-agents/src/messages.rs",
+        "crates/slopvac-agents/data/model-evals.json",
+        # The command list of the base topic comes from the CLI crate.
+        "crates/slopvac/src/owners.rs",
+        # The config that `prime` reads, and the schemas that validate it.
+        "crates/slopvac-config/src/schema.rs",
+        "schemas/v3/config.schema.json",
+        "schemas/v3/frontmatter.schema.json",
+        "docs/contract/compat/profiles/legacy-normal.toml",
+        # The ruleset that lints the rendered text.
+        "crates/slopvac-rules/tests/fixtures/core-v3/ai-residue.json",
+        "crates/slopvac-styles/presets/ste.toml",
+        "crates/slopvac-engine/src/lib.rs",
+        # The build: PCRE2 linking comes from .cargo/config.toml.
+        ".cargo/config.toml",
+        "docs/site.toml",
+        "Cargo.lock",
+        "rust-toolchain.toml",
+        # The script and the fixture config.
+        PRIME_GATE_SCRIPT,
+        ".github/action-fixtures/slopvac-v3.toml",
+    ],
+)
+def test_every_input_of_the_rendered_prime_text_runs_the_prime_gate(path):
+    name, _ = gate_location()
+    assert evaluate(JOBS[name]["if"], classes_of([path])) is True
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # Each changes the gate or what it renders, so its coverage tests must run too.
+        PRIME_GATE_SCRIPT,
+        "tests/test_prime_prose_gate.py",
+        "crates/slopvac-agents/topics/review.md.j2",
+        "crates/slopvac/src/owners.rs",
+        ".cargo/config.toml",
+        # build.rs of slopvac-report reads docs/site.toml, so it feeds the built binary.
+        "docs/site.toml",
+        # The `test` job builds the binary with the pinned toolchain this script installs.
+        "scripts/ci/install-rust-toolchain.sh",
+    ],
+)
+def test_every_input_of_the_prime_gate_runs_its_coverage_tests(path):
+    # The `test` job runs the whole root pytest suite, tests/test_prime_prose_gate.py
+    # included, against the built binary.
+    assert any(runs_whole_pytest_suite(s) for s in JOBS["test"]["steps"])
+    assert evaluate(JOBS["test"]["if"], classes_of([path])) is True
+
+
+@pytest.mark.parametrize(
+    ("run", "expected"),
+    [
+        (
+            "cargo build --locked -p slopvac",
+            [["cargo", "build", "--locked", "-p", "slopvac"]],
+        ),
+        ("# cargo build -p slopvac", []),
+        ("echo cargo build -p slopvac", [["echo", "cargo", "build", "-p", "slopvac"]]),
+        (
+            "make && cargo build \\\n  -p slopvac",
+            [["make"], ["cargo", "build", "-p", "slopvac"]],
+        ),
+        ("ls | grep x  # not cargo build", [["ls"], ["grep", "x"]]),
+    ],
+)
+def test_commands_reads_executable_commands_only(run, expected):
+    assert commands(run) == expected
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        "# cargo build -p slopvac",
+        "echo cargo build -p slopvac",
+        "cargo build --release -p slopvac",
+        "cargo build -p other",
+        "cargo check -p slopvac",
+    ],
+)
+def test_only_a_cargo_build_of_the_slopvac_package_builds_the_binary(run):
+    assert builds_the_binary({"run": run}) is False
+    assert builds_the_binary({"run": "cargo build --locked -p slopvac"}) is True
+
+
+@pytest.mark.parametrize(
+    "run",
+    ["# bash scripts/ci/gate_prime_prose.sh", "echo scripts/ci/gate_prime_prose.sh"],
+)
+def test_a_comment_or_an_echo_does_not_run_the_gate_script(run):
+    assert runs_script({"run": run}) is False
+    assert runs_script({"run": f"bash {PRIME_GATE_SCRIPT} a b c"}) is True
+
+
+def test_the_3x_job_runs_the_gate_with_the_binary_it_built():
+    _, job = gate_location()
+    steps = job["steps"]
+    gate = next(i for i, s in enumerate(steps) if runs_script(s))
+    builds = [i for i, s in enumerate(steps) if builds_the_binary(s)]
+    assert builds
+    assert [i for i in builds if i < gate], "no build step runs before the gate"
+    # The gate gets that build's output, and the files it names exist.
+    run = steps[gate]["run"]
+    assert '"$SLOPVAC_BIN"' in run
+    assert job["env"]["SLOPVAC_BIN"].endswith("/target/debug/slopvac")
+    assert (ROOT / PRIME_GATE_SCRIPT).is_file()
+    assert (ROOT / ".github/action-fixtures/slopvac-v3.toml").is_file()
+    assert ".github/action-fixtures/slopvac-v3.toml" in run
