@@ -5,6 +5,8 @@
 //! never holds document text or an absolute path outside the project root. It also holds the
 //! sentences that fill those details. The binary registers it in [`crate::messages::ALL`].
 
+use std::path::PathBuf;
+
 use slopvac_messages::{Catalog, Entry};
 
 use crate::errors::CliError;
@@ -21,7 +23,10 @@ pub(crate) enum IoMessage {
         detail: String,
     },
     /// A 2.x option that 3.0 removed.
-    #[expect(dead_code, reason = "registered here; `init` and `run` adopt it in their own changes")]
+    #[expect(
+        dead_code,
+        reason = "registered here; the `init` and `run` messages slice constructs it"
+    )]
     #[code("removed-option")]
     #[message("{detail}")]
     RemovedOption {
@@ -115,6 +120,14 @@ pub(crate) enum IoMessage {
     #[code("cli-open-needs-html")]
     #[text("--open shows an HTML report; drop --format or use --format html.")]
     OpenNeedsHtml,
+    /// The line `--out` prints on standard output after it writes the report.
+    #[code("cli-output-report-path")]
+    #[text("report: {path}")]
+    OutputReportPath {
+        /// The report file, as the user gave it.
+        #[display_path]
+        path: PathBuf,
+    },
     /// Writing the report failed.
     #[code("cli-report-write-failed")]
     #[text("cannot write the report: {kind}")]

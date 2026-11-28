@@ -49,6 +49,7 @@ fn the_catalog_registers_exactly_these_codes() {
             "cli-open-needs-html",
             "cli-open-no-opener",
             "cli-open-skipped-ci",
+            "cli-output-report-path",
             "cli-report-write-failed",
             "cli-stdin-document-too-large",
             "cli-stdin-fix-unsupported",
@@ -108,6 +109,7 @@ fn a_general_code_is_an_error_that_carries_the_detail_of_its_site(#[case] code: 
     "cli-open-needs-html",
     "--open shows an HTML report; drop --format or use --format html."
 )]
+#[case::report_path("cli-output-report-path", "report: {path}")]
 #[case::write_failed("cli-report-write-failed", "cannot write the report: {kind}")]
 #[case::skipped_ci("cli-open-skipped-ci", "not opening the report: CI is set.")]
 #[case::open_failed("cli-open-failed", "warning: could not open the report: {detail}")]

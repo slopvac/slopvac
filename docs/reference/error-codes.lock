@@ -43,6 +43,21 @@ claims-literal-added text
 claims-literal-removed text
 claims-negation-changed text
 claims-text-failed error
+cli-open-exited text
+cli-open-failed text
+cli-open-needs-html text
+cli-open-no-opener text
+cli-open-skipped-ci text
+cli-output-report-path text
+cli-report-write-failed text
+cli-stdin-document-too-large text
+cli-stdin-fix-unsupported text
+cli-stdin-language-invalid text
+cli-stdin-language-required text
+cli-stdin-not-readable text
+cli-stdin-not-utf8 text
+cli-stdin-option-unsupported text
+cli-stdin-path-given text
 command-not-wired error
 comment-rule-named-not-run notice
 comment-rules-not-run notice
@@ -401,6 +416,8 @@ fix-refused text
 fix-symlink error
 fix-unsafe-directory error
 fix-unsupported-platform error
+input-not-utf8 error
+input-unreadable error
 internal-error error
 invalid-params error
 invalid-request error
@@ -668,6 +685,7 @@ not-initialized error
 offline error
 offline-network-needed error
 offline-plugin-missing error
+output-failed error
 pack-name-ambiguous error
 parse-body-span-invalid text
 parse-budget-exceeded text
@@ -1546,6 +1564,8 @@ prime-topic-disabled-in text
 prime-topic-render-failed text
 prime-topic-unknown text
 protocol-version-unsupported error
+removed-option error
+render-failed error
 render-json error
 render-missing-source error
 render-position error
@@ -1857,6 +1877,7 @@ update-verify-rejected text
 update-verify-wrong-release text
 update-version-reason text
 update-version-unknown error
+usage error
 vocabulary-no-blocklist notice
 vocabulary-no-taggable-entries notice
 vocabulary-sweep-shared notice

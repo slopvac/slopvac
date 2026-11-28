@@ -132,9 +132,8 @@ pub fn deliver_with(
         return out.flush().map_err(failed);
     };
     write_file(&path, &rendered).map_err(failed)?;
-    // The fixed output line that scripts read, not a message.
-    // ast-grep-ignore: user-text-literal
-    writeln!(out, "report: {}", path.display()).map_err(failed)?;
+    let line = IoMessage::OutputReportPath { path: path.clone() };
+    writeln!(out, "{}", line.text()).map_err(failed)?;
     out.flush().map_err(failed)?;
     if open {
         show(&path, opener, ci, err_out);
