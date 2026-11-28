@@ -835,6 +835,62 @@ fn an_rst_buffer_never_runs_a_python_from_its_own_repository() -> TestResult {
     Ok(())
 }
 
+/// A buffer opened through a symlink has two repositories: the link's and the target's. Both
+/// are untrusted when they sit outside the server's directory, so a `python3` that the link's
+/// repository ships on `PATH` never runs, even though the config lookup follows the link to
+/// the target. The fake `python3` leaves a marker file if it runs.
+///
+/// The link is the file itself, or a directory of the link repository that points at the
+/// target repository's root, so the nearest `.git` above the opened path is the target's.
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::file_link("docs/a.rst")]
+#[case::directory_link_to_the_target_repository("sub/docs/a.rst")]
+fn an_rst_buffer_through_a_symlink_never_runs_a_python_from_the_link_repository(
+    #[case] opened: &str,
+) -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+    let link_repo = tempfile::tempdir()?;
+    let link_root = link_repo.path().canonicalize()?;
+    fs::create_dir(link_root.join(".git"))?;
+    let bin = link_root.join("bin");
+    fs::create_dir(&bin)?;
+    let marker = link_root.join("executed");
+    // The search path is only the link repository's `bin`, so no other interpreter is found,
+    // and the script names `touch` by its full path.
+    let script = format!("#!/bin/sh\n/usr/bin/touch '{}'\nexit 0\n", marker.display());
+    for name in ["python3", "python"] {
+        let tool = bin.join(name);
+        fs::write(&tool, &script)?;
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755))?;
+    }
+    let target_repo = tempfile::tempdir()?;
+    let target_root = target_repo.path().canonicalize()?;
+    fs::create_dir(target_root.join(".git"))?;
+    let text = "Title\n=====\n\nText.\n";
+    fs::create_dir(target_root.join("docs"))?;
+    fs::write(target_root.join("docs/a.rst"), text)?;
+    if opened == "docs/a.rst" {
+        fs::create_dir(link_root.join("docs"))?;
+        std::os::unix::fs::symlink(target_root.join("docs/a.rst"), link_root.join(opened))?;
+    } else {
+        std::os::unix::fs::symlink(&target_root, link_root.join("sub"))?;
+    }
+    let path = bin.display().to_string();
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start_with(&root, &[("PATH", &path)])?;
+    session.open(&link_root, opened, text)?;
+    let codes = session.codes(&link_root, opened)?;
+    session.finish()?;
+    assert!(!marker.exists(), "the link repository's python3 was run");
+    assert!(
+        codes.iter().any(|c| c == "rst-converter-missing"),
+        "{codes:?}"
+    );
+    Ok(())
+}
+
 /// A directive diagnostic carries the code and a fixed text, never the value of the document
 /// (policies, logging and redaction). `zz-ZZ` is no locale, so the check refuses it.
 #[test]
