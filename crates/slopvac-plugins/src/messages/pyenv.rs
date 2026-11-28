@@ -867,7 +867,7 @@ pub(crate) enum PyenvPhrase {
 /// environments and interpreters live outside the project, so an absolute path shows as
 /// `<external>/<file name>`.
 fn shown(path: &Path) -> String {
-    slopvac_fs::display_under_root(path, Path::new("."))
+    path.display().to_string()
 }
 
 /// `Reading` for `path`.

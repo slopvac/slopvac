@@ -577,13 +577,13 @@ impl ManagedEnv {
         ))?;
         if files.first().map(|f| Path::new(&f.path)) != Some(resolved.as_path()) {
             return Err(PyEnvError::Changed {
-                path: slopvac_fs::display_under_root(&resolved, Path::new(".")),
+                path: resolved.display().to_string(),
                 why: PyenvPhrase::NotRecordedInterpreter.as_static().into(),
             });
         }
         for f in files {
             let changed = |why: &str| PyEnvError::Changed {
-                path: slopvac_fs::display_under_root(Path::new(&f.path), Path::new(".")),
+                path: f.path.clone(),
                 why: why.to_owned(),
             };
             let meta =
