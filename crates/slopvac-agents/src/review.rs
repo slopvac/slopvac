@@ -13,6 +13,7 @@ use serde::Serialize;
 
 use slopvac_messages::Catalog;
 use slopvac_model::{Notice, NoticeLevel, SchemaVersion};
+use slopvac_plugins::hooks::{CompleteItem, CompleteRequest, ProviderTask};
 use slopvac_update::messages::UpdateMessage;
 
 use crate::claims::{self, Report};
@@ -57,11 +58,11 @@ impl ReviewType {
     /// The `task` a provider is asked for this type, or `None` for `mechanical`, which calls
     /// no provider.
     #[must_use]
-    pub fn task(self) -> Option<&'static str> {
+    pub fn task(self) -> Option<ProviderTask> {
         match self {
             Self::Mechanical => None,
-            Self::Update => Some("update"),
-            Self::Rewrite => Some("rewrite"),
+            Self::Update => Some(ProviderTask::Update),
+            Self::Rewrite => Some(ProviderTask::Rewrite),
         }
     }
 
@@ -380,12 +381,14 @@ pub struct SentItem {
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct ProviderRequest<'a> {
-    /// The task: `update` or `rewrite`.
+    /// The task as the protocol names it: `update` or `rewrite`.
     pub task: &'static str,
     /// The reviewer model from `--reviewer-model`, else `[review] model`.
     pub model: &'a str,
-    /// The items, from [`provider_items`].
+    /// The items, from [`provider_items`], with what each one belongs to.
     pub items: &'a [SentItem],
+    /// The `provider/complete` request: the plan's own `request`, sent as it is.
+    pub call: &'a CompleteRequest,
 }
 
 /// A provider's answer for one sent item.
@@ -525,6 +528,30 @@ pub fn provider_items(payload: &Payload) -> Vec<SentItem> {
     items
 }
 
+/// The `provider/complete` request for `items`, or `None` when nothing would be sent: a type
+/// with no task, or no items. The plan prints this value, and a call sends the same value.
+/// `model` is the reviewer model a call names, from the flag or the config.
+#[must_use]
+pub fn provider_request(
+    review_type: ReviewType,
+    items: &[SentItem],
+    model: Option<&str>,
+) -> Option<CompleteRequest> {
+    let task = review_type.task()?;
+    if items.is_empty() {
+        return None;
+    }
+    let sent = items
+        .iter()
+        .map(|item| CompleteItem {
+            id: item.id.clone(),
+            instruction: Some(item.instruction.to_owned()),
+            text: item.text.clone(),
+        })
+        .collect();
+    Some(CompleteRequest::new(task, model.map(str::to_owned), sent))
+}
+
 /// The instruction for a payload item of `role`. The roles are the closed set that
 /// [`payload`] builds.
 fn instruction(role: &str, with_original: bool) -> AgentsPhrase {
@@ -597,6 +624,11 @@ pub struct Plan {
     pub scope: Scope,
     /// The exact provider payload.
     pub payload: Payload,
+    /// The `provider/complete` request that a call sends: present when the review uses a provider
+    /// and the payload has items, also on `--dry-run`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = slopvac_model::absent_not_null)]
+    pub request: Option<CompleteRequest>,
     /// False for `mechanical`, which never calls a provider.
     pub uses_provider: bool,
     /// The author's model, if known.
@@ -738,13 +770,25 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, Box<Stop
     } else {
         (false, Vec::new())
     };
+    let payload = payload(review_type, &report, &original, &revised);
+    // The model a call names: only the flag or the config, never one the provider declares.
+    let call_model = match reviewer_source {
+        "flag" | "config" => reviewer.as_deref(),
+        _ => None,
+    };
+    let request = if uses_provider {
+        provider_request(review_type, &provider_items(&payload), call_model)
+    } else {
+        None
+    };
     let mut plan = Plan {
         schema_version: SchemaVersion,
         review_type,
         reason,
         stats,
         scope,
-        payload: payload(review_type, &report, &original, &revised),
+        payload,
+        request,
         uses_provider,
         author_model: author,
         reviewer_model: reviewer,
@@ -952,19 +996,21 @@ fn call_provider(
     let provider = env
         .provider
         .ok_or_else(|| AgentsError::coded(&AgentsMessage::ProviderMissing))?;
-    // A payload with nothing to send makes no call, so it needs no reviewer model.
-    let Some(task) = plan.review_type.task() else {
+    // A payload with nothing to send has no request and makes no call, so it needs no model.
+    let Some(call) = plan.request.clone() else {
         return Ok(None);
     };
+    let model = call
+        .model
+        .as_deref()
+        .ok_or_else(|| AgentsError::coded(&AgentsMessage::ModelMissing))?;
+    let model_source = sources.reviewer;
     let items = provider_items(&plan.payload);
-    if items.is_empty() {
-        return Ok(None);
-    }
-    let (model, model_source) = requested_model(plan.reviewer_model.as_deref(), sources.reviewer)?;
     let reply = provider.review(&ProviderRequest {
-        task,
+        task: call.task.as_str(),
         model,
         items: &items,
+        call: &call,
     })?;
     let answers = check_reply(&reply, &items)?;
     refuse_failed_items(&answers, &items)?;
@@ -989,18 +1035,6 @@ fn call_provider(
     let notices = reported_notices(plan, sources.author, model, model_source, &answered)?;
     plan.notices.extend(notices);
     Ok(Some(assemble_report(&plan.payload, &answered)))
-}
-
-/// The reviewer model a call sends: `--reviewer-model`, else `[review] model`. A model that
-/// only the provider declares is not enough, because the request must name one.
-fn requested_model<'a>(
-    reviewer: Option<&'a str>,
-    source: &'static str,
-) -> Result<(&'a str, &'static str), AgentsError> {
-    match (reviewer, source) {
-        (Some(model), "flag" | "config") => Ok((model, source)),
-        _ => Err(AgentsError::coded(&AgentsMessage::ModelMissing)),
-    }
 }
 
 /// Group the answers by the model they report, in payload order, and add the notices for a

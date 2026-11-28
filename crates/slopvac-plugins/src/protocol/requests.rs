@@ -15,12 +15,12 @@ use serde_json::Value;
 
 use super::schema::{
     Documents, FeatureNameSchema, FindingsEntry, HookIdSchema, HookKindSchema, MinOne,
-    ObjectSchema, Over, ProtocolVersion, ReportStub, TaskKind, UniqueItems, bare_entry,
+    ObjectSchema, Over, ProtocolVersion, ReportStub, UniqueItems, bare_entry,
     bare_fields, min_version_is_optional, options_are_optional,
 };
 use super::text;
 use crate::error::{EncodeCause, PluginError};
-use crate::hooks::{CompleteItem, Document};
+use crate::hooks::{CompleteItem, Document, ProviderTask};
 use crate::host::MAX_REQUEST_ID;
 use crate::protocol::NameVersion;
 
@@ -297,8 +297,7 @@ pub(crate) struct CompleteParams<'a> {
     #[schemars(with = "HookIdSchema")]
     pub(crate) provider: &'a str,
     /// The review type.
-    #[schemars(with = "TaskKind")]
-    pub(crate) task: &'a str,
+    pub(crate) task: ProviderTask,
 }
 
 /// `recipe/plan`.
@@ -722,7 +721,7 @@ mod tests {
                 items: &items,
                 model: "m1",
                 provider: "main",
-                task: "rewrite",
+                task: ProviderTask::Rewrite,
             },
         );
         agree(

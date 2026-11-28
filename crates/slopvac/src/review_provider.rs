@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 use slopvac_agents::AgentsError;
 use slopvac_agents::review::{self, ModelProvider, ProviderReply, ProviderRequest, ReplyItem};
 use slopvac_config::LoadedConfig;
-use slopvac_plugins::hooks::CompleteItem;
 use slopvac_plugins::{CompleteError, HookKind, HostConfig, PluginError, Shutdown};
 
 use crate::env::Env;
@@ -98,18 +97,10 @@ impl<'a> PluginProvider<'a> {
             .iter()
             .find(|h| h.kind == HookKind::Provider.as_str())
             .map(|h| h.id.clone());
-        let answers = hook.as_deref().map(|hook| {
-            let items: Vec<CompleteItem> = request
-                .items
-                .iter()
-                .map(|item| CompleteItem {
-                    id: item.id.clone(),
-                    instruction: Some(item.instruction.to_owned()),
-                    text: item.text.clone(),
-                })
-                .collect();
-            host.complete_checked(hook, request.task, request.model, &items)
-        });
+        // The plan's own request goes out as it is (threat model TM-19).
+        let answers = hook
+            .as_deref()
+            .map(|hook| host.complete_checked(hook, request.call));
         let shutdown = host.shutdown();
         // A failure of the request comes first; the shutdown can only add to a clean reply.
         let answers = match answers {

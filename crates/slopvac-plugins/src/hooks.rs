@@ -244,6 +244,60 @@ pub struct Completion {
     pub model: String,
 }
 
+/// The review task of `provider/complete`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+#[schemars(inline, rename_all = "kebab-case")]
+#[non_exhaustive]
+pub enum ProviderTask {
+    /// Check the changed claims.
+    FactCheck,
+    /// Review the changed passages.
+    Update,
+    /// Review the whole document.
+    Rewrite,
+}
+
+impl ProviderTask {
+    /// The task as the protocol names it.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FactCheck => "fact-check",
+            Self::Update => "update",
+            Self::Rewrite => "rewrite",
+        }
+    }
+}
+
+/// What a `provider/complete` call sends, apart from the hook id that the handshake picks: the
+/// `task`, the `model` when one is set, and the `items`.
+///
+/// `slopvac review` prints this value in its plan and sends the same value, so the dry run
+/// and the call cannot drift apart (threat model TM-19).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[schemars(inline, deny_unknown_fields, transform = bare_fields)]
+#[non_exhaustive]
+pub struct CompleteRequest {
+    /// The review task.
+    pub task: ProviderTask,
+    /// The reviewer model. A call needs one; a dry run without one leaves it out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1), transform = slopvac_model::absent_not_null)]
+    pub model: Option<String>,
+    /// The items, at least one.
+    #[schemars(length(min = 1))]
+    pub items: Vec<CompleteItem>,
+}
+
+impl CompleteRequest {
+    /// A request for `task` on `model` with `items`.
+    #[must_use]
+    pub fn new(task: ProviderTask, model: Option<String>, items: Vec<CompleteItem>) -> Self {
+        Self { task, model, items }
+    }
+}
+
 /// An item sent to a provider.
 ///
 /// Fields sit in alphabetical order, the order of the wire bytes.

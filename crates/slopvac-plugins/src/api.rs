@@ -7,12 +7,12 @@ use serde_json::Value;
 
 use crate::error::{CompleteError, PluginError, RpcError};
 use crate::hooks::{
-    CompleteItem, Completion, Document, FindingsDocument, FixEdit, RecipeFile, Rendered, Segment,
+    CompleteRequest, Completion, Document, FindingsDocument, FixEdit, RecipeFile, Rendered, Segment,
     Tag, check_completions, match_entries, parse_edits, parse_error_object, parse_recipe,
     parse_rendered, parse_score, parse_segments, parse_tags,
 };
 use crate::host::Plugin;
-use crate::messages::host::HostText;
+use crate::messages::host::{HostPhrase, HostText};
 use crate::protocol::{
     CompleteParams, ExtractParams, FixParams, HookKind, RecipeParams, RenderParams, ScoreParams,
     TagParams, request_len,
@@ -318,37 +318,38 @@ impl Plugin {
     pub fn complete(
         &self,
         hook: &str,
-        task: &str,
-        model: &str,
-        items: &[CompleteItem],
+        request: &CompleteRequest,
     ) -> Result<Vec<Result<Completion, RpcError>>, PluginError> {
-        self.complete_checked(hook, task, model, items)
-            .map_err(PluginError::from)
+        self.complete_checked(hook, request).map_err(PluginError::from)
     }
 
     /// [`Self::complete`], with the stage of a failure kept: a refused result is
     /// [`CompleteError::Refused`], and every other failure is [`CompleteError::Host`]. The
-    /// answers follow the order of `items`.
+    /// answers follow the order of the request's items.
     ///
     /// # Errors
-    /// A request-level failure, by stage.
+    /// A request-level failure, by stage. A request without a model is `plugin-usage`, because
+    /// `provider/complete` needs one.
     pub fn complete_checked(
         &self,
         hook: &str,
-        task: &str,
-        model: &str,
-        items: &[CompleteItem],
+        request: &CompleteRequest,
     ) -> Result<Vec<Result<Completion, RpcError>>, CompleteError> {
+        let model = request.model.as_deref().ok_or_else(|| {
+            CompleteError::Host(PluginError::Usage(
+                HostPhrase::CompleteModelMissing.as_static().to_owned(),
+            ))
+        })?;
         let params = CompleteParams {
-            items,
+            items: &request.items,
             model,
             provider: hook,
-            task,
+            task: request.task,
         };
         let result = self
             .call_with(HookKind::Provider, hook, &params)
             .map_err(CompleteError::Host)?;
-        let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+        let ids: Vec<&str> = request.items.iter().map(|i| i.id.as_str()).collect();
         check_completions(&result, &ids)
     }
 

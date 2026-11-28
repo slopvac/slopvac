@@ -915,6 +915,7 @@ plugins-host-bad-jsonrpc text
 plugins-host-budget-exceeded text
 plugins-host-bytes-exceed text
 plugins-host-closed text
+plugins-host-complete-model-missing text
 plugins-host-cpu-limit text
 plugins-host-dropped text
 plugins-host-encode-message text

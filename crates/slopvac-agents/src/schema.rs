@@ -164,6 +164,10 @@ pub(crate) fn plan(schema: &mut Schema) {
                 &is("reviewer_model_checked", &json!(true)),
                 &json!({"required": ["author_model", "reviewer_model"]}),
             ),
+            if_then(
+                &is("uses_provider", &json!(false)),
+                &json!({"allOf": absent(&["request"])}),
+            ),
         ],
     );
 }

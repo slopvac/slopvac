@@ -18,8 +18,8 @@ use common::*;
 use rstest::rstest;
 use serde_json::{Value, json};
 use slopvac_plugins::hooks::{
-    CompleteItem, Completion, Document, Finding, FindingsDocument, RecipeAction, RecipeFile,
-    Rendered, Segment, Span,
+    CompleteItem, CompleteRequest, Completion, Document, Finding, FindingsDocument, ProviderTask,
+    RecipeAction, RecipeFile, Rendered, Segment, Span,
 };
 use slopvac_plugins::{
     BudgetCaps, DrainHook, HookKind, HostConfig, Plugin, PluginError, PluginSpec, ReadHook,
@@ -1256,7 +1256,10 @@ fn complete_returns_an_answer_or_an_error_per_item() {
             instruction: Some("fail".into()),
         },
     ];
-    let out = p.complete("main", "rewrite", "m1", &items).unwrap();
+    let out = p.complete(
+        "main",
+        &CompleteRequest::new(ProviderTask::Rewrite, Some("m1".into()), items.to_vec()),
+    ).unwrap();
     let sent = sent_params(&pidfile, "provider/complete");
     std::fs::remove_dir_all(pidfile.parent().unwrap()).unwrap();
     assert_eq!(
