@@ -194,11 +194,34 @@ mod tests {
         assert!(matches!(r.target, Target::Digest(_)));
     }
 
-    #[test]
-    fn a_digest_does_not_excuse_a_malformed_tag() {
-        for tag in ["", "-x", "a b"] {
-            let text = format!("ghcr.io/a/b:{tag}@{D}");
-            assert!(Reference::parse(&text).is_err(), "{text}");
+    #[rstest::rstest]
+    #[case::empty("")]
+    #[case::leading_hyphen("-x")]
+    #[case::space("a b")]
+    fn a_digest_does_not_excuse_a_malformed_tag(#[case] tag: &str) {
+        let text = format!("ghcr.io/a/b:{tag}@{D}");
+        assert!(Reference::parse(&text).is_err(), "{text}");
+    }
+
+    /// A refused reference can carry a credential, so no part of the error chain repeats the
+    /// input: only the reason is kept (policies.md, section 1.7).
+    #[rstest::rstest]
+    #[case::token_in_a_tag_beside_a_digest(&format!("reg.example/acme/x:tok3n!secret@{D}"))]
+    #[case::user_info("reader:tok3n-secret@reg.example/acme/x:1")]
+    #[case::token_in_the_digest("reg.example/acme/x:1@sha256:tok3n-secret")]
+    #[case::token_in_the_repository("reg.example/acme/Tok3n-secret:1")]
+    #[case::token_without_a_target("reg.example/acme/tok3n-secret")]
+    fn a_refused_reference_keeps_the_input_out_of_the_error_chain(#[case] text: &str) {
+        let err = Reference::parse(text).unwrap_err();
+        let mut shown = vec![err.to_string(), format!("{err:?}")];
+        let mut cause = std::error::Error::source(&err);
+        while let Some(e) = cause {
+            shown.push(e.to_string());
+            shown.push(format!("{e:?}"));
+            cause = e.source();
+        }
+        for part in shown {
+            assert!(!part.to_lowercase().contains("tok3n"), "{part}");
         }
     }
 
