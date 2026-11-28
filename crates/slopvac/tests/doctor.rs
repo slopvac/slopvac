@@ -399,8 +399,14 @@ fn every_extended_file_is_listed_once_in_the_order_it_is_read() {
         "slopvac.toml",
         "schema_version = 3\nextends = [\"conf/a.toml\", \"conf/b.toml\"]\n",
     );
-    w.write("conf/a.toml", "schema_version = 3\nextends = [\"c.toml\"]\n");
-    w.write("conf/b.toml", "schema_version = 3\nextends = [\"c.toml\"]\n");
+    w.write(
+        "conf/a.toml",
+        "schema_version = 3\nextends = [\"c.toml\"]\n",
+    );
+    w.write(
+        "conf/b.toml",
+        "schema_version = 3\nextends = [\"c.toml\"]\n",
+    );
     w.write("conf/c.toml", "schema_version = 3\n");
     let (code, doc) = w.json(&[], |_| {});
     assert_eq!(code, 0);
@@ -485,7 +491,11 @@ fn an_extended_file_that_cannot_be_read_gets_the_status_and_ends_the_list(
 
 #[rstest::rstest]
 #[case::not_toml("schema_version = 3\n{{{\n", "invalid", "not valid TOML (line 2)")]
-#[case::legacy("[vale]\nbinary = \"vale\"\n", "legacy", "2.x configuration: run `slopvac migrate`")]
+#[case::legacy(
+    "[vale]\nbinary = \"vale\"\n",
+    "legacy",
+    "2.x configuration: run `slopvac migrate`"
+)]
 #[case::newer("schema_version = 4\n", "invalid", "unsupported schema_version")]
 #[case::unknown_key("schema_version = 3\nbogus = 1\n", "invalid", "unknown key (line 2)")]
 #[case::bad_value(
@@ -522,7 +532,10 @@ fn a_refused_extended_file_gets_a_fixed_message_and_ends_the_list(
 fn a_chain_over_its_depth_budget_makes_the_file_that_passes_it_invalid() {
     let w = World::new();
     // Each file extends the next: 40 levels is over the depth budget of 32.
-    w.write("slopvac.toml", "schema_version = 3\nextends = [\"f1.toml\"]\n");
+    w.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"f1.toml\"]\n",
+    );
     for n in 1..40 {
         w.write(
             &format!("f{n}.toml"),
@@ -541,7 +554,10 @@ fn a_chain_over_its_depth_budget_makes_the_file_that_passes_it_invalid() {
     );
     assert!(before.iter().all(|s| s["status"] == "ok"), "{sources:?}");
     assert_eq!(sources[0]["layer"], "project");
-    assert!(sources[1..].iter().all(|s| s["layer"] == "extends"), "{sources:?}");
+    assert!(
+        sources[1..].iter().all(|s| s["layer"] == "extends"),
+        "{sources:?}"
+    );
 }
 
 #[test]
@@ -578,7 +594,10 @@ fn offline_set_in_an_extended_file_is_a_config_source() {
         "slopvac.toml",
         "schema_version = 3\nextends = [\"base.toml\"]\n[network]\noffline = false\n",
     );
-    w.write("base.toml", "schema_version = 3\n[network]\noffline = true\n");
+    w.write(
+        "base.toml",
+        "schema_version = 3\n[network]\noffline = true\n",
+    );
     let (_, doc) = w.json(&[], |_| {});
     assert_eq!(
         doc["offline"],

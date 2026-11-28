@@ -302,7 +302,11 @@ fn update_check_false_in_the_config_option_file_suppresses_the_notice() -> io::R
         "schema_version = 3\n[network]\nupdate_check = false\n",
     )?;
     let cache = seeded_cache()?;
-    let out = run(&fx, cache.path(), &["lint", "--config", "ci.toml", "doc.md"]);
+    let out = run(
+        &fx,
+        cache.path(),
+        &["lint", "--config", "ci.toml", "doc.md"],
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(0), "stderr: {stderr}");
     assert!(!stderr.contains("update-available"), "stderr: {stderr}");

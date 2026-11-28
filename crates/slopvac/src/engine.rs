@@ -339,9 +339,10 @@ fn config_message(err: &ConfigError, root: &Path, esc: &dyn Fn(&str) -> String) 
             let file = err
                 .source_file()
                 .filter(|_| label.parent() == Some(Path::new("")));
-            esc(&err
-                .to_string()
-                .replace(path.as_str(), &redact::shown_path(file.unwrap_or(label), root)))
+            esc(&err.to_string().replace(
+                path.as_str(),
+                &redact::shown_path(file.unwrap_or(label), root),
+            ))
         }
     };
     if err.is_legacy() {
@@ -385,7 +386,10 @@ fn budget_data(err: &ConfigError) -> Option<serde_json::Map<String, serde_json::
 /// `root` when it is absolute.
 pub(crate) fn config_not_found(given: &Path, root: &Path) -> CliError {
     let shown = redact::shown_path(given, root);
-    CliError::escaping("config-not-found", &format!("--config {shown}: no such file"))
+    CliError::escaping(
+        "config-not-found",
+        &format!("--config {shown}: no such file"),
+    )
 }
 
 /// The outcome of a run that could not start because of `error`: no documents, and a notice

@@ -730,7 +730,11 @@ fn broken_project() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("slopvac.toml"), NOT_UTF8).unwrap();
     fs::create_dir(dir.path().join("old")).unwrap();
-    fs::write(dir.path().join("old/.slopvac.toml"), "profile = \"strict\"\n").unwrap();
+    fs::write(
+        dir.path().join("old/.slopvac.toml"),
+        "profile = \"strict\"\n",
+    )
+    .unwrap();
     fs::write(dir.path().join("ok.toml"), "schema_version = 3\n").unwrap();
     dir
 }
@@ -768,7 +772,10 @@ fn invocations_that_skip_the_preflight_run_on_a_broken_config(#[case] args: &[&s
 
 #[rstest::rstest]
 #[case::not_utf8(NOT_UTF8.to_vec(), "error[config-io]: cannot read {file}: not valid UTF-8")]
-#[case::oversize(oversize(), "error[config-too-large]: {file} is larger than 1048576 bytes")]
+#[case::oversize(
+    oversize(),
+    "error[config-too-large]: {file} is larger than 1048576 bytes"
+)]
 fn config_read_errors_do_not_print_absolute_paths(#[case] body: Vec<u8>, #[case] line: &str) {
     // policies.md 1.7: paths in errors are relative to the project root, or `<external>/<name>`.
     let base = tempfile::Builder::new()

@@ -129,7 +129,11 @@ where
         return exit::code(exit::INCOMPLETE);
     }
     // One resolution of the configuration for the working directory (config.md, section 2.2).
-    let preflight = Preflight::run(invocation.preflight_mode(), &cwd, invocation.explicit_config());
+    let preflight = Preflight::run(
+        invocation.preflight_mode(),
+        &cwd,
+        invocation.explicit_config(),
+    );
     let refusal = preflight.refusal(&cwd);
     // `lint` reports the failure in its own form, so `--format json` still prints the report.
     if let Some(err) = &refusal
@@ -300,7 +304,11 @@ fn dispatch(
 ) -> Result<u8, CliError> {
     match matches.subcommand() {
         Some(("self", m)) => {
-            let rt = update_runtime(env, globals.offline, context.preflight.network().update_check);
+            let rt = update_runtime(
+                env,
+                globals.offline,
+                context.preflight.network().update_check,
+            );
             let text = slopvac_update::command::run(m, &rt)
                 .map_err(|f| CliError::new(f.code, f.message))?;
             write_stdout(out, text.as_bytes())
@@ -525,9 +533,11 @@ fn doctor(
     use crate::doctor::dirs::SharedDirs;
     use crate::doctor::update::InstalledUpdateProbe;
     let cwd = std::env::current_dir().unwrap_or_default();
-    let scan = preflight.outcome().map_or_else(Default::default, |outcome| {
-        crate::doctor::config::scan(&cwd, preflight.explicit(), outcome)
-    });
+    let scan = preflight
+        .outcome()
+        .map_or_else(Default::default, |outcome| {
+            crate::doctor::config::scan(&cwd, preflight.explicit(), outcome)
+        });
     let report = crate::doctor::build(&crate::doctor::Inputs {
         env,
         cwd: &cwd,
