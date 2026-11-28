@@ -1,9 +1,8 @@
 //! The documents of `slopvac rules --format json` and `slopvac explain --format json`.
 //!
 //! The types are the producer contract of `schemas/v3/rules-output.schema.json`, which
-//! `slopvac-schemas` generates from them. Field order is the JSON key order: the members of
-//! the rule definition, then the ones the binary adds. Semantics are in
-//! `docs/contract/rules.md`.
+//! `slopvac-schemas` generates from them. The JSON keys print in alphabetical order, as they
+//! always have; see `render`. Semantics are in `docs/contract/rules.md`.
 
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -304,7 +303,12 @@ impl<'a> ExplainOutput<'a> {
 }
 
 fn render(document: &impl Serialize) -> String {
-    let mut text = serde_json::to_string_pretty(document).unwrap_or_default();
+    // Through `Value`, whose maps sort their keys, so the keys print in alphabetical order at
+    // every depth, as `slopvac rules` and `slopvac explain` have always printed them. Field
+    // order in these types does not decide the output.
+    let mut text = serde_json::to_value(document)
+        .and_then(|value| serde_json::to_string_pretty(&value))
+        .unwrap_or_default();
     text.push('\n');
     text
 }
