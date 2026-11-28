@@ -263,7 +263,34 @@ pub struct ModelMismatchNoticeData {
 }
 
 /// `items` is required when the reviewer is the reported model, and absent otherwise.
-fn model_same_conditions(_schema: &mut Schema) {}
+fn model_same_conditions(schema: &mut Schema) {
+    let conditions = vec![
+        if_then(
+            &json!({"properties": {"reviewer_source": {"const": "reported"}}, "required": ["reviewer_source"]}),
+            &json!({"required": ["items"]}),
+        ),
+        if_then(
+            &json!({
+                "properties": {"reviewer_source": {"enum": ["flag", "config", "provider"]}},
+                "required": ["reviewer_source"],
+            }),
+            &json!({"not": {"required": ["items"]}}),
+        ),
+    ];
+    schema.insert("allOf".into(), Value::Array(conditions));
+}
+
+impl ModelSameNoticeData {
+    /// Whether `items` agrees with `reviewer_source`: at least one item for a reported
+    /// reviewer, none for any other.
+    fn items_agree(&self) -> bool {
+        match (&self.reviewer_source, &self.items) {
+            (ReviewerSource::Reported, Some(items)) => !items.is_empty(),
+            (ReviewerSource::Reported, None) => false,
+            (_, items) => items.is_none(),
+        }
+    }
+}
 
 /// The data of a typed notice code, with that code. Each constructor serves one code, so a
 /// code and a shape that do not match cannot be built. [`crate::Notice::from_catalog_data`]
@@ -445,15 +472,19 @@ impl NoticeData {
         reviewer_source: ReviewerSource,
         items: Vec<ItemLocation>,
     ) -> Result<Self, NoticeError> {
+        let data = ModelSameNoticeData {
+            author: author.into(),
+            author_source,
+            reviewer: reviewer.into(),
+            reviewer_source,
+            items: (!items.is_empty()).then_some(items),
+        };
+        if !data.items_agree() {
+            return Err(NoticeError::DataShape(REVIEW_MODEL_SAME.to_owned()));
+        }
         Ok(Self {
             code: REVIEW_MODEL_SAME,
-            shape: Shape::ModelSame(ModelSameNoticeData {
-                author: author.into(),
-                author_source,
-                reviewer: reviewer.into(),
-                reviewer_source,
-                items: (!items.is_empty()).then_some(items),
-            }),
+            shape: Shape::ModelSame(data),
         })
     }
 
@@ -468,6 +499,11 @@ impl NoticeData {
         reported: impl Into<String>,
         items: Vec<ItemLocation>,
     ) -> Result<Self, NoticeError> {
+        if items.is_empty() {
+            return Err(NoticeError::DataShape(
+                REVIEW_MODEL_REPORTED_MISMATCH.to_owned(),
+            ));
+        }
         Ok(Self {
             code: REVIEW_MODEL_REPORTED_MISMATCH,
             shape: Shape::ModelMismatch(ModelMismatchNoticeData {
@@ -501,6 +537,14 @@ impl NoticeData {
             UnsupportedNoticeData::deserialize(data).is_ok()
         } else if BUDGET_CODES.contains(&code) {
             BudgetNoticeData::deserialize(data).is_ok()
+        } else if PATH_BUDGET_CODES.contains(&code) {
+            PathBudgetNoticeData::deserialize(data).is_ok()
+        } else if UNKNOWN_RULE_CODES.contains(&code) {
+            UnknownRuleNoticeData::deserialize(data).is_ok()
+        } else if MODEL_SAME_CODES.contains(&code) {
+            ModelSameNoticeData::deserialize(data).is_ok_and(|d| d.items_agree())
+        } else if MODEL_MISMATCH_CODES.contains(&code) {
+            ModelMismatchNoticeData::deserialize(data).is_ok_and(|d| !d.items.is_empty())
         } else {
             true
         }
@@ -528,16 +572,26 @@ pub(crate) fn data_schema(generator: &mut schemars::SchemaGenerator) -> schemars
     generator.subschema_for::<RulesNoticeData>();
     generator.subschema_for::<UnsupportedNoticeData>();
     generator.subschema_for::<BudgetNoticeData>();
+    generator.subschema_for::<PathBudgetNoticeData>();
+    generator.subschema_for::<UnknownRuleNoticeData>();
+    generator.subschema_for::<ModelSameNoticeData>();
+    generator.subschema_for::<ModelMismatchNoticeData>();
+    generator.subschema_for::<ItemLocation>();
     schemars::json_schema!({ "type": "object" })
 }
 
 /// The `allOf` entries of the notice schema: for each typed code, `if code then data` is the
-/// shape. A code with no typed shape keeps the generic object.
+/// shape. A code with no typed shape keeps the generic object. New groups go last, so the
+/// entries before them keep their index.
 pub(crate) fn data_conditions() -> Value {
-    let groups: [(&[&str], &str); 3] = [
+    let groups: [(&[&str], &str); 7] = [
         (RULES_CODES, "RulesNoticeData"),
         (UNSUPPORTED_CODES, "UnsupportedNoticeData"),
         (BUDGET_CODES, "BudgetNoticeData"),
+        (PATH_BUDGET_CODES, "PathBudgetNoticeData"),
+        (UNKNOWN_RULE_CODES, "UnknownRuleNoticeData"),
+        (MODEL_SAME_CODES, "ModelSameNoticeData"),
+        (MODEL_MISMATCH_CODES, "ModelMismatchNoticeData"),
     ];
     Value::Array(
         groups

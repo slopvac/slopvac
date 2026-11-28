@@ -104,7 +104,7 @@ fn payload_is_only_what_the_review_type_needs() {
 
     let update = payload(ReviewType::Update, &report, ORIGINAL, REVISED);
     assert_eq!(update.kind, "passages");
-    let roles = |role: &str| update.items.iter().filter(|i| i.role == role).count();
+    let roles = |role: &str| update.items.iter().filter(|i| i.role.as_str() == role).count();
     assert_eq!(
         (roles("changed"), roles("added"), roles("dropped")),
         (2, 1, 3)
@@ -113,13 +113,13 @@ fn payload_is_only_what_the_review_type_needs() {
         update
             .items
             .iter()
-            .filter(|i| i.role == "changed")
+            .filter(|i| i.role.as_str() == "changed")
             .all(|i| i.original.is_some())
     );
     let dropped: Vec<&str> = update
         .items
         .iter()
-        .filter(|i| i.role == "dropped")
+        .filter(|i| i.role.as_str() == "dropped")
         .map(|i| i.text.as_str())
         .collect();
     assert!(dropped.contains(&"Entries expire after 24 hours."));
@@ -129,7 +129,7 @@ fn payload_is_only_what_the_review_type_needs() {
     let texts: Vec<(&str, &str)> = rewrite
         .items
         .iter()
-        .map(|i| (i.role, i.text.as_str()))
+        .map(|i| (i.role.as_str(), i.text.as_str()))
         .collect();
     assert_eq!(
         texts,
@@ -152,7 +152,7 @@ fn a_deletion_only_update_still_sends_the_deleted_sentence() {
     );
     assert_eq!(update.items.len(), 1);
     assert_eq!(
-        (update.items[0].role, update.items[0].text.as_str()),
+        (update.items[0].role.as_str(), update.items[0].text.as_str()),
         ("dropped", "Remove the 90 day limit.")
     );
 }

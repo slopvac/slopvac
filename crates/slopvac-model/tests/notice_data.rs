@@ -274,7 +274,11 @@ fn the_new_codes_write_the_documented_keys_and_no_null(
     #[case] data: NoticeData,
     #[case] expected: &str,
 ) {
-    assert_eq!(data_json(message, data), expected);
+    let written: serde_json::Value = serde_json::from_str(&data_json(message, data)).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(expected).unwrap();
+    assert_eq!(written, expected);
+    // `null` is never written: an absent optional key is left out.
+    assert!(!written.to_string().contains("null"));
 }
 
 #[rstest]

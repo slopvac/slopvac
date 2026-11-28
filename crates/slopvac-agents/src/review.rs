@@ -5,6 +5,7 @@
 //! during lint or offline, and receives only the text the review type needs.
 
 use std::collections::BTreeSet;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
@@ -12,7 +13,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use slopvac_messages::Catalog;
-use slopvac_model::{Notice, NoticeLevel, SchemaVersion};
+use slopvac_model::{ItemLocation, ItemRole, Notice, NoticeLevel, SchemaVersion};
 use slopvac_plugins::hooks::{CompleteItem, CompleteRequest, ProviderTask};
 use slopvac_update::messages::UpdateMessage;
 
@@ -237,8 +238,7 @@ pub fn compare_models(author: Option<&str>, reviewer: &str) -> ModelCheck {
 pub struct PayloadItem {
     /// What the text is: `changed`, `added`, `dropped`, `original_document` or
     /// `revised_document`.
-    #[schemars(extend("type" = "string", "enum" = ["changed", "added", "dropped", "original_document", "revised_document"]))]
-    pub role: &'static str,
+    pub role: ItemRole,
     /// Line of `text` in its document: the revision, except for `dropped` and
     /// `original_document`, which sit in the original.
     #[schemars(range(min = 1))]
@@ -281,9 +281,9 @@ pub fn payload(kind: ReviewType, report: &Report, original: &str, revised: &str)
                 .iter()
                 .map(|c| PayloadItem {
                     role: if c.change == "added" {
-                        "added"
+                        ItemRole::Added
                     } else {
-                        "changed"
+                        ItemRole::Changed
                     },
                     line: c.line,
                     text: c.text.clone(),
@@ -291,7 +291,7 @@ pub fn payload(kind: ReviewType, report: &Report, original: &str, revised: &str)
                 })
                 .collect();
             items.extend(report.dropped.iter().map(|d| PayloadItem {
-                role: "dropped",
+                role: ItemRole::Dropped,
                 line: d.line,
                 text: d.text.clone(),
                 original: None,
@@ -305,13 +305,13 @@ pub fn payload(kind: ReviewType, report: &Report, original: &str, revised: &str)
             kind: "document",
             items: vec![
                 PayloadItem {
-                    role: "original_document",
+                    role: ItemRole::OriginalDocument,
                     line: 1,
                     text: original.to_owned(),
                     original: None,
                 },
                 PayloadItem {
-                    role: "revised_document",
+                    role: ItemRole::RevisedDocument,
                     line: 1,
                     text: revised.to_owned(),
                     original: None,
@@ -554,14 +554,14 @@ pub fn provider_request(
 
 /// The instruction for a payload item of `role`. The roles are the closed set that
 /// [`payload`] builds.
-fn instruction(role: &str, with_original: bool) -> AgentsPhrase {
+fn instruction(role: ItemRole, with_original: bool) -> AgentsPhrase {
     match (role, with_original) {
-        ("changed", true) => AgentsPhrase::InstructionChangedWithOriginal,
-        ("changed", false) => AgentsPhrase::InstructionChanged,
-        ("added", _) => AgentsPhrase::InstructionAdded,
-        ("dropped", _) => AgentsPhrase::InstructionDropped,
-        ("original_document", _) => AgentsPhrase::InstructionOriginalDocument,
-        _ => AgentsPhrase::InstructionRevisedDocument,
+        (ItemRole::Changed, true) => AgentsPhrase::InstructionChangedWithOriginal,
+        (ItemRole::Changed, false) => AgentsPhrase::InstructionChanged,
+        (ItemRole::Added, _) => AgentsPhrase::InstructionAdded,
+        (ItemRole::Dropped, _) => AgentsPhrase::InstructionDropped,
+        (ItemRole::OriginalDocument, _) => AgentsPhrase::InstructionOriginalDocument,
+        (ItemRole::RevisedDocument, _) => AgentsPhrase::InstructionRevisedDocument,
     }
 }
 
@@ -867,23 +867,14 @@ struct Sources {
     reviewer: &'static str,
 }
 
-/// Where a payload item sits, as a notice names it under `items`.
-#[derive(Debug, Serialize, JsonSchema)]
-pub(crate) struct ItemLocation {
-    /// The payload item's role.
-    role: &'static str,
-    /// The payload item's line.
-    line: usize,
-}
-
-/// The `{role, line}` locations of payload items, for a notice's `items` key.
+/// The `{role, line}` locations of payload items, for a notice's `items` key. A payload line is
+/// one-based, so an item at line 0 cannot occur and would be skipped.
 fn item_locations(payload: &Payload, indexes: &[usize]) -> Result<serde_json::Value, AgentsError> {
     let locations: Vec<ItemLocation> = indexes
         .iter()
         .filter_map(|&i| payload.items.get(i))
-        .map(|item| ItemLocation {
-            role: item.role,
-            line: item.line,
+        .filter_map(|item| {
+            NonZeroUsize::new(item.line).map(|line| ItemLocation::new(item.role, line))
         })
         .collect();
     serde_json::to_value(locations).map_err(|e| {
@@ -1195,7 +1186,7 @@ fn assemble_report(payload: &Payload, answered: &[(&SentItem, &str, &str)]) -> S
             let item = payload.items.get(sent.item)?;
             let heading = AgentsText::ReportItem {
                 position: sent.item + 1,
-                role: item.role.to_owned(),
+                role: item.role.as_str().to_owned(),
                 line: item.line,
             }
             .to_string();

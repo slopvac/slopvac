@@ -6,7 +6,7 @@
 
 use schemars::Schema;
 use serde_json::{Map, Value, json};
-use slopvac_model::if_then;
+use slopvac_model::{ItemRole, if_then};
 
 /// `{"properties": {key: {"const": value}}, "required": [key]}`.
 fn is(key: &str, value: &Value) -> Value {
@@ -83,16 +83,21 @@ pub(crate) fn dropped(schema: &mut Schema) {
 
 /// Only a changed item carries the sentence before the change.
 pub(crate) fn payload_item(schema: &mut Schema) {
+    let others: Vec<&str> = ItemRole::ALL
+        .into_iter()
+        .filter(|role| *role != ItemRole::Changed)
+        .map(ItemRole::as_str)
+        .collect();
     all_of(
         schema,
         vec![
             if_then(
-                &is("role", &json!("changed")),
+                &is("role", &json!(ItemRole::Changed.as_str())),
                 &json!({"required": ["original"]}),
             ),
             if_then(
                 &json!({
-                    "properties": {"role": {"enum": ["added", "dropped", "original_document", "revised_document"]}},
+                    "properties": {"role": {"enum": others}},
                     "required": ["role"],
                 }),
                 &json!({"not": {"required": ["original"]}}),
@@ -103,6 +108,7 @@ pub(crate) fn payload_item(schema: &mut Schema) {
 
 /// The payload kind decides which items it holds.
 pub(crate) fn payload(schema: &mut Schema) {
+    let passages = [ItemRole::Changed, ItemRole::Added, ItemRole::Dropped].map(ItemRole::as_str);
     all_of(
         schema,
         vec![
@@ -113,7 +119,7 @@ pub(crate) fn payload(schema: &mut Schema) {
             if_then(
                 &is("kind", &json!("passages")),
                 &json!({"properties": {"items": {"items": {
-                    "properties": {"role": {"enum": ["changed", "added", "dropped"]}},
+                    "properties": {"role": {"enum": passages}},
                 }}}}),
             ),
             if_then(
@@ -122,8 +128,8 @@ pub(crate) fn payload(schema: &mut Schema) {
                     "minItems": 2,
                     "maxItems": 2,
                     "prefixItems": [
-                        {"properties": {"role": {"const": "original_document"}}},
-                        {"properties": {"role": {"const": "revised_document"}}},
+                        {"properties": {"role": {"const": ItemRole::OriginalDocument.as_str()}}},
+                        {"properties": {"role": {"const": ItemRole::RevisedDocument.as_str()}}},
                     ],
                 }}}),
             ),
