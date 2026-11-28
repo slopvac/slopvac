@@ -19,22 +19,12 @@ use crate::errors::CliError;
 use crate::plugin_loader::{InstalledPlugins, LoadRefusal};
 use crate::redact;
 
-/// Which loader step refused the provider plugin.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LoadStage {
-    /// The plugin is not locked, not installed or changed since sync.
-    Synced,
-    /// The installed files break the plugin contract.
-    Code,
-}
-
 /// Why the provider plugin could not be loaded, kept typed as the cause of the review error:
-/// the step, the stable code, and the text with every absolute path redacted and escaped once
-/// for the terminal, so the error chain names no path (policies.md section 1.7).
+/// the stable code, and the text with every absolute path redacted and escaped once for the
+/// terminal, so the error chain names no path (policies.md section 1.7).
 #[derive(Debug, thiserror::Error)]
 #[error("{text}")]
 pub(crate) struct LoadCause {
-    stage: LoadStage,
     code: &'static str,
     text: String,
 }
@@ -42,21 +32,11 @@ pub(crate) struct LoadCause {
 impl LoadCause {
     /// The cause of `refusal`, with paths shown relative to `cwd`.
     fn new(refusal: &LoadRefusal, cwd: &Path) -> Self {
-        let stage = match refusal {
-            LoadRefusal::Synced(_) => LoadStage::Synced,
-            LoadRefusal::Code(_) => LoadStage::Code,
-        };
         let shown = redact::redact_absolute(&refusal.to_string(), cwd);
         Self {
-            stage,
             code: refusal.code(),
             text: slopvac_sanitize::line(&shown),
         }
-    }
-
-    /// The loader step that refused the plugin.
-    pub(crate) fn stage(&self) -> LoadStage {
-        self.stage
     }
 
     /// The stable code of the refusal.
@@ -114,7 +94,7 @@ impl<'a> PluginProvider<'a> {
     /// A refusal of the loader, under its own code, with its typed cause kept.
     fn load_failure(&self, refusal: &LoadRefusal) -> AgentsError {
         let cause = LoadCause::new(refusal, &self.cwd);
-        AgentsError::new_coded(cause.code, cause.text.clone()).with_source(cause)
+        AgentsError::new_coded(cause.code(), cause.text.clone()).with_source(cause)
     }
 
     fn ask(
@@ -225,8 +205,8 @@ mod tests {
 
     use super::*;
 
-    /// A loader refusal reaches the review error with its cause kept typed: the step and the
-    /// code, beside the same text.
+    /// A loader refusal reaches the review error with its cause kept typed: the code, beside the
+    /// same text.
     #[test]
     fn a_load_refusal_keeps_its_typed_cause() {
         let env = crate::env::MapEnv::new(&[], false);
@@ -239,7 +219,6 @@ mod tests {
         let cause = std::error::Error::source(&error)
             .and_then(|s| s.downcast_ref::<LoadCause>())
             .expect("a typed load cause");
-        assert_eq!(cause.stage(), LoadStage::Synced);
         assert_eq!(cause.code(), refusal.code());
         assert_eq!(cause.to_string(), error.to_string());
     }

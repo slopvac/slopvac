@@ -345,10 +345,10 @@ mod tests {
                 slopvac_model::NonEmptyString::new("a notice").unwrap(),
             ),
         );
-        let stopped = review::Stopped {
-            error: AgentsError::new_coded("review-provider-missing", "no provider"),
-            notices: vec![notice],
-        };
+        let stopped = review::Stopped::new(
+            AgentsError::new_coded("review-provider-missing", "no provider"),
+            vec![notice],
+        );
 
         let error = stopped_error(&stopped, &mut Refusing, Path::new("proj"));
 

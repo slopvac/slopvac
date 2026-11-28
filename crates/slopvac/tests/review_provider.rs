@@ -916,9 +916,14 @@ fn an_update_with_nothing_to_send_needs_no_provider_and_no_network(
 ) {
     let world = World::new(UNCHANGED, &config);
     world.trust();
-    let mut cmd = world
-        .slopvac()
-        .args(["review", "new.md", "--original", "old.md", "--type", "update"]);
+    let mut cmd = world.slopvac().args([
+        "review",
+        "new.md",
+        "--original",
+        "old.md",
+        "--type",
+        "update",
+    ]);
     if offline {
         cmd = cmd.env("SLOPVAC_OFFLINE", "1");
     }

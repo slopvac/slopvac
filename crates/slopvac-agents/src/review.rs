@@ -592,6 +592,12 @@ pub struct Stopped {
 }
 
 impl Stopped {
+    /// A stop with its failure and the notices known before it.
+    #[must_use]
+    pub fn new(error: AgentsError, notices: Vec<Notice>) -> Self {
+        Self { error, notices }
+    }
+
     /// The stable code of the failure.
     #[must_use]
     pub fn code(&self) -> &'static str {
