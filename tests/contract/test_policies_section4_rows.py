@@ -19,8 +19,9 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 
-# Row families whose tests are Rust tests that run under the gate. The R, C, H and V rows have no
-# marked test yet; the maintainer decides who maps them (reported with the bead slopvac-8l4.13.93).
+# Row families whose tests are Rust tests that run under the gate. For now only the N rows are
+# gated. The R, C, H and V rows have no marked Rust test yet, so they need no marker until a
+# later change maps them.
 GATED_FAMILIES = frozenset("N")
 
 _SECTION = re.compile(r"^## 4\. Conformance tests$", re.MULTILINE)
