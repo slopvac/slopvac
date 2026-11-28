@@ -610,7 +610,7 @@ The 3.0 binary must pass these tests. Each runs the installed binary with an iso
 
 | ID | Test | Owner |
 |---|---|---|
-| N1 | With the update check disabled, `lint`, `validate`, `rules`, `explain`, `prime`, `reference`, and `claims` each finish under a network sandbox that fails any connection. | `slopvac-8l4.12.1` |
+| N1 | With the update check disabled, `lint`, `validate`, `rules`, `explain`, `prime` and `claims` each finish under a network sandbox that fails any connection. `reference` joins this test once it is wired. Until then it exits 2 with `command-not-wired`. | `slopvac-8l4.12.1` |
 | N2 | `--offline`, `SLOPVAC_OFFLINE=1`, and `[network] offline = true` each make `plugins sync` exit 2 with the code `offline-plugin-missing` when the cache lacks a plugin. A command with no network path exits 2 with `offline-network-needed`. | `slopvac-8l4.9.3` |
 | N3 | `SLOPVAC_OFFLINE=1` with `[network] offline = false` in the config stays offline. The CLI help lists no flag that turns offline mode off. | `slopvac-8l4.12.1` |
 | N4 | With a populated cache and a lockfile, `plugins sync --offline` succeeds and verifies digests. | `slopvac-8l4.9.3` |
