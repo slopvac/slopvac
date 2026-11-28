@@ -692,6 +692,8 @@ plugin-loader-command-unsafe text
 plugin-loader-manifest-invalid text
 plugin-loader-manifest-unreadable text
 plugin-loader-not-code text
+plugin-loader-phrase-source-invalid text
+plugin-loader-phrase-source-unusable text
 plugin-manifest-mismatch error
 plugin-not-code error
 plugin-not-installed error

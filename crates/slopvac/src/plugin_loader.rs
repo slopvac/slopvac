@@ -15,8 +15,9 @@ use slopvac_packs::{
 };
 use slopvac_plugins::extract::{ExtractError, Limits, TreeHash, tree_hash_capturing};
 use slopvac_plugins::host::PluginSpec;
+use slopvac_messages::Catalog;
 use slopvac_plugins::lock::{LockedPack, SourceKind};
-use slopvac_plugins::oci::Reference;
+use slopvac_plugins::oci::{OciError, Reference};
 use slopvac_plugins::sign::{KeyPolicy, PublicKey};
 use slopvac_plugins::sync::{Store, SyncError};
 use slopvac_plugins::trust::VerifiedPlugin;
@@ -35,6 +36,22 @@ pub(crate) enum LoadRefusal {
     /// The installed files break the plugin contract.
     #[error(transparent)]
     Code(#[from] CodePluginError),
+    /// A signed entry whose OCI source does not parse. Sync parses the same source before it
+    /// fetches or verifies anything, so it installed nothing for the entry, and the refusal has
+    /// the text and the code of a plugin that is not installed.
+    #[error("{}", not_installed(.id))]
+    SourceUnparsed {
+        /// The plugin id.
+        id: String,
+        /// The kind of the parse failure.
+        #[source]
+        cause: SourceCause,
+    },
+}
+
+/// The refusal of a plugin that sync did not install.
+fn not_installed(id: &str) -> SyncedError {
+    SyncedError::NotInstalled { id: id.to_owned() }
 }
 
 impl LoadRefusal {
@@ -43,8 +60,44 @@ impl LoadRefusal {
         match self {
             Self::Synced(e) => e.code().unwrap_or("plugin-not-loaded"),
             Self::Code(e) => e.code(),
+            Self::SourceUnparsed { id, .. } => not_installed(id).code().unwrap_or("plugin-not-loaded"),
         }
     }
+}
+
+/// Why the OCI source of a signed entry does not parse, as a kind only. The text of an
+/// [`OciError`] can name the registry and the source, so none of it is kept (the approved
+/// departures in `docs/engineering.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum SourceCause {
+    /// The source is not a valid OCI reference.
+    #[error("{}", LoaderPhrase::SourceInvalid.as_static())]
+    Invalid,
+    /// The parse failed in another way.
+    #[error("{}", LoaderPhrase::SourceUnusable.as_static())]
+    Other,
+}
+
+impl SourceCause {
+    fn of(e: &OciError) -> Self {
+        match e {
+            OciError::Invalid(_) => Self::Invalid,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// Fixed phrases of the code plugin loader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Catalog)]
+pub(crate) enum LoaderPhrase {
+    /// An OCI source that is not a valid reference.
+    #[code("plugin-loader-phrase-source-invalid")]
+    #[text("the OCI source is not a valid reference")]
+    SourceInvalid,
+    /// An OCI source whose parse failed in another way.
+    #[code("plugin-loader-phrase-source-unusable")]
+    #[text("the OCI source cannot be used")]
+    SourceUnusable,
 }
 
 /// Loads code plugins from the lock of one project and the plugin store.
@@ -77,9 +130,10 @@ impl<'a> InstalledPlugins<'a> {
             return Ok(None);
         };
         let reference =
-            Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).map_err(|_| {
-                SyncedError::NotInstalled {
+            Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).map_err(|e| {
+                LoadRefusal::SourceUnparsed {
                     id: locked.id.to_string(),
+                    cause: SourceCause::of(&e),
                 }
             })?;
         let namespace = reference.repository.split('/').next().unwrap_or_default();
@@ -481,11 +535,31 @@ mod tests {
         assert!(
             matches!(
                 &refusal,
-                LoadRefusal::Synced(SyncedError::NotInstalled { id }) if id == "fmt"
+                LoadRefusal::SourceUnparsed { id, cause: SourceCause::Invalid } if id == "fmt"
             ),
             "{refusal:?}"
         );
         assert_eq!(refusal.code(), "plugin-not-installed");
+        assert_eq!(
+            refusal.to_string(),
+            "plugin `fmt` is locked but not installed; run `slopvac plugins sync`"
+        );
+        // The chain keeps the kind of the parse failure, and no text in it names the source or
+        // the registry.
+        let source = std::error::Error::source(&refusal).expect("the refusal keeps its cause");
+        assert_eq!(
+            source.downcast_ref::<SourceCause>(),
+            Some(&SourceCause::Invalid),
+            "{source:?}"
+        );
+        let mut next: Option<&dyn std::error::Error> = Some(&refusal);
+        while let Some(e) = next {
+            let text = e.to_string();
+            for named in ["oci://", "registry.example", "acme/fmt"] {
+                assert!(!text.contains(named), "{text}");
+            }
+            next = e.source();
+        }
     }
 
     /// The hash comes before any parse, so a manifest broken after sync is tampering and not a
