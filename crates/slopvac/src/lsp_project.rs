@@ -693,7 +693,8 @@ mod tests {
         std::fs::create_dir(root.join("sub")).expect("mkdir");
         std::fs::write(root.join("slopvac.toml"), "schema_version = 3\n").expect("config");
         std::fs::write(root.join("sub/slopvac.toml"), LEXICON_OFF).expect("nested config");
-        let server = project_linter(&root).expect("a project");
+        let server = project_linter(&root);
+        assert!(server.failure.is_none(), "a project");
         (dir, root, server)
     }
 
