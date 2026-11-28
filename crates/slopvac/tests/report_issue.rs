@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
+use assert_cmd::cargo::CommandCargoExt;
 use predicates::prelude::*;
 use slopvac_cli::cli;
 use slopvac_cli::env::MapEnv;
@@ -1270,7 +1271,9 @@ fn isolate(cmd: &mut std::process::Command) {
 }
 
 fn slopvac() -> Command {
-    let mut cmd = std::process::Command::new(assert_cmd::cargo::cargo_bin("slopvac"));
+    // `CommandCargoExt::cargo_bin` honours `CARGO_TARGET_<TRIPLE>_RUNNER`, as
+    // `assert_cmd::Command::cargo_bin` does.
+    let mut cmd = std::process::Command::cargo_bin("slopvac").expect("binary builds");
     isolate(&mut cmd);
     let empty = std::env::temp_dir().join("slopvac-report-no-gh-on-path");
     std::fs::create_dir_all(&empty).unwrap();
