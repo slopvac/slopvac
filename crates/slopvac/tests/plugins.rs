@@ -1429,12 +1429,18 @@ fn trust_of_a_planted_registry_plugin_without_a_valid_signature_exits_2() {
     fs::create_dir_all(store.join("refs")).unwrap();
     fs::write(store.join("refs").join(digest.hex()), done.hash.hex()).unwrap();
 
-    sandbox
+    let out = sandbox
         .slopvac()
         .args(["--offline", "plugins", "trust", "fmt"])
         .assert()
         .code(2)
         .stderr(predicate::str::starts_with("error[signature-invalid]: "));
+    // No key is pinned for the entry, and the missing signature still reports as the cached
+    // signature check reports it.
+    assert_eq!(
+        String::from_utf8(out.get_output().stderr.clone()).unwrap(),
+        "error[signature-invalid]: signature-invalid: details are withheld because they can name paths outside the project\n"
+    );
     assert_eq!(trust_records(&sandbox), 0);
 }
 
@@ -1483,7 +1489,7 @@ fn trust_of_a_registry_plugin_with_a_swapped_signature_file_exits_2_and_changes_
     fs::write(store.join("refs").join(digest.hex()), done.hash.hex()).unwrap();
     let before = cached_files(&blobs);
 
-    sandbox
+    let out = sandbox
         .slopvac()
         .args(["--offline", "plugins", "trust", "fmt"])
         .assert()
@@ -1492,6 +1498,16 @@ fn trust_of_a_registry_plugin_with_a_swapped_signature_file_exits_2_and_changes_
             "error[plugins-trust-inputs-failed]: ",
         ));
 
+    // No key is pinned for the entry, and the swapped file still reports as a swapped file.
+    assert_eq!(
+        String::from_utf8(out.get_output().stderr.clone()).unwrap(),
+        format!(
+            "error[plugins-trust-inputs-failed]: cannot load `fmt` to record trust: plugin `fmt`: \
+             digest mismatch: the lock pins {}, the content is {}\n",
+            Digest::of(&statement),
+            Digest::of(b"swapped")
+        )
+    );
     assert_eq!(cached_files(&blobs), before, "trust changed the cache");
     assert_eq!(trust_records(&sandbox), 0);
 }
