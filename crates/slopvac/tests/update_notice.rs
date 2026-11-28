@@ -271,4 +271,46 @@ mod conformance {
         );
         Ok(())
     }
+
+    /// A machine format keeps the update notice out of stdout. The notice still reaches stderr, so
+    /// a missing notice cannot pass for a clean stream.
+    ///
+    /// Conformance: N6
+    #[rstest]
+    #[case::json("json")]
+    #[case::github("github")]
+    #[case::sarif("sarif")]
+    #[case::rdjsonl("rdjsonl")]
+    #[case::codeclimate("codeclimate")]
+    #[case::junit("junit")]
+    #[case::checkstyle("checkstyle")]
+    fn a_machine_format_keeps_stdout_free_of_the_update_notice(
+        #[case] format: &str,
+    ) -> io::Result<()> {
+        let fx = fixture()?;
+        let cache = seeded_cache()?;
+        let out = run(&fx, cache.path(), &["lint", "doc.md", "--format", format]);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stderr.contains(NOTICE), "stderr: {stderr}");
+        assert!(!stdout.contains("update-available"), "stdout: {stdout}");
+        Ok(())
+    }
+
+    /// `--version --json` is the JSON document that carries the notice, in `notices`.
+    ///
+    /// Conformance: N6
+    #[test]
+    fn version_json_carries_the_update_notice_in_notices() -> io::Result<()> {
+        let fx = fixture()?;
+        let cache = seeded_cache()?;
+        let out = run(&fx, cache.path(), &["--version", "--json"]);
+        let doc: serde_json::Value = serde_json::from_slice(&out.stdout)
+            .unwrap_or_else(|e| panic!("stdout is not JSON ({e}): {out:?}"));
+        let notices = doc["notices"].as_array().expect("notices is an array");
+        assert_eq!(notices.len(), 1, "notices: {notices:?}");
+        assert_eq!(notices[0]["code"], "update-available");
+        assert_eq!(notices[0]["x-latest"], "99.0.0");
+        Ok(())
+    }
 }

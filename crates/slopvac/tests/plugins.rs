@@ -826,7 +826,10 @@ mod conformance {
     }
 
     /// Extract `archive` into a new directory under `scratch` and return its tree hash and place.
-    fn extract_plugin(archive: &[u8], store: &std::path::Path) -> slopvac_plugins::extract::Extracted {
+    fn extract_plugin(
+        archive: &[u8],
+        store: &std::path::Path,
+    ) -> slopvac_plugins::extract::Extracted {
         slopvac_plugins::extract::extract_targz(
             archive,
             store,
@@ -1055,9 +1058,10 @@ mod conformance {
         let store = plugin_store(&sandbox);
         let trees = store.join("trees");
         let record = store.join("refs").join(digest.hex());
-        let honest_hash =
-            slopvac_plugins::extract::TreeHash::from_hex(fs::read_to_string(&record).unwrap().trim())
-                .unwrap();
+        let honest_hash = slopvac_plugins::extract::TreeHash::from_hex(
+            fs::read_to_string(&record).unwrap().trim(),
+        )
+        .unwrap();
         // Put the evil tree where the honest one was, and point the record at a second copy.
         let evil = plugin_targz(&PLUGIN_MANIFEST.replace("--serve", "--evil"));
         let aside = sandbox.dir.path().join("aside");
@@ -1207,5 +1211,140 @@ mod conformance {
                 )
             })
             .collect()
+    }
+
+    /// With the update check off, each command that has no network path finishes while a proxy
+    /// that counts and answers nothing stands in for the network, and it sees no connection. The
+    /// run has 60 seconds, so a command that waits on a refused connection fails the test.
+    ///
+    /// Conformance: N1
+    #[rstest::rstest]
+    #[case::lint(&["lint", "doc.md"])]
+    #[case::validate(&["validate", "--config", "slopvac.toml"])]
+    #[case::rules(&["rules"])]
+    #[case::explain(&["explain", "core:ai-residue.chat-leakage"])]
+    #[case::prime(&["prime"])]
+    #[case::reference(&["reference"])]
+    #[case::claims(&["claims", "doc.md", "--original", "doc.md"])]
+    fn a_command_with_no_network_path_finishes_when_every_connection_is_refused(
+        #[case] args: &[&str],
+    ) {
+        let sandbox = Sandbox::new();
+        fs::write(
+            sandbox.project().join("slopvac.toml"),
+            "schema_version = 3\n",
+        )
+        .unwrap();
+        fs::write(
+            sandbox.project().join("doc.md"),
+            "# Title\n\nPlain words here.\n",
+        )
+        .unwrap();
+        let tally = NetworkTally::start();
+        let mut cmd = sandbox.slopvac();
+        tally.route(&mut cmd);
+        let out = cmd
+            .args(args)
+            .timeout(std::time::Duration::from_secs(60))
+            .output()
+            .expect("the command finishes within 60 seconds");
+        assert!(
+            matches!(out.status.code(), Some(0..=2)),
+            "the command did not exit normally: {:?}",
+            out.status
+        );
+        assert_eq!(tally.requests(), 0, "the command opened a connection");
+    }
+
+    /// The long flags that one help page lists.
+    fn long_flags(help: &str) -> Vec<String> {
+        help.split_whitespace()
+            .filter(|word| word.starts_with("--"))
+            .map(|word| {
+                word.trim_end_matches(|c: char| !c.is_ascii_alphanumeric())
+                    .split('=')
+                    .next()
+                    .unwrap_or_default()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    /// `--offline` is on every help page, and no page lists a flag whose name turns the network
+    /// on. Only `--offline` itself is a network flag.
+    ///
+    /// Conformance: N3
+    #[rstest::rstest]
+    #[case::root(&["--help"])]
+    #[case::lint(&["lint", "--help"])]
+    #[case::plugins_sync(&["plugins", "sync", "--help"])]
+    #[case::review(&["review", "--help"])]
+    fn the_help_lists_no_flag_that_turns_offline_mode_off(#[case] args: &[&str]) {
+        let sandbox = Sandbox::new();
+        let out = sandbox.slopvac().args(args).assert().success();
+        let help = String::from_utf8(out.get_output().stdout.clone()).unwrap();
+        let flags = long_flags(&help);
+        assert!(
+            flags.iter().any(|f| f == "--offline"),
+            "--offline is missing:\n{help}"
+        );
+        let turn_on: Vec<&String> = flags
+            .iter()
+            .filter(|f| f.contains("online") || f.contains("network") || f.contains("no-offline"))
+            .collect();
+        assert!(turn_on.is_empty(), "{turn_on:?} in:\n{help}");
+    }
+
+    /// `plugins sync` installs a code plugin and records no trust for it.
+    ///
+    /// Conformance: N8
+    #[test]
+    fn sync_never_records_trust_for_a_code_plugin() {
+        let sandbox = Sandbox::new();
+        lock_code_plugin(&sandbox);
+        sandbox
+            .slopvac()
+            .args(["--offline", "plugins", "sync"])
+            .assert()
+            .success();
+        assert_eq!(trust_records(&sandbox), 0);
+    }
+
+    /// `plugins update` leaves the trust store as it found it, with a code plugin installed.
+    ///
+    /// Conformance: N8
+    #[test]
+    fn update_never_records_trust_for_a_code_plugin() {
+        let sandbox = Sandbox::new();
+        lock_code_plugin(&sandbox);
+        sandbox
+            .slopvac()
+            .args(["--offline", "plugins", "sync"])
+            .assert()
+            .success();
+        sandbox
+            .slopvac()
+            .args(["--offline", "plugins", "update"])
+            .assert()
+            .code(2);
+        assert_eq!(trust_records(&sandbox), 0);
+    }
+
+    /// Neither command takes `--yes`, so no flag can make either one record trust.
+    ///
+    /// Conformance: N8
+    #[rstest::rstest]
+    #[case::sync(&["--offline", "plugins", "sync", "--yes"])]
+    #[case::update(&["--offline", "plugins", "update", "--yes"])]
+    fn sync_and_update_refuse_a_yes_flag_and_record_no_trust(#[case] args: &[&str]) {
+        let sandbox = Sandbox::new();
+        lock_code_plugin(&sandbox);
+        sandbox
+            .slopvac()
+            .args(args)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains("--yes"));
+        assert_eq!(trust_records(&sandbox), 0);
     }
 }
