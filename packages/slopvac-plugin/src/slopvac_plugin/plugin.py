@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import queue
-import re
 import sys
 import threading
 import traceback
@@ -15,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, BinaryIO, NoReturn
 
 from . import framing
+from ._schema import PROTOCOL, load_pattern
 from .errors import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -30,7 +30,7 @@ from .errors import (
 )
 from .hooks import BY_METHOD, KINDS, HookKind
 from .types import Context
-from .validate import KEBAB, is_int, is_request_id
+from .validate import is_int, is_request_id
 
 log = logging.getLogger("slopvac_plugin")
 
@@ -38,7 +38,8 @@ PROTOCOL_MIN = 1
 PROTOCOL_MAX = 1
 DEFAULT_MAX_BATCH_DOCUMENTS = 64
 DEFAULT_MAX_IN_FLIGHT = 1
-FEATURE_NAME = re.compile(r"^[a-z][a-z0-9-]*\Z|^x-[a-z0-9-]+\Z")
+FEATURE_NAME = load_pattern(PROTOCOL, "/$defs/FeatureName/pattern")
+HOOK_ID = load_pattern(PROTOCOL, "/$defs/HookId/pattern")
 
 
 @dataclass(frozen=True)
@@ -126,7 +127,7 @@ class Plugin:
         """Register a handler for one hook kind. The kind-named decorators call this."""
         if kind not in KINDS:
             raise ValueError(f"unknown hook kind: {kind!r}")
-        if not KEBAB.match(hook_id):
+        if not HOOK_ID.match(hook_id):
             raise ValueError(f"invalid hook id: {hook_id!r}")
 
         def register(fn: Callable[..., Any]) -> Callable[..., Any]:
