@@ -1396,8 +1396,15 @@ mod unix_only {
         let spec = spec_for(&vp, decl());
         let g = gate(&s, &vp);
         fs::set_permissions(&parent, fs::Permissions::from_mode(0o000)).unwrap();
-        let err = g.state(&vp, &spec).unwrap_err();
+        // Root searches a directory whatever its mode, so the refusal cannot be provoked.
+        let searchable = fs::read_dir(&parent).is_ok();
+        let result = g.state(&vp, &spec);
         fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
+        if searchable {
+            eprintln!("skipped: this user searches a mode 000 directory (running as root)");
+            return;
+        }
+        let err = result.unwrap_err();
         assert!(
             matches!(
                 err,

@@ -1368,7 +1368,13 @@ fn trust_reports_a_tree_without_a_location_as_a_trust_input_failure() {
     let loader = UnresolvableTreeLoader::new(f.base.path());
     let ran = f.run(&["trust", "fake"], false, |s| s.loader(&loader));
     let status = f.run(&["status"], false, |s| s.loader(&loader));
+    // Root searches a directory whatever its mode, so the refusal cannot be provoked.
+    let searchable = fs::read_dir(&loader.parent).is_ok();
     loader.set_mode(0o755);
+    if searchable {
+        eprintln!("skipped: this user searches a mode 000 directory (running as root)");
+        return;
+    }
     let err = ran.result.unwrap_err();
     assert_eq!(err.code(), "plugins-trust-inputs-failed");
     let shown = format!("{}\n{err:?}", names_in_chain(&err));
