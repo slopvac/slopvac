@@ -1737,5 +1737,5 @@ mod conformance {
             out.contains("--title '[bug]: crash on empty input' --body-file ./-\n"),
             "{out}"
         );
-}
+    }
 }
