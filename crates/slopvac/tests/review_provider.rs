@@ -836,3 +836,136 @@ fn an_update_with_nothing_to_send_needs_no_reviewer_model() {
     assert!(plan.get("report").is_none(), "{plan}");
     assert_eq!(world.spawns(), 0, "the plugin started");
 }
+
+/// A failure of the plugin, from the start to the call, shows its host code and none of the
+/// text the plugin supplied: an error answer, an exit with a standard error tail, a framing
+/// error that quotes a key, and a handshake that names a feature or a version.
+#[rstest]
+#[case::initialize_error(json!({"init": {"error": -32603}}), "internal-error")]
+#[case::initialize_version(
+    json!({"init": {"error": -32001, "supported": "PLUGIN-SECRET-MESSAGE"}}),
+    "protocol-version-unsupported"
+)]
+#[case::exit_before_the_handshake(json!({"init": "exit"}), "plugin-exited")]
+#[case::duplicate_key_in_the_handshake(json!({"init": "duplicate_key"}), "plugin-protocol-violation")]
+#[case::required_feature(json!({"init": "required_feature"}), "required-feature-missing")]
+#[case::exit_during_the_call(json!({"complete": "exit"}), "plugin-exited")]
+#[case::duplicate_key_in_the_reply(json!({"complete": "duplicate_key"}), "plugin-protocol-violation")]
+fn a_plugin_failure_shows_its_code_and_none_of_the_plugins_text(
+    #[case] script: Value,
+    #[case] code: &str,
+) {
+    let world = World::new(REWRITE, &configured());
+    world.trust();
+    world.script(&script);
+
+    let out = world.review(&[]);
+
+    assert_refused(&out, code);
+    let err = stderr(&out);
+    for secret in [
+        "PLUGIN-SECRET-MESSAGE",
+        "PLUGIN-SECRET-KEY",
+        "PLUGIN-SECRET-FEATURE",
+    ] {
+        assert!(!err.contains(secret), "{secret} on stderr:\n{err}");
+    }
+}
+
+/// An item that the provider failed keeps its code when the shutdown fails after it.
+#[test]
+fn an_item_error_keeps_its_code_when_the_shutdown_fails() {
+    let world = World::new(REWRITE, &configured());
+    world.trust();
+    world.script(&json!({"errors": {"1": -32006}, "shutdown": "garbage"}));
+
+    let out = world.review(&[]);
+
+    assert_refused(&out, "document-invalid");
+    assert!(
+        !stderr(&out).contains("error[plugin-protocol-violation]"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+/// A `shutdown` that the plugin does not acknowledge reports why, under the host code of that
+/// failure: an error answer, an exit before the answer, or an answer that is not null.
+#[rstest]
+#[case::error_answer("error", "internal-error")]
+#[case::exit_before_the_answer("exit", "plugin-exited")]
+#[case::answer_not_null("not_null", "plugin-protocol-violation")]
+fn a_shutdown_without_an_acknowledgement_reports_why(#[case] how: &str, #[case] code: &str) {
+    let world = World::new(REWRITE, &configured());
+    world.trust();
+    world.script(&json!({"shutdown": how}));
+
+    let out = world.review(&[]);
+
+    assert_refused(&out, code);
+    assert!(out.stdout.is_empty(), "no plan on a failed run");
+}
+
+/// An update of identical files has nothing to send, so it needs no network and no provider.
+#[rstest]
+#[case::offline(configured(), true)]
+#[case::no_provider(config("model = \"reviewer-model\"\n"), false)]
+fn an_update_with_nothing_to_send_needs_no_provider_and_no_network(
+    #[case] config: String,
+    #[case] offline: bool,
+) {
+    let world = World::new(UNCHANGED, &config);
+    world.trust();
+    let mut cmd = world
+        .slopvac()
+        .args(["review", "new.md", "--original", "old.md", "--type", "update"]);
+    if offline {
+        cmd = cmd.env("SLOPVAC_OFFLINE", "1");
+    }
+
+    let out = cmd.output().expect("run");
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let plan = plan(&out);
+    assert!(plan.get("report").is_none(), "{plan}");
+    assert_eq!(world.spawns(), 0, "the plugin started");
+}
+
+/// A reviewer model whose name holds a backslash is the model the provider reports, so no
+/// mismatch notice appears.
+#[test]
+fn a_reported_model_with_a_backslash_matches_the_requested_one() {
+    let world = World::new(
+        REWRITE,
+        &config("provider = \"provider\"\nmodel = 'team\\reviewer'\n"),
+    );
+    world.trust();
+
+    let out = world.review(&[]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let plan = plan(&out);
+    let list = notices(&plan);
+    assert!(
+        list.iter()
+            .all(|n| n["code"] != "review-model-reported-mismatch"),
+        "{plan}"
+    );
+}
+
+/// An answer that ends with CRLF loses the whole line ending, so no escaped carriage return
+/// shows in the report.
+#[test]
+fn an_answer_with_a_crlf_ending_leaves_no_escaped_carriage_return() {
+    let world = World::new(REWRITE, &configured());
+    world.trust();
+    world.script(&json!({"text": {"1": "first answer\r\n"}}));
+
+    let out = world.review(&[]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let plan = plan(&out);
+    let report = plan["report"].as_str().expect("a report");
+    assert!(report.contains("first answer"), "{report}");
+    assert!(!report.contains("\\u{d}"), "{report}");
+}

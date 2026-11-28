@@ -17,7 +17,15 @@ answers comes from LOG_DIR/script.json, which the test writes before each run:
 - "request_error": a JSON-RPC code; the whole request fails with it.
 - "offer_hooks": the hooks the `initialize` reply offers, in place of the one provider hook.
 - "shutdown": "garbage" answers `shutdown` with a header line without a colon, which breaks
-  the framing after every request has been answered.
+  the framing after every request has been answered. "error" answers it with a JSON-RPC error
+  object, "exit" leaves without an answer, and "not_null" answers it with a value that is not
+  null.
+- "init": how `initialize` fails. {"error": code} answers with a JSON-RPC error object, and
+  {"error": code, "supported": text} adds `data.supported`. "exit" writes PLUGIN-SECRET-MESSAGE
+  to standard error and leaves. "duplicate_key" repeats the key PLUGIN-SECRET-KEY in the reply.
+  "required_feature" lists PLUGIN-SECRET-FEATURE as a required feature.
+- "complete": how `provider/complete` fails. "exit" writes PLUGIN-SECRET-MESSAGE to standard
+  error and leaves; "duplicate_key" repeats the key PLUGIN-SECRET-KEY in an entry.
 """
 
 import json
@@ -58,9 +66,26 @@ def read_msg():
 
 
 def send(obj):
-    body = json.dumps(obj).encode()
+    send_raw(json.dumps(obj).encode())
+
+
+def send_raw(body):
     out.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
     out.flush()
+
+
+def leave_with_secret():
+    sys.stderr.write("PLUGIN-SECRET-MESSAGE\n")
+    sys.stderr.flush()
+    sys.exit(3)
+
+
+def with_duplicate_key(id_, result):
+    """A response whose result object repeats the key PLUGIN-SECRET-KEY."""
+    inner = json.dumps(result)
+    assert inner.endswith("}")
+    dup = inner[:-1] + ', "PLUGIN-SECRET-KEY": 1, "PLUGIN-SECRET-KEY": 2}'
+    return ('{"jsonrpc": "2.0", "id": %s, "result": %s}' % (json.dumps(id_), dup)).encode()
 
 
 def rpc_error(code):
@@ -126,7 +151,20 @@ while True:
         offered = script().get("offer_hooks")
         if offered is not None:
             reply["capabilities"]["hooks"] = offered
-        send({"jsonrpc": "2.0", "id": id_, "result": reply})
+        init = script().get("init")
+        if isinstance(init, dict) and "error" in init:
+            error = rpc_error(init["error"])
+            if "supported" in init:
+                error["data"]["supported"] = init["supported"]
+            send({"jsonrpc": "2.0", "id": id_, "error": error})
+        elif init == "exit":
+            leave_with_secret()
+        elif init == "duplicate_key":
+            send_raw(with_duplicate_key(id_, reply))
+        else:
+            if init == "required_feature":
+                reply["capabilities"]["features"]["required"] = ["PLUGIN-SECRET-FEATURE"]
+            send({"jsonrpc": "2.0", "id": id_, "result": reply})
     elif method == "provider/complete":
         params = msg["params"]
         with open(os.path.join(log_dir, "requests"), "a") as f:
@@ -134,16 +172,27 @@ while True:
         with open(os.path.join(log_dir, "requests.raw"), "ab") as f:
             f.write(last_body + b"\n")
         s = script()
-        if "request_error" in s:
+        if s.get("complete") == "exit":
+            leave_with_secret()
+        elif s.get("complete") == "duplicate_key":
+            send_raw(with_duplicate_key(id_, {"results": answer(params, s)}))
+        elif "request_error" in s:
             send({"jsonrpc": "2.0", "id": id_, "error": rpc_error(s["request_error"])})
         elif "results" in s:
             send({"jsonrpc": "2.0", "id": id_, "result": {"results": s["results"]}})
         else:
             send({"jsonrpc": "2.0", "id": id_, "result": {"results": answer(params, s)}})
     elif method == "shutdown":
-        if script().get("shutdown") == "garbage":
+        how = script().get("shutdown")
+        if how == "garbage":
             out.write(b"no colon in this header\r\n\r\n")
             out.flush()
+        elif how == "error":
+            send({"jsonrpc": "2.0", "id": id_, "error": rpc_error(-32603)})
+        elif how == "exit":
+            sys.exit(0)
+        elif how == "not_null":
+            send({"jsonrpc": "2.0", "id": id_, "result": "done"})
         else:
             send({"jsonrpc": "2.0", "id": id_, "result": None})
     elif method == "exit":

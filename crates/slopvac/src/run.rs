@@ -977,4 +977,49 @@ mod plugin_dir_tests {
             dirs.state_dir
         );
     }
+
+    /// The runner works from the config snapshot that the command resolved and never discovers
+    /// the config again: given project A's snapshot while the working directory is B, it reads
+    /// A's lock.
+    #[test]
+    fn the_runner_reads_the_project_of_the_resolved_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (dir.path().join("a"), dir.path().join("b"));
+        let tree = a.join("plugins/p");
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::create_dir_all(a.join(".slopvac")).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(tree.join("main.txt"), "x").unwrap();
+        std::fs::write(a.join("slopvac.toml"), "schema_version = 3\n").unwrap();
+        let digest = slopvac_plugins::extract::tree_hash(&tree).unwrap();
+        std::fs::write(
+            a.join(".slopvac/plugins.lock"),
+            format!(
+                "schema_version = 3\n\n[[plugins]]\nid = \"p\"\nkind = \"code\"\n\
+                 version = \"1.0.0\"\nslopvac_api = 1\nsource = \"plugins/p\"\n\
+                 digest = \"{digest}\"\n"
+            ),
+        )
+        .unwrap();
+        let presets = slopvac_styles::StylePresets(slopvac_styles::BuiltinSource);
+        let config = slopvac_config::Discovery::new(&presets)
+            .nearest(&a)
+            .unwrap()
+            .expect("project A's config");
+        let home = dir.path().join("home");
+        let (data, state) = (home.join("data"), home.join("state"));
+        let env = MapEnv::new(
+            &[
+                ("XDG_DATA_HOME", data.to_str().unwrap()),
+                ("XDG_STATE_HOME", state.to_str().unwrap()),
+            ],
+            false,
+        );
+
+        let found = with_plugin_runner(true, &env, &b, Some(&config), |runner, _| {
+            Ok(runner.locked_code("p").map(|pack| pack.id.to_string()))
+        });
+
+        assert_eq!(found.ok().and_then(Result::ok).as_deref(), Some("p"));
+    }
 }
