@@ -312,8 +312,8 @@ pub fn run(
                 reason: phrase(ReportPhrase::BodyFileNotUtf8),
             })
         })?;
-        let text = say(&ReportText::GhCommand { line });
-        write_all(out, format!("{text}\n").as_bytes())?;
+        let heading = say(&ReportText::GhCommand);
+        write_all(out, format!("{heading}\n{line}\n").as_bytes())?;
         if run_gh {
             create_with_gh(deps, &report.title, path, out)?;
         }
@@ -347,8 +347,8 @@ fn create_with_gh(
             },
         })
     })?;
-    let line = say(&ReportText::Created { url: created });
-    write_all(out, format!("{line}\n").as_bytes())
+    let heading = say(&ReportText::Created);
+    write_all(out, format!("{heading} {created}\n").as_bytes())
 }
 
 /// Replace `path` with `body` in one step: a temporary file in the same directory, then a rename.
@@ -378,10 +378,11 @@ fn write_body(path: &Path, body: &str) -> Result<(), CliError> {
 fn footer(url: &github::FormUrl, labels: &[&str]) -> String {
     let mut text = phrase(ReportPhrase::FooterNotPosted);
     text.push('\n');
+    text.push_str(&say(&ReportText::FooterUrl));
+    text.push(' ');
+    text.push_str(&url.url);
+    text.push('\n');
     let lines = [
-        Some(ReportText::FooterUrl {
-            url: url.url.clone(),
-        }),
         Some(ReportText::FooterLabels {
             labels: labels.join(", "),
         }),

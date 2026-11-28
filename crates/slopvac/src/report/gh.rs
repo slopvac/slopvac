@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use super::REPOSITORY;
-use super::messages::{ReportPhrase, ReportText, say};
+use super::messages::{ReportPhrase, ReportText, phrase, say};
 
 /// The only host a report goes to.
 pub const HOST: &str = "github.com";
@@ -34,12 +34,12 @@ pub enum GhError {
 impl std::fmt::Display for GhError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Missing => f.write_str(ReportPhrase::GhMissingShort.as_static()),
-            Self::NotLoggedIn => f.write_str(ReportPhrase::GhNotLoggedInShort.as_static()),
+            Self::Missing => f.write_str(&phrase(ReportPhrase::GhMissingShort)),
+            Self::NotLoggedIn => f.write_str(&phrase(ReportPhrase::GhNotLoggedInShort)),
             Self::Failed(Some(code)) => f.write_str(&say(&ReportText::GhFailedExit {
                 code: code.to_string(),
             })),
-            Self::Failed(None) => f.write_str(ReportPhrase::GhFailedTimeout.as_static()),
+            Self::Failed(None) => f.write_str(&phrase(ReportPhrase::GhFailedTimeout)),
         }
     }
 }

@@ -15,8 +15,6 @@ pub const MAX_SAMPLE_BYTES: u64 = 256 * 1024;
 pub const MAX_TITLE_CHARS: usize = 200;
 /// The field that holds document text.
 const TEXT_FIELD: &str = "input";
-/// What GitHub writes for an empty optional field.
-const NO_RESPONSE: &str = "_No response_";
 
 /// Read the document sample for `--include-text`.
 ///
@@ -69,12 +67,10 @@ impl Report {
     /// The text printed before anything is sent.
     #[must_use]
     pub fn preview(&self) -> String {
-        let text = say(&ReportText::Preview {
+        let heading = say(&ReportText::Preview {
             repository: REPOSITORY.to_owned(),
-            title: self.title.clone(),
-            body: self.body.clone(),
         });
-        format!("{text}\n")
+        format!("{heading} {}\n\n{}\n", self.title, self.body)
     }
 }
 
@@ -103,7 +99,7 @@ impl Warnings {
     fn note(&mut self, field: &str, found: Option<super::gate::Kind>) {
         if let Some(kind) = found {
             let text = say(&ReportText::Possible {
-                kind: kind.label().to_owned(),
+                kind: kind.label(),
                 field: field.to_owned(),
             });
             if !self.0.contains(&text) {
@@ -299,7 +295,8 @@ pub fn build(
                     if field.required {
                         missing.push(field.id);
                     }
-                    sections.push(format!("{heading}\n\n{NO_RESPONSE}"));
+                    let no_response = phrase(ReportPhrase::NoResponse);
+                    sections.push(format!("{heading}\n\n{no_response}"));
                 } else if let (Kind::Textarea, Some(language)) = (field.kind, field.render) {
                     sections.push(format!("{heading}\n\n{}", fence(language, &joined)));
                 } else {

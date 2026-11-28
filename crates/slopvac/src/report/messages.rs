@@ -234,6 +234,12 @@ pub enum ReportPhrase {
     #[code("cli-report-kind-local-name")]
     #[text("local name")]
     KindLocalName,
+    /// The text GitHub writes for an empty optional field.
+    // `_No response_` copies the placeholder that GitHub's own issue forms use, so it must stay
+    // byte-identical.
+    #[code("cli-report-no-response")]
+    #[text("_No response_")]
+    NoResponse,
     /// The body file was written.
     #[code("cli-report-body-written")]
     #[text("Wrote the body to the file you named.")]
@@ -326,16 +332,13 @@ pub enum ReportText {
         /// The field id.
         field: String,
     },
-    /// The preview: target, title and body.
+    /// The first two heading words of the preview. The cleaned title and body follow as written,
+    /// never as arguments: the body can hold the document sample.
     #[code("cli-report-preview")]
-    #[text("Target: {repository}\nTitle: {title}\n\n{body}")]
+    #[text("Target: {repository}\nTitle:")]
     Preview {
         /// The repository.
         repository: String,
-        /// The cleaned title.
-        title: String,
-        /// The cleaned body.
-        body: String,
     },
     /// A warning line.
     #[code("cli-report-warning")]
@@ -344,27 +347,20 @@ pub enum ReportText {
         /// The warning, from [`ReportText::Possible`].
         text: String,
     },
-    /// The `gh issue create` command line.
+    /// The heading of the `gh issue create` command line. The quoted command follows as written,
+    /// never as an argument: it can hold an absolute `--body-file` path.
     #[code("cli-report-gh-command")]
-    #[text("GitHub CLI command:\n{line}")]
-    GhCommand {
-        /// The quoted command.
-        line: String,
-    },
-    /// What `gh` printed after it created the issue.
+    #[text("GitHub CLI command:")]
+    GhCommand,
+    /// The heading of what `gh` printed after it created the issue. The text follows as written.
     #[code("cli-report-created")]
-    #[text("Created: {url}")]
-    Created {
-        /// The issue URL, as `gh` printed it.
-        url: String,
-    },
-    /// The prefilled form URL.
+    #[text("Created:")]
+    Created,
+    /// The heading of the prefilled form URL. The URL follows as written, because it carries the
+    /// cleaned answers.
     #[code("cli-report-footer-url")]
-    #[text("Prefilled issue form: {url}")]
-    FooterUrl {
-        /// The URL.
-        url: String,
-    },
+    #[text("Prefilled issue form:")]
+    FooterUrl,
     /// The labels the form sets.
     #[code("cli-report-footer-labels")]
     #[text("The issue form adds the labels: {labels}")]
@@ -402,7 +398,7 @@ pub fn text_entries() -> &'static [slopvac_messages::Entry] {
 
 /// The phrase as owned text.
 pub(super) fn phrase(phrase: ReportPhrase) -> String {
-    phrase.as_static().to_owned()
+    slopvac_messages::render(&phrase)
 }
 
 /// The text of `text`.
