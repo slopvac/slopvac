@@ -170,8 +170,7 @@ impl EffectiveSeverity {
     }
 }
 
-/// One entry of the `rules` list: the rule as its category file defines it, with the
-/// qualified id, and the facts the binary adds.
+/// One entry of the `rules` list.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(
     rename = "RuleOutput",
