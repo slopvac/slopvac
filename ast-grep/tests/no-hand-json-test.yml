@@ -1,0 +1,159 @@
+id: no-hand-json
+valid:
+  - |
+    #[schemars(extend("allOf" = [&json_schema!({"a": 1})]))]
+    struct S;
+  - 'fn f() -> Schema { json_schema!({"type": "string"}) }'
+  - |
+    #[cfg(test)]
+    mod tests {
+        fn t() { json!({"a": 1}); }
+    }
+  - |
+    #[cfg(test)]
+    #[allow(clippy::unwrap_used, reason = "test")]
+    mod tests {
+        fn t() { json!(1); }
+    }
+  - |
+    #[cfg(test)]
+    fn helper() -> Value { json!({"a": 1}) }
+  - 'fn f(o: &mut String, c: char) { let _ = write!(o, "{{ \"{c}\" }}"); }'
+  - 'const OPEN: &str = "{{";'
+  - 'fn f() -> Value { Value::from(64) }'
+  - |
+    fn f() {
+        // json!({"a": 1}) in a comment
+    }
+  - |
+    /// Builds {"a": 1} from the type.
+    fn f() {}
+  - |
+    #[cfg(all(test, unix))]
+    mod tests {
+        fn t() { json!(1); }
+    }
+  - 'use serde_json::json;'
+  - 'use serde_json::{json, Value};'
+  - 'use serde_json::Value;'
+  - 'fn f() { let v = vec![json_schema!(1)]; }'
+  - 'fn f() { let s = "json!"; }'
+  - |
+    #[cfg(test)]
+    fn t() { let v = vec![json!(1)]; }
+  - |
+    #[cfg(test)]
+    const X: &str = "{\"a\":1}";
+  - |
+    #[cfg(test)]
+    #[derive(Debug)]
+    struct S { v: Value }
+  - |
+    #[cfg(test)]
+    #[schemars(extend("allOf" = [&json!({"a": 1})]))]
+    struct S;
+  - |
+    // a comment between
+    #[cfg(test)]
+    // another comment
+    #[allow(dead_code)]
+    const X: &str = r#"{"a b":1}"#;
+  - 'fn f(o: &mut String, c: char) { let _ = write!(o, "{{ \"{c}\" }}"); }'
+  - |
+    #[cfg(all(any(unix, windows), test))]
+    mod tests {
+        fn t() { json!(1); }
+    }
+  - |
+    #[cfg(any(test, all(test, unix)))]
+    fn t() { json!(1); }
+  - |
+    #[cfg(test)]
+    // a line comment
+    fn t() { json!(1); }
+  - |
+    #[cfg(test)]
+    /* a block comment */
+    mod tests {
+        fn t() { json!(1); }
+    }
+  - |
+    #[cfg(test)]
+    /* a block comment */
+    #[allow(dead_code)]
+    // a line comment
+    const X: &str = r#"{"a":1}"#;
+  - |
+    #[doc = "uses json!(x) in prose"]
+    struct S;
+invalid:
+  - 'fn f() { let v = serde_json:: json!(1); }'
+  - 'fn f() { let v = ::serde_json::  json!(1); }'
+  - 'fn f() { let v = serde_json::json /* x */ !(1); }'
+  - |
+    #[schemars(extend("allOf" = [&serde_json:: json!({"a": 1})]))]
+    struct S;
+  - |
+    #[schemars(extend("allOf" = [&json /* x */ !({"a": 1})]))]
+    struct S;
+  - |
+    #[cfg(any(test, unix))]
+    fn f() { json!(1); }
+  - |
+    #[cfg(all(any(test, unix), unix))]
+    fn f() { json!(1); }
+  - |
+    #[cfg(all(not(test), unix))]
+    fn f() { json!(1); }
+  - |
+    #[cfg(test)]
+    mod tests {}
+    /* a block comment */
+    fn f() { json!(1); }
+  - 'fn f() { let v = vec![json /* x */ !(1)]; }'
+  - 'use serde_json::json as j;'
+  - 'use serde_json::{json as j, Value};'
+  - 'use serde_json::*;'
+  - 'fn f() { let v = vec![json!(1)]; }'
+  - 'fn f() { let s = format!("{}", json!(1)); }'
+  - 'fn f() { let v = vec![serde_json::json!(1)]; }'
+  - 'const S: &str = r#"{"1a":1}"#;'
+  - 'const S: &str = r#"{"a b": 1}"#;'
+  - 'const S: &str = "[{\"a-b c\":1}]";'
+  - 'fn f() -> String { format!("{{\"2x\":{n}}}") }'
+  - |
+    #[cfg_attr(feature = "x", cfg(test))]
+    mod m {
+        fn f() { json!(1); }
+    }
+  - |
+    #[cfg(any(test, feature = "x"))]
+    fn f() { json!(1); }
+  - |
+    #[cfg(test)]
+    mod tests {}
+    const S: &str = r#"{"a":1}"#;
+  - |
+    #[cfg(not(test))]
+    const S: &str = r#"{"a":1}"#;
+  - |
+    #[schemars(extend("allOf" = [&json!({"a": 1})]))]
+    struct S;
+  - |
+    #[cfg(not(test))]
+    mod m {
+        fn t() { json!(1); }
+    }
+  - 'fn f() -> Value { json!({"a": 1}) }'
+  - 'fn f() -> Value { serde_json::json!([1, 2]) }'
+  - 'fn f(o: &mut String) { let _ = write!(o, "{{\"code\":\"{c}\"}}"); }'
+  - 'fn f() -> String { format!(r#"{{"tag":"p","n":{n}}}"#) }'
+  - 'const S: &str = r#"{"id":7,"jsonrpc":"2.0"}"#;'
+  - |
+    #[cfg(test)]
+    mod tests {}
+    fn f() -> Value { json!(1) }
+  - |
+    #[allow(dead_code)]
+    fn f() -> Value { json!(1) }
+  - 'fn f() -> Value { json!({"a": json!(1)}) }'

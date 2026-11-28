@@ -1,0 +1,170 @@
+id: no-hand-json
+language: rust
+severity: error
+message: Build JSON output from a typed model, not with `json!` or a JSON string.
+note: >-
+  Derive `Serialize` and `JsonSchema` on a type and serialise it. Write schema fragments
+  with `schemars::json_schema!`. Tests, benches, examples and `cfg(test)` code are exempt. A
+  permitted use goes in this file's allow list under its category, with contract sign-off.
+files:
+  - crates/*/src/**
+# The ignore list is closed: every entry carries an annotation, and
+# scripts/ci/check_no_hand_json.py rejects a line without one.
+#   `# exempt glob`         a test, bench or example path.
+#   `# exempt test-module`  an out-of-line `#[cfg(test)] mod x;` file, which this rule cannot
+#                           see. The checker confirms the parent declares it under cfg(test).
+#   `# allow <category> <count>`  the allow list. `<count>` is the number of findings the rule
+#                           reports in that file when the entry is absent. A finding is a macro
+#                           call, a token-tree `json!`, an attribute or a `use`, so a `json!`
+#                           nested in another adds none.
+# The checker reads this file, so the list has one source. It fails when an allow-listed file
+# has no finding left, when a count differs from the number of findings, and when the sum of a
+# category differs from its total line below. With `--base <ref>` it also compares with the
+# file at that ref, and fails on a new entry, a raised count or a raised total. A permanent
+# growth passes only when the pull request carries the label `no-hand-json-growth` (contract
+# sign-off). TEMPORARY growth never passes. The list can only shrink: delete an entry (or
+# lower its count and total) in the same change that removes the sites.
+#
+# total schema-generation 81
+# total config-leaf 24
+# total digest-input 6
+# total validator-fragment 2
+# total TEMPORARY(slopvac-8l4.12.88) 11
+# total TEMPORARY(slopvac-8l4.3.85) 3
+ignores:
+  - "**/tests/**" # exempt glob
+  - "**/benches/**" # exempt glob
+  - "**/examples/**" # exempt glob
+  # An out-of-line test module `tests.rs` is declared `#[cfg(test)] mod tests;` in its parent.
+  - "**/tests.rs" # exempt glob
+  - crates/slopvac-plugins/src/protocol_corpus.rs # exempt test-module
+  - crates/slopvac-config/src/schema/patterns.rs # exempt test-module
+  # Schema generation: transforms, conditions and fragments of a generated schema.
+  - crates/slopvac-agents/src/schema.rs # allow schema-generation 29
+  - crates/slopvac-config/src/wire.rs # allow schema-generation 4
+  - crates/slopvac-model/src/notice_data.rs # allow schema-generation 2
+  - crates/slopvac-model/src/report.rs # allow schema-generation 1
+  - crates/slopvac-model/src/schema.rs # allow schema-generation 3
+  - crates/slopvac-packs/src/manifest.rs # allow schema-generation 21
+  - crates/slopvac-plugins/src/protocol/schema.rs # allow schema-generation 12
+  - crates/slopvac-rules/src/model.rs # allow schema-generation 3
+  - crates/slopvac-rules/src/schema.rs # allow schema-generation 3
+  - crates/slopvac-schemas/src/plugin_files.rs # allow schema-generation 2
+  - crates/slopvac-terms/src/wire.rs # allow schema-generation 1
+  # Config value-tree leaves that resolution stores or compares.
+  - crates/slopvac-config/src/resolve.rs # allow config-leaf 16
+  - crates/slopvac-packs/src/genre_layer.rs # allow config-leaf 8
+  # Canonical input of a digest, never written out.
+  - crates/slopvac-plugins/src/pyenv/listing.rs # allow digest-input 1
+  - crates/slopvac-plugins/src/pyenv/mod.rs # allow digest-input 4
+  - crates/slopvac-plugins/src/trust.rs # allow digest-input 1
+  # A schema fragment handed to a validator.
+  - crates/slopvac/src/init/template.rs # allow validator-fragment 2
+  # TEMPORARY(slopvac-8l4.3.85): the locale category is built as rule-file JSON.
+  - crates/slopvac-engine/src/locale.rs # allow TEMPORARY(slopvac-8l4.3.85) 3
+  # TEMPORARY(slopvac-8l4.12.88): the inspect output is built with json!.
+  - crates/slopvac/src/inspect.rs # allow TEMPORARY(slopvac-8l4.12.88) 11
+rule:
+  any:
+    - all:
+        - kind: macro_invocation
+        - has:
+            field: macro
+            any:
+              - kind: identifier
+                regex: ^json$
+              - kind: scoped_identifier
+                has:
+                  field: name
+                  kind: identifier
+                  regex: ^json$
+    # `json!` inside another macro's token tree (`vec![json!(1)]`) is no macro invocation, so
+    # the `json` identifier followed by `!` is matched. A `json!` inside the arguments of a
+    # `json!` call, or inside an attribute (matched whole below), adds no second finding.
+    - all:
+        - kind: identifier
+        - regex: ^json$
+        - inside:
+            kind: token_tree
+        # The next token that is no comment must be `!`, so `json /* x */ !(...)` matches too.
+        - precedes:
+            regex: ^!$
+            stopBy:
+              not:
+                any:
+                  - kind: line_comment
+                  - kind: block_comment
+        - not:
+            inside:
+              any:
+                - kind: attribute_item
+                - all:
+                    - kind: macro_invocation
+                    - has:
+                        field: macro
+                        any:
+                          - kind: identifier
+                            regex: ^json$
+                          - kind: scoped_identifier
+                            has:
+                              field: name
+                              kind: identifier
+                              regex: ^json$
+              stopBy: end
+    # `json!` inside an attribute such as `#[schemars(extend(...))]` is a token tree, not a
+    # macro invocation, so the attribute is matched as a whole: one finding for the attribute,
+    # whatever the number of calls in it. A comment may sit between `json` and `!`.
+    - all:
+        - kind: attribute_item
+        - has:
+            stopBy: end
+            all:
+              - kind: identifier
+                regex: ^json$
+              - precedes:
+                  regex: ^!$
+                  stopBy:
+                    not:
+                      any:
+                        - kind: line_comment
+                        - kind: block_comment
+    # An import that renames `json` (`json as j`) or globs `serde_json` hides the call sites.
+    - all:
+        - kind: use_declaration
+        - regex: '(^|[^A-Za-z0-9_])json\s+as\s|serde_json::(\*|\{[^}]*\*)'
+    - all:
+        - any:
+            - kind: string_literal
+            - kind: raw_string_literal
+        # `{` or a format string's `{{`, then a quoted key of any text and a colon. A Fluent
+        # placeable such as `{{ \"{c}\" }}` has no colon after the quote, so it stays clear.
+        - regex: '\{\{?\s*\\?"[^"\\]*\\?"\s*:'
+  # Exempt any item (module, function, impl, const, struct, ...) that follows a `cfg(test)`
+  # attribute, with other attributes and comments between them, and the attribute lines that
+  # follow it.
+  not:
+    any:
+      - inside:
+          follows:
+            kind: attribute_item
+            # The predicate, read as boolean logic, must be false whenever `test` is false:
+            # `cfg(test)`, `cfg(all(any(unix, windows), test))`, `cfg(any(test, test))`. Not
+            # `cfg(not(test))`, `cfg(any(test, unix))` or `cfg_attr(..., cfg(test))`. The regex
+            # comes from `check_no_hand_json.py --print-cfg-regex`, and a test keeps them equal.
+            regex: '^#\[cfg\((?:\s*test\s*|\s*all\(\s*(?:[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?,)*(?:\s*test\s*|\s*all\(\s*(?:[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?,)*\s*test\s*(?:,[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?)*\s*\)\s*|\s*any\(\s*\s*test\s*(?:,\s*test\s*)*\s*\)\s*)(?:,[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?)*\s*\)\s*|\s*any\(\s*(?:\s*test\s*|\s*all\(\s*(?:[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?,)*\s*test\s*(?:,[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?)*\s*\)\s*|\s*any\(\s*\s*test\s*(?:,\s*test\s*)*\s*\)\s*)(?:,(?:\s*test\s*|\s*all\(\s*(?:[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?,)*\s*test\s*(?:,[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?)*\s*\)\s*|\s*any\(\s*\s*test\s*(?:,\s*test\s*)*\s*\)\s*))*\s*\)\s*)\)\s*\]$'
+            stopBy:
+              not:
+                any:
+                  - kind: attribute_item
+                  - kind: line_comment
+                  - kind: block_comment
+          stopBy: end
+      - follows:
+          kind: attribute_item
+          regex: '^#\[cfg\((?:\s*test\s*|\s*all\(\s*(?:[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?,)*(?:\s*test\s*|\s*all\(\s*(?:[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?,)*\s*test\s*(?:,[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?)*\s*\)\s*|\s*any\(\s*\s*test\s*(?:,\s*test\s*)*\s*\)\s*)(?:,[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?)*\s*\)\s*|\s*any\(\s*(?:\s*test\s*|\s*all\(\s*(?:[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?,)*\s*test\s*(?:,[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?)*\s*\)\s*|\s*any\(\s*\s*test\s*(?:,\s*test\s*)*\s*\)\s*)(?:,(?:\s*test\s*|\s*all\(\s*(?:[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?,)*\s*test\s*(?:,[^(),]+(?:\(\s*[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?(?:,[^(),]+(?:\(\s*[^(),]+(?:,[^(),]+)*\s*\))?)*\s*\))?)*\s*\)\s*|\s*any\(\s*\s*test\s*(?:,\s*test\s*)*\s*\)\s*))*\s*\)\s*)\)\s*\]$'
+          stopBy:
+            not:
+              any:
+                - kind: attribute_item
+                - kind: line_comment
+                - kind: block_comment
