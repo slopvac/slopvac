@@ -86,14 +86,9 @@ struct LoadFailure {
 
 impl LoadFailure {
     /// The failure as the language server shows it on the file that failed.
-    fn shown(self: Box<Self>) -> ConfigFailure {
-        let Self {
-            error,
-            path,
-            position,
-        } = *self;
-        let shown = ConfigFailure::new(error.code, error.message, path);
-        match position {
+    fn shown(self) -> ConfigFailure {
+        let shown = ConfigFailure::new(self.error.code, self.error.message, self.path);
+        match self.position {
             Some((text, offset)) => shown.at_offset(text, offset),
             None => shown,
         }
@@ -220,7 +215,7 @@ pub(crate) fn project_linter(root: &Path) -> ProjectServer {
     });
     let (notices, failure) = match project.load(&[]) {
         Ok(notices) => (notices, None),
-        Err(failure) => (Vec::new(), Some(failure.shown())),
+        Err(failure) => (Vec::new(), Some((*failure).shown())),
     };
     ProjectServer {
         linter: ProjectLinter {
@@ -607,7 +602,7 @@ impl Linter for ProjectLinter {
     fn reload(&self, open: &[String]) -> Reloaded {
         match self.project.load(open) {
             Ok(notices) => Reloaded::new(notices, None),
-            Err(failure) => Reloaded::new(Vec::new(), Some(failure.shown())),
+            Err(failure) => Reloaded::new(Vec::new(), Some((*failure).shown())),
         }
     }
 
