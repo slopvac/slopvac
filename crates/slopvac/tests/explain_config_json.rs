@@ -104,7 +104,7 @@ fn explain_config_prints_the_config_and_each_setting_of_a_file_as_json() {
         json!({"id": "reference", "source": "default"}),
         "{doc}"
     );
-    assert_eq!(input["front_matter_resolved"], json!(false), "{doc}");
+    assert_eq!(input["front_matter_resolved"], json!(true), "{doc}");
     assert_eq!(
         setting(input, "locale"),
         &json!({
@@ -264,7 +264,7 @@ fn explain_config_prints_a_url_value_without_its_user_info_query_and_fragment() 
 }
 
 #[test]
-fn explain_config_does_not_read_front_matter_and_prints_none_of_it() {
+fn explain_config_reads_no_front_matter_key_outside_the_slopvac_block() {
     let dir = project();
     fs::write(
         dir.path().join("a.md"),
@@ -275,7 +275,7 @@ fn explain_config_does_not_read_front_matter_and_prints_none_of_it() {
     assert!(!doc.to_string().contains("FRONT-MATTER-SECRET"), "{doc}");
     let input = only_input(&doc);
     assert_eq!(setting(input, "locale")["value"], json!("en-GB"), "{doc}");
-    assert_eq!(input["front_matter_resolved"], json!(false), "{doc}");
+    assert_eq!(input["front_matter_resolved"], json!(true), "{doc}");
 }
 
 #[test]
@@ -491,4 +491,175 @@ fn an_unreadable_parent_config_stops_explain_config_as_it_stops_lint_with_json()
         "{lint:?}"
     );
     assert_eq!(explain, lint);
+}
+/// The layers of every origin in the record `input`: its settings, the values they replaced and
+/// its configured rules.
+fn origin_layers(input: &Value) -> Vec<String> {
+    let mut layers = Vec::new();
+    for entry in input["settings"].as_array().expect("a `settings` list") {
+        layers.push(entry["source"]["layer"].clone());
+        for replaced in entry["replaced"].as_array().expect("a `replaced` list") {
+            layers.push(replaced["source"]["layer"].clone());
+        }
+    }
+    for rule in input["configured_rules"].as_array().expect("a rule list") {
+        layers.push(rule["source"]["layer"].clone());
+    }
+    layers
+        .into_iter()
+        .map(|l| l.as_str().expect("a layer name").to_owned())
+        .collect()
+}
+
+/// A document whose `slopvac:` block sets `terms.allow` on line 5 (its key at column 5) and
+/// whose directive sets `locale` on line 9. `<!-- slopvac: ` is 14 bytes, so that key starts at
+/// column 15.
+const LAYERED: &str = "---\nslopvac:\n  v: 3\n  terms:\n    allow: [zorblax]\n---\n# Title\n\n<!-- slopvac: locale=en-US -->\n";
+
+/// A front-matter value and a directive value are settings of the record, each with the input
+/// as its file and the line and column of its key (docs/contract/config.md, section 1.4.1).
+#[test]
+fn explain_config_shows_a_front_matter_and_a_directive_value_at_their_origin_with_json() {
+    let dir = project_with("schema_version = 3\nlocale = \"en-GB\"\n");
+    fs::write(dir.path().join("a.md"), LAYERED).expect("write document");
+    let doc = explained(dir.path(), &["a.md"]);
+    let input = only_input(&doc);
+    assert_eq!(input["front_matter_resolved"], json!(true), "{doc}");
+    let allow = setting(input, "terms.allow");
+    assert_eq!(allow["value"], json!(["zorblax"]), "{doc}");
+    assert_eq!(
+        allow["source"],
+        json!({"layer": "front-matter", "file": "a.md", "line": 5, "column": 5}),
+        "{doc}"
+    );
+    let locale = setting(input, "locale");
+    assert_eq!(locale["value"], json!("en-US"), "{doc}");
+    assert_eq!(
+        locale["source"],
+        json!({"layer": "directive", "file": "a.md", "line": 9, "column": 15}),
+        "{doc}"
+    );
+    assert_eq!(
+        locale["replaced"],
+        json!([{
+            "value": "en-GB",
+            "source": {"layer": "project", "file": "slopvac.toml", "line": 2, "column": 1},
+        }]),
+        "{doc}"
+    );
+}
+
+/// The record names the genre that lint gives the same input, with the same source
+/// (docs/contract/config.md, section 1.4.1).
+#[rstest]
+#[case::front_matter(
+    "schema_version = 3\n",
+    "a.md",
+    "---\nslopvac:\n  v: 3\n  genre: informal\n---\n# Title\n\nText.\n",
+    "explicit"
+)]
+#[case::directive(
+    "schema_version = 3\n",
+    "a.md",
+    "<!-- slopvac: genre=informal -->\n# Title\n\nText.\n",
+    "explicit"
+)]
+#[case::genres_block(
+    "schema_version = 3\n\n[[genres]]\nfiles = [\"**\"]\ngenre = \"internal\"\n",
+    "a.md",
+    "# Title\n\nText.\n",
+    "explicit"
+)]
+#[case::detection(
+    "schema_version = 3\n",
+    "reference/e.md",
+    "# Title\n\nText.\n",
+    "detected"
+)]
+#[case::none("schema_version = 3\n", "a.md", "# Title\n\nText.\n", "default")]
+fn explain_config_names_the_genre_that_lint_reports_for_the_input(
+    #[case] config: &str,
+    #[case] path: &str,
+    #[case] text: &str,
+    #[case] source: &str,
+) {
+    let dir = project_with(config);
+    let file = dir.path().join(path);
+    fs::create_dir_all(file.parent().expect("a parent")).expect("dir");
+    fs::write(&file, text).expect("write document");
+    let doc = explained(dir.path(), &[path]);
+    let (code, stdout, stderr) = outcome(dir.path(), &["lint", "--format", "json", path]);
+    assert!(code.is_some_and(|c| c < 2), "{stderr}");
+    let report: Value = serde_json::from_str(&stdout).expect("a lint report");
+    let linted = &report["documents"][0]["genre"];
+    let explained = &only_input(&doc)["genre"];
+    assert_eq!(explained["source"], json!(source), "{doc}");
+    assert_eq!(explained["id"], linted["id"], "{doc}\n{report}");
+    assert_eq!(explained["source"], linted["source"], "{doc}\n{report}");
+}
+
+/// With `[frontmatter] enabled = false` the document takes no part in resolution: the record
+/// says so, and no origin is the `slopvac:` block or a directive.
+#[test]
+fn explain_config_with_front_matter_off_resolves_no_document_layer() {
+    let dir = project_with("schema_version = 3\n\n[frontmatter]\nenabled = false\n");
+    fs::write(dir.path().join("a.md"), LAYERED).expect("write document");
+    let doc = explained(dir.path(), &["a.md"]);
+    let input = only_input(&doc);
+    assert_eq!(input["front_matter_resolved"], json!(false), "{doc}");
+    let layers = origin_layers(input);
+    assert!(
+        !layers
+            .iter()
+            .any(|l| l == "front-matter" || l == "directive"),
+        "{doc}"
+    );
+}
+
+/// A `slopvac:` block with an error is reported on stderr at its key, the run is incomplete,
+/// and the record is still printed without any value from that block. The unknown key `zorp`
+/// is on line 5, at column 3.
+#[test]
+fn explain_config_reports_a_bad_block_and_keeps_the_record_without_its_values() {
+    let dir = project_with("schema_version = 3\nlocale = \"en-GB\"\n");
+    fs::write(
+        dir.path().join("a.md"),
+        "---\nslopvac:\n  v: 3\n  locale: en-US\n  zorp: 1\n---\n# Title\n\nText.\n",
+    )
+    .expect("write document");
+    let (code, stdout, stderr) = outcome(
+        dir.path(),
+        &["lint", "--explain-config", "--format", "json", "a.md"],
+    );
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(
+        stderr.starts_with("error[config-unknown-key]: a.md:5:3: "),
+        "{stderr}"
+    );
+    let doc: Value = serde_json::from_str(&stdout).expect("stdout is one JSON document");
+    let input = only_input(&doc);
+    assert_eq!(setting(input, "locale")["value"], json!("en-GB"), "{doc}");
+    assert!(
+        !origin_layers(input).iter().any(|l| l == "front-matter"),
+        "{doc}"
+    );
+}
+
+/// The markers of a steering block are no directive, so a steering file explains cleanly and
+/// no origin is a directive (docs/contract/config.md, section 1.1.1).
+#[test]
+fn explain_config_reads_no_directive_from_a_steering_block() {
+    let dir = project_with("schema_version = 3\n");
+    fs::write(
+        dir.path().join("AGENTS.md"),
+        "# Agents\n\n<!-- slopvac:begin -->\nRun the checks.\n<!-- slopvac:end -->\n",
+    )
+    .expect("write document");
+    let doc = explained(dir.path(), &["AGENTS.md"]);
+    assert!(
+        !origin_layers(only_input(&doc))
+            .iter()
+            .any(|l| l == "directive"),
+        "{doc}"
+    );
 }
