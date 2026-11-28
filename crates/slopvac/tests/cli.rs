@@ -10,6 +10,7 @@ mod support;
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
+use std::path::Path;
 
 fn slopvac() -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
@@ -390,10 +391,19 @@ fn cache_with_newer_release() -> tempfile::TempDir {
     dir
 }
 
+/// Point the inputs that install detection reads at empty directories under `base`: the receipt
+/// directory and the cargo home. Without them a receipt or a cargo layout on the host decides
+/// `install_method` and the upgrade text, and a byte pin then fails on some machines only. The
+/// executable path is the one input left alone: it is the test binary in the target directory.
+fn without_host_install_evidence<'a>(cmd: &'a mut Command, base: &Path) -> &'a mut Command {
+    cmd.env("AXOUPDATER_CONFIG_PATH", base.join("no-receipts"))
+        .env("CARGO_HOME", base.join("no-cargo-home"))
+}
+
 /// The `--offline --version --json` document, parsed.
 fn offline_version_document() -> serde_json::Value {
     let cache = tempfile::tempdir().unwrap();
-    let out = slopvac()
+    let out = without_host_install_evidence(&mut slopvac(), cache.path())
         .env("SLOPVAC_CACHE_DIR", cache.path())
         .args(["--offline", "--version", "--json"])
         .assert()
@@ -461,7 +471,7 @@ fn expected_version_bytes(notices: &str) -> String {
 }
 
 fn raw_version_output(cmd: &mut Command, cache: &std::path::Path, args: &[&str]) -> String {
-    let out = cmd
+    let out = without_host_install_evidence(cmd, cache)
         .env("SLOPVAC_CACHE_DIR", cache)
         .args(args)
         .assert()
