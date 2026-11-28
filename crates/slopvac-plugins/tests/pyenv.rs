@@ -2049,14 +2049,20 @@ mod unix_only {
         assert_changed(&env, "interp/python", "changed size or modification time");
     }
 
-    #[test]
-    fn an_alias_that_resolves_only_after_the_store_opened_does_not_widen_the_project() {
-        let s = Scratch::new("u-interp-late");
+    /// The environment is on disk, built through the real root. A fresh store opens on an alias
+    /// and the alias moves to an ancestor of the interpreter before the load, so only a root
+    /// resolved when the store opened keeps the interpreter outside the project.
+    #[rstest::rstest]
+    #[case::dangling_at_open(false)]
+    #[case::resolved_at_open(true)]
+    fn the_alias_is_resolved_when_the_store_opens_not_when_it_loads(#[case] resolves: bool) {
+        let s = Scratch::new(&format!("u-interp-late-{resolves}"));
         let root = fs::canonicalize(&s.0).unwrap();
-        // The alias dangles when the store opens, and later points at an ancestor of the
-        // interpreter, before the environment loads.
-        let alias = alias_to(&s, &s.dir("not-there-yet"));
-        let (store, vp, w) = built_on_wrapper(&s, &alias);
+        let project = s.dir("project");
+        fs::create_dir_all(&project).unwrap();
+        let (_, vp, w) = built_on_wrapper(&s, &root);
+        let alias = alias_to(&s, &if resolves { project } else { s.dir("not-there-yet") });
+        let store = EnvStore::open(s.dir("envs"), &alias);
         fs::remove_file(&alias).unwrap();
         std::os::unix::fs::symlink(&root, &alias).unwrap();
         let env = store.load(&vp.tree, "3.12").unwrap().expect("on disk");
