@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use slopvac_config::frontmatter::Policy;
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_lsp::{
-    Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
+    Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded, Server,
 };
 use slopvac_model::{ConfigSource, Notice, RuleId};
 use slopvac_styles::{BuiltinSource, StylePresets};
@@ -54,8 +54,25 @@ pub(crate) struct ProjectServer {
     pub linter: ProjectLinter,
     /// Warnings about the config.
     pub notices: Vec<Notice>,
+    /// Why the project config could not be loaded at startup.
+    pub failure: Option<ConfigFailure>,
     /// Front-matter validation.
     pub checks: Vec<Arc<dyn Check>>,
+}
+
+impl ProjectServer {
+    /// The language server over this project.
+    pub(crate) fn into_server(self) -> Server {
+        let server = self
+            .checks
+            .into_iter()
+            .fold(Server::new(Arc::new(self.linter)), Server::with_check)
+            .with_startup_notices(self.notices);
+        match self.failure {
+            Some(failure) => server.with_startup_failure(failure),
+            None => server,
+        }
+    }
 }
 
 /// Why the project config could not be loaded, with where to show it.
@@ -65,6 +82,22 @@ struct LoadFailure {
     path: PathBuf,
     /// The text of that file and the byte offset of the error in it.
     position: Option<(String, usize)>,
+}
+
+impl LoadFailure {
+    /// The failure as the language server shows it on the file that failed.
+    fn shown(self: Box<Self>) -> ConfigFailure {
+        let Self {
+            error,
+            path,
+            position,
+        } = *self;
+        let shown = ConfigFailure::new(error.code, error.message, path);
+        match position {
+            Some((text, offset)) => shown.at_offset(text, offset),
+            None => shown,
+        }
+    }
 }
 
 /// A map that holds at most `cap` entries: a new key that finds it full empties it first.
@@ -171,30 +204,32 @@ struct ProjectCheck {
 /// The language server's linter for the project config found from `root`: the shipped
 /// rules, the term-casing pack, the settings, the project's terms files and the blocklists,
 /// built the same way `slopvac lint` builds an engine. The notices are the warnings about the
-/// config, which the language server shows to the client.
-///
-/// # Errors
-/// The config error, `terms-invalid`, or `rules-unavailable`.
-pub(crate) fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
+/// config, which the language server shows to the client. A config that fails to load is the
+/// failure the server shows, and every document reads as not linted until a reload succeeds.
+pub(crate) fn project_linter(root: &Path) -> ProjectServer {
     let project = Arc::new(Project {
         root: root.to_path_buf(),
         loaded: Mutex::new(Loaded {
             epoch: 0,
             dependencies: BTreeSet::new(),
-            // Replaced by the load below. A project whose first load fails is never served.
+            // Replaced by the load below.
             state: State::Failed(String::new()),
         }),
         #[cfg(test)]
         pause: Mutex::new(None),
     });
-    let notices = project.load(&[]).map_err(|failure| failure.error)?;
-    Ok(ProjectServer {
+    let (notices, failure) = match project.load(&[]) {
+        Ok(notices) => (notices, None),
+        Err(failure) => (Vec::new(), Some(failure.shown())),
+    };
+    ProjectServer {
         linter: ProjectLinter {
             project: Arc::clone(&project),
         },
         notices,
+        failure,
         checks: vec![Arc::new(ProjectCheck { project })],
-    })
+    }
 }
 
 /// The nearest config of `dir`, found again from disk.
@@ -572,14 +607,7 @@ impl Linter for ProjectLinter {
     fn reload(&self, open: &[String]) -> Reloaded {
         match self.project.load(open) {
             Ok(notices) => Reloaded::new(notices, None),
-            Err(failure) => {
-                let mut shown =
-                    ConfigFailure::new(failure.error.code, failure.error.message, failure.path);
-                if let Some((text, offset)) = failure.position {
-                    shown = shown.at_offset(text, offset);
-                }
-                Reloaded::new(Vec::new(), Some(shown))
-            }
+            Err(failure) => Reloaded::new(Vec::new(), Some(failure.shown())),
         }
     }
 

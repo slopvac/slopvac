@@ -59,6 +59,7 @@ pub struct Server {
     checks: Vec<Arc<dyn Check>>,
     hook: Option<PublishHook>,
     startup: Vec<Notice>,
+    startup_failure: Option<ConfigFailure>,
 }
 
 /// Called with the document uri while the document lock is held, after a diagnostics
@@ -74,7 +75,17 @@ impl Server {
             checks: Vec::new(),
             hook: None,
             startup: Vec::new(),
+            startup_failure: None,
         }
+    }
+
+    /// Show `failure` right after the handshake, the way a reload that fails shows it: on the
+    /// file that failed, until a later reload succeeds. It is the failure of the config the
+    /// linter was built from.
+    #[must_use]
+    pub fn with_startup_failure(mut self, failure: ConfigFailure) -> Self {
+        self.startup_failure = Some(failure);
+        self
     }
 
     /// Show `notices` to the client once, as `window/showMessage` warnings, right after the
@@ -176,6 +187,7 @@ impl Server {
         for notice in &self.startup {
             show_warning(&queue_tx, notice);
         }
+        show_config_failure(&shared, self.startup_failure.as_ref(), &queue_tx);
         sync_watch(&shared, &queue_tx);
         let result = main_loop(&shared, connection, &jobs_tx, &queue_tx);
         drop(jobs_tx);
