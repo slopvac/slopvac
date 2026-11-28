@@ -45,7 +45,9 @@ jobs:
       # read. This lints every conditional branch with the 3.x ruleset; any lint exit
       # above 0, including exit 2 (incomplete), fails the step.
       - name: Gate the rendered prime guidance
-        run: bash scripts/ci/gate_prime_prose.sh "$SLOPVAC_BIN" .github/action-fixtures/slopvac-v3.toml "$RUNNER_TEMP/prime-prose"
+        run: >-
+          bash scripts/ci/gate_prime_prose.sh "$SLOPVAC_BIN"
+          .github/action-fixtures/slopvac-v3.toml "$RUNNER_TEMP/prime-prose"
 
       - name: Run the action, blocking
         id: blocking
