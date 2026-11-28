@@ -237,6 +237,34 @@ fn too_many_tags() -> (String, &'static str, usize) {
     (text, "tags", limit)
 }
 
+/// The data of a refused budget is exactly `budget`, `limit` and `path`, with the path shown
+/// relative to the project root, and the report validates against the published schema.
+#[test]
+fn a_refused_budget_notice_carries_exactly_budget_limit_and_the_relative_path() -> TestResult {
+    let dir = empty_project()?;
+    fs::create_dir(dir.path().join("docs"))?;
+    // 150000 sentences of 8 bytes joined by one space, and a newline: 1_350_000 bytes. The
+    // tag ceiling is one tag for every 64 bytes, plus 65_536: 21_093 + 65_536.
+    fs::write(dir.path().join("docs/a.md"), over_budget())?;
+    slopvac(dir.path())?
+        .args(["lint", "--format", "json", "--out", "r.json", "docs/a.md"])
+        .assert()
+        .code(2);
+    let report: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dir.path().join("r.json"))?)?;
+    assert_eq!(
+        report["notices"][0]["data"],
+        serde_json::json!({"budget": "tags", "limit": 86_629, "path": "docs/a.md"}),
+        "{report}"
+    );
+    let errors: Vec<String> = support::report_validator()
+        .iter_errors(&report)
+        .map(|e| format!("{e} at {}", e.instance_path()))
+        .collect();
+    assert!(errors.is_empty(), "{errors:?}");
+    Ok(())
+}
+
 #[rstest]
 #[case::tags(too_many_tags())]
 #[case::sentences(too_many_sentences())]
