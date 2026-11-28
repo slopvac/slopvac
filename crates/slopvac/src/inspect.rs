@@ -471,7 +471,10 @@ fn explain_in(
         ));
     };
     let text = match format_of(m) {
-        "json" => ExplainOutput::new(rule_output(rule, &effective(sev, rule))?, suppression(rule)).render(),
+        "json" => {
+            let entry = rule_output(rule, &effective(sev, rule))?;
+            ExplainOutput::new(entry, suppression(rule)).render()
+        }
         "md" => format!(
             "{DISABLE}\n{}\n{ENABLE}\n",
             rule_block(rule, sev).join("\n")
@@ -794,7 +797,10 @@ mod tests {
     fn the_render_failed_message_names_the_rule_and_not_the_configured_value() {
         let message = output_at_a_level_that_is_no_level().message;
         assert!(message.contains(CORE_RULE), "{message}");
-        assert!(message.contains("effective level is not a level"), "{message}");
+        assert!(
+            message.contains("effective level is not a level"),
+            "{message}"
+        );
         assert!(!message.contains("loud"), "{message}");
     }
 }
