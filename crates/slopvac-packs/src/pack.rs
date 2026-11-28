@@ -213,13 +213,44 @@ impl LoadedPack {
         budget: &mut Budget,
     ) -> Result<Self, PackError> {
         // The manifest counts toward both byte budgets like any pack file, before it is parsed.
-        let manifest_text = source.manifest_text()?;
-        let manifest_bytes = manifest_text.len() as u64;
-        if manifest_bytes > budget.limits().pack_bytes {
+        let (text, bytes) = Self::manifest_text(source, budget)?;
+        budget.charge_bytes(bytes)?;
+        let manifest = Self::parse_manifest(&text, origin)?;
+        Self::load_rest(source, origin, budget, manifest, bytes)
+    }
+
+    /// Like [`LoadedPack::load_within`], and `check` sees the parsed manifest first. `check` runs
+    /// before the load charges `budget` and before it reads any other file. A manifest that
+    /// `check` refuses leaves the budget as it was.
+    pub(crate) fn load_checked<E: From<PackError>>(
+        source: &dyn PackSource,
+        origin: Source,
+        budget: &mut Budget,
+        check: impl FnOnce(&Manifest) -> Result<(), E>,
+    ) -> Result<Self, E> {
+        // The per-plugin cap bounds the parse. The charge waits until `check` accepts the
+        // manifest.
+        let (text, bytes) = Self::manifest_text(source, budget)?;
+        let manifest = Self::parse_manifest(&text, origin)?;
+        check(&manifest)?;
+        budget.charge_bytes(bytes)?;
+        Self::load_rest(source, origin, budget, manifest, bytes).map_err(E::from)
+    }
+
+    /// The manifest text and its length, refused over the per-plugin byte cap.
+    fn manifest_text(source: &dyn PackSource, budget: &Budget) -> Result<(String, u64), PackError> {
+        let text = source.manifest_text()?;
+        let bytes = text.len() as u64;
+        if bytes > budget.limits().pack_bytes {
             return Err(refusal(PackBudget::Bytes, budget.limits().pack_bytes));
         }
-        budget.charge_bytes(manifest_bytes)?;
-        let mut manifest = Manifest::parse_allowing_core(&manifest_text)?;
+        Ok((text, bytes))
+    }
+
+    /// Parse the manifest and check its id against `origin`. The core takes the binary's
+    /// version.
+    fn parse_manifest(text: &str, origin: Source) -> Result<Manifest, PackError> {
+        let mut manifest = Manifest::parse_allowing_core(text)?;
         let is_core = manifest.id.as_str() == RESERVED_ID;
         match (origin, is_core) {
             (Source::Core, false) => return Err(PackError::NotCore),
@@ -230,9 +261,19 @@ impl LoadedPack {
             manifest.version =
                 Version::parse(env!("CARGO_PKG_VERSION")).map_err(|_| PackError::BinaryVersion)?;
         }
+        Ok(manifest)
+    }
+
+    /// Load the files of a charged manifest, and name the plugin in any refusal.
+    fn load_rest(
+        source: &dyn PackSource,
+        origin: Source,
+        budget: &mut Budget,
+        manifest: Manifest,
+        bytes: u64,
+    ) -> Result<Self, PackError> {
         let id = manifest.id.clone();
-        Self::load_files(source, origin, budget, manifest, manifest_bytes)
-            .map_err(|e| e.in_plugin(&id))
+        Self::load_files(source, origin, budget, manifest, bytes).map_err(|e| e.in_plugin(&id))
     }
 
     /// Read and check the files the manifest lists, once the manifest is in and charged.

@@ -21,7 +21,7 @@ use slopvac_plugins::sync::{Store, SyncError};
 
 use crate::messages::PackMessage;
 use crate::source::MemorySource;
-use crate::{Budget, Limits, LoadedPack, PackError, PackKind, Packs, Source, to_lock_id};
+use crate::{Budget, Limits, LoadedPack, Manifest, PackError, PackKind, Packs, Source, to_lock_id};
 
 /// What a test hangs on the hash pass of a load: called for each file right after it is read.
 #[cfg(feature = "test-support")]
@@ -194,8 +194,7 @@ fn dependency_order(requested: &[PackId], lock: &Lockfile) -> Result<Vec<LockedP
 }
 
 /// Check the installed manifest against the lock entry and the API this build implements.
-fn check_manifest(locked: &LockedPack, pack: &LoadedPack) -> Result<(), SyncedError> {
-    let manifest = pack.manifest();
+fn check_manifest(locked: &LockedPack, manifest: &Manifest) -> Result<(), SyncedError> {
     let id = locked.id.to_string();
     let kind = match manifest.kind {
         PackKind::Data => LockKind::Data,
@@ -378,8 +377,12 @@ fn load_inner(
             LockKind::Data => Source::Pack,
             LockKind::Code => Source::Plugin,
         };
-        let pack = LoadedPack::load_within(&MemorySource::new(files), origin, budget)?;
-        check_manifest(&locked, &pack)?;
+        // The integrity pass above has read every file once. From the captured bytes,
+        // `check_manifest` compares the manifest with the lock before the load reads any other
+        // file, compiles anything or charges the budget.
+        let pack = LoadedPack::load_checked(&MemorySource::new(files), origin, budget, |m| {
+            check_manifest(&locked, m)
+        })?;
         check_requirements(&pack, &loaded)?;
         loaded.push(pack);
     }

@@ -611,6 +611,65 @@ fn a_manifest_kind_that_differs_from_its_lock_entry_is_refused(
     assert_eq!(err.code(), Some("plugin-manifest-mismatch"));
 }
 
+#[rstest]
+#[case::data_locked_code_installed("data", "code")]
+#[case::code_locked_data_installed("code", "data")]
+fn a_manifest_kind_that_differs_from_its_lock_entry_is_refused_before_any_file_compiles(
+    #[case] locked_kind: &'static str,
+    #[case] kind: &'static str,
+) {
+    // The pattern does not compile. A load that compiled the files first would report that.
+    let mut w = World::new();
+    w.install(&Spec {
+        kind,
+        locked_kind,
+        ..Spec::new("acme").rules(&["("])
+    });
+
+    let err = w.load(&["acme"]).unwrap_err();
+
+    assert!(
+        matches!(err, SyncedError::ManifestMismatch { field: "kind", .. }),
+        "{err}"
+    );
+}
+
+/// The bytes a load of `spec` reads: its manifest and each file it ships.
+fn bytes_of(spec: &Spec) -> u64 {
+    let files: usize = spec.files.iter().map(|(_, text)| text.len()).sum();
+    (spec.manifest().len() + files) as u64
+}
+
+#[rstest]
+#[case::rules(|_: &Spec, l: &mut Limits| l.run_rules = 1)]
+#[case::bytes(|next: &Spec, l: &mut Limits| l.run_bytes = bytes_of(next))]
+fn a_manifest_kind_that_differs_from_its_lock_entry_charges_nothing_to_the_run_budget(
+    #[case] fit: fn(&Spec, &mut Limits),
+) {
+    let mut w = World::new();
+    w.install(&Spec {
+        kind: "code",
+        locked_kind: "data",
+        ..Spec::new("acme").rules(&["a"])
+    });
+    let next = Spec::new("next").rules(&["b"]);
+    w.install(&next);
+    // The run budget holds `next` alone, so any charge for `acme` leaves too little for it.
+    let mut budget = Budget::new(small(|l| fit(&next, l)));
+
+    let refused = load_synced_within(&ids(&["acme"]), &w.lock(), &w.store(), &mut budget);
+    let loaded = load_synced_within(&ids(&["next"]), &w.lock(), &w.store(), &mut budget);
+
+    assert!(
+        matches!(
+            refused,
+            Err(SyncedError::ManifestMismatch { field: "kind", .. })
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(loaded_ids(&loaded.unwrap()), ["next"]);
+}
+
 #[test]
 fn a_required_version_the_lock_does_not_provide_is_refused() {
     let mut w = World::new();
@@ -1851,6 +1910,76 @@ fn a_three_mebibyte_config_from_an_embedded_source_loads() {
     let loaded = LoadedPack::load(&EmbeddedSource::new(manifest, tables), Source::Pack);
 
     assert!(loaded.is_ok(), "{:?}", loaded.err());
+}
+
+#[rstest]
+#[case::toml_that_does_not_parse("schema_version = 3\nid = \"acme\nversion = [\n")]
+#[case::a_key_the_contract_does_not_know(
+    "schema_version = 3\nid = \"acme\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\nextra = 1\n\n[provides]\n"
+)]
+fn a_malformed_manifest_over_the_run_byte_allowance_is_a_run_byte_refusal(
+    #[case] manifest: &'static str,
+) {
+    use slopvac_packs::EmbeddedSource;
+    // The manifest fits the per-plugin cap and crosses the 10-byte run allowance.
+    let mut budget = Budget::new(small(|l| l.run_bytes = 10));
+
+    let e = LoadedPack::load_within(
+        &EmbeddedSource::new(manifest, &[]),
+        Source::Pack,
+        &mut budget,
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(
+            e,
+            PackError::Budget {
+                budget: PackBudget::RunBytes,
+                limit: 10,
+                plugin: None
+            }
+        ),
+        "{e:?}"
+    );
+}
+
+#[test]
+fn a_malformed_manifest_keeps_its_charge_so_the_next_plugin_crosses_the_run_byte_allowance() {
+    use slopvac_packs::{EmbeddedSource, ManifestError};
+    let malformed = "schema_version = 3\nid = \"acme\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\nextra = 1\n\n[provides]\n";
+    let valid = "schema_version = 3\nid = \"next\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n\n[provides]\n";
+    // Each manifest fits alone. Both together cross the allowance by one byte.
+    let limit = (malformed.len() + valid.len() - 1) as u64;
+    let mut budget = Budget::new(small(|l| l.run_bytes = limit));
+
+    let first = LoadedPack::load_within(
+        &EmbeddedSource::new(malformed, &[]),
+        Source::Pack,
+        &mut budget,
+    );
+    let second =
+        LoadedPack::load_within(&EmbeddedSource::new(valid, &[]), Source::Pack, &mut budget);
+
+    assert!(
+        matches!(
+            &first,
+            Err(PackError::Manifest(ManifestError::Invalid { pointer, message }))
+                if pointer.is_empty() && message == "unknown key"
+        ),
+        "{first:?}"
+    );
+    assert!(
+        matches!(
+            second,
+            Err(PackError::Budget {
+                budget: PackBudget::RunBytes,
+                limit: l,
+                plugin: None
+            }) if l == limit
+        ),
+        "{second:?}"
+    );
 }
 /// A `.tar.gz` of one file.
 fn targz_of(name: &str, bytes: &[u8]) -> Vec<u8> {

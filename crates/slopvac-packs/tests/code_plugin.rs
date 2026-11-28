@@ -77,6 +77,12 @@ fn install(root: &Path, manifest_text: &str) -> CodePluginContext {
 #[case::data_plugin("data", manifest("acme", "1.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::NotCode { .. }))]
 #[case::id_differs("code", manifest("evil", "1.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::Mismatch { field: "id", .. }))]
 #[case::version_differs("code", manifest("acme", "2.0.0", TABLE), |e: &CodePluginError| matches!(e, CodePluginError::Mismatch { field: "version", .. }))]
+#[case::code_locked_data_installed(
+    "code",
+    "schema_version = 3\nid = \"acme\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n\n[provides]\n".to_owned(),
+    |e: &CodePluginError| matches!(e, CodePluginError::Mismatch { id, field: "kind" } if id == "acme")
+        && e.code() == "plugin-manifest-mismatch"
+)]
 #[case::no_plugin_table(
     "code",
     "schema_version = 3\nid = \"acme\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[provides]\n".to_owned(),
