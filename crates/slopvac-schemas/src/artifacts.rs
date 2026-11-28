@@ -316,11 +316,7 @@ pub const ARTIFACTS: &[Artifact] = &[
              This is an output document, so it is not valid input for a rule or category file. \
              Unknown keys are errors, and keys that start with `x-` are ignored.",
         ),
-        imports: &[
-            "common.schema.json",
-            "rule.schema.json",
-            "lint-report.schema.json",
-        ],
+        imports: &["common.schema.json", "rule.schema.json"],
         inline: &[],
         keep: &["ExplainOutput"],
         build: rules_output,
