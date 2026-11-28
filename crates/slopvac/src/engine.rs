@@ -906,8 +906,12 @@ pub(crate) fn block_errors(shown: &str, text: &str, read: &Read) -> Vec<BlockErr
 }
 
 /// The `slopvac:` block of the item's front matter, read under the project's front matter
-/// policy. A top-level `genre` key is ordinary data and never counts.
+/// policy. A top-level `genre` key is ordinary data and never counts. A standalone HTML file
+/// has no front matter, as the engine reads it, so it contributes nothing.
 fn read_block(item: &Item) -> Read {
+    if item.kind == Kind::Html {
+        return Read::default();
+    }
     let config = item.config.as_ref().map(|(config, _)| &**config);
     read_block_under(&item.text, &item.shown, config)
 }
