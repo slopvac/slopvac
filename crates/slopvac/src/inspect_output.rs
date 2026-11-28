@@ -303,9 +303,9 @@ impl<'a> ExplainOutput<'a> {
 }
 
 fn render(document: &impl Serialize) -> String {
-    // Through `Value`, whose maps sort their keys, so the keys print in alphabetical order at
-    // every depth, as `slopvac rules` and `slopvac explain` have always printed them. Field
-    // order in these types does not decide the output.
+    // The published output sorts its keys at every depth, which the field order of these types
+    // would not give. A `Value` map sorts them, so the document goes through one only to be
+    // printed. Nothing is patched on the way.
     let mut text = serde_json::to_value(document)
         .and_then(|value| serde_json::to_string_pretty(&value))
         .unwrap_or_default();
