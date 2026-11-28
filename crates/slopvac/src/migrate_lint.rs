@@ -84,8 +84,7 @@ impl Configure for MigrateConfigure {
             let detected = probe
                 .preparse(&input)
                 .ok()
-                .and_then(|pre| probe.detect_genre(&input, &pre).ok().flatten())
-                .map(|genre| genre.id.as_str().to_owned());
+                .and_then(|pre| probe.detect_genre(&input, &pre).ok().flatten());
             let layers = DocumentLayers::from_blocks(&blocks).with_detected_genre(detected);
             file_settings(&self.rules, &loaded, rel, &Overrides::default(), &layers)
                 .map(|(settings, _)| DocumentSettings::new(settings).with_declared_genre(declared))

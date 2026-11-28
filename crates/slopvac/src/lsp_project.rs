@@ -33,7 +33,7 @@ use slopvac_engine::{Engine, Input, Kind};
 use slopvac_lsp::{
     Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
 };
-use slopvac_model::{BomMode, ConfigSource, Notice, RuleId};
+use slopvac_model::{BomMode, ConfigSource, GenreResult, Notice, RuleId};
 
 use crate::engine::{
     config_error, declared_genre, file_settings, read_block_under, rel_text, settings_for,
@@ -498,7 +498,7 @@ impl Project {
         text: &str,
         config: &LoadedConfig,
         rel: &Path,
-    ) -> Option<String> {
+    ) -> Option<GenreResult> {
         let kind = match path.rsplit('.').next() {
             Some("mdx") => Kind::Mdx,
             Some("rst") => Kind::Rst,
@@ -516,11 +516,7 @@ impl Project {
         }
         let engine = probe.engine();
         let pre = engine.preparse(&input).ok()?;
-        engine
-            .detect_genre(&input, &pre)
-            .ok()
-            .flatten()
-            .map(|g| g.id.as_str().to_owned())
+        engine.detect_genre(&input, &pre).ok().flatten()
     }
 
     /// The probe engine of `config`, built once for each config root and load.
@@ -790,7 +786,10 @@ mod tests {
         let config = LoadedConfig::without_files(root.clone());
         let detected =
             project.detected_genre(epoch, path, "# Notes\n\nText.\n", &config, Path::new(path));
-        assert_eq!(detected.as_deref(), Some("internal"));
+        assert_eq!(
+            detected.map(|g| g.id.as_str().to_owned()).as_deref(),
+            Some("internal")
+        );
     }
 
     #[test]

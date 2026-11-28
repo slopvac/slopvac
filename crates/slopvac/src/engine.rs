@@ -453,18 +453,24 @@ impl Linter for EngineLinter {
             match lint_settings::build_with_origins(
                 &catalog,
                 &resolved,
+                layers.detected_genre(),
                 lint_settings::config_sources(&config_files(config)),
                 &Overrides::default(),
             ) {
-                Ok((settings, origins)) => inputs.push(crate::explain_config::ExplainInput::new(
-                    &item.shown,
-                    &root,
-                    &config.root,
-                    &settings,
-                    &explained,
-                    &origins,
-                    &catalog,
-                )),
+                Ok((settings, origins)) => inputs.push(
+                    crate::explain_config::ExplainInput::new(
+                        &item.shown,
+                        &root,
+                        &config.root,
+                        &settings,
+                        &explained,
+                        &origins,
+                        &catalog,
+                    )
+                    .with_front_matter_resolved(front_matter_resolved(
+                        item.config.as_ref().map(|(c, _)| &**c),
+                    )),
+                ),
                 Err(err) => run.incomplete.push(err),
             }
         }
@@ -475,6 +481,17 @@ impl Linter for EngineLinter {
             refusal: None,
         }
     }
+}
+
+/// Whether the front matter and inline directives of an input under `config` take part in
+/// resolution: the policy of `config`, or the core policy when no config applies.
+fn front_matter_resolved(config: Option<&LoadedConfig>) -> bool {
+    config
+        .map_or_else(
+            slopvac_config::frontmatter::Policy::core,
+            slopvac_config::frontmatter::Policy::from_config,
+        )
+        .enabled
 }
 
 /// Strip user-info and query strings from every URL in a config value before it is printed.
@@ -974,9 +991,10 @@ pub(crate) fn file_settings(
 ) -> Result<(slopvac_engine::Settings, slopvac_config::Resolved), CliError> {
     let resolved = lint_settings::resolve(config, rel, layers);
     let files = config_files(config);
-    let mut settings = lint_settings::build(
+    let (mut settings, _) = lint_settings::build_with_origins(
         rules,
         &resolved,
+        layers.detected_genre(),
         lint_settings::config_sources(&files),
         overrides,
     )?;
@@ -1000,7 +1018,7 @@ fn input_of<'a>(item: &'a Item, rel: Option<&'a str>, declared: Option<&'a str>)
 /// chooses for it. Both are `None` for a document that cannot be read.
 struct Reads {
     preparsed: Vec<Option<Preparsed>>,
-    detected: Vec<Option<String>>,
+    detected: Vec<Option<slopvac_model::GenreResult>>,
 }
 
 /// Read each item once, and ask the engine of its config for the genre of each.
@@ -1059,11 +1077,7 @@ fn preparse(request: &LintRequest, items: &[Item], rules: &Catalog) -> Reads {
             .collect();
         for ((&i, input), read) in indexes.iter().zip(&inputs).zip(probe.preparse_all(&inputs)) {
             if let Ok(pre) = read {
-                reads.detected[i] = probe
-                    .detect_genre(input, &pre)
-                    .ok()
-                    .flatten()
-                    .map(|genre| genre.id.as_str().to_owned());
+                reads.detected[i] = probe.detect_genre(input, &pre).ok().flatten();
                 reads.preparsed[i] = Some(pre);
             }
         }

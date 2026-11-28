@@ -1,0 +1,55 @@
+{
+  "schema_version": 3,
+  "slopvac_version": "3.0.0",
+  "inputs": [
+    {
+      "path": "docs/a.md",
+      "config_root": ".",
+      "config_sources": [
+        {
+          "layer": "core"
+        },
+        {
+          "layer": "project",
+          "file": "slopvac.toml"
+        }
+      ],
+      "profile": "normal",
+      "genre": {
+        "id": "consumer",
+        "source": "default"
+      },
+      "settings": [
+        {
+          "key": "frontmatter.enabled",
+          "value": false,
+          "source": {
+            "layer": "project",
+            "file": "slopvac.toml",
+            "line": 4,
+            "column": 1
+          },
+          "replaced": [
+            {
+              "value": true,
+              "source": {
+                "layer": "core"
+              }
+            }
+          ]
+        }
+      ],
+      "rules": {
+        "total": 120,
+        "configured": {
+          "error": 0,
+          "warning": 0,
+          "suggestion": 0,
+          "off": 0
+        }
+      },
+      "configured_rules": [],
+      "front_matter_resolved": false
+    }
+  ]
+}

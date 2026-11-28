@@ -72,8 +72,8 @@ pub struct ExplainInput {
     /// The profile name.
     #[schemars(length(min = 1))]
     profile: String,
-    /// The genre the config sets. The genre that detection picks reads the document, so it is
-    /// not resolved here.
+    /// The genre whose settings the record holds, as the lint report names it for the same
+    /// input.
     genre: ExplainGenre,
     /// Each resolved setting, in key order.
     settings: Vec<ExplainSetting>,
@@ -81,8 +81,8 @@ pub struct ExplainInput {
     rules: ExplainRuleCounts,
     /// The rules whose level a layer set, sorted by id.
     configured_rules: Vec<ExplainConfiguredRule>,
-    /// Whether front matter took part in resolution. False until it does. When it does, the
-    /// document gains key names and their source locations, never values.
+    /// Whether the input's front matter and inline directives took part in resolution. False
+    /// when `[frontmatter] enabled = false` turns both off.
     front_matter_resolved: bool,
 }
 
@@ -142,6 +142,14 @@ impl ExplainInput {
             front_matter_resolved: false,
         }
     }
+
+    /// The same record, saying whether the input's front matter and inline directives took
+    /// part in resolution.
+    #[must_use]
+    pub(crate) fn with_front_matter_resolved(mut self, resolved: bool) -> Self {
+        self.front_matter_resolved = resolved;
+        self
+    }
 }
 
 /// A path made safe to show: never absolute.
@@ -171,7 +179,8 @@ struct ExplainGenre {
     /// The genre id.
     #[schemars(length(min = 1))]
     id: String,
-    /// `explicit` when a config layer sets the genre, `default` otherwise.
+    /// `explicit` when a layer names the genre, `detected` when genre detection chose it,
+    /// `default` otherwise.
     source: GenreSource,
 }
 

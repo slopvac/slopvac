@@ -472,8 +472,9 @@ impl DocumentBlocks {
 pub struct DocumentLayers {
     front_matter: Vec<Setting>,
     directives: Vec<Setting>,
-    /// The genre that detection chose, when nothing names one. It supplies the genre layer.
-    detected_genre: Option<String>,
+    /// The genre that the engine chose for the document, with its source. When no layer names
+    /// a genre, it supplies the genre layer and the genre of the settings.
+    detected_genre: Option<GenreResult>,
 }
 
 impl DocumentLayers {
@@ -494,11 +495,17 @@ impl DocumentLayers {
         }
     }
 
-    /// The same layers with the genre that detection chose for the document.
+    /// The same layers with the genre that the engine chose for the document.
     #[must_use]
-    pub fn with_detected_genre(mut self, genre: Option<String>) -> Self {
+    pub fn with_detected_genre(mut self, genre: Option<GenreResult>) -> Self {
         self.detected_genre = genre;
         self
+    }
+
+    /// The genre that the engine chose for the document, if it was asked.
+    #[must_use]
+    pub fn detected_genre(&self) -> Option<&GenreResult> {
+        self.detected_genre.as_ref()
     }
 }
 
@@ -591,7 +598,7 @@ pub fn resolve(config: &LoadedConfig, rel: &Path, layers: &DocumentLayers) -> Re
             cli: &[],
             env: &[],
         },
-        layers.detected_genre.as_deref(),
+        layers.detected_genre.as_ref().map(|g| g.id.as_str()),
     )
 }
 
@@ -723,9 +730,12 @@ fn is_inherited(layer: ConfigLayer) -> bool {
 }
 
 /// The settings of a file before any category or rule is set: profile, genre, thresholds and
-/// the severity shift.
+/// the severity shift. A genre that a layer names is `explicit`. Otherwise the genre is the one
+/// the engine chose for the document, `detected` or `default` as it says, and without one the
+/// registry's default genre.
 fn base_settings(
     resolved: &Resolved,
+    detected: Option<&GenreResult>,
     sources: Vec<ConfigSource>,
     cli: &Overrides,
 ) -> Result<Settings, CliError> {
@@ -733,17 +743,26 @@ fn base_settings(
         .get(&["profile", "name"])
         .and_then(Json::as_str)
         .unwrap_or("normal");
-    let (genre, source) = match resolved.get(&["genre"]).and_then(Json::as_str) {
-        Some(name) => (name, GenreSource::Explicit),
-        None => (DEFAULT_GENRE, GenreSource::Default),
+    let genre = match (resolved.get(&["genre"]).and_then(Json::as_str), detected) {
+        (Some(name), _) => GenreResult {
+            id: GenreId::new(name).map_err(|e| internal("genre", e))?,
+            source: GenreSource::Explicit,
+            reasons: Vec::new(),
+        },
+        (None, Some(chosen)) => GenreResult {
+            id: chosen.id.clone(),
+            source: chosen.source,
+            reasons: Vec::new(),
+        },
+        (None, None) => GenreResult {
+            id: GenreId::new(DEFAULT_GENRE).map_err(|e| internal("genre", e))?,
+            source: GenreSource::Default,
+            reasons: Vec::new(),
+        },
     };
     let mut settings = Settings::new(
         NonEmptyString::new(profile).map_err(|e| internal("profile", e))?,
-        GenreResult {
-            id: GenreId::new(genre).map_err(|e| internal("genre", e))?,
-            source,
-            reasons: Vec::new(),
-        },
+        genre,
     );
     settings.config_sources = sources;
     apply_thresholds(&mut settings, profile, resolved, cli);
@@ -853,7 +872,7 @@ pub fn build(
     sources: Vec<ConfigSource>,
     cli: &Overrides,
 ) -> Result<Settings, CliError> {
-    build_with_origins(rules, resolved, sources, cli).map(|(settings, _)| settings)
+    build_with_origins(rules, resolved, None, sources, cli).map(|(settings, _)| settings)
 }
 
 /// [`build`], and the rules whose level a layer set, each with that layer. `--explain-config`
@@ -864,10 +883,11 @@ pub fn build(
 pub(crate) fn build_with_origins(
     rules: &Catalog,
     resolved: &Resolved,
+    detected: Option<&GenreResult>,
     sources: Vec<ConfigSource>,
     cli: &Overrides,
 ) -> Result<(Settings, Vec<RuleOrigin>), CliError> {
-    let mut settings = base_settings(resolved, sources, cli)?;
+    let mut settings = base_settings(resolved, detected, sources, cli)?;
     let mut origins = Vec::new();
 
     let shift = resolved
