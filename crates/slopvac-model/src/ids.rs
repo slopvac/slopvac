@@ -219,6 +219,13 @@ impl RuleId {
     pub fn local(&self) -> &str {
         self.0.split_once(':').map_or("", |(_, l)| l)
     }
+
+    /// The pack part as a [`PackId`]. `RuleId::new` checks the part with the same rule
+    /// as `PackId::new`, so this cannot fail.
+    #[must_use]
+    pub fn pack_id(&self) -> PackId {
+        PackId(self.pack().to_owned())
+    }
 }
 
 impl TryFrom<String> for RuleId {

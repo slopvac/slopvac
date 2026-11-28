@@ -236,10 +236,6 @@ pub struct RuleOutput<'a> {
 impl<'a> RuleOutput<'a> {
     /// The entry of `rule`, shown at `effective` severity with the page `url`.
     #[must_use]
-    #[expect(
-        clippy::expect_used,
-        reason = "a rule id carries a valid plugin id, because RuleId::new checks it"
-    )]
     pub fn new(rule: &'a LoadedRule, effective: &Effective, url: Option<String>) -> Self {
         let definition = rule.rule();
         Self {
@@ -262,7 +258,7 @@ impl<'a> RuleOutput<'a> {
             ai_signal_source: definition.ai_signal_source,
             citation: &definition.citation,
             category: rule.category(),
-            plugin: PackId::new(rule.id().pack()).expect("a rule id names a plugin"),
+            plugin: rule.id().pack_id(),
             kind: rule.kind().into(),
             effective_severity: EffectiveSeverity::of(effective),
             severity_from: effective.from.clone(),
