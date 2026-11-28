@@ -522,7 +522,7 @@ impl Packs {
     /// [`PackError::GenreCycle`] for a genre that extends itself through its parents, and
     /// [`PackError::Artifact`] with [`ArtifactFault::Invalid`] for a plugin tagger that takes
     /// the id of another tagger or emits a tag that a built-in tagger, a built-in genre or
-    /// `reserved` supplies.
+    /// `reserved` supplies. That refusal has no stable code: [`PackError::code`] returns `None`.
     pub fn new(packs: Vec<LoadedPack>, reserved: &[String]) -> Result<Self, PackError> {
         Self::new_within(packs, Limits::default(), reserved)
     }

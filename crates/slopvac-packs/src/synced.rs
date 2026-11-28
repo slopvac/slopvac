@@ -393,8 +393,9 @@ impl Packs {
     /// # Errors
     /// [`SyncedError`] as for [`load_synced`], and for the registries of [`Packs::new`]. That
     /// includes [`PackError::Artifact`] with [`crate::ArtifactFault::Invalid`] for a plugin tagger that
-    /// emits a tag in `reserved`, the context tags the project's config declares. A caller with
-    /// no such contexts passes `&[]`.
+    /// emits a tag in `reserved`, the context tags the project's config declares, arriving as
+    /// `SyncedError::Pack(PackError::Artifact { .. })`. That refusal has no stable code:
+    /// [`PackError::code`] returns `None`. A caller with no such contexts passes `&[]`.
     pub fn with_synced(
         requested: &[PackId],
         lock: &Lockfile,

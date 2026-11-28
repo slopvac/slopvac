@@ -1182,7 +1182,8 @@ fn a_plugin_tagger_is_checked_against_built_in_ids_and_tags_separately(
 }
 
 // The project's config can declare context tags for a genre. A plugin tagger must not emit one,
-// for the same reason it must not emit a built-in genre's tag, and the refusal has the same code.
+// for the same reason it must not emit a built-in genre's tag. The refusal is the typed
+// `PackError::Artifact` with `ArtifactFault::Invalid`, which has no stable code.
 #[rstest]
 #[case::tag_the_config_declares("config-ctx", true)]
 #[case::tag_the_config_does_not_declare("acme-tag", false)]
