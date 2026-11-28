@@ -26,6 +26,10 @@ files:
   - crates/slopvac-terms/src/**
   - crates/slopvac-text/src/**
   - crates/slopvac-migrate/src/**
+  - crates/slopvac/src/cli_messages.rs
+  - crates/slopvac/src/errors.rs
+  - crates/slopvac/src/output.rs
+  - crates/slopvac/src/stdin.rs
 ignores:
   # Audit output is for contributors reading a failing test, not for users.
   - crates/slopvac-messages/src/audit.rs

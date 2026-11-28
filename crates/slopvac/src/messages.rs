@@ -45,6 +45,7 @@ pub static ALL: &[Registered] = &[
     ("slopvac-migrate", slopvac_migrate::error_entries),
     ("slopvac-migrate-text", slopvac_migrate::text_entries),
     ("slopvac-migrate-phrases", slopvac_migrate::phrase_entries),
+    ("cli io", crate::cli_messages::entries),
     ("lint options", lint_option_entries),
     ("lint fix", lint_fix_entries),
     ("lint fix reason", lint_fix_reason_entries),

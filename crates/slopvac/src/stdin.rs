@@ -5,6 +5,7 @@ use std::io::Read;
 
 use clap::ArgMatches;
 
+use crate::cli_messages::IoMessage;
 use crate::errors::CliError;
 use crate::redact::STDIN_NAME;
 
@@ -46,12 +47,7 @@ pub const COMMENT_LANGUAGES: [&str; 30] = [
 ];
 
 /// Options that make no sense without a file on disk.
-const REJECTED: [(&str, &str); 4] = [
-    ("diff-base", ""),
-    ("diff-working-tree", ""),
-    ("fix", " because stdin has no file to write back to"),
-    ("open", ""),
-];
+const REJECTED: [&str; 4] = ["diff-base", "diff-working-tree", "fix", "open"];
 
 /// What `--stdin` resolved to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,10 +58,6 @@ pub struct StdinPlan {
     pub language: String,
 }
 
-fn usage(message: impl Into<String>) -> CliError {
-    CliError::new("usage", message)
-}
-
 /// Validate the options given with `--stdin`.
 ///
 /// # Errors
@@ -73,23 +65,26 @@ fn usage(message: impl Into<String>) -> CliError {
 /// not fit the mode.
 pub fn plan(m: &ArgMatches) -> Result<StdinPlan, CliError> {
     if m.get_many::<std::path::PathBuf>("targets").is_some() {
-        return Err(usage("PATH must be empty when --stdin is set."));
+        return Err(IoMessage::usage(&IoMessage::StdinPathGiven));
     }
-    for (name, reason) in REJECTED {
+    for name in REJECTED {
         let given = m.try_get_one::<bool>(name).ok().flatten().copied() == Some(true)
             || m.try_get_one::<String>(name).ok().flatten().is_some();
         if given {
-            return Err(usage(format!(
-                "--{name} is not supported with --stdin{reason}."
-            )));
+            let sentence = if name == "fix" {
+                IoMessage::StdinFixUnsupported
+            } else {
+                IoMessage::StdinOptionUnsupported {
+                    option: name.to_owned(),
+                }
+            };
+            return Err(IoMessage::usage(&sentence));
         }
     }
     let code_comments = m.get_one::<String>("mode").map(String::as_str) == Some("code-comments");
     let language = m.get_one::<String>("language");
     if code_comments && language.is_none() {
-        return Err(usage(
-            "--language is required with --stdin --mode code-comments.",
-        ));
+        return Err(IoMessage::usage(&IoMessage::StdinLanguageRequired));
     }
     let language = language.map_or("markdown", String::as_str);
     let (mode, valid): (&'static str, &[&str]) = if code_comments {
@@ -98,10 +93,11 @@ pub fn plan(m: &ArgMatches) -> Result<StdinPlan, CliError> {
         ("prose", &PROSE_LANGUAGES)
     };
     if !valid.contains(&language) {
-        return Err(usage(format!(
-            "--language {language:?} is not valid for mode {mode}. Valid values: {}.",
-            valid.join(", ")
-        )));
+        return Err(IoMessage::usage(&IoMessage::StdinLanguageInvalid {
+            language: format!("{language:?}"),
+            mode: mode.to_owned(),
+            valid: valid.join(", "),
+        }));
     }
     Ok(StdinPlan {
         mode,
@@ -119,18 +115,17 @@ pub fn read(source: &mut dyn Read) -> Result<Vec<u8>, CliError> {
     let buf =
         slopvac_fs::read_capped(source, slopvac_fs::MAX_DOCUMENT_BYTES).map_err(
             |err| match err {
-                slopvac_fs::Error::CapExceeded { .. } => CliError::new(
-                    "document-too-large",
-                    format!("{STDIN_NAME}: larger than the 64 MiB document limit"),
-                ),
-                _ => CliError::new("input-unreadable", format!("{STDIN_NAME}: cannot read")),
+                slopvac_fs::Error::CapExceeded { .. } => IoMessage::stdin_too_large(STDIN_NAME),
+                _ => IoMessage::input_unreadable(&IoMessage::StdinNotReadable {
+                    shown: STDIN_NAME.to_owned(),
+                }),
             },
         )?;
     if let Err(err) = std::str::from_utf8(&buf) {
-        return Err(CliError::new(
-            "input-not-utf8",
-            format!("{STDIN_NAME}: not valid UTF-8 (byte {})", err.valid_up_to()),
-        ));
+        return Err(IoMessage::input_not_utf8(&IoMessage::StdinNotUtf8 {
+            shown: STDIN_NAME.to_owned(),
+            offset: err.valid_up_to(),
+        }));
     }
     Ok(buf)
 }
