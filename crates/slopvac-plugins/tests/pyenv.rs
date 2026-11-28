@@ -1844,18 +1844,6 @@ mod unix_only {
         assert!(matches!(err, PluginError::Untrusted(_)), "{err:?}");
     }
 
-    /// Every rendering of a pyenv or spawn error: the message, then each `source()`.
-    fn chain(err: &dyn std::error::Error) -> String {
-        let mut out = err.to_string();
-        let mut next = err.source();
-        while let Some(e) = next {
-            out.push('\n');
-            out.push_str(&e.to_string());
-            next = e.source();
-        }
-        out
-    }
-
     /// An environment built on a wrapper interpreter at `interp/python` and trusted.
     fn trusted_on_wrapper(s: &Scratch) -> (Built, TrustGate, PluginSpec, PathBuf) {
         let w = s.dir("interp/python");
@@ -1876,9 +1864,12 @@ mod unix_only {
     }
 
     #[rstest::rstest]
-    #[case::target_changed("target")]
-    #[case::content_changed("content")]
-    fn a_changed_interpreter_is_reported_without_its_absolute_path(#[case] change: &str) {
+    #[case::target_changed("target", "`<external>/python-other`")]
+    #[case::content_changed("content", "`<external>/python`")]
+    fn a_changed_interpreter_is_reported_without_its_absolute_path(
+        #[case] change: &str,
+        #[case] expected: &str,
+    ) {
         let s = Scratch::new(&format!("u-interp-shown-{change}"));
         let (b, g, sp, w) = trusted_on_wrapper(&s);
         let text = format!(
@@ -1893,11 +1884,11 @@ mod unix_only {
         } else {
             write_exec(&w, &text);
         }
-        let full = chain(&b.env.verify_full().unwrap_err());
-        let quick = chain(&g.check(&sp).unwrap_err());
+        let full = chain_texts(&b.env.verify_full().unwrap_err()).join("\n");
+        let quick = chain_texts(&g.check(&sp).unwrap_err()).join("\n");
         for shown in [full, quick] {
             assert!(!shown.contains(&s.0.display().to_string()), "{shown}");
-            assert!(shown.contains("<external>/python"), "{shown}");
+            assert!(shown.contains(expected), "{shown}");
         }
     }
 
@@ -1913,9 +1904,9 @@ mod unix_only {
             // Root reads a file whatever its mode, so the refusal cannot be provoked.
             return;
         }
-        let shown = chain(&result.unwrap_err());
+        let shown = chain_texts(&result.unwrap_err()).join("\n");
         assert!(!shown.contains(&s.0.display().to_string()), "{shown}");
-        assert!(shown.contains("<external>/python"), "{shown}");
+        assert!(shown.contains("reading <external>/python: "), "{shown}");
     }
 
     #[test]
