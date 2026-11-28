@@ -1520,6 +1520,7 @@ plugins-update-unchanged text
 plugins-update-unknown-pack text
 plugins-update-updated text
 plugins-update-write text
+plugins-why-coded text
 plugins-why-no-envs text
 plugins-why-no-loader text
 pos-model-bad-magic text

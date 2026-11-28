@@ -292,6 +292,10 @@ pub(crate) enum CliText {
     #[code("plugins-why-no-envs")]
     #[text("the managed Python environments are not available")]
     WhyNoEnvs,
+    /// A reason that carries the code of its failure.
+    #[code("plugins-why-coded")]
+    #[text("{code}: {detail}")]
+    WhyCoded { code: String, detail: String },
     /// Trust for a plugin was removed.
     #[code("plugins-untrusted")]
     #[text("removed the trust recorded for `{id}`")]
