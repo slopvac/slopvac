@@ -22,7 +22,8 @@ pub(crate) enum Mode {
     /// read no project config.
     Skip,
     /// `report` reads the config for its offline setting, and goes on when it does not
-    /// resolve, so that a user with a broken config can still file a bug.
+    /// resolve, so that a user with a broken config can still file a bug. Only `--gh --yes`,
+    /// which needs the network, stops on that failure.
     Tolerant,
     /// `doctor` reports a config that does not resolve and does not stop on it.
     Report,
@@ -149,14 +150,20 @@ impl Preflight {
         if self.mode != Mode::Strict {
             return None;
         }
-        let Some(Err(err)) = &self.outcome else {
-            return None;
-        };
         if let Some(given) = &self.explicit
             && !cwd.join(given).is_file()
         {
             return None;
         }
+        self.unresolved(cwd)
+    }
+
+    /// The failure of a resolution that did not succeed, as `lint` prints it, whatever the
+    /// mode. `None` when the configuration resolved, or the invocation skipped it.
+    pub(crate) fn unresolved(&self, cwd: &Path) -> Option<CliError> {
+        let Some(Err(err)) = &self.outcome else {
+            return None;
+        };
         Some(crate::engine::config_error(err, cwd))
     }
 }

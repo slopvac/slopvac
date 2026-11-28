@@ -330,6 +330,14 @@ fn dispatch(
                 };
                 report::consent::run(consent, env, &clock, out)
             } else {
+                let cwd = std::env::current_dir().unwrap_or_default();
+                // policies.md 1.5: while the configuration does not resolve, offline mode is
+                // unknown, so `--gh --yes` stops on the failure before it writes or prints.
+                if m.get_flag("yes")
+                    && let Some(failure) = context.preflight.unresolved(&cwd)
+                {
+                    return Err(failure);
+                }
                 let opener = report::github::SystemOpener;
                 let gh = report::gh::SystemGh::default();
                 report::run(
@@ -337,7 +345,7 @@ fn dispatch(
                     &report::Deps {
                         env,
                         offline: globals.offline,
-                        cwd: std::env::current_dir().unwrap_or_default(),
+                        cwd,
                         opener: &opener,
                         gh: &gh,
                     },
