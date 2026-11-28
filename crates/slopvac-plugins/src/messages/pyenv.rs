@@ -863,46 +863,59 @@ pub(crate) enum PyenvPhrase {
     SearchUnverified,
 }
 
-/// Names a path in the `what` of an I/O failure as policies section 1.7 shows it: the
-/// environments and interpreters live outside the project, so an absolute path shows as
-/// `<external>/<file name>`.
-fn shown(path: &Path) -> String {
-    slopvac_fs::display_under_root(path, Path::new("."))
+/// Names a path in the `what` of an I/O failure as policies section 1.7 shows it: relative to
+/// the project `root` when it lies under it, else as `<external>/<file name>`.
+fn shown(path: &Path, root: &Path) -> String {
+    slopvac_fs::display_under_root(path, root)
 }
 
 /// `Reading` for `path`.
-pub(crate) fn reading(path: &Path) -> String {
-    PyenvText::Reading { path: shown(path) }.to_string()
+pub(crate) fn reading(path: &Path, root: &Path) -> String {
+    PyenvText::Reading {
+        path: shown(path, root),
+    }.to_string()
 }
 
 /// `Inspecting` for `path`.
-pub(crate) fn inspecting(path: &Path) -> String {
-    PyenvText::Inspecting { path: shown(path) }.to_string()
+pub(crate) fn inspecting(path: &Path, root: &Path) -> String {
+    PyenvText::Inspecting {
+        path: shown(path, root),
+    }.to_string()
 }
 
 /// `ReadingLink` for `path`.
-pub(crate) fn reading_link(path: &Path) -> String {
-    PyenvText::ReadingLink { path: shown(path) }.to_string()
+pub(crate) fn reading_link(path: &Path, root: &Path) -> String {
+    PyenvText::ReadingLink {
+        path: shown(path, root),
+    }.to_string()
 }
 
 /// `Protecting` for `path`.
-pub(crate) fn protecting(path: &Path) -> String {
-    PyenvText::Protecting { path: shown(path) }.to_string()
+pub(crate) fn protecting(path: &Path, root: &Path) -> String {
+    PyenvText::Protecting {
+        path: shown(path, root),
+    }.to_string()
 }
 
 /// `Removing` for `path`.
-pub(crate) fn removing(path: &Path) -> String {
-    PyenvText::Removing { path: shown(path) }.to_string()
+pub(crate) fn removing(path: &Path, root: &Path) -> String {
+    PyenvText::Removing {
+        path: shown(path, root),
+    }.to_string()
 }
 
 /// `Creating` for `path`.
-pub(crate) fn creating(path: &Path) -> String {
-    PyenvText::Creating { path: shown(path) }.to_string()
+pub(crate) fn creating(path: &Path, root: &Path) -> String {
+    PyenvText::Creating {
+        path: shown(path, root),
+    }.to_string()
 }
 
 /// `Securing` for `path`.
-pub(crate) fn securing(path: &Path) -> String {
-    PyenvText::Securing { path: shown(path) }.to_string()
+pub(crate) fn securing(path: &Path, root: &Path) -> String {
+    PyenvText::Securing {
+        path: shown(path, root),
+    }.to_string()
 }
 
 /// `TomlSyntax` for a manifest failure at `line` and `column`.
@@ -1592,18 +1605,20 @@ mod tests {
 
     #[test]
     fn path_helpers_print_the_path_after_the_verb() {
-        let p = Path::new("a/b");
-        assert_eq!(reading(p), "reading a/b");
-        assert_eq!(inspecting(p), "inspecting a/b");
-        assert_eq!(reading_link(p), "reading link a/b");
-        assert_eq!(protecting(p), "protecting a/b");
-        assert_eq!(removing(p), "removing a/b");
-        assert_eq!(creating(p), "creating a/b");
-        assert_eq!(securing(p), "securing a/b");
+        let (p, root) = (Path::new("a/b"), Path::new("."));
+        assert_eq!(reading(p, root), "reading a/b");
+        assert_eq!(inspecting(p, root), "inspecting a/b");
+        assert_eq!(reading_link(p, root), "reading link a/b");
+        assert_eq!(protecting(p, root), "protecting a/b");
+        assert_eq!(removing(p, root), "removing a/b");
+        assert_eq!(creating(p, root), "creating a/b");
+        assert_eq!(securing(p, root), "securing a/b");
     }
 
-    #[test]
-    fn path_helpers_show_an_absolute_path_as_external() {
-        assert_eq!(reading(Path::new("/a/b")), "reading <external>/b");
+    #[rstest::rstest]
+    #[case::inside_the_project("/proj/a/b", "reading a/b")]
+    #[case::outside_the_project("/elsewhere/a/b", "reading <external>/b")]
+    fn path_helpers_show_a_path_under_the_project_root(#[case] path: &str, #[case] shown: &str) {
+        assert_eq!(reading(Path::new(path), Path::new("/proj")), shown);
     }
 }
