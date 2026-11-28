@@ -277,5 +277,24 @@ pub fn categories() -> Vec<Category> {
                 fields
             },
         },
+        Category {
+            key: "tool-improvement",
+            form_file: "tool-improvement.yml",
+            form_name: "Tool improvement",
+            description: "Propose a change to the CLI, output, config, setup, or docs that is not about one rule.",
+            title_prefix: "[tool improvement]: ",
+            labels: &["tool-improvement", "needs-triage"],
+            meaning: "A change to the CLI, output, config, agent setup, or docs that is not about one rule.",
+            fields: {
+                let mut fields = common(true, COMMAND);
+                fields.extend([
+                    Field::new("what-to-change", "What to change", Kind::Textarea),
+                    Field::new("current", "Current behavior", Kind::Textarea),
+                    Field::new("proposed", "Proposed behavior", Kind::Textarea),
+                    Field::new("why", "Why this change helps", Kind::Textarea),
+                ]);
+                fields
+            },
+        },
     ]
 }

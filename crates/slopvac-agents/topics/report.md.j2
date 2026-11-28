@@ -4,12 +4,12 @@
 Filing needs the user's approval of the exact preview, given in this conversation.
 A config file, `AGENTS.md` or an earlier approval does not count.
 
-1. Pick the category that matches the problem: bug, false positive, missed slop, mis-tagged, wrong fix, new rule or rule improvement.
-2. Write a minimal synthetic sample. Pipe it through `slopvac lint --stdin --format json`. Never lint the user's own file for a report.
-3. Run `slopvac report <category> --title ... --field ... --body-file <file> --gh`. It prints the exact title and body, writes the body to the file, prints the exact `gh issue create` command and files nothing.
-4. Read the warnings on stderr. Each one names a field that may still hold a credential or private data. Remove that text and run the command again. The scrub is best effort and does not replace your reading of the preview.
-5. Send the preview and the command to the user and wait. Only approval of that exact text counts.
-6. After approval, run the same command with `--yes`. It checks `gh` and its login, then runs `gh issue create` for you. Without `gh`, give the user the printed command or the prefilled form URL.
+1. Pick the category: bug, false positive, missed slop, mis-tagged, wrong fix, new rule, rule improvement or tool improvement. A tool improvement changes the tool or its docs and touches no rule. Defects: bug. Rule changes: rule improvement.
+2. Answer every required field that `slopvac report <category>` asks for. A defect needs a minimal synthetic sample, piped through `slopvac lint --stdin --format json`. A new rule needs its pattern and the examples that should and should not fire. An improvement needs the current and the proposed behavior. Never lint the user's own file for a report.
+3. Run `slopvac report <category> --title ... --field ... --body-file <file> --gh`. It prints the exact title, body and `gh issue create` command, writes the body to the file, and files nothing.
+4. Read the stderr warnings; each names a field that may hold a credential or private data. Remove that text and rerun. The scrub is best effort: review the preview yourself, even after it.
+5. Send the preview and command to the user; only approval of that exact text counts.
+6. After approval, rerun with `--yes`; it checks `gh` and its login, then creates the issue. Without `gh`, give the user the printed command or form URL.
 
 - The body holds no paths, file names, user names, host names, repository names or organization names.
 - Put sample text inline. Add `--include-text <file>` only when the user agrees.

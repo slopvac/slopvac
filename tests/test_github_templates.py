@@ -137,3 +137,26 @@ def test_config_contact_links_are_complete():
         assert set(link) == {"name", "url", "about"}
         assert all(isinstance(v, str) and v for v in link.values())
         assert link["url"].startswith("https://")
+
+
+def test_contributing_report_list_names_each_issue_form():
+    """CONTRIBUTING lists one entry per issue form, named by the form's title prefix."""
+    block = re.search(
+        r"^The forms cover these categories:\n\n((?:- .+\n)+)",
+        _text(CONTRIBUTING),
+        re.MULTILINE,
+    )
+    assert block, "CONTRIBUTING.md has no list of form categories"
+    listed = {
+        label.lower()
+        for label in re.findall(r"^- ([^:\n]+):", block.group(1), re.MULTILINE)
+    }
+    titled = set()
+    for path in sorted((ROOT / ".github" / "ISSUE_TEMPLATE").glob("*.yml")):
+        if path.name == "config.yml":
+            continue
+        title = yaml.safe_load(_text(path))["title"]
+        match = re.fullmatch(r"\[(.+)\]: ", title)
+        assert match, f"{path.name}: title is not a category prefix: {title!r}"
+        titled.add(match.group(1))
+    assert listed == titled

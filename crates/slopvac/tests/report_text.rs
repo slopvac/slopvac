@@ -534,7 +534,7 @@ const REPORT_HELP: &str = concat!(
     "  <CATEGORY>\n",
     "          The kind of report; it picks the issue form.\n",
     "          \n",
-    "          [possible values: bug, false-positive, missed-slop, mis-tagged, wrong-fix, new-rule, rule-improvement]\n",
+    "          [possible values: bug, false-positive, missed-slop, mis-tagged, wrong-fix, new-rule, rule-improvement, tool-improvement]\n",
     "\n",
     "Options:\n",
     "      --offline\n",

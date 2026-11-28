@@ -213,4 +213,19 @@ REPORT_CATEGORIES: tuple[ReportCategory, ...] = (
             proposal=True,
         ),
     ),
+    ReportCategory(
+        key="tool-improvement",
+        form_file="tool-improvement.yml",
+        form_name="Tool improvement",
+        title_prefix="[tool improvement]: ",
+        labels=("tool-improvement", "needs-triage"),
+        meaning="A change to the CLI, output, config, agent setup, or docs that is not about one rule.",
+        fields=_category_fields(
+            _field("what-to-change", "What to change", "textarea"),
+            _field("current", "Current behavior", "textarea"),
+            _field("proposed", "Proposed behavior", "textarea"),
+            _field("why", "Why this change helps", "textarea"),
+            proposal=True,
+        ),
+    ),
 )
