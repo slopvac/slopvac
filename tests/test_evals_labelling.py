@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import sys
 
 import pytest
 
@@ -328,7 +329,7 @@ def test_an_interrupted_judge_run_keeps_finished_judgments_and_resumes_without_r
     def run(provider_calls_before_crash):
         def ask(prompt):
             if len(asked) >= provider_calls_before_crash:
-                raise lab.runner.EngineError("provider crashed")
+                raise OSError("provider crashed")
             asked.append(prompt)
             return "A"
 
@@ -1111,3 +1112,594 @@ def test_judge_reports_an_unusable_ledger_path_and_exits_2(
     assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 2
     assert asked == []
     assert "evals label judge" in capsys.readouterr().err
+
+
+# --- provider failures: retry, skip and treat as no judgment ------------------------
+
+
+def provider_failure():
+    raise lab.runner.EngineError("provider command exited 1: SECRET document text")
+
+
+def flaky(failures):
+    """A provider that fails its first `failures` calls, then answers A."""
+    calls = []
+
+    def answer(prompt):
+        calls.append(prompt)
+        if len(calls) <= failures:
+            provider_failure()
+        return "A"
+
+    return answer
+
+
+def always_fail(prompt):
+    provider_failure()
+
+
+def judgment_rows(d):
+    return lab.read_jsonl(d / "judgments" / "anthropic.jsonl")
+
+
+def test_a_pair_that_fails_twice_then_succeeds_gives_one_verdict_and_two_failed_rows(
+    judge_env, tmp_path, monkeypatch
+):
+    asked = []
+    rc = judge_cli(judge_env, tmp_path, monkeypatch, asked, answer=flaky(2))
+    assert rc == 0
+    rows = judgment_rows(judge_env)
+    failed = [r for r in rows if r.get("status") == "failed"]
+    assert len(failed) == 2
+    assert sum("verdict" in r for r in rows) == 2  # both orders judged once
+    assert len(asked) == 4  # 2 failures + 2 verdict calls
+    assert reservations(judge_env, "anthropic") == 4
+    for r in failed:
+        assert "verdict" not in r
+        assert r["error"] == "provider-exit"
+        assert "SECRET" not in json.dumps(r)
+
+
+def test_a_pair_that_always_fails_is_charged_three_times_skipped_and_listed(
+    three_items, tmp_path, monkeypatch, capsys
+):
+    asked = []
+    rc = judge_cli(three_items, tmp_path, monkeypatch, asked, answer=flaky(3))
+    assert rc == 0  # the first pair fails all three attempts, the rest still run
+    assert len(asked) == 3 + 5
+    assert reservations(three_items, "anthropic") == 8
+    rows = judgment_rows(three_items)
+    assert sum(r.get("status") == "failed" for r in rows) == 3
+    assert sum("verdict" in r for r in rows) == 5
+    out = capsys.readouterr().out
+    assert "skipped 1 pair" in out and "i0 tp-first" in out
+
+
+def test_the_summary_names_each_skipped_pair(judge_env, tmp_path, monkeypatch, capsys):
+    assert judge_cli(judge_env, tmp_path, monkeypatch, [], answer=always_fail) == 0
+    out = capsys.readouterr().out
+    assert "i0 tp-first" in out and "i0 fp-first" in out
+    assert reservations(judge_env, "anthropic") == 6
+
+
+def test_a_resume_after_two_failed_attempts_allows_exactly_one_more(
+    judge_env, tmp_path, monkeypatch
+):
+    # Ceiling 2: both charges go to the first pair, the third reserve is refused.
+    rc = judge_cli(
+        judge_env, tmp_path, monkeypatch, [], answer=always_fail, max_invocations=2
+    )
+    assert rc == 2
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked, answer=always_fail) == 0
+    assert len(asked) == 1 + 3  # one more for the first pair, three for the second
+    first = [r for r in judgment_rows(judge_env) if r["order"] == lab.ORDERS[0]]
+    assert len(first) == 3 and all(r["status"] == "failed" for r in first)
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked, answer=always_fail) == 0
+    assert len(asked) == 4  # nothing left to try
+
+
+def test_the_ceiling_holds_when_failures_consume_budget(
+    three_items, tmp_path, monkeypatch
+):
+    asked = []
+    rc = judge_cli(
+        three_items, tmp_path, monkeypatch, asked, answer=always_fail, max_invocations=4
+    )
+    assert rc == 2
+    assert len(asked) == 4
+    assert reservations(three_items, "anthropic") == 4
+
+
+def test_a_credential_failure_stops_the_run_without_a_retry(judge_env, tmp_path):
+    script = tmp_path / "provider.py"
+    script.write_text(
+        "import sys\nopen(sys.argv[1], 'a').write('x')\n"
+        "sys.stderr.write(\"could not resolve credentials for profile 'p'\")\n"
+        "sys.exit(1)\n"
+    )
+    counter = tmp_path / "calls"
+    rc = cli.main(
+        ["label", "--dir", str(judge_env), "judge", "--family", "anthropic"]
+        + ["--model", "claude-test", "--rules-dir", str(tmp_path)]
+        + ["--max-invocations", "99"]
+        + ["--provider-cmd", f"{sys.executable} {script} {counter}"]
+    )
+    assert rc == 2
+    assert counter.read_text() == "x"  # one call, no retry
+    (failed,) = judgment_rows(judge_env)  # the charged attempt is on file
+    assert failed["status"] == "failed" and failed["error"] == "credential"
+    assert "verdict" not in failed and "credentials" not in json.dumps(failed)
+
+
+def skipped_env(d):
+    """Two families judged i0; anthropic failed three times on one order."""
+    write_judgments(d, "openai", "gpt-test", ["i0"])
+    base = {
+        "item": "i0",
+        "family": "anthropic",
+        "model": "claude-test",
+        "prompt_version": lab.PROMPT_VERSION,
+    }
+    rows = [{**base, "order": lab.ORDERS[0], "verdict": "tp"}] + [
+        {**base, "order": lab.ORDERS[1], "status": "failed", "error": "provider-exit"}
+        for _ in range(3)
+    ]
+    lab.write_jsonl(d / "judgments" / "anthropic.jsonl", rows)
+
+
+def test_merge_queues_a_skipped_pair_as_a_dispute_with_missing(judge_env):
+    skipped_env(judge_env)
+    assert merge_cli(judge_env) == 0
+    (dispute,) = lab.read_jsonl(judge_env / "disputes.jsonl")
+    assert dispute["verdicts"] == {"anthropic": "missing", "openai": "tp"}
+    assert lab.read_jsonl(judge_env / "labels.jsonl") == []
+    assert json.loads((judge_env / "stats.json").read_text())["kappa_n"] == 0
+
+
+def test_the_worksheet_shows_missing_for_a_skipped_pair(judge_env, tmp_path):
+    skipped_env(judge_env)
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(judge_env, out, tmp_path) == 0
+    (row,) = read_sheet(out)
+    assert row["queue"] == "dispute"
+    assert row["judge anthropic"] == "missing" and row["judge openai"] == "tp"
+
+
+def mark_failed_cli(d, item, order, *, attempts="3", family="anthropic", **kw):
+    model = kw.get("model", "claude-test")
+    return cli.main(
+        ["label", "--dir", str(d), "mark-failed", "--family", family]
+        + ["--model", model, item, order, "--attempts", str(attempts)]
+    )
+
+
+def test_a_pair_marked_failed_three_times_is_skipped_without_a_call(
+    three_items, tmp_path, monkeypatch, capsys
+):
+    # An empty ledger (a run stopped at once) exists, as it does on a live run.
+    assert judge_cli(three_items, tmp_path, monkeypatch, [], max_invocations=0) == 2
+    assert mark_failed_cli(three_items, "i0", lab.ORDERS[0]) == 0
+    marks = judgment_rows(three_items)
+    assert len(marks) == 3
+    assert all(
+        r["status"] == "failed"
+        and r["error"] == "provider-exit"
+        and r["recorded"] == "manual"
+        and "verdict" not in r
+        for r in marks
+    )
+    asked = []
+    assert judge_cli(three_items, tmp_path, monkeypatch, asked) == 0
+    assert len(asked) == 5  # the marked pair is not asked
+    assert reservations(three_items, "anthropic") == 5
+    out = capsys.readouterr().out
+    assert "skipped 1 pair" in out and f"i0 {lab.ORDERS[0]}" in out
+
+
+def test_marking_fewer_attempts_leaves_the_rest_to_the_judge_run(
+    judge_env, tmp_path, monkeypatch
+):
+    assert judge_cli(judge_env, tmp_path, monkeypatch, [], max_invocations=0) == 2
+    assert mark_failed_cli(judge_env, "i0", lab.ORDERS[0], attempts=2) == 0
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked, answer=always_fail) == 0
+    assert len(asked) == 1 + 3  # one more for the marked pair, three for the other
+
+
+@pytest.mark.parametrize(
+    ("item", "order", "attempts", "model"),
+    [
+        pytest.param("nope", lab.ORDERS[0], 3, "claude-test", id="unknown-item"),
+        pytest.param("i0", "sideways", 3, "claude-test", id="unknown-order"),
+        pytest.param("i0", lab.ORDERS[0], 0, "claude-test", id="zero-attempts"),
+        pytest.param("i0", lab.ORDERS[0], -1, "claude-test", id="negative-attempts"),
+        pytest.param("i0", lab.ORDERS[0], 3, "gpt-5", id="family-mismatch"),
+    ],
+)
+def test_mark_failed_rejects_bad_input_and_writes_nothing(
+    judge_env, item, order, attempts, model
+):
+    rc = mark_failed_cli(judge_env, item, order, attempts=attempts, model=model)
+    assert rc == 2
+    assert not (judge_env / "judgments").exists()
+
+
+def credential_failure(prompt):
+    raise lab.CredentialFailure("provider command exited 1: could not resolve")
+
+
+def test_credential_failures_count_as_attempts_and_the_fourth_run_skips_the_pair(
+    judge_env, tmp_path, monkeypatch, capsys
+):
+    first = lab.ORDERS[0]
+    for _ in range(3):
+        asked = []
+        rc = judge_cli(
+            judge_env, tmp_path, monkeypatch, asked, answer=credential_failure
+        )
+        assert rc == 2 and len(asked) == 1
+    asked = []
+    rc = judge_cli(judge_env, tmp_path, monkeypatch, asked, answer=credential_failure)
+    assert rc == 2  # the next pair fails the same way
+    assert len(asked) == 1
+    rows = judgment_rows(judge_env)
+    assert sum(r["order"] == first for r in rows) == 3  # never a fourth attempt
+    assert sum(r["order"] != first for r in rows) == 1
+
+
+def test_attempt_counts_are_read_under_the_ledger_lock(
+    judge_env, tmp_path, monkeypatch
+):
+    """Another run finishes between this run's start and its lock: its rows count."""
+    real = cli.models.Budget
+    inner = []
+    calls = []  # both runs share one provider fake, so every call lands here
+
+    class Racing(real):
+        def __init__(self, *args, **kw):
+            if not inner:
+                inner.append(True)
+                rc = judge_cli(
+                    judge_env, tmp_path, monkeypatch, calls, answer=always_fail
+                )
+                assert rc == 0
+            super().__init__(*args, **kw)
+
+    monkeypatch.setattr(cli.models, "Budget", Racing)
+    assert judge_cli(judge_env, tmp_path, monkeypatch, calls, answer=always_fail) == 0
+    assert len(calls) == 6  # the other run's 6 calls; this run adds none
+    assert reservations(judge_env, "anthropic") == 6
+    assert sum(r.get("status") == "failed" for r in judgment_rows(judge_env)) == 6
+
+
+def test_a_read_error_while_summarising_exits_2(judge_env, tmp_path, monkeypatch):
+    real = lab.read_jsonl
+    reads = []
+
+    def read(path):
+        if path.name == "anthropic.jsonl":
+            reads.append(path)
+            if len(reads) == 2:  # the read after the run
+                raise OSError("disk went away")
+        return real(path)
+
+    monkeypatch.setattr(lab, "read_jsonl", read)
+    assert judge_cli(judge_env, tmp_path, monkeypatch, [], answer=always_fail) == 2
+
+
+@pytest.fixture
+def duplicated_item(judge_env):
+    lab.write_jsonl(
+        judge_env / "items.jsonl",
+        [{**ITEM, "id": "i0", "line": 5, "split": "tuning"}] * 2,
+    )
+    return judge_env
+
+
+def test_a_duplicated_item_is_judged_once_per_order(
+    duplicated_item, tmp_path, monkeypatch
+):
+    asked = []
+    assert judge_cli(duplicated_item, tmp_path, monkeypatch, asked) == 0
+    assert len(asked) == 2  # one per order, not one per row
+    assert len(judgment_rows(duplicated_item)) == 2
+
+
+def test_a_duplicated_item_that_always_fails_is_charged_three_times_per_order(
+    duplicated_item, tmp_path, monkeypatch
+):
+    asked = []
+    assert (
+        judge_cli(duplicated_item, tmp_path, monkeypatch, asked, answer=always_fail)
+        == 0
+    )
+    assert len(asked) == 6  # 3 per order, not 6
+    assert reservations(duplicated_item, "anthropic") == 6
+
+
+def test_merge_and_worksheet_count_a_duplicated_item_id_once(duplicated_item, tmp_path):
+    write_judgments(duplicated_item, "anthropic", "claude-test", ["i0"])
+    write_judgments(duplicated_item, "openai", "gpt-test", ["i0"], verdict="fp")
+    assert merge_cli(duplicated_item) == 0
+    assert len(lab.read_jsonl(duplicated_item / "disputes.jsonl")) == 1
+    assert json.loads((duplicated_item / "stats.json").read_text())["items"] == 1
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(duplicated_item, out, tmp_path) == 0
+    assert len(read_sheet(out)) == 1
+
+
+def ledger_path(d):
+    return d / "judgments" / "anthropic.ledger.jsonl"
+
+
+def test_mark_failed_refuses_while_a_judge_holds_the_ledger_lock(
+    judge_env, tmp_path, monkeypatch
+):
+    assert judge_cli(judge_env, tmp_path, monkeypatch, [], max_invocations=0) == 2
+    before = (
+        judgment_rows(judge_env)
+        if (judge_env / "judgments" / "anthropic.jsonl").exists()
+        else []
+    )
+    with cli.models.Budget(5, ledger_path(judge_env)):
+        assert mark_failed_cli(judge_env, "i0", lab.ORDERS[0]) == 2
+    assert (
+        not (judge_env / "judgments" / "anthropic.jsonl").exists()
+        or judgment_rows(judge_env) == before
+    )
+    assert mark_failed_cli(judge_env, "i0", lab.ORDERS[0]) == 0  # free again
+
+
+def judgment(item, family, model, order, verdict):
+    return {
+        "item": item,
+        "family": family,
+        "model": model,
+        "order": order,
+        "prompt_version": lab.PROMPT_VERSION,
+        "verdict": verdict,
+    }
+
+
+def write_rows(d, family, rows):
+    lab.write_jsonl(d / "judgments" / f"{family}.jsonl", rows)
+
+
+def pair_rows(item, family, model, first, second):
+    return [
+        judgment(item, family, model, lab.ORDERS[0], first),
+        judgment(item, family, model, lab.ORDERS[1], second),
+    ]
+
+
+def test_merge_uses_the_first_verdict_row_of_a_duplicated_pair_and_reports_it(
+    duplicated_item, capsys
+):
+    first, second = lab.ORDERS
+    write_rows(
+        duplicated_item,
+        "anthropic",
+        [
+            *pair_rows("i0", "anthropic", "claude-test", "tp", "tp"),
+            judgment("i0", "anthropic", "claude-test", first, "fp"),  # later duplicate
+        ],
+    )
+    write_rows(
+        duplicated_item, "openai", pair_rows("i0", "openai", "gpt-test", "tp", "tp")
+    )
+    assert merge_cli(duplicated_item) == 0
+    (label,) = lab.read_jsonl(duplicated_item / "labels.jsonl")
+    assert label["label"] == "tp" and label["item"] == "i0"
+    assert lab.read_jsonl(duplicated_item / "disputes.jsonl") == []
+    err = capsys.readouterr().err
+    assert "1 duplicate verdict rows" in err and f"i0 {first}" in err
+    assert second not in err  # only the conflicting pair is named
+
+
+def test_worksheet_shows_the_first_verdict_of_a_duplicated_pair_once(
+    duplicated_item, tmp_path
+):
+    write_rows(
+        duplicated_item,
+        "anthropic",
+        [
+            *pair_rows("i0", "anthropic", "claude-test", "tp", "tp"),
+            *pair_rows("i0", "anthropic", "claude-test", "fp", "fp"),
+        ],
+    )
+    write_rows(
+        duplicated_item, "openai", pair_rows("i0", "openai", "gpt-test", "fp", "fp")
+    )
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(duplicated_item, out, tmp_path) == 0
+    (row,) = read_sheet(out)
+    assert row["judge anthropic"] == "tp" and row["judge openai"] == "fp"
+
+
+def dedupe_cli(d):
+    return cli.main(["label", "--dir", str(d), "dedupe-check"])
+
+
+def test_dedupe_check_passes_a_clean_file(judge_env, capsys):
+    write_judgments(judge_env, "anthropic", "claude-test", ["i0"])
+    assert dedupe_cli(judge_env) == 0
+    out = capsys.readouterr().out
+    assert "anthropic\tpairs=2\tduplicates=0" in out
+    assert "conflict" not in out
+
+
+def test_dedupe_check_passes_consistent_duplicates_and_counts_them(judge_env, capsys):
+    rows = pair_rows("i0", "anthropic", "claude-test", "tp", "fp")
+    write_rows(judge_env, "anthropic", [*rows, *rows, rows[0]])
+    assert dedupe_cli(judge_env) == 0
+    assert "anthropic\tpairs=2\tduplicates=3" in capsys.readouterr().out
+
+
+def test_dedupe_check_lists_conflicting_pairs_and_exits_1(judge_env, capsys):
+    rows = pair_rows("i0", "anthropic", "claude-test", "tp", "tp")
+    extra = judgment("i0", "anthropic", "claude-test", lab.ORDERS[0], "fp")
+    write_rows(judge_env, "anthropic", [*rows, extra])
+    assert dedupe_cli(judge_env) == 1
+    out = capsys.readouterr().out
+    assert "anthropic\tpairs=2\tduplicates=1" in out
+    assert f"conflict\tanthropic\ti0\t{lab.ORDERS[0]}\ttp,fp" in out
+
+
+def test_dedupe_check_ignores_failed_rows_and_writes_nothing(judge_env, capsys):
+    skipped_env(judge_env)
+    before = {f.name: f.read_bytes() for f in (judge_env / "judgments").iterdir()}
+    assert dedupe_cli(judge_env) == 0
+    after = {f.name: f.read_bytes() for f in (judge_env / "judgments").iterdir()}
+    assert before == after
+    assert "anthropic\tpairs=1\tduplicates=0" in capsys.readouterr().out
+
+
+# --- round 4: colliding ids, exhausted pairs and the mark-failed lock ---------------
+
+TEXTS = ("utm_campaign=", "utm_source=", "utm_medium=")
+
+
+@pytest.fixture
+def collision_env(judge_env):
+    """Three findings on one line that share one item id."""
+    lab.write_jsonl(
+        judge_env / "items.jsonl",
+        [{**ITEM, "id": "c0", "line": 5, "text": t, "split": "tuning"} for t in TEXTS],
+    )
+    for family, model in (("anthropic", "claude-test"), ("openai", "gpt-test")):
+        write_rows(
+            judge_env, family, pair_rows("c0", family, model, "tp", "tp")
+        )  # both judges agree, yet saw only the first finding
+    return judge_env
+
+
+def test_merge_never_labels_a_colliding_id_automatically(collision_env):
+    assert merge_cli(collision_env) == 0
+    assert lab.read_jsonl(collision_env / "labels.jsonl") == []
+    (dispute,) = lab.read_jsonl(collision_env / "disputes.jsonl")
+    assert dispute["item"] == "c0" and dispute["collision"] is True
+
+
+def test_the_worksheet_has_one_dispute_row_per_finding_behind_a_colliding_id(
+    collision_env, tmp_path
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(collision_env, out, tmp_path) == 0
+    rows = read_sheet(out)
+    assert [r["flagged text"] for r in rows] == list(TEXTS)
+    assert {r["queue"] for r in rows} == {"dispute"}
+    assert {r["collision"] for r in rows} == {"yes"}
+    assert {r["item"] for r in rows} == {"c0"}
+    assert all(r["judge anthropic"] == r["judge openai"] == "tp" for r in rows)
+
+
+def test_a_plain_item_has_a_blank_collision_cell(sheet_env, tmp_path):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(sheet_env, out, tmp_path) == 0
+    assert {r["collision"] for r in read_sheet(out)} == {""}
+
+
+def fill_by_text(path, answers):
+    rows = read_sheet(path)
+    for row in rows:
+        row["verdict"], row["reason"] = answers.get(row["flagged text"], ("", ""))
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        out = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        out.writeheader()
+        out.writerows(rows)
+
+
+def test_every_reader_takes_the_first_row_of_a_repeated_item(judge_env, tmp_path):
+    first = {**ITEM, "id": "i0", "line": 5, "split": "tuning", "rule": R}
+    later = {**first, "rule": ALPHA}  # a hand-edited later row with the same text
+    lab.write_jsonl(judge_env / "items.jsonl", [first, later])
+    write_rows(
+        judge_env, "anthropic", pair_rows("i0", "anthropic", "claude-test", "tp", "fp")
+    )
+    write_rows(judge_env, "openai", pair_rows("i0", "openai", "gpt-test", "tp", "tp"))
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(judge_env, out, tmp_path) == 0
+    (row,) = read_sheet(out)
+    assert row["rule"] == R
+
+
+def test_an_exhausted_pair_is_skipped_before_its_document_is_loaded(
+    judge_env, tmp_path, monkeypatch, capsys
+):
+    lab.write_jsonl(
+        judge_env / "items.jsonl",
+        [{**ITEM, "id": "g0", "doc": "ghost", "line": 5, "split": "tuning"}],
+    )
+    base = {
+        "item": "g0",
+        "family": "anthropic",
+        "model": "claude-test",
+        "prompt_version": lab.PROMPT_VERSION,
+        "status": "failed",
+        "error": "provider-exit",
+    }
+    write_rows(
+        judge_env,
+        "anthropic",
+        [{**base, "order": o} for o in lab.ORDERS for _ in range(3)],
+    )
+    ledger_path(judge_env).write_text("")
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 0
+    assert asked == []
+    out = capsys.readouterr().out
+    assert "skipped 2 pairs" in out and "g0" in out
+
+
+def test_mark_failed_requires_an_existing_ledger(judge_env, capsys):
+    assert mark_failed_cli(judge_env, "i0", lab.ORDERS[0]) == 2
+    assert "ledger" in capsys.readouterr().err
+    assert not (judge_env / "judgments").exists()
+
+
+def resolve_cli_c0(d, verdict, reason="later look"):
+    return cli.main(
+        ["label", "--dir", str(d), "resolve", "c0", verdict]
+        + ["--reviewer", "sjors", "--reason", reason, "--date", "2026-11-20"]
+    )
+
+
+def test_agreeing_rows_for_a_colliding_id_give_one_human_row_and_one_label(
+    collision_env, tmp_path
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(collision_env, out, tmp_path) == 0
+    fill_by_text(out, {t: ("fp", "tracking") for t in TEXTS})
+    assert import_cli(collision_env, out) == 0
+    (human,) = lab.read_jsonl(collision_env / "human.jsonl")
+    assert (human["item"], human["label"]) == ("c0", "fp") and "text" not in human
+    assert merge_cli(collision_env) == 0
+    (label,) = lab.read_jsonl(collision_env / "labels.jsonl")
+    assert (label["item"], label["label"], label["source"]) == ("c0", "fp", "human")
+    assert lab.read_jsonl(collision_env / "disputes.jsonl") == []
+
+
+def test_conflicting_rows_for_one_id_are_refused_naming_the_id_and_rows(
+    collision_env, tmp_path, capsys
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(collision_env, out, tmp_path) == 0
+    fill_by_text(out, {TEXTS[0]: ("tp", "a"), TEXTS[1]: ("fp", "b")})
+    assert import_cli(collision_env, out) == 2
+    err = capsys.readouterr().err
+    assert "c0" in err and "rows 2, 3" in err
+    assert not (collision_env / "human.jsonl").exists()
+
+
+def test_a_later_resolve_overrides_an_earlier_import_of_a_colliding_id(
+    collision_env, tmp_path
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(collision_env, out, tmp_path) == 0
+    fill_by_text(out, {t: ("fp", "tracking") for t in TEXTS})
+    assert import_cli(collision_env, out) == 0
+    assert resolve_cli_c0(collision_env, "tp") == 0
+    assert merge_cli(collision_env) == 0
+    (label,) = lab.read_jsonl(collision_env / "labels.jsonl")
+    assert label["label"] == "tp"

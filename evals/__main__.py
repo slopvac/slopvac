@@ -13,7 +13,9 @@ import json
 import os
 import sys
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 from . import ab as ab_mod
 from . import corpuslib as lib
@@ -335,8 +337,12 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
         if refusal:
             print(f"evals label judge: {refusal}", file=sys.stderr)
             return 2
-        done = labelling.completed(labelling.read_jsonl(out), args.model)
         with models.Budget(args.max_invocations, ledger) as budget:
+            # Read the attempts only once the ledger lock is held, so a run that
+            # finished just before cannot be missed and a pair cannot pass 3.
+            earlier = labelling.read_jsonl(out)
+            done = labelling.completed(earlier, args.model)
+            spent = labelling.failed_attempts(earlier, args.model)
             rows = labelling.judge_items(
                 labelling.read_jsonl(p["items"]),
                 labelling.command_asker(args.provider_cmd),
@@ -346,9 +352,11 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
                 cache=_cache(args),
                 notes=labelling.rule_notes(Path(args.rules_dir)),
                 done=done,
+                attempts=spent,
                 sink=lambda row: labelling.append_jsonl(out, [row]),
                 budget=budget,
             )
+            skipped = labelling.skipped_pairs(labelling.read_jsonl(out), args.model)
     except models.BudgetExceeded as exc:
         print(
             f"evals label judge: {exc}; {out} keeps the finished judgments",
@@ -358,8 +366,100 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
     except (models.ModelEvalError, runner.EngineError, OSError) as exc:
         print(f"evals label judge: {exc}", file=sys.stderr)
         return 2
-    print(f"{len(rows)} judgments written to {out}")
+    written = sum(r.get("status") != labelling.FAILED for r in rows)
+    print(f"{written} judgments written to {out}")
+    if skipped:
+        print(
+            f"skipped {len(skipped)} pair{'s' if len(skipped) != 1 else ''} after "
+            f"{labelling.MAX_ATTEMPTS} failed attempts (no judgment; the merge "
+            "queues them for review):"
+        )
+        for item, order in skipped:
+            print(f"  {item} {order}")
     return 0
+
+
+def cmd_label_mark_failed(args: argparse.Namespace) -> int:
+    """Record failed attempts that no judgments row holds, so `judge` counts them."""
+    p = _paths(args)
+    out = p["judgments"] / f"{args.family}.jsonl"
+    try:
+        labelling.check_identity(args.family, args.model)
+        if args.attempts < 1:
+            raise runner.EngineError("--attempts must be at least 1")
+        if args.order not in labelling.ORDERS:
+            raise runner.EngineError(
+                f"unknown order {args.order!r}; use one of {', '.join(labelling.ORDERS)}"
+            )
+        if args.item not in {i["id"] for i in labelling.read_jsonl(p["items"])}:
+            raise runner.EngineError(f"unknown item {args.item!r}")
+        row = {
+            "item": args.item,
+            "family": args.family,
+            "model": args.model,
+            "order": args.order,
+            "prompt_version": labelling.PROMPT_VERSION,
+            "status": labelling.FAILED,
+            "error": "provider-exit",
+            "recorded": "manual",
+        }
+        ledger = out.with_suffix(".ledger.jsonl")
+        if not ledger.exists():
+            raise runner.EngineError(
+                f"{ledger.name} does not exist; run `label judge` first, so there "
+                "is a ledger lock to take"
+            )
+        # Take the lock a judge run holds, so a rows-only write cannot race its counts.
+        with models.ledger_lock(ledger):
+            labelling.append_jsonl(out, [row] * args.attempts)
+    except (models.ModelEvalError, runner.EngineError, OSError) as exc:
+        print(f"evals label mark-failed: {exc}", file=sys.stderr)
+        return 2
+    print(f"{args.attempts} failed attempts recorded in {out}")
+    return 0
+
+
+def _duplicate_notice(command: str, judgments: Sequence[Mapping[str, Any]]) -> None:
+    """Say on stderr that duplicate verdict rows exist and that the first one counted."""
+    report = labelling.duplicate_report(judgments)
+    extra = sum(r["duplicates"] for r in report.values())
+    if not extra:
+        return
+    print(
+        f"evals label {command}: {extra} duplicate verdict rows; the first row of "
+        "each (item, order) counts; run `label dedupe-check` for the details",
+        file=sys.stderr,
+    )
+    for fam, r in report.items():
+        for item, order, verdicts in r["conflicts"]:
+            print(
+                f"  {fam} {item} {order} disagrees: {', '.join(verdicts)}",
+                file=sys.stderr,
+            )
+
+
+def cmd_label_dedupe_check(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    try:
+        judgments, _ = labelling.usable_judgments(
+            [
+                r
+                for f in sorted(p["judgments"].glob("*.jsonl"))
+                for r in labelling.read_jsonl(f)
+            ]
+        )
+    except (runner.EngineError, OSError) as exc:
+        print(f"evals label dedupe-check: {exc}", file=sys.stderr)
+        return 2
+    report = labelling.duplicate_report(judgments)
+    for fam, r in report.items():
+        print(f"{fam}\tpairs={r['pairs']}\tduplicates={r['duplicates']}")
+    conflicts = 0
+    for fam, r in report.items():
+        for item, order, verdicts in r["conflicts"]:
+            conflicts += 1
+            print(f"conflict\t{fam}\t{item}\t{order}\t{','.join(verdicts)}")
+    return 1 if conflicts else 0
 
 
 def cmd_label_merge(args: argparse.Namespace) -> int:
@@ -381,6 +481,7 @@ def cmd_label_merge(args: argparse.Namespace) -> int:
             "from another prompt version or from an older model",
             file=sys.stderr,
         )
+    _duplicate_notice("merge", judgments)
     previous = {r["item"]: r["label"] for r in labelling.read_jsonl(p["labels"])}
     merged = labelling.merge(
         labelling.read_jsonl(p["items"]), judgments, labelling.read_jsonl(p["human"])
@@ -449,6 +550,7 @@ def cmd_label_worksheet(args: argparse.Namespace) -> int:
                 for r in labelling.read_jsonl(f)
             ]
         )
+        _duplicate_notice("worksheet", judgments)
         docs = {d["id"]: d for d in lib.load_manifest()["documents"]}
         cache = _cache(args)
         families, rows = labelling.worksheet_rows(
@@ -543,6 +645,21 @@ def build_parser() -> argparse.ArgumentParser:
     lj.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
     lj.add_argument("--cache")
     lj.set_defaults(func=cmd_label_judge)
+
+    lf = lsub.add_parser(
+        "mark-failed", help="record failed judge attempts that no judgment row holds"
+    )
+    lf.add_argument("--family", required=True)
+    lf.add_argument("--model", required=True)
+    lf.add_argument("--attempts", required=True, type=int)
+    lf.add_argument("item")
+    lf.add_argument("order")
+    lf.set_defaults(func=cmd_label_mark_failed)
+
+    ld = lsub.add_parser(
+        "dedupe-check", help="count duplicate verdict rows and list conflicts"
+    )
+    ld.set_defaults(func=cmd_label_dedupe_check)
 
     lm = lsub.add_parser("merge", help="combine judgments into labels and disputes")
     lm.add_argument("--date", default=None)

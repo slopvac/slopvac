@@ -28,6 +28,7 @@ Repeat each run at least three times, because one sample of a model says little.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import fcntl
 import hashlib
@@ -41,7 +42,7 @@ import subprocess
 import tempfile
 import threading
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
@@ -878,6 +879,33 @@ class Reply(NamedTuple):
     usage: dict[str, int] | None = None
 
 
+def _lock_ledger(ledger: Path) -> int:
+    """Take the exclusive lock on `<ledger>.lock` and return its descriptor.
+
+    Raises `ModelEvalError` when another process holds it. Closing the
+    descriptor drops the lock.
+    """
+    fd = os.open(str(ledger) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        raise ModelEvalError(
+            f"another run holds the ledger lock for {ledger.name}; refusing to start"
+        ) from None
+    return fd
+
+
+@contextlib.contextmanager
+def ledger_lock(ledger: Path) -> Iterator[None]:
+    """Hold the ledger lock a `Budget` uses, without reserving anything."""
+    fd = _lock_ledger(ledger)
+    try:
+        yield
+    finally:
+        os.close(fd)
+
+
 class Budget:
     """A ceiling on model-command invocations, retries included, kept on disk.
 
@@ -906,15 +934,7 @@ class Budget:
 
     def _open(self, ledger: Path) -> None:
         ledger.parent.mkdir(parents=True, exist_ok=True)
-        self._fd = os.open(str(ledger) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
-        try:
-            fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            os.close(self._fd)
-            self._fd = None
-            raise ModelEvalError(
-                f"another run holds the ledger lock for {ledger.name}; refusing to start"
-            ) from None
+        self._fd = _lock_ledger(ledger)
         reserved: set[int] = set()
         finished: set[int] = set()
         if ledger.is_file():
