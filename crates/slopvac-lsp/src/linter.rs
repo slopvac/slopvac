@@ -245,6 +245,8 @@ pub fn buffer_kind(path: &str) -> Kind {
     match FileKind::from_file_name(&name) {
         Some(FileKind::Mdx) => Kind::Mdx,
         Some(FileKind::Rst) => Kind::Rst,
+        // A standalone HTML file, read as the CLI reads it: its findings carry no fix.
+        Some(FileKind::Html) => Kind::Html,
         _ => Kind::Markdown,
     }
 }
