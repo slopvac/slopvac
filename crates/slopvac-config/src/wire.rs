@@ -16,6 +16,7 @@ use slopvac_model::{
 };
 
 use crate::MAX_INDEX_EXTRA;
+use crate::schema::REL_PATH_PATTERN;
 use crate::schema::{
     BUDGET_NONE, DEFAULT_ALLOW, DEFAULT_FRONTMATTER_ENABLED, DEFAULT_GUIDANCE_DEPTH,
     DEFAULT_GUIDANCE_LEVEL, DEFAULT_GUIDANCE_REPORT, DEFAULT_GUIDANCE_REVIEW,
@@ -604,5 +605,67 @@ pub(crate) struct FrontMatterDocument {
 pub fn frontmatter_schema() -> Value {
     generator()
         .into_root_schema_for::<FrontMatterDocument>()
+        .to_value()
+}
+
+/// A path relative to this file: no leading slash or drive letter, no backslash and no .. segment.
+#[derive(JsonSchema)]
+#[schemars(with = "String", extend("minLength" = MIN_STRING, "pattern" = REL_PATH_PATTERN))]
+pub(crate) struct RelPath;
+
+/// Terms the style brings.
+#[derive(JsonSchema)]
+#[schemars(transform = x_extensions)]
+#[expect(
+    dead_code,
+    reason = "schema only: the derive reads the fields and no code reads a value"
+)]
+pub(crate) struct StyleTerms {
+    /// Words the style lets through the spelling check. A list replaces.
+    allow: Option<Vec<NonEmptyString>>,
+    /// Blocklist files, relative to this style file.
+    blocklists: Option<Vec<RelPath>>,
+}
+
+/// An ordered preset of category and rule levels and of terms. A config lists styles in order
+/// and the last one wins. A style may extend other styles, which apply first. A style declares
+/// the styles it cannot combine with, and the host reports a conflict when both are active.
+/// Semantics are specified in docs/contract/plugins.md. The style name is the file name without
+/// its extension, qualified by the plugin id. Maps merge by key and lists replace, as in
+/// config.schema.json. Category entries, rule levels and names are the definitions in
+/// config.schema.json.
+#[derive(JsonSchema)]
+#[schemars(transform = x_extensions)]
+#[expect(
+    dead_code,
+    reason = "schema only: the derive reads the fields and no code reads a value"
+)]
+pub(crate) struct StyleDocument {
+    schema_version: SchemaVersion,
+    description: Option<NonEmptyString>,
+    /// Styles applied before this one, lowest first.
+    #[schemars(extend("uniqueItems" = true))]
+    extends: Option<Vec<Ref>>,
+    /// Styles that must not be active together with this one.
+    #[schemars(extend("uniqueItems" = true))]
+    conflicts: Option<Vec<Ref>>,
+    /// Category dials, keyed by category name. A bare level sets the severity of every rule in
+    /// the category. Keys are data, so the x- convention does not apply: an x- key is a rule or
+    /// category name and takes a level.
+    categories: Option<CategoriesMap>,
+    /// Rule levels, keyed by rule name. A rule entry wins over the category entry. Keys are
+    /// data, so the x- convention does not apply: an x- key is a rule or category name and
+    /// takes a level.
+    rules: Option<RulesMap>,
+    terms: Option<StyleTerms>,
+}
+
+/// The schema of a style preset file, with its `$defs`. The references to config definitions
+/// stay local here, and `slopvac-schemas` points them at the config schema.
+/// `slopvac-schemas` writes it to `schemas/v3/style.schema.json`.
+#[must_use]
+pub fn style_schema() -> Value {
+    generator()
+        .into_root_schema_for::<StyleDocument>()
         .to_value()
 }

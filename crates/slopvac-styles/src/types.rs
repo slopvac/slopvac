@@ -4,10 +4,12 @@
 //! replace.
 
 use serde::Deserialize;
+use slopvac_config::{BUDGET_MINIMUM, BUDGET_NONE};
 
 use crate::messages::StyleMessage;
 
-/// The level a rule or category reports at.
+/// The level a rule or category reports at. The names are `slopvac_config::RULE_LEVELS`, and
+/// `tests/level_names.rs` holds the two equal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Level {
@@ -95,11 +97,11 @@ impl<'de> Deserialize<'de> for Budget {
             Text(String),
         }
         match Raw::deserialize(d)? {
-            Raw::Number(n) if n >= 0.0 => Ok(Self::Limit(n)),
+            Raw::Number(n) if n >= f64::from(BUDGET_MINIMUM) => Ok(Self::Limit(n)),
             Raw::Number(n) => Err(D::Error::custom(StyleMessage::BudgetNegative {
                 found: n.to_string(),
             })),
-            Raw::Text(t) if t == "none" => Ok(Self::None),
+            Raw::Text(t) if t == BUDGET_NONE => Ok(Self::None),
             Raw::Text(t) => Err(D::Error::custom(StyleMessage::BudgetInvalid { found: t })),
         }
     }
