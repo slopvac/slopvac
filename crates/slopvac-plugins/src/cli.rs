@@ -331,7 +331,9 @@ impl<'a> Runner<'a> {
     ///
     /// # Errors
     /// The plugin needs a managed environment that is not there (`plugin-spawn-failed`), or
-    /// [`Plugin::start`](crate::Plugin::start) failed, under the code of its error.
+    /// [`Plugin::start`](crate::Plugin::start) failed, under the code of its error. A failure
+    /// whose text can carry what the plugin sent keeps its code and shows the withheld sentence
+    /// in place of that text.
     pub fn start(
         &self,
         vp: &VerifiedPlugin,
@@ -342,8 +344,16 @@ impl<'a> Runner<'a> {
         let (gate, spec) = self
             .prepared(vp, spec, SPAWN_FAILED)
             .map_err(|text| Reported::new(SPAWN_FAILED, text))?;
-        Plugin::start(&spec, cfg, &gate).map_err(|e| RunError::Failed {
-            source: Reported::new(e.error.slopvac_code(), e.error.to_string()),
+        Plugin::start(&spec, cfg, &gate).map_err(|e| {
+            let code = e.error.slopvac_code();
+            let text = if e.error.text_is_host_only() {
+                e.error.to_string()
+            } else {
+                cause::plugin_text_withheld(code)
+            };
+            RunError::Failed {
+                source: Reported::new(code, text),
+            }
         })
     }
 }

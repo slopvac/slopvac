@@ -176,6 +176,38 @@ impl PluginError {
             Self::Usage(_) | Self::Encode(_) => "plugin-usage",
         }
     }
+
+    /// Whether the text holds only what the host wrote. It is false for a failure whose text can
+    /// carry what the plugin sent: an error answer, the standard error tail of an exit, a framing
+    /// or schema failure, a declaration or a feature that the plugin named, and the versions it
+    /// reported. A caller that shows such a failure to the user shows its code and withholds the
+    /// text, because the plugin's text can quote the document (policies.md section 1.7).
+    #[must_use]
+    pub fn text_is_host_only(&self) -> bool {
+        match self {
+            Self::Untrusted(_)
+            | Self::TrustKeyMissing(_)
+            | Self::TrustKeyMismatch(_)
+            | Self::TrustKeyUnusable(_)
+            | Self::HashMismatch(_)
+            | Self::Timeout { .. }
+            | Self::SpawnFailed(_)
+            | Self::LauncherNotInstalled
+            | Self::RequestIdExhausted
+            | Self::Offline(_)
+            | Self::Cancelled
+            | Self::MessageTooLarge(_)
+            | Self::Usage(_)
+            | Self::Encode(_) => true,
+            Self::Exited { .. }
+            | Self::ProtocolViolation(_)
+            | Self::OutputInvalid(_)
+            | Self::DeclarationMismatch(_)
+            | Self::ProtocolVersionUnsupported { .. }
+            | Self::RequiredFeatureMissing(_)
+            | Self::Rpc(_) => false,
+        }
+    }
 }
 
 /// Why a `provider/complete` call gave no result that the host accepts, split by stage.

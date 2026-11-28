@@ -16,8 +16,54 @@ use slopvac_plugins::{CompleteError, HookKind, HostConfig, PluginError, Shutdown
 
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::plugin_loader::InstalledPlugins;
+use crate::plugin_loader::{InstalledPlugins, LoadRefusal};
 use crate::redact;
+
+/// Which loader step refused the provider plugin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LoadStage {
+    /// The plugin is not locked, not installed or changed since sync.
+    Synced,
+    /// The installed files break the plugin contract.
+    Code,
+}
+
+/// Why the provider plugin could not be loaded, kept typed as the cause of the review error:
+/// the step, the stable code, and the text with every absolute path redacted and escaped once
+/// for the terminal, so the error chain names no path (policies.md section 1.7).
+#[derive(Debug, thiserror::Error)]
+#[error("{text}")]
+pub(crate) struct LoadCause {
+    stage: LoadStage,
+    code: &'static str,
+    text: String,
+}
+
+impl LoadCause {
+    /// The cause of `refusal`, with paths shown relative to `cwd`.
+    fn new(refusal: &LoadRefusal, cwd: &Path) -> Self {
+        let stage = match refusal {
+            LoadRefusal::Synced(_) => LoadStage::Synced,
+            LoadRefusal::Code(_) => LoadStage::Code,
+        };
+        let shown = redact::redact_absolute(&refusal.to_string(), cwd);
+        Self {
+            stage,
+            code: refusal.code(),
+            text: slopvac_sanitize::line(&shown),
+        }
+    }
+
+    /// The loader step that refused the plugin.
+    pub(crate) fn stage(&self) -> LoadStage {
+        self.stage
+    }
+
+    /// The stable code of the refusal.
+    pub(crate) fn code(&self) -> &'static str {
+        self.code
+    }
+}
 
 /// The plugin named under `[review] provider`, resolved and started only when a call is due.
 pub(crate) struct PluginProvider<'a> {
@@ -54,16 +100,21 @@ impl<'a> PluginProvider<'a> {
         AgentsError::new_coded(code, slopvac_sanitize::line(&shown))
     }
 
-    /// A failure of the call itself. The host's text is shown, except where it carries the
-    /// plugin's own free text: an error answer to the request and the standard error tail of an
-    /// exit. That text can quote the document (policies.md section 1.7), so only the code shows.
+    /// A failure of the call itself. The host's text is shown, except where it can carry what
+    /// the plugin sent ([`PluginError::text_is_host_only`]). That text can quote the document
+    /// (policies.md section 1.7), so only the code shows.
     fn call_failure(&self, error: &PluginError) -> AgentsError {
-        match error {
-            PluginError::Rpc(_) | PluginError::Exited { .. } => {
-                review::request_failed(error.slopvac_code())
-            }
-            _ => self.failure(error.slopvac_code(), &error.to_string()),
+        if error.text_is_host_only() {
+            self.failure(error.slopvac_code(), &error.to_string())
+        } else {
+            review::request_failed(error.slopvac_code())
         }
+    }
+
+    /// A refusal of the loader, under its own code, with its typed cause kept.
+    fn load_failure(&self, refusal: &LoadRefusal) -> AgentsError {
+        let cause = LoadCause::new(refusal, &self.cwd);
+        AgentsError::new_coded(cause.code, cause.text.clone()).with_source(cause)
     }
 
     fn ask(
@@ -77,7 +128,7 @@ impl<'a> PluginProvider<'a> {
             .map_err(|e| self.failure(e.code(), &e.to_string()))?;
         let (plugin, spec) = loader
             .try_load(&locked)
-            .map_err(|e| self.failure(e.code(), &e.to_string()))?;
+            .map_err(|e| self.load_failure(&e))?;
         // Before the start: a plugin that declares no provider hook is not a model provider.
         if !spec
             .declaration
@@ -102,7 +153,8 @@ impl<'a> PluginProvider<'a> {
             .as_deref()
             .map(|hook| host.complete_checked(hook, request.call));
         let shutdown = host.shutdown();
-        // A failure of the request comes first; the shutdown can only add to a clean reply.
+        // A failure of the request comes first, then an item the provider failed; the shutdown
+        // can only add to a reply that is clean.
         let answers = match answers {
             None => return Err(review::not_a_provider()),
             Some(Err(CompleteError::Refused(_))) => {
@@ -112,7 +164,9 @@ impl<'a> PluginProvider<'a> {
             Some(Err(other)) => return Err(self.call_failure(&PluginError::from(other))),
             Some(Ok(answers)) => answers,
         };
-        if let Some(code) = shutdown_code(&shutdown) {
+        if let Some(code) = shutdown_code(&shutdown)
+            && answers.iter().all(Result::is_ok)
+        {
             return Err(review::shutdown_failed(code));
         }
         Ok(ProviderReply::new(
@@ -129,15 +183,16 @@ impl<'a> PluginProvider<'a> {
 }
 
 /// The host code for a shutdown that was not clean, or `None` for a clean one: a protocol
-/// violation, no answer to `shutdown` within its timer, or an exit that was not the clean
-/// status 0 after `shutdown` and `exit` (plugin-protocol.md sections 3 and 6.3).
+/// violation, the code of the failure that kept the plugin from acknowledging `shutdown` (an
+/// error answer, an exit, a timeout), or an exit that was not the clean status 0 after
+/// `shutdown` and `exit` (plugin-protocol.md sections 3 and 6.3).
 fn shutdown_code(shutdown: &Shutdown) -> Option<&'static str> {
     if shutdown.clean() {
         None
     } else if shutdown.violation.is_some() {
         Some("plugin-protocol-violation")
-    } else if !shutdown.acknowledged {
-        Some("plugin-timeout")
+    } else if let Some(refused) = &shutdown.refused {
+        Some(refused.slopvac_code())
     } else {
         Some("plugin-exited")
     }
@@ -161,5 +216,31 @@ impl ModelProvider for PluginProvider<'_> {
             |runner, loader| Ok(self.ask(runner, loader, request)),
         )
         .map_err(|e: CliError| AgentsError::new_coded(e.code, e.message))?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use slopvac_packs::SyncedError;
+
+    use super::*;
+
+    /// A loader refusal reaches the review error with its cause kept typed: the step and the
+    /// code, beside the same text.
+    #[test]
+    fn a_load_refusal_keeps_its_typed_cause() {
+        let env = crate::env::MapEnv::new(&[], false);
+        let provider = PluginProvider::new("p".to_owned(), true, &env, Path::new("/project"), None);
+        let refusal = LoadRefusal::Synced(SyncedError::NotInstalled { id: "p".to_owned() });
+
+        let error = provider.load_failure(&refusal);
+
+        assert_eq!(error.code(), refusal.code());
+        let cause = std::error::Error::source(&error)
+            .and_then(|s| s.downcast_ref::<LoadCause>())
+            .expect("a typed load cause");
+        assert_eq!(cause.stage(), LoadStage::Synced);
+        assert_eq!(cause.code(), refusal.code());
+        assert_eq!(cause.to_string(), error.to_string());
     }
 }

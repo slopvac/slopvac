@@ -716,6 +716,10 @@ pub(crate) enum HostPhrase {
     #[code("plugins-host-shut-down")]
     #[text("the plugin has shut down")]
     ShutDown,
+    /// The answer to `shutdown` was not `null`.
+    #[code("plugins-host-shutdown-not-null")]
+    #[text("the answer to shutdown is not null")]
+    ShutdownNotNull,
     /// A `provider/complete` request named no model.
     #[code("plugins-host-complete-model-missing")]
     #[text("a provider/complete request needs a model")]
@@ -1667,6 +1671,10 @@ mod tests {
     fn every_phrase_keeps_its_text_and_is_registered() {
         let table: Vec<(HostPhrase, &str)> = vec![
             (HostPhrase::ShutDown, "the plugin has shut down"),
+            (
+                HostPhrase::ShutdownNotNull,
+                "the answer to shutdown is not null",
+            ),
             (
                 HostPhrase::CompleteModelMissing,
                 "a provider/complete request needs a model",

@@ -276,14 +276,19 @@ pub fn review(
             write(out, &text)?;
             Ok(exit::PASS)
         }
-        Err(stopped) => {
-            for notice in &stopped.notices {
-                // A notice that cannot be written must not hide the error that follows it.
-                let _ = writeln!(err_out, "{}", slopvac_report::render_notice(notice));
-            }
-            Err(agents_error(&stopped.error, &root))
-        }
+        Err(stopped) => Err(stopped_error(&stopped, err_out, &root)),
     }
+}
+
+/// The error of a review that stopped, after its notices went to `err_out`. A notice that
+/// cannot be written must not hide the error: the error is what the run reports.
+fn stopped_error(stopped: &review::Stopped, err_out: &mut dyn Write, root: &Path) -> CliError {
+    for notice in &stopped.notices {
+        // A failed write of a notice is harmless here: the error that follows is the outcome,
+        // and the binary reports it whatever the stream does.
+        let _ = writeln!(err_out, "{}", slopvac_report::render_notice(notice));
+    }
+    agents_error(&stopped.error, root)
 }
 
 /// `slopvac claims`. Reads the two named files and nothing else, so it needs no network.
@@ -316,6 +321,39 @@ pub fn claims(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    /// A writer that refuses every write.
+    struct Refusing;
+
+    impl Write for Refusing {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+        }
+    }
+
+    /// A stopped review whose notices cannot be written still reports its own error.
+    #[test]
+    fn a_notice_that_cannot_be_written_leaves_the_review_error() {
+        let notice = slopvac_model::Notice::from_catalog(
+            slopvac_model::NoticeLevel::Warning,
+            slopvac_model::NoticeMessage::new(
+                slopvac_model::KebabName::new("review-model-unchecked").unwrap(),
+                slopvac_model::NonEmptyString::new("a notice").unwrap(),
+            ),
+        );
+        let stopped = review::Stopped {
+            error: AgentsError::new_coded("review-provider-missing", "no provider"),
+            notices: vec![notice],
+        };
+
+        let error = stopped_error(&stopped, &mut Refusing, Path::new("proj"));
+
+        assert_eq!(error.code, "review-provider-missing");
+    }
 
     // Owners report paths relative to the project. With a relative root, each variant shows
     // the root once.

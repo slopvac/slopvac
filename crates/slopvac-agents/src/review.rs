@@ -980,12 +980,17 @@ fn unchecked_notice(
 
 /// Call the provider and return its report, after every gate that keeps it idle: offline
 /// mode, a missing provider and a missing reviewer model. The report is built only once every
-/// answer has passed the check and none failed. A payload with no items calls nothing.
+/// answer has passed the check and none failed. A payload with no items calls nothing, so it
+/// passes every gate: it needs no network, no provider and no model.
 fn call_provider(
     env: &ReviewEnv<'_>,
     plan: &mut Plan,
     sources: &Sources,
 ) -> Result<Option<String>, AgentsError> {
+    // A payload with nothing to send has no request and makes no call.
+    let Some(call) = plan.request.clone() else {
+        return Ok(None);
+    };
     if env.offline {
         // The code has one home, in the `slopvac-update` catalog, with the command as a parameter.
         let message = UpdateMessage::OfflineNetworkNeeded {
@@ -996,10 +1001,6 @@ fn call_provider(
     let provider = env
         .provider
         .ok_or_else(|| AgentsError::coded(&AgentsMessage::ProviderMissing))?;
-    // A payload with nothing to send has no request and makes no call, so it needs no model.
-    let Some(call) = plan.request.clone() else {
-        return Ok(None);
-    };
     let model = call
         .model
         .as_deref()
@@ -1014,23 +1015,16 @@ fn call_provider(
     })?;
     let answers = check_reply(&reply, &items)?;
     refuse_failed_items(&answers, &items)?;
-    // The text and the model a provider reports are plugin-origin text. They are escaped once,
-    // here, for the JSON plan, so the report and the notices carry no live control.
-    let escaped: Vec<(&SentItem, String, String)> = items
+    // The text and the model a provider reports are plugin-origin text. Models are compared and
+    // text is trimmed on the values as sent, and each is escaped once where it enters the plan,
+    // so the report and the notices carry no live control.
+    let answered: Vec<(&SentItem, &str, &str)> = items
         .iter()
         .zip(&answers)
         .filter_map(|(sent, answer)| match answer {
-            Answer::Text { text, model } => Some((
-                sent,
-                slopvac_sanitize::structured(text),
-                slopvac_sanitize::structured(model),
-            )),
+            Answer::Text { text, model } => Some((sent, text.as_str(), model.as_str())),
             Answer::Failed { .. } => None,
         })
-        .collect();
-    let answered: Vec<(&SentItem, &str, &str)> = escaped
-        .iter()
-        .map(|(sent, text, model)| (*sent, text.as_str(), model.as_str()))
         .collect();
     let notices = reported_notices(plan, sources.author, model, model_source, &answered)?;
     plan.notices.extend(notices);
@@ -1038,7 +1032,8 @@ fn call_provider(
 }
 
 /// Group the answers by the model they report, in payload order, and add the notices for a
-/// model that is the author's and for one that is not the requested model.
+/// model that is the author's and for one that is not the requested model. The models are
+/// compared as reported, and a reported model is escaped where a notice shows it.
 fn reported_notices(
     plan: &Plan,
     author_source: &str,
@@ -1061,10 +1056,11 @@ fn reported_notices(
         }
     }
     let mut notices = Vec::new();
-    for (reported, indexes) in groups {
+    for (raw, indexes) in groups {
         let items = item_locations(&plan.payload, &indexes)?;
+        let reported = slopvac_sanitize::structured(&raw);
         if let Some(author) = plan.author_model.as_deref()
-            && compare_models(Some(author), &reported) == ModelCheck::Same
+            && compare_models(Some(author), &raw) == ModelCheck::Same
         {
             notices.push(same_model_notice(
                 author,
@@ -1074,7 +1070,7 @@ fn reported_notices(
                 Some(items.clone()),
             )?);
         }
-        if model_key(requested) != model_key(&reported) {
+        if model_key(requested) != model_key(&raw) {
             let mut data = serde_json::Map::new();
             data.insert("requested".into(), requested.into());
             data.insert("requested_source".into(), requested_source.into());
@@ -1153,8 +1149,8 @@ fn refuse_failed_items(answers: &[&Answer], items: &[SentItem]) -> Result<(), Ag
 
 /// The report: one block per payload item in payload order, whatever order the reply came in.
 /// A block is the item's heading, then a blank line and the answer with its trailing newlines
-/// removed; an empty answer leaves the heading alone. Blocks are separated by a blank line and
-/// the report ends with one newline.
+/// removed and then escaped; an empty answer leaves the heading alone. Blocks are separated by
+/// a blank line and the report ends with one newline.
 fn assemble_report(payload: &Payload, answered: &[(&SentItem, &str, &str)]) -> String {
     let blocks: Vec<String> = answered
         .iter()
@@ -1167,7 +1163,7 @@ fn assemble_report(payload: &Payload, answered: &[(&SentItem, &str, &str)]) -> S
                 line: item.line,
             }
             .to_string();
-            let body = text.trim_end_matches(['\n', '\r']);
+            let body = slopvac_sanitize::structured(text.trim_end_matches(['\n', '\r']));
             Some(if body.is_empty() {
                 heading
             } else {

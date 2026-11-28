@@ -939,6 +939,7 @@ plugins-host-not-object text
 plugins-host-result-or-error text
 plugins-host-rpc-error text
 plugins-host-shut-down text
+plugins-host-shutdown-not-null text
 plugins-host-status-limit text
 plugins-host-status-unknown text
 plugins-host-stderr-cap text
@@ -1149,6 +1150,7 @@ plugins-part-trust-unknown text
 plugins-part-trusted text
 plugins-part-trusted-env text
 plugins-part-untrusted text
+plugins-plugin-text-withheld text
 plugins-process-wait-failed text
 plugins-pyenv-added-after-build text
 plugins-pyenv-bad-package-name text

@@ -33,6 +33,10 @@ enum WithheldText {
     #[code("plugins-detail-withheld")]
     #[text("{code}: details are withheld because they can name paths outside the project")]
     Withheld { code: String },
+    /// Stands in for failure text that the plugin supplied.
+    #[code("plugins-plugin-text-withheld")]
+    #[text("{code}: the plugin's own text is withheld, because it can quote the document")]
+    PluginText { code: String },
 }
 
 /// The registered entry of the withheld sentence, for the group's message registry.
@@ -44,6 +48,14 @@ pub(crate) fn entries() -> &'static [Entry] {
 /// Every withheld text goes through here, so the code always shows beside it.
 pub(crate) fn withheld(code: &str) -> String {
     render(&WithheldText::Withheld {
+        code: code.to_owned(),
+    })
+}
+
+/// The sentence that stands in for a failure text that the plugin supplied, with the code of
+/// the failure beside it.
+pub(crate) fn plugin_text_withheld(code: &str) -> String {
+    render(&WithheldText::PluginText {
         code: code.to_owned(),
     })
 }

@@ -1299,13 +1299,22 @@ impl Plugin {
         // A descendant that left the group is lost to the final walk once its
         // parent exits, so it goes now. No snapshot is kept across the waits.
         shared.group.kill_strays();
-        // A plugin that a failure already ended is not asked.
+        // A plugin that a failure already ended is not asked; that failure is the reason.
         let mut acknowledged = false;
-        if self.conn.dead().is_none() {
-            acknowledged = self
+        let mut refused = self.conn.dead();
+        if refused.is_none() {
+            match self
                 .conn
                 .request::<()>(method::SHUTDOWN, None, self.timeouts.shutdown, false)
-                .is_ok_and(|v| v.is_null());
+            {
+                Ok(v) if v.is_null() => acknowledged = true,
+                Ok(_) => {
+                    refused = Some(PluginError::ProtocolViolation(
+                        HostPhrase::ShutdownNotNull.as_static().to_owned(),
+                    ));
+                }
+                Err(e) => refused = Some(e),
+            }
             if acknowledged {
                 // Before `exit`, so the waiter sees it when the leader leaves.
                 shared.group.acknowledge();
@@ -1341,6 +1350,7 @@ impl Plugin {
             accounting_incomplete: !(stderr_drained && stdout_drained),
             violation,
             acknowledged,
+            refused,
             left,
             status: shared.group.exit_status(),
             teardown: shared.group.teardown(),
@@ -1361,6 +1371,11 @@ pub struct Shutdown {
     /// The plugin answered `shutdown` with `null`, and no failure had ended
     /// it before.
     pub acknowledged: bool,
+    /// Why the plugin did not acknowledge `shutdown`, or `None` when it did: the
+    /// failure that had already ended it, so it was not asked; the error that
+    /// the request ended with, such as an error answer, an exit or a timeout;
+    /// or a protocol violation for an answer that is not `null`.
+    pub refused: Option<PluginError>,
     /// The plugin left on its own, without a kill.
     pub left: bool,
     /// The leader's exit status, or `None` if it was not reaped by the end
