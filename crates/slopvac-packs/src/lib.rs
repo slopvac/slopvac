@@ -35,7 +35,7 @@ pub use problem::{ArtifactFault, RuleFault, RuleProblem};
 pub use source::{DirSource, EmbeddedSource, FileTable, MANIFEST_FILE, PackSource, SourceError};
 #[cfg(feature = "test-support")]
 pub use synced::load_synced_observed;
-pub use synced::{SyncedError, load_synced, load_synced_within};
+pub use synced::{SyncedError, Trust, TrustQuery, load_synced, load_synced_within};
 
 pub use manifest::{
     HookDecl, MANIFEST_SCHEMA_VERSION, Manifest, ManifestError, PackKind, PackPath, PluginRuntime,

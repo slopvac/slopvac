@@ -18,14 +18,31 @@ use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
     ArtifactFault, Budget, Limits, LoadedPack, PackError, Packs, Reference, Source, SourceError,
-    SyncedError, TooLargePart, core_source, load_synced, load_synced_within,
+    SyncedError, TooLargePart, Trust, TrustQuery, core_source, load_synced, load_synced_within,
 };
-use slopvac_plugins::extract::tree_hash;
-use slopvac_plugins::lock::Lockfile;
+use slopvac_plugins::extract::{TreeHash, tree_hash};
+use slopvac_plugins::lock::{Lockfile, PackId as LockPackId};
 use slopvac_plugins::sync::Store;
 use slopvac_rules::PackBudget;
 
 const MIB: usize = 1024 * 1024;
+
+/// A trust store double: the tree hash recorded as trusted for each plugin id. A plugin with
+/// no record is untrusted, and one recorded at another hash changed after trust.
+struct Recorded(Vec<(&'static str, TreeHash)>);
+
+impl TrustQuery for Recorded {
+    fn trust(&self, id: &LockPackId, tree: &TreeHash) -> Trust {
+        match self.0.iter().find(|(known, _)| *known == id.as_str()) {
+            None => Trust::Untrusted,
+            Some((_, hash)) if hash == tree => Trust::Trusted,
+            Some(_) => Trust::Changed,
+        }
+    }
+}
+
+/// No trust recorded for any plugin. A load of data plugins asks for none.
+const NO_TRUST: &Recorded = &Recorded(Vec::new());
 
 /// One pack to install: its manifest values and extra files.
 struct Spec {
@@ -220,7 +237,15 @@ impl World {
     }
 
     fn load(&self, requested: &[&str]) -> Result<Vec<LoadedPack>, SyncedError> {
-        load_synced(&ids(requested), &self.lock(), &self.store())
+        self.load_trusting(requested, NO_TRUST)
+    }
+
+    fn load_trusting(
+        &self,
+        requested: &[&str],
+        trust: &dyn TrustQuery,
+    ) -> Result<Vec<LoadedPack>, SyncedError> {
+        load_synced(&ids(requested), &self.lock(), &self.store(), trust)
     }
 }
 
@@ -324,6 +349,7 @@ fn a_data_plugin_loads_the_rule_file_its_hash_covered_not_the_one_on_disk() {
         &ids(&["acme"]),
         &w.lock(),
         &w.store(),
+        NO_TRUST,
         &mut Budget::default(),
         &mut swap,
     )
@@ -490,7 +516,7 @@ fn a_pack_in_the_store_but_not_in_the_lock_is_not_loaded() {
     w.install(&Spec::new("acme"));
     let lock = Lockfile::parse("schema_version = 3\nplugins = []\n").unwrap();
 
-    let err = load_synced(&ids(&["acme"]), &lock, &w.store()).unwrap_err();
+    let err = load_synced(&ids(&["acme"]), &lock, &w.store(), NO_TRUST).unwrap_err();
 
     assert!(matches!(err, SyncedError::NotLocked { .. }), "{err}");
 }
@@ -657,8 +683,20 @@ fn a_manifest_kind_that_differs_from_its_lock_entry_charges_nothing_to_the_run_b
     // The run budget holds `next` alone, so any charge for `acme` leaves too little for it.
     let mut budget = Budget::new(small(|l| fit(&next, l)));
 
-    let refused = load_synced_within(&ids(&["acme"]), &w.lock(), &w.store(), &mut budget);
-    let loaded = load_synced_within(&ids(&["next"]), &w.lock(), &w.store(), &mut budget);
+    let refused = load_synced_within(
+        &ids(&["acme"]),
+        &w.lock(),
+        &w.store(),
+        NO_TRUST,
+        &mut budget,
+    );
+    let loaded = load_synced_within(
+        &ids(&["next"]),
+        &w.lock(),
+        &w.store(),
+        NO_TRUST,
+        &mut budget,
+    );
 
     assert!(
         matches!(
@@ -668,6 +706,133 @@ fn a_manifest_kind_that_differs_from_its_lock_entry_charges_nothing_to_the_run_b
         "{refused:?}"
     );
     assert_eq!(loaded_ids(&loaded.unwrap()), ["next"]);
+}
+
+/// A code plugin `acme` with one rule for each pattern.
+fn code_plugin(patterns: &[&str]) -> Spec {
+    Spec {
+        kind: "code",
+        locked_kind: "code",
+        ..Spec::new("acme").rules(patterns)
+    }
+}
+
+/// A hash that no installed tree has.
+fn other_hash() -> TreeHash {
+    TreeHash::parse(&format!("sha256:{}", "0".repeat(64))).unwrap()
+}
+
+/// What the trust store records for `acme` in each refusal case.
+fn untrusted_record(trust: Trust) -> Recorded {
+    match trust {
+        Trust::Untrusted => Recorded(Vec::new()),
+        Trust::Changed => Recorded(vec![("acme", other_hash())]),
+        other => panic!("{other:?} is not a refusal"),
+    }
+}
+
+fn refused_for_trust(err: &SyncedError, trust: Trust) -> bool {
+    match (err, trust) {
+        (SyncedError::Untrusted { id }, Trust::Untrusted)
+        | (SyncedError::ChangedAfterTrust { id }, Trust::Changed) => id == "acme",
+        _ => false,
+    }
+}
+
+#[rstest]
+#[case::untrusted(Trust::Untrusted, "plugin-untrusted")]
+#[case::changed_after_trust(Trust::Changed, "plugin-hash-mismatch")]
+fn a_code_plugin_without_trust_for_its_tree_contributes_no_rule(
+    #[case] trust: Trust,
+    #[case] code: &str,
+) {
+    let mut w = World::new();
+    w.install(&code_plugin(&["a"]));
+
+    let err = Packs::with_synced(
+        &ids(&["acme"]),
+        &w.lock(),
+        &w.store(),
+        &untrusted_record(trust),
+        &[],
+    )
+    .unwrap_err();
+
+    assert!(refused_for_trust(&err, trust), "{err:?}");
+    assert_eq!(err.code(), Some(code));
+}
+
+#[rstest]
+#[case::untrusted(Trust::Untrusted)]
+#[case::changed_after_trust(Trust::Changed)]
+fn a_code_plugin_without_trust_is_refused_before_any_file_compiles(#[case] trust: Trust) {
+    // The pattern does not compile. A load that compiled the files first would report that.
+    let mut w = World::new();
+    w.install(&code_plugin(&["("]));
+
+    let err = w
+        .load_trusting(&["acme"], &untrusted_record(trust))
+        .unwrap_err();
+
+    assert!(refused_for_trust(&err, trust), "{err:?}");
+}
+
+#[rstest]
+#[case::untrusted_rules(Trust::Untrusted, |_: &Spec, l: &mut Limits| l.run_rules = 1)]
+#[case::untrusted_bytes(Trust::Untrusted, |next: &Spec, l: &mut Limits| l.run_bytes = bytes_of(next))]
+#[case::changed_rules(Trust::Changed, |_: &Spec, l: &mut Limits| l.run_rules = 1)]
+#[case::changed_bytes(Trust::Changed, |next: &Spec, l: &mut Limits| l.run_bytes = bytes_of(next))]
+fn a_code_plugin_without_trust_charges_nothing_to_the_run_budget(
+    #[case] trust: Trust,
+    #[case] fit: fn(&Spec, &mut Limits),
+) {
+    let mut w = World::new();
+    w.install(&code_plugin(&["a"]));
+    let next = Spec::new("next").rules(&["b"]);
+    w.install(&next);
+    let record = untrusted_record(trust);
+    // The run budget holds `next` alone, so any charge for `acme` leaves too little for it.
+    let mut budget = Budget::new(small(|l| fit(&next, l)));
+
+    let refused = load_synced_within(&ids(&["acme"]), &w.lock(), &w.store(), &record, &mut budget);
+    let loaded = load_synced_within(&ids(&["next"]), &w.lock(), &w.store(), &record, &mut budget);
+
+    let err = refused.unwrap_err();
+    assert!(refused_for_trust(&err, trust), "{err:?}");
+    assert_eq!(loaded_ids(&loaded.unwrap()), ["next"]);
+}
+
+#[test]
+fn a_code_plugin_trusted_at_its_tree_hash_loads_its_rules() {
+    let mut w = World::new();
+    let tree = w.install(&code_plugin(&["a", "b"]));
+    let record = Recorded(vec![("acme", tree_hash(&tree).unwrap())]);
+
+    let sets = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &record, &[])
+        .unwrap()
+        .into_rule_sets();
+
+    let got: Vec<(String, usize)> = sets[1..]
+        .iter()
+        .map(|s| (s.pack().to_string(), s.rules().count()))
+        .collect();
+    assert_eq!(got, [("acme".to_owned(), 2)]);
+}
+
+#[test]
+fn a_data_plugin_loads_with_no_trust_recorded() {
+    let mut w = World::new();
+    w.install(&Spec::new("acme").rules(&["a"]));
+
+    let sets = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[])
+        .unwrap()
+        .into_rule_sets();
+
+    let got: Vec<(String, usize)> = sets[1..]
+        .iter()
+        .map(|s| (s.pack().to_string(), s.rules().count()))
+        .collect();
+    assert_eq!(got, [("acme".to_owned(), 1)]);
 }
 
 #[test]
@@ -698,7 +863,7 @@ fn a_synced_plugin_registers_its_taggers_after_the_core_ones() {
     ));
     w.install(&spec);
 
-    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap();
 
     let ids: Vec<&str> = packs.taggers().map(|t| t.id.as_str()).collect();
     assert_eq!(ids.len(), Packs::core().unwrap().taggers().count() + 1);
@@ -721,7 +886,7 @@ fn a_synced_tagger_over_the_pattern_cap_is_refused() {
     ));
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert_eq!(err.code(), Some("tagger-pattern-too-long"), "{err}");
     assert!(
@@ -735,7 +900,7 @@ fn a_synced_tagger_over_the_pattern_cap_is_refused() {
 fn a_bare_genre_name_that_a_synced_pack_shares_with_the_core_is_ambiguous() {
     let mut w = World::new();
     w.install(&Spec::new("acme").genre("consumer", "profile: strict\n"));
-    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap();
     let at = Reference::new("docs/config.toml", 4, 9);
 
     let err = packs.resolve_genre("consumer", &at).unwrap_err();
@@ -756,7 +921,7 @@ fn a_bare_genre_name_that_a_synced_pack_shares_with_the_core_is_ambiguous() {
 fn a_qualified_genre_name_resolves_to_the_pack_that_supplies_it() {
     let mut w = World::new();
     w.install(&Spec::new("acme").genre("consumer", "profile: strict\n"));
-    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap();
     let at = Reference::new("docs/config.toml", 4, 9);
 
     let (spec, from) = packs.resolve_genre("acme:consumer", &at).unwrap();
@@ -776,7 +941,7 @@ fn a_qualified_genre_name_resolves_to_the_pack_that_supplies_it() {
 fn a_bare_genre_name_only_a_synced_pack_defines_resolves() {
     let mut w = World::new();
     w.install(&Spec::new("acme").genre("memo", ""));
-    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap();
 
     let (_, from) = packs
         .resolve_genre("memo", &Reference::new("c.toml", 1, 1))
@@ -848,7 +1013,7 @@ fn base_then_unread_top(base: &Spec) -> World {
 
 fn run_error(w: &World, limits: Limits) -> PackError {
     let mut budget = Budget::new(limits);
-    match load_synced_within(&ids(&["top"]), &w.lock(), &w.store(), &mut budget) {
+    match load_synced_within(&ids(&["top"]), &w.lock(), &w.store(), NO_TRUST, &mut budget) {
         Err(SyncedError::Pack(e)) => e,
         other => panic!("{other:?}"),
     }
@@ -942,6 +1107,7 @@ fn the_core_pack_counts_toward_the_run_budget() {
         &ids(&["acme"]),
         &w.lock(),
         &w.store(),
+        NO_TRUST,
         small(|l| l.run_rules = 1),
         &[],
     )
@@ -970,7 +1136,7 @@ fn registering_packs_applies_the_same_budgets_as_loading_them(
     let mut w = World::new();
     w.install(&Spec::new("acme").rules(&["abcdef", "ghi"]));
     // Loaded under the default limits, then registered under small ones.
-    let packs = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+    let packs = load_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST).unwrap();
 
     let err = Packs::new_within(packs, small(set), &[]).unwrap_err();
 
@@ -1136,6 +1302,8 @@ fn a_budget_refusal_exposes_its_budget_name_and_limit(
 #[case::mismatch(SyncedError::ManifestMismatch { id: "a".into(), field: "id" }, Some("plugin-manifest-mismatch"))]
 #[case::cycle(SyncedError::RequiresCycle { cycle: vec!["a".into(), "a".into()] }, Some("plugin-requires-cycle"))]
 #[case::unmet(SyncedError::RequirementUnmet { id: "a".into(), needs: "b".into(), requirement: ">=1".into() }, Some("plugin-requirement-unmet"))]
+#[case::untrusted(SyncedError::Untrusted { id: "a".into() }, Some("plugin-untrusted"))]
+#[case::changed_after_trust(SyncedError::ChangedAfterTrust { id: "a".into() }, Some("plugin-hash-mismatch"))]
 fn every_error_reports_its_catalog_code(#[case] error: SyncedError, #[case] code: Option<&str>) {
     assert_eq!(error.code(), code);
 }
@@ -1160,7 +1328,7 @@ fn owned_rule_sets_list_the_core_first_then_each_plugin_in_load_order() {
     w.install(&Spec::new("base").rules(&["a"]));
     w.install(&Spec::new("top").requires("base").rules(&["b", "c"]));
 
-    let sets = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store(), &[])
+    let sets = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store(), NO_TRUST, &[])
         .unwrap()
         .into_rule_sets();
 
@@ -1181,7 +1349,7 @@ fn a_synced_tagger_that_takes_a_core_tagger_id_is_refused() {
         &format!("schema_version: 3\nid: {id}\ntag: acme-tag\nmatch:\n  - pattern: 'a'\n"),
     ));
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
 }
@@ -1195,7 +1363,7 @@ fn a_synced_tagger_that_emits_a_core_tag_is_refused() {
         &format!("schema_version: 3\nid: acme-t\ntag: {tag}\nmatch:\n  - pattern: 'a'\n"),
     ));
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
 }
@@ -1289,7 +1457,7 @@ fn a_synced_plugin_tagger_is_checked_against_the_contexts_a_config_declares(
         &format!("schema_version: 3\nid: acme-t\ntag: {tag}\nmatch:\n  - pattern: 'a'\n"),
     ));
 
-    let synced = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &reserved);
+    let synced = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &reserved);
 
     match (refused, synced) {
         (false, Ok(_)) => {}
@@ -1373,7 +1541,7 @@ fn plugin_with_style_of(len: usize, utf8: bool) -> World {
 fn a_plugin_style_of_exactly_one_mebibyte_loads() {
     let w = plugin_with_style_of(MIB, true);
 
-    let loaded = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]);
+    let loaded = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]);
 
     assert!(loaded.is_ok(), "{:?}", loaded.err());
 }
@@ -1391,7 +1559,7 @@ fn a_plugin_style_over_one_mebibyte_is_refused_as_too_large(
 ) {
     let w = plugin_with_style_of(len, utf8);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     let SyncedError::Pack(PackError::Source(SourceError::StyleTooLarge { style, cap })) = &err
     else {
@@ -1414,7 +1582,7 @@ fn a_one_and_a_half_mebibyte_category_still_loads() {
     let mut w = World::new();
     w.install(&spec);
 
-    let loaded = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]);
+    let loaded = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]);
 
     assert!(loaded.is_ok(), "{:?}", loaded.err());
 }
@@ -1430,7 +1598,7 @@ fn an_oversized_category_that_is_not_utf8_is_refused_as_too_large() {
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     let SyncedError::Pack(PackError::Source(SourceError::TooLarge { cap })) = &err else {
         panic!("{err:?}");
@@ -1447,7 +1615,7 @@ fn two_plugins_that_share_a_bare_rule_id_both_load() {
     w.install(&Spec::new("base").rules(&["a"]));
     w.install(&Spec::new("top").requires("base").rules(&["b"]));
 
-    let packs = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store(), &[]).unwrap();
+    let packs = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap();
 
     let ids: Vec<String> = packs
         .rule_sets()
@@ -1488,7 +1656,7 @@ fn a_plugin_rule_with_a_core_rule_id_is_refused_with_its_own_code() {
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
     assert_eq!(
@@ -1523,7 +1691,7 @@ fn a_plugin_category_that_shares_an_id_with_a_core_category_loads_beside_it() {
     let mut w = World::new();
     w.install(&spec);
 
-    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap();
 
     let shared: Vec<(String, String)> = packs
         .rule_sets()
@@ -1586,7 +1754,7 @@ fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_for_the_rule_
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert!(
         matches!(
@@ -1608,9 +1776,9 @@ fn a_core_clash_is_reported_before_a_repeated_plugin_listed_ahead_of_it() {
     w.install(&Spec::new("acme").rules(&["a"]));
     let (clash, local) = colliding_with_core_as("other");
     w.install(&clash);
-    let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
-    loaded.extend(load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap());
-    loaded.extend(load_synced(&ids(&["other"]), &w.lock(), &w.store()).unwrap());
+    let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST).unwrap();
+    loaded.extend(load_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST).unwrap());
+    loaded.extend(load_synced(&ids(&["other"]), &w.lock(), &w.store(), NO_TRUST).unwrap());
     loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
 
     let err = Packs::new(loaded, &[]).unwrap_err();
@@ -1664,7 +1832,7 @@ fn two_core_clashes_in_one_plugin_name_the_lowest_rule_in_either_order(#[case] l
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST, &[]).unwrap_err();
 
     assert!(
         matches!(
@@ -1706,7 +1874,7 @@ fn core_clashes_across_plugins_name_the_lowest_qualified_id_in_any_order(#[case]
     let mut loaded = Vec::new();
     for &i in order {
         let name = ["alpha", "beta", "gamma"][i];
-        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store(), NO_TRUST).unwrap());
     }
     loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
 
@@ -1734,7 +1902,7 @@ fn duplicate_ids_name_the_lowest_qualified_id_in_any_order(#[case] order: &[&'st
     w.install(&Spec::new("beta").rules(&["a", "b"]));
     let mut loaded = Vec::new();
     for name in order {
-        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store(), NO_TRUST).unwrap());
     }
 
     let err = Packs::new(loaded, &[]).unwrap_err();
@@ -1769,7 +1937,7 @@ fn core_clashes_of_a_prefix_plugin_pair_follow_byte_order_of_the_whole_id(
     w.install(&extra);
     let mut loaded = Vec::new();
     for name in order {
-        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store(), NO_TRUST).unwrap());
     }
     loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
 
@@ -1796,7 +1964,7 @@ fn duplicates_of_a_prefix_plugin_pair_follow_byte_order_of_the_whole_id(
     w.install(&Spec::new("acme-extra").rules(&["a"]));
     let mut loaded = Vec::new();
     for name in order {
-        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
+        loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store(), NO_TRUST).unwrap());
     }
 
     let err = Packs::new(loaded, &[]).unwrap_err();
@@ -1815,8 +1983,8 @@ fn duplicates_of_a_prefix_plugin_pair_follow_byte_order_of_the_whole_id(
 fn the_same_qualified_rule_id_supplied_twice_is_refused() {
     let mut w = World::new();
     w.install(&Spec::new("acme").rules(&["a"]));
-    let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
-    loaded.extend(load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap());
+    let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST).unwrap();
+    loaded.extend(load_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST).unwrap());
 
     let err = Packs::new(loaded, &[]).unwrap_err();
 
@@ -1829,7 +1997,7 @@ fn a_plugin_listed_before_the_core_is_still_checked_against_the_core_ids() {
     let (spec, _) = colliding_with_core();
     let mut w = World::new();
     w.install(&spec);
-    let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+    let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST).unwrap();
     loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
 
     let err = Packs::new(loaded, &[]).unwrap_err();
@@ -1877,7 +2045,7 @@ fn a_rule_with_4097_tokens_is_refused_with_the_rule_entries_budget() {
     let mut w = World::new();
     w.install(&spec);
 
-    let err = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+    let err = load_synced(&ids(&["acme"]), &w.lock(), &w.store(), NO_TRUST).unwrap_err();
 
     assert_eq!(err.code(), Some("rules-budget-exceeded"), "{err}");
     assert_eq!(err.budget(), Some((PackBudget::RuleEntries, 4096)), "{err}");
@@ -2035,7 +2203,7 @@ fn a_forged_record_and_a_swapped_tree_do_not_load_a_data_plugin() {
     ))
     .unwrap();
 
-    let err = load_synced(&ids(&["acme"]), &lock, &w.store()).unwrap_err();
+    let err = load_synced(&ids(&["acme"]), &lock, &w.store(), NO_TRUST).unwrap_err();
 
     assert!(matches!(err, SyncedError::Tampered { .. }), "{err}");
     assert_eq!(err.code(), Some("plugin-tampered"));

@@ -14,7 +14,10 @@ use semver::Version;
 use slopvac_model::{ApiVersion, PackId};
 #[cfg(feature = "test-support")]
 use slopvac_plugins::extract::tree_hash_capturing_files_observed;
-use slopvac_plugins::extract::{ExtractError, Limits as ExtractLimits, tree_hash_capturing_files};
+use slopvac_plugins::PluginError;
+use slopvac_plugins::extract::{
+    ExtractError, Limits as ExtractLimits, TreeHash, tree_hash_capturing_files,
+};
 use slopvac_plugins::lock::{LockedPack, Lockfile, PackId as LockPackId, PackKind as LockKind};
 use slopvac_plugins::sign::RESERVED_ID;
 use slopvac_plugins::sync::{Store, SyncError};
@@ -107,6 +110,39 @@ pub enum SyncedError {
         /// The version requirement.
         requirement: String,
     },
+    /// A code plugin has no recorded trust, so none of its files load. The run exits 2.
+    #[error("{}", PluginError::Untrusted(String::from(.id)))]
+    Untrusted {
+        /// The plugin id.
+        id: String,
+    },
+    /// A code plugin's tree differs from the one that was trusted, so none of its files load.
+    /// The run exits 2.
+    #[error("{}", PluginError::HashMismatch(String::from(.id)))]
+    ChangedAfterTrust {
+        /// The plugin id.
+        id: String,
+    },
+}
+
+/// The trust state of a code plugin's installed tree, as the caller's trust store records it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Trust {
+    /// Trust is recorded for this plugin at this tree hash.
+    Trusted,
+    /// No trust is recorded for this plugin.
+    Untrusted,
+    /// Trust is recorded for this plugin at another tree hash: its files changed after trust.
+    Changed,
+}
+
+/// Answers the trust state of each code plugin that a load reaches. A load asks only about
+/// code plugins, after it has verified the tree against the lock, and passes the hash it
+/// verified. A data plugin needs no answer.
+pub trait TrustQuery {
+    /// The trust state of plugin `id`, whose installed tree hashes to `tree`.
+    fn trust(&self, id: &LockPackId, tree: &TreeHash) -> Trust;
 }
 
 impl SyncedError {
@@ -142,8 +178,22 @@ impl SyncedError {
                     requirement
                 })
             }
+            Self::Untrusted { id } => return host_code(&PluginError::Untrusted(id.clone())),
+            Self::ChangedAfterTrust { id } => {
+                return host_code(&PluginError::HashMismatch(id.clone()));
+            }
         })
     }
+}
+
+/// The code of a plugin host refusal, read from the host's message catalog, so the trust
+/// refusals of a load report the same code as the host's and no code is written twice.
+fn host_code(refusal: &PluginError) -> Option<&'static str> {
+    let code = refusal.slopvac_code();
+    slopvac_plugins::message_entries()
+        .iter()
+        .map(|entry| entry.code)
+        .find(|known| *known == code)
 }
 
 /// The highest extension API this build implements.
@@ -257,8 +307,9 @@ pub fn load_synced(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
+    trust: &dyn TrustQuery,
 ) -> Result<Vec<LoadedPack>, SyncedError> {
-    load_synced_within(requested, lock, store, &mut Budget::default())
+    load_synced_within(requested, lock, store, trust, &mut Budget::default())
 }
 
 /// Like [`load_synced`], and charges `budget` as each pack loads: file bytes as they are read,
@@ -277,12 +328,14 @@ pub fn load_synced_within(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
+    trust: &dyn TrustQuery,
     budget: &mut Budget,
 ) -> Result<Vec<LoadedPack>, SyncedError> {
     load_inner(
         requested,
         lock,
         store,
+        trust,
         budget,
         #[cfg(feature = "test-support")]
         None,
@@ -301,16 +354,19 @@ pub fn load_synced_observed(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
+    trust: &dyn TrustQuery,
     budget: &mut Budget,
     after_hash: &mut dyn FnMut(&str, &Path),
 ) -> Result<Vec<LoadedPack>, SyncedError> {
-    load_inner(requested, lock, store, budget, Some(after_hash))
+    load_inner(requested, lock, store, trust, budget, Some(after_hash))
 }
 
 fn load_inner(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
+    #[expect(unused_variables, reason = "wip: the trust check lands in the next commit")]
+    trust: &dyn TrustQuery,
     budget: &mut Budget,
     #[cfg(feature = "test-support")] mut after_hash: Option<HashObserver<'_>>,
 ) -> Result<Vec<LoadedPack>, SyncedError> {
@@ -403,9 +459,10 @@ impl Packs {
         requested: &[PackId],
         lock: &Lockfile,
         store: &Store,
+        trust: &dyn TrustQuery,
         reserved: &[String],
     ) -> Result<Self, SyncedError> {
-        Self::with_synced_within(requested, lock, store, Limits::default(), reserved)
+        Self::with_synced_within(requested, lock, store, trust, Limits::default(), reserved)
     }
 
     /// Like [`Packs::with_synced`], under `limits` for the run. The core pack counts toward the
@@ -417,6 +474,7 @@ impl Packs {
         requested: &[PackId],
         lock: &Lockfile,
         store: &Store,
+        trust: &dyn TrustQuery,
         limits: Limits,
         reserved: &[String],
     ) -> Result<Self, SyncedError> {
@@ -426,7 +484,13 @@ impl Packs {
             Source::Core,
             &mut budget,
         )?];
-        packs.extend(load_synced_within(requested, lock, store, &mut budget)?);
+        packs.extend(load_synced_within(
+            requested,
+            lock,
+            store,
+            trust,
+            &mut budget,
+        )?);
         Ok(Self::new_within(packs, limits, reserved)?)
     }
 }
