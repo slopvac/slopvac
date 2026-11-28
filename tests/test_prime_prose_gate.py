@@ -12,6 +12,7 @@ The script is the CI gate for the guidance text. These tests pin what it must do
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -72,7 +73,12 @@ def stand_in(tmp_path: Path, *, real: Path | None = None, lint_exit: int = 0) ->
     if real is not None:
         prime = lint = f'exec "{real}" "$@"'
     else:
-        prime = 'echo "# Prime: stand-in"; exit 0'
+        # RACE_FILE lets a test create a file at the moment `prime` runs, to stand in for
+        # another process that writes into the output directory during the run.
+        prime = (
+            'if [ -n "$RACE_FILE" ] && [ ! -e "$RACE_FILE" ]; then '
+            'echo mine > "$RACE_FILE"; fi; echo "# Prime: stand-in"; exit 0'
+        )
         lint = f"exit {lint_exit}"
     script = tmp_path / "slopvac"
     script.write_text(
@@ -92,12 +98,15 @@ def linted(tmp_path: Path) -> list[str]:
     return [Path(arg).name for arg in argv[1:]]
 
 
-def run_gate(binary: Path, out: Path) -> subprocess.CompletedProcess[str]:
+def run_gate(
+    binary: Path, out: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(SCRIPT), str(binary), str(CONFIG), str(out)],
         capture_output=True,
         text=True,
         check=False,
+        env={**os.environ, **(env or {})},
     )
 
 
@@ -107,12 +116,20 @@ def test_every_condition_in_a_topic_is_a_branch_the_gate_knows(topic):
     assert conditions_of(text) == set(CONDITIONS[topic])
 
 
-def test_the_conditions_helper_sees_a_new_condition_on_a_known_variable():
-    text = (TOPICS / "review.md.j2").read_text(encoding="utf-8")
-    added = text + '{% if review_type == "rewrite" %}\nx\n{% endif %}\n'
-    assert conditions_of(added) - set(CONDITIONS["review.md.j2"]) == {
-        'review_type == "rewrite"'
-    }
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('{% if level == "full" %}x{% endif %}', {'level == "full"'}),
+        # A condition that wraps over lines is one condition.
+        (
+            '{% if review_type == "update"\n   and review_depth == "self" %}x{% endif %}',
+            {'review_type == "update" and review_depth == "self"'},
+        ),
+        ('{%- elif\n  level != "minimal" -%}', {'level != "minimal"'}),
+    ],
+)
+def test_conditions_are_read_whether_or_not_they_wrap_over_lines(text, expected):
+    assert conditions_of(text) == expected
 
 
 def test_lint_receives_every_rendered_file_and_no_other(tmp_path):
@@ -160,14 +177,73 @@ def test_the_gate_fails_on_every_nonzero_lint_exit(tmp_path, code):
     assert run_gate(gate, tmp_path / "out").returncode == code
 
 
+REFUSED = 2  # the exit code for an output path the script will not use
+
+
 def test_a_non_empty_output_directory_is_refused_and_left_alone(tmp_path):
     gate = stand_in(tmp_path)
     out = tmp_path / "keep"
     out.mkdir()
     (out / "mine.txt").write_text("keep", encoding="utf-8")
-    assert run_gate(gate, out).returncode != 0
+    assert run_gate(gate, out).returncode == REFUSED
     assert (out / "mine.txt").read_text(encoding="utf-8") == "keep"
     assert not (tmp_path / "lint-argv").exists()
+
+
+def test_a_regular_file_as_the_output_path_is_refused_and_left_alone(tmp_path):
+    gate = stand_in(tmp_path)
+    out = tmp_path / "file"
+    out.write_text("keep", encoding="utf-8")
+    assert run_gate(gate, out).returncode == REFUSED
+    assert out.read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads any directory, so none is unreadable")
+def test_an_unreadable_output_directory_is_refused_and_its_files_survive(tmp_path):
+    gate = stand_in(tmp_path)
+    out = tmp_path / "unreadable"
+    out.mkdir()
+    # A file with the name of a render: a run that got past the guard would truncate it.
+    victim = out / "write-minimal.md"
+    victim.write_text("keep", encoding="utf-8")
+    out.chmod(0o300)  # write and search, but no read: `ls` fails, writes still work
+    try:
+        assert run_gate(gate, out).returncode == REFUSED
+    finally:
+        out.chmod(0o700)
+    assert victim.read_text(encoding="utf-8") == "keep"
+    assert not (tmp_path / "lint-argv").exists()
+
+
+def test_a_dangling_symlink_as_the_output_path_is_refused_and_not_followed(tmp_path):
+    gate = stand_in(tmp_path)
+    target = tmp_path / "nowhere"
+    out = tmp_path / "link"
+    out.symlink_to(target)
+    assert run_gate(gate, out).returncode == REFUSED
+    assert not target.exists()
+    assert out.is_symlink()
+
+
+def test_a_symlink_to_a_directory_is_refused_and_the_directory_stays_empty(tmp_path):
+    gate = stand_in(tmp_path)
+    real = tmp_path / "real"
+    real.mkdir()
+    out = tmp_path / "link"
+    out.symlink_to(real, target_is_directory=True)
+    assert run_gate(gate, out).returncode == REFUSED
+    assert list(real.iterdir()) == []
+
+
+def test_a_file_that_appears_in_the_output_directory_during_the_run_is_not_truncated(
+    tmp_path,
+):
+    gate = stand_in(tmp_path)
+    out = tmp_path / "out"
+    racer = out / "review-update-self.md"
+    result = run_gate(gate, out, {"RACE_FILE": str(racer)})
+    assert result.returncode == 1
+    assert racer.read_text(encoding="utf-8") == "mine\n"
 
 
 @pytest.mark.parametrize("make_dir", [False, True])
