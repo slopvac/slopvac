@@ -136,6 +136,8 @@ package:
   - 'packages/slopvac-lint/vale/styles-verified/**'
   - 'packages/slopvac-lint/docs/rules.md'
   - 'scripts/install_vale.py'
+  # The CLI E2E job lints the guidance text that this crate renders.
+  - 'crates/slopvac-agents/**'
 
 # The composite action at the repository root, run with the binary built from
 # this checkout.

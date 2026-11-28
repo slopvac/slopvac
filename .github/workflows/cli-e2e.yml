@@ -388,6 +388,37 @@ jobs:
           assert report['documents'][0]['unchecked']
           PY
 
+      # The steps above run the 2.x wheel. The 3.x guidance text lives in the Rust crates,
+      # so this gate builds the 3.x binary and lints what `prime write` and `prime review`
+      # print. The repository slopvac.toml is a 2.x file, so the run uses the 3.x fixture.
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: cli-e2e-prime
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Gate the rendered prime guidance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked -p slopvac
+          bin="$PWD/target/debug/slopvac"
+          work="$RUNNER_TEMP/prime-prose"
+          rm -rf "$work"
+          mkdir -p "$work"
+          cp .github/action-fixtures/slopvac-v3.toml "$work/slopvac.toml"
+          cd "$work"
+          "$bin" prime write > write.md
+          "$bin" prime review > review-auto.md
+          for type in mechanical update rewrite; do
+            "$bin" prime review --type "$type" > "review-$type.md"
+          done
+          # Exit 1 is a failed gate and exit 2 is an incomplete run; both fail the step.
+          "$bin" lint write.md review-auto.md review-mechanical.md review-update.md review-rewrite.md
+
   smoke:
     if: ${{ github.event_name == 'workflow_dispatch' || inputs.package || inputs.docs }}
     runs-on: ubuntu-26.04
