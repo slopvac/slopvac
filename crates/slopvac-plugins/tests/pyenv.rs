@@ -2066,7 +2066,11 @@ mod unix_only {
     #[case::dangling_at_open(Place::Missing, Place::Root, "<external>/python-other")]
     #[case::resolved_at_open(Place::Project, Place::Root, "<external>/python-other")]
     #[case::holding_the_interpreter_at_open(Place::Root, Place::Project, "interp/python-other")]
-    #[case::holding_the_interpreter_then_dangling(Place::Root, Place::Missing, "interp/python-other")]
+    #[case::holding_the_interpreter_then_dangling(
+        Place::Root,
+        Place::Missing,
+        "interp/python-other"
+    )]
     fn the_alias_is_resolved_when_the_store_opens_not_when_it_loads(
         #[case] at_open: Place,
         #[case] at_load: Place,
