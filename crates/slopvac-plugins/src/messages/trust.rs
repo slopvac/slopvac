@@ -378,6 +378,10 @@ pub(crate) enum TrustPhrase {
     #[code("plugins-trust-phrase-secure-dir")]
     #[text("securing the trust directory")]
     SecureDir,
+    /// The operation of resolving the verified tree to its canonical path.
+    #[code("plugins-trust-phrase-resolve-tree")]
+    #[text("resolving the plugin tree")]
+    ResolveTree,
     /// The operation of securing the store file.
     #[code("plugins-trust-phrase-secure-file")]
     #[text("securing the trust file")]
@@ -1636,6 +1640,7 @@ mod tests {
             (TrustPhrase::SyncStore, "syncing the trust store"),
             (TrustPhrase::ReplaceStore, "replacing the trust store"),
             (TrustPhrase::SecureDir, "securing the trust directory"),
+            (TrustPhrase::ResolveTree, "resolving the plugin tree"),
             (TrustPhrase::SecureFile, "securing the trust file"),
             (TrustPhrase::TempKey, "creating a temporary trust key file"),
             (TrustPhrase::WriteKey, "writing the trust key"),

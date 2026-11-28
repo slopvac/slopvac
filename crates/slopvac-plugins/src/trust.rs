@@ -7,11 +7,11 @@
 //! directory. A file with the same name in a project is never read.
 //!
 //! The trust hash covers everything that can execute or change what executes
-//! (threat model section 5.4): the verified tree hash, the declaration, the
-//! program and its arguments, the environment names and values and the `PATH`
-//! passed to the plugin, the manifest digest and the publisher key, plus the
-//! interpreter identity and environment listing of a managed Python
-//! environment ([`crate::pyenv`]). Any change revokes trust.
+//! (threat model section 5.4): the verified tree hash and the tree's canonical
+//! location, the declaration, the program and its arguments, the environment
+//! names and values and the `PATH` passed to the plugin, the manifest digest
+//! and the publisher key, plus the interpreter identity and environment listing
+//! of a managed Python environment ([`crate::pyenv`]). Any change revokes trust.
 //!
 //! Environment values enter the hash only as HMAC-SHA256 commitments under a
 //! per-user key kept in the store (see [`TrustKey`]), so a credential in a
@@ -174,6 +174,9 @@ pub struct TrustInputs<'a> {
     pub name: &'a str,
     /// Hash of the verified, extracted tree.
     pub tree: &'a TreeHash,
+    /// The canonical path of that tree, which is the plugin's working directory. The same
+    /// tree at another location is another trust hash.
+    pub location: &'a str,
     /// The declaration from the trusted manifest.
     pub declaration: &'a PluginDeclaration,
     /// The tagged program identity: `tree:<relative path>` or `external:<absolute path>`.
@@ -210,9 +213,10 @@ pub fn trust_hash(i: &TrustInputs<'_>, key: &TrustKey) -> Digest {
         .collect();
     env.sort_unstable();
     let doc = json!({
-        "v": 2,
+        "v": 3,
         "name": i.name,
         "tree": i.tree.as_str(),
+        "location": i.location,
         "declaration": serde_json::to_value(i.declaration).expect("declaration serialises"),
         "program": i.program,
         "args": i.args,
@@ -819,6 +823,17 @@ fn program_id(
     Ok(format!("tree:{}", parts.join("/")))
 }
 
+/// The canonical path of the verified tree, as the trust hash records it. A path that does not
+/// resolve, or is not UTF-8, fails closed.
+fn canonical_location(root: &Path) -> Result<String, TrustError> {
+    let what = TrustPhrase::ResolveTree.as_static();
+    fs::canonicalize(root)
+        .map_err(io_err(what))?
+        .into_os_string()
+        .into_string()
+        .map_err(|_| io_err(what)(io::ErrorKind::InvalidData.into()))
+}
+
 fn hash_for(
     vp: &VerifiedPlugin,
     spec: &PluginSpec,
@@ -827,6 +842,7 @@ fn hash_for(
     key: &TrustKey,
 ) -> Result<Digest, TrustError> {
     check_environment(spec)?;
+    let location = canonical_location(&vp.root)?;
     let (program, interpreter, environment) = match python {
         None => (program_id(&vp.root, &spec.program, external)?, None, None),
         Some(env) => {
@@ -852,6 +868,7 @@ fn hash_for(
         &TrustInputs {
             name: &vp.name,
             tree: &vp.tree,
+            location: &location,
             declaration: &spec.declaration,
             program: &program,
             args: &spec.args,

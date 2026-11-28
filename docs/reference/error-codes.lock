@@ -1472,6 +1472,7 @@ plugins-trust-phrase-open-lock text
 plugins-trust-phrase-path-empty text
 plugins-trust-phrase-python-flags text
 plugins-trust-phrase-replace-store text
+plugins-trust-phrase-resolve-tree text
 plugins-trust-phrase-secure-dir text
 plugins-trust-phrase-secure-file text
 plugins-trust-phrase-store-over-cap text

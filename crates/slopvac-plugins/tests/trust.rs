@@ -393,6 +393,36 @@ fn a_plugin_that_runs_from_somewhere_else_is_refused() {
 }
 
 #[test]
+fn a_trust_record_does_not_cover_the_same_tree_at_another_location() {
+    let s = Scratch::new("moved");
+    let vp = install(&s, "1.0.0", "");
+    let spec = spec_for(&vp, decl());
+    trust(&gate(&s, &vp), &vp, &spec);
+
+    let archive = targz(&[
+        ("plugin.py", PLUGIN_PY.as_bytes()),
+        ("VERSION", b"1.0.0"),
+        ("extra", b""),
+    ]);
+    let out = extract_targz(
+        archive.as_slice(),
+        &s.dir("elsewhere"),
+        &HashSet::new(),
+        Limits::default(),
+    )
+    .unwrap();
+    assert_eq!(out.hash, vp.tree, "the same tree");
+    assert_ne!(out.root, vp.root, "at another location");
+    let moved = VerifiedPlugin {
+        root: out.root,
+        ..vp.clone()
+    };
+    let moved_spec = spec_for(&moved, decl());
+    let err = gate(&s, &moved).check(&moved_spec).unwrap_err();
+    assert!(matches!(err, PluginError::Untrusted(_)), "{err:?}");
+}
+
+#[test]
 fn changed_arguments_or_program_need_new_trust() {
     let s = Scratch::new("args");
     let vp = install(&s, "1.0.0", "");
@@ -527,6 +557,7 @@ fn tm6_the_hash_carries_a_kind_tag_and_the_tree_relative_path() {
             &TrustInputs {
                 name: &vp.name,
                 tree: &vp.tree,
+                location: fs::canonicalize(&vp.root).unwrap().to_str().unwrap(),
                 declaration: &spec.declaration,
                 program,
                 args: &spec.args,
@@ -690,6 +721,7 @@ fn every_trust_input_changes_the_hash() {
     let base = TrustInputs {
         name: "p",
         tree: &tree1,
+        location: "/data/trees/tree-1",
         declaration: &d,
         program: "tree:run",
         args: &args,
@@ -710,6 +742,10 @@ fn every_trust_input_changes_the_hash() {
         },
         TrustInputs {
             tree: &tree2,
+            ..base.clone()
+        },
+        TrustInputs {
+            location: "/elsewhere/trees/tree-1",
             ..base.clone()
         },
         TrustInputs {
@@ -781,8 +817,8 @@ fn the_trust_hash_matches_an_independently_derived_vector() {
     // "hooks":[{"id":"main","kind":"tagger"}],"network":false},
     // "env":[["A","b7b8edb0...fb884a"],["B","7f6614d5...23ad7a"]],
     // "environment":null,"interpreter":null,
-    // "key":"fp","manifest":"sha256:<64 x a>","name":"p","path":"/usr/bin:/bin",
-    // "program":"tree:bin/run","tree":"sha256:<64 x 1>","v":2}
+    // "key":"fp","location":"/data/slopvac/trees/tree-11","manifest":"sha256:<64 x a>",
+    // "name":"p","path":"/usr/bin:/bin","program":"tree:bin/run","tree":"sha256:<64 x 1>","v":3}
     let tree = TreeHash::parse(&format!("sha256:{}", "11".repeat(32))).unwrap();
     let mut d = decl();
     d.hooks.truncate(1);
@@ -797,6 +833,7 @@ fn the_trust_hash_matches_an_independently_derived_vector() {
     let inputs = TrustInputs {
         name: "p",
         tree: &tree,
+        location: "/data/slopvac/trees/tree-11",
         declaration: &d,
         program: "tree:bin/run",
         args: &args,
@@ -809,12 +846,12 @@ fn the_trust_hash_matches_an_independently_derived_vector() {
     };
     assert_eq!(
         trust_hash(&inputs, &key).as_str(),
-        "sha256:a075e43084781ef86f03ae8dabda11221b5bea2e4ced58aa6f42653be6bb4439"
+        "sha256:7f3f452c9b5402586e4ba4f747cf03f71754fc4cb14d293d38953dc3d144da12"
     );
     assert_eq!(key.id(), "eea214704cf428bf", "hmac(key, key-id label)[..8]");
     // Without env the document has `"env":[]` and the key does not enter the hash.
     let bare = TrustInputs { env: &[], ..inputs };
-    let expected = "sha256:5ea1cd683c5128cc4f122211a7dd6694f7df7213974086b1d36d13a91b7f5061";
+    let expected = "sha256:d073b9fb69b6d0ab37dbc086c7e8505c9ecbb36c4653315b98a270fad8862197";
     assert_eq!(trust_hash(&bare, &key).as_str(), expected);
     assert_eq!(
         trust_hash(&bare, &TrustKey::from_bytes([9; 32])).as_str(),
@@ -1001,6 +1038,7 @@ fn the_same_env_value_under_two_keys_gives_two_hashes() {
     let inputs = TrustInputs {
         name: "p",
         tree: &tree,
+        location: "/data/trees/tree-1",
         declaration: &d,
         program: "tree:run",
         args: &[],
