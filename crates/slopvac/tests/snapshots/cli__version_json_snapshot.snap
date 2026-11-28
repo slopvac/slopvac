@@ -32,6 +32,9 @@ expression: doc
     "lint-report": [
       3
     ],
+    "plugin-manifest": [
+      3
+    ],
     "plugins-lock": [
       3
     ],

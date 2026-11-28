@@ -418,6 +418,7 @@ fn version_json_lists_supported_versions_from_the_owning_crates() {
             "explain-config": [slopvac_model::SchemaVersion::VALUE],
             "genre": [slopvac_context::GENRE_SCHEMA_VERSION],
             "lint-report": [slopvac_model::SchemaVersion::VALUE],
+            "plugin-manifest": [slopvac_packs::MANIFEST_SCHEMA_VERSION],
             "plugins-lock": [slopvac_plugins::lock::LOCK_SCHEMA_VERSION],
             "review-plan": [slopvac_model::SchemaVersion::VALUE],
             "rules-output": [slopvac_model::SchemaVersion::VALUE],
@@ -440,7 +441,7 @@ fn version_json_lists_supported_versions_from_the_owning_crates() {
 const SCHEMA_VERSIONS: &str = concat!(
     r#""schema_version":3,"schema_versions":{"blocklist":[3],"category":[3],"claims":[3],"#,
     r#""config":[3],"doctor-report":[3],"explain-config":[3],"genre":[3],"lint-report":[3],"#,
-    r#""plugins-lock":[3],"review-plan":[3],"rules-output":[3],"style":[3],"tagger":[3],"#,
+    r#""plugin-manifest":[3],"plugins-lock":[3],"review-plan":[3],"rules-output":[3],"style":[3],"tagger":[3],"#,
     r#""terms":[3],"version":[3]}"#
 );
 

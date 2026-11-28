@@ -43,6 +43,10 @@ pub fn supported() -> Supported {
                 vec![u64::from(slopvac_context::GENRE_SCHEMA_VERSION)],
             ),
             ("lint-report", vec![report]),
+            (
+                "plugin-manifest",
+                vec![u64::from(slopvac_packs::MANIFEST_SCHEMA_VERSION)],
+            ),
             ("plugins-lock", vec![lock]),
             ("review-plan", vec![report]),
             ("rules-output", vec![report]),
