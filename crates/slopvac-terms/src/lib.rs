@@ -24,6 +24,7 @@ mod read;
 mod reference;
 mod shape;
 pub mod suggest;
+mod wire;
 
 pub use blocklist::{BLOCKLIST_SCHEMA_VERSION, Blocklist, BlocklistEntry, Pos};
 pub use casing::{CasingFinding, TermSet};
@@ -33,3 +34,4 @@ pub use messages::{message_entries, phrase_entries, text_entries};
 pub use read::MAX_TERMS_FILE_BYTES;
 pub use reference::reference_pages;
 pub use shape::{TERMS_SCHEMA_VERSION, TermEntry, TermsFile};
+pub use wire::{blocklist_schema, terms_schema};

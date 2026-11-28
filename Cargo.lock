@@ -2866,9 +2866,11 @@ dependencies = [
  "slopvac-plugins",
  "slopvac-rules",
  "slopvac-sanitize",
+ "slopvac-terms",
  "snapbox",
  "tempfile",
  "thiserror",
+ "toml",
 ]
 
 [[package]]
@@ -2891,12 +2893,16 @@ name = "slopvac-terms"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "jsonschema",
+ "proptest",
  "rstest",
+ "schemars",
  "serde",
  "serde-saphyr",
  "serde_json",
  "slopvac-fs",
  "slopvac-messages",
+ "slopvac-model",
  "tempfile",
  "thiserror",
  "toml",
