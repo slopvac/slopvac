@@ -470,9 +470,9 @@ pub struct ManagedEnv {
     record: EnvRecord,
     /// The project root that its errors show paths under (policies section 1.7).
     project: PathBuf,
-    /// The project root with its links resolved, taken once when the store opened. Interpreter
-    /// diagnostics compare against it, because recorded interpreter paths are canonical. `None`
-    /// when the root could not be resolved: those paths then show as external.
+    /// The project root with its links resolved, which the store took once when it opened.
+    /// Interpreter diagnostics compare against it, because recorded interpreter paths are
+    /// canonical. `None` when the root did not resolve: those paths then show as external.
     canonical_project: Option<PathBuf>,
 }
 
@@ -577,7 +577,7 @@ impl ManagedEnv {
     }
 
     /// A canonical path as the project shows it. The recorded interpreter paths are canonical,
-    /// so they are compared with the canonical project root that the store resolved once. A
+    /// so this compares them with the canonical project root that the store resolved once. A
     /// root that did not resolve shows every such path as `<external>/<file name>`.
     fn shown(&self, canonical: &Path) -> String {
         // The `.` root accepts only relative paths, and a canonical path is absolute.
