@@ -90,3 +90,6 @@ pub(crate) fn is_rule_key(s: &str) -> bool {
     chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
         && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
+
+#[cfg(test)]
+mod patterns;
