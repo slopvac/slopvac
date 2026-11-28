@@ -1482,29 +1482,37 @@ fn the_repository_cannot_be_changed_by_flags_or_config() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains("error[usage]"));
+    // A config with such a key does not resolve, so `--gh --yes` stops on it before any
+    // network action (policies.md, section 1.5), with the code `lint` reports for it:
+    // `config-unknown-key` in `docs/reference/error-codes.lock`.
     let bin_dir = tempfile::tempdir().unwrap();
-    let log = fake_gh(bin_dir.path(), true);
+    let log = counting_gh(bin_dir.path());
     let work = tempfile::tempdir().unwrap();
     std::fs::write(
         work.path().join("slopvac.toml"),
         "schema_version = 3\nrepository = \"other/repo\"\n",
     )
     .unwrap();
-    let body = work.path().join("b.md");
-    let args = bug(&["--body-file", body.to_str().unwrap(), "--gh", "--yes"]);
-    slopvac()
-        .current_dir(work.path())
-        .env("PATH", bin_dir.path())
-        .arg("report")
-        .args(&args)
-        .assert()
-        .code(0);
-    let recorded = std::fs::read_to_string(log).unwrap();
-    assert!(
-        recorded.contains("-R\ngithub.com/slopvac/slopvac\n"),
-        "{recorded}"
+    let submitted = report_gh_yes(work.path(), bin_dir.path());
+    let stderr = String::from_utf8_lossy(&submitted.stderr);
+    assert_eq!(submitted.status.code(), Some(2), "{stderr}");
+    assert_eq!(error_code(&stderr), Some("config-unknown-key"), "{stderr}");
+    assert!(!log.exists(), "gh ran");
+    // `--gh` alone takes no network action, and the command it prints names the project's
+    // own repository.
+    let previewed = report_in(work.path(), bin_dir.path(), &["--gh"]);
+    let stdout = String::from_utf8_lossy(&previewed.stdout);
+    assert_eq!(
+        previewed.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&previewed.stderr)
     );
-    assert!(!recorded.contains("other/repo"));
+    assert!(
+        stdout.contains("gh issue create -R github.com/slopvac/slopvac --title"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("other/repo"), "{stdout}");
 }
 
 /// A fake `gh` on `PATH` that records every call, `auth status` included, one line of
@@ -1584,7 +1592,10 @@ fn tree_of(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
 
 /// The code of the first `error[<code>]` line of `stderr`.
 fn error_code(stderr: &str) -> Option<&str> {
-    stderr.strip_prefix("error[")?.split_once(']').map(|(code, _)| code)
+    stderr
+        .strip_prefix("error[")?
+        .split_once(']')
+        .map(|(code, _)| code)
 }
 
 /// While the config does not resolve, its offline setting is unknown, so `report --gh --yes`
@@ -1608,7 +1619,11 @@ fn the_binary_gh_yes_refuses_and_runs_no_gh_while_the_config_does_not_resolve() 
     let out = report_gh_yes(work.path(), bin_dir.path());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(2), "{stderr}");
-    assert_eq!(error_code(&stderr), Some("config-extends-missing"), "{stderr}");
+    assert_eq!(
+        error_code(&stderr),
+        Some("config-extends-missing"),
+        "{stderr}"
+    );
     assert_eq!(
         error_code(&stderr),
         error_code(&lint_stderr),
