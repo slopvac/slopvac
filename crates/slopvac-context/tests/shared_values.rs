@@ -39,7 +39,10 @@ fn the_levels_the_reader_reads_are_exactly_the_published_level_names() {
         .collect();
     read.sort();
     variants.sort();
-    assert_eq!(read, variants, "RULE_LEVELS and the variants of RuleLevel differ");
+    assert_eq!(
+        read, variants,
+        "RULE_LEVELS and the variants of RuleLevel differ"
+    );
 }
 
 #[test]

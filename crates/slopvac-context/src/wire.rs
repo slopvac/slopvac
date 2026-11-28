@@ -234,7 +234,11 @@ const CONFIG_DEFINITIONS: [&str; 4] = ["Ref", "RuleKey", "RuleLevel", "CategoryS
 /// definitions that another file owns.
 fn check_config_definitions(config: &Schema) -> Result<(), GenreSchemaError> {
     for name in CONFIG_DEFINITIONS {
-        if config.get("$defs").and_then(|defs| defs.get(name)).is_none() {
+        if config
+            .get("$defs")
+            .and_then(|defs| defs.get(name))
+            .is_none()
+        {
             return Err(GenreSchemaError::MissingConfigDefinition {
                 name: name.to_owned(),
             });
@@ -252,8 +256,8 @@ fn check_config_definitions(config: &Schema) -> Result<(), GenreSchemaError> {
 /// [`GenreSchemaError::MissingConfigDefinition`] when the config schema lacks a definition
 /// that the genre schema takes from it.
 pub fn genre_schema() -> Result<Schema, GenreSchemaError> {
-    let config = Schema::try_from(slopvac_config::config_schema())
-        .unwrap_or_else(|_| json_schema!({}));
+    let config =
+        Schema::try_from(slopvac_config::config_schema()).unwrap_or_else(|_| json_schema!({}));
     check_config_definitions(&config)?;
     Ok(schema_generator().into_root_schema_for::<GenreDocument>())
 }
@@ -273,7 +277,11 @@ mod tests {
         let names = |v: &Value| -> Vec<String> {
             match v {
                 Value::String(one) => vec![one.clone()],
-                Value::Array(many) => many.iter().filter_map(Value::as_str).map(str::to_owned).collect(),
+                Value::Array(many) => many
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
                 _ => Vec::new(),
             }
         };
@@ -284,10 +292,17 @@ mod tests {
             .iter()
             .flat_map(|c| {
                 let kind = &c["if"]["properties"]["kind"];
-                names(if kind.get("const").is_some() { &kind["const"] } else { &kind["enum"] })
+                names(if kind.get("const").is_some() {
+                    &kind["const"]
+                } else {
+                    &kind["enum"]
+                })
             })
             .collect();
-        (listed.into_iter().collect(), conditions.into_iter().collect())
+        (
+            listed.into_iter().collect(),
+            conditions.into_iter().collect(),
+        )
     }
 
     #[test]
@@ -295,16 +310,23 @@ mod tests {
         let schema = genre_schema().unwrap().to_value();
         let (listed, conditioned) = spelled(&schema["$defs"]["Signal"]);
         assert_eq!(listed.len(), 4, "the schema lists every kind: {listed:?}");
-        assert_eq!(listed, conditioned, "a condition names a kind the enum lacks, or the reverse");
+        assert_eq!(
+            listed, conditioned,
+            "a condition names a kind the enum lacks, or the reverse"
+        );
         for name in &listed {
             let read = serde_json::from_value::<SignalKind>(json!(name));
-            assert!(read.is_ok(), "the reader refuses `{name}`, which the schema accepts");
+            assert!(
+                read.is_ok(),
+                "the reader refuses `{name}`, which the schema accepts"
+            );
         }
     }
 
     #[test]
     fn a_config_schema_without_ref_is_refused_by_name() {
-        let config = json_schema!({"$defs": {"RuleKey": {}, "RuleLevel": {}, "CategorySettings": {}}});
+        let config =
+            json_schema!({"$defs": {"RuleKey": {}, "RuleLevel": {}, "CategorySettings": {}}});
         assert_eq!(
             check_config_definitions(&config),
             Err(GenreSchemaError::MissingConfigDefinition { name: "Ref".into() })

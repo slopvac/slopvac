@@ -2541,6 +2541,7 @@ dependencies = [
  "slopvac-rules",
  "slopvac-sanitize",
  "tempfile",
+ "thiserror",
  "toml",
 ]
 
