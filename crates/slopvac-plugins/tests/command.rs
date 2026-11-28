@@ -2509,7 +2509,10 @@ fn signed_registry(releases: Vec<(&'static str, signed_fixture::Published)>) -> 
         releases
             .iter()
             .find_map(|(_, p)| p.blobs.get(last))
-            .map_or_else(|| Response::new(404), |b| Response::new(200).body(b.clone()))
+            .map_or_else(
+                || Response::new(404),
+                |b| Response::new(200).body(b.clone()),
+            )
     })
 }
 
@@ -2519,7 +2522,14 @@ fn a_key_pinned_with_pin_verifies_the_update_that_advances_the_lock() {
     let key = signed_fixture::Key::primary();
     let files: &[(&str, &[u8])] = &[("pack.toml", b"id = \"style\"\n")];
     let v120 = signed_fixture::publish(&key, "acme", "style", "1.2.0", NOT_BEFORE, files);
-    let v130 = signed_fixture::publish(&key, "acme", "style", "1.3.0", "2026-11-05T00:00:00Z", files);
+    let v130 = signed_fixture::publish(
+        &key,
+        "acme",
+        "style",
+        "1.3.0",
+        "2026-11-05T00:00:00Z",
+        files,
+    );
     let digest = v130.digest.clone();
     let entry = format!(
         "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
@@ -2532,10 +2542,17 @@ fn a_key_pinned_with_pin_verifies_the_update_that_advances_the_lock() {
     f.write_lock(&[entry.replace("{reg}", &reg)]);
     let file = f.key_file(
         "acme.pub",
-        &format!("untrusted comment: test key\n{}\n", key.public().to_base64()),
+        &format!(
+            "untrusted comment: test key\n{}\n",
+            key.public().to_base64()
+        ),
     );
     let fp = key.public().fingerprint();
-    let pinned = f.run(&["pin", "acme", &fp, "--key", &file, "--registry", &reg], false, |s| s);
+    let pinned = f.run(
+        &["pin", "acme", &fp, "--key", &file, "--registry", &reg],
+        false,
+        |s| s,
+    );
     assert_eq!(pinned.result.unwrap(), 0, "{}", pinned.out);
 
     // The binary builds its key policy from the store's pins before any command runs.
@@ -2543,7 +2560,9 @@ fn a_key_pinned_with_pin_verifies_the_update_that_advances_the_lock() {
         pinned: TrustStore::open(f.state()).pinned_map().unwrap(),
         ..KeyPolicy::default()
     };
-    let ran = f.run(&["update"], true, |s| s.range("style", "^1.2").policy(policy));
+    let ran = f.run(&["update"], true, |s| {
+        s.range("style", "^1.2").policy(policy)
+    });
     assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
     let lock = slopvac_plugins::lock::read_project_lock(&f.project(), false).unwrap();
     let style = lock.get(&"style".parse().unwrap()).unwrap();

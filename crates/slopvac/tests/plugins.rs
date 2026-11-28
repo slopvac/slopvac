@@ -1291,7 +1291,10 @@ fn cache_signed_style(sandbox: &Sandbox, key: &signed_fixture::Key) -> signed_fi
         "style",
         "1.2.0",
         SIGNED_NOT_BEFORE,
-        &[("pack.toml", b"id = \"style\"\n"), ("rules/a.yml", b"rule: a\n")],
+        &[
+            ("pack.toml", b"id = \"style\"\n"),
+            ("rules/a.yml", b"rule: a\n"),
+        ],
     );
     p.cache_into(&sandbox.dir.path().join("home/data/slopvac"));
     sandbox.write_lock(&format!(
@@ -1308,7 +1311,10 @@ fn pin_through_the_binary(sandbox: &Sandbox, key: &signed_fixture::Key) {
     let file = sandbox.dir.path().join("acme.pub");
     fs::write(
         &file,
-        format!("untrusted comment: test key\n{}\n", key.public().to_base64()),
+        format!(
+            "untrusted comment: test key\n{}\n",
+            key.public().to_base64()
+        ),
     )
     .unwrap();
     sandbox
@@ -1328,7 +1334,7 @@ fn stderr_code(out: &assert_cmd::assert::Assert) -> String {
         .strip_prefix("error[")
         .and_then(|rest| rest.split_once(']'))
         .map(|(code, _)| code.to_owned())
-        .unwrap_or_else(|| panic!("no error code in {stderr:?}"))
+        .expect("stderr starts with an error code")
 }
 
 #[test]
@@ -1336,8 +1342,16 @@ fn a_key_pinned_with_plugins_pin_verifies_a_signed_sync() {
     let sandbox = Sandbox::new();
     let key = signed_fixture::Key::primary();
     cache_signed_style(&sandbox, &key);
-    let before = sandbox.slopvac().args(["--offline", "plugins", "sync"]).assert().code(2);
-    assert_eq!(stderr_code(&before), "signature-invalid", "no pin, no verification");
+    let before = sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2);
+    assert_eq!(
+        stderr_code(&before),
+        "signature-invalid",
+        "no pin, no verification"
+    );
     pin_through_the_binary(&sandbox, &key);
     sandbox
         .slopvac()
@@ -1359,7 +1373,10 @@ fn k16_after_a_rotation_sync_refuses_the_entry_the_old_key_signed() {
     use slopvac_plugins::trust::TrustStore;
 
     let sandbox = Sandbox::new();
-    let (old, new) = (signed_fixture::Key::primary(), signed_fixture::Key::secondary());
+    let (old, new) = (
+        signed_fixture::Key::primary(),
+        signed_fixture::Key::secondary(),
+    );
     cache_signed_style(&sandbox, &old);
     pin_through_the_binary(&sandbox, &old);
     sandbox
@@ -1378,7 +1395,10 @@ fn k16_after_a_rotation_sync_refuses_the_entry_the_old_key_signed() {
         new_pk.key_id(),
         old_pk.key_id()
     );
-    let (old_sig, new_sig) = (old.sign(statement.as_bytes()), new.sign(statement.as_bytes()));
+    let (old_sig, new_sig) = (
+        old.sign(statement.as_bytes()),
+        new.sign(statement.as_bytes()),
+    );
     TrustStore::open(sandbox.dir.path().join("home/state/slopvac"))
         .rotate_key(
             &PinScope::new(SIGNED_REGISTRY, "acme"),
@@ -1393,7 +1413,11 @@ fn k16_after_a_rotation_sync_refuses_the_entry_the_old_key_signed() {
         )
         .unwrap();
 
-    let after = sandbox.slopvac().args(["--offline", "plugins", "sync"]).assert().code(2);
+    let after = sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2);
     assert_eq!(stderr_code(&after), "signature-invalid");
 }
 
@@ -1407,7 +1431,10 @@ fn k22_pin_and_rotate_finish_with_stdin_closed_and_open_no_connection() {
     let file = sandbox.dir.path().join("acme.pub");
     fs::write(
         &file,
-        format!("untrusted comment: test key\n{}\n", key.public().to_base64()),
+        format!(
+            "untrusted comment: test key\n{}\n",
+            key.public().to_base64()
+        ),
     )
     .unwrap();
     let dir = sandbox.dir.path();
@@ -1425,9 +1452,15 @@ fn k22_pin_and_rotate_finish_with_stdin_closed_and_open_no_connection() {
             .assert()
     };
     let fp = key.public().fingerprint();
-    run(vec!["pin".into(), "acme".into(), fp.clone().into(), "--key".into(), file.into()])
-        .success()
-        .stdout(format!("pinned key {fp} for namespace `acme` on ghcr.io\n"));
+    run(vec![
+        "pin".into(),
+        "acme".into(),
+        fp.clone().into(),
+        "--key".into(),
+        file.into(),
+    ])
+    .success()
+    .stdout(format!("pinned key {fp} for namespace `acme` on ghcr.io\n"));
     let rotated = run(vec![
         "rotate".into(),
         "acme".into(),

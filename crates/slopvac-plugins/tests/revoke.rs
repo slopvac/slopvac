@@ -1449,13 +1449,14 @@ fn k18_a_rotation_file_over_4_kib_is_refused_with_its_name(#[case] name: &str) {
     };
     r.files(&statement, &old, &new);
     let err = r.rotate(&new_fp(), &r.cache(&[])).unwrap_err();
-    match &err {
-        TrustError::RotationFile { file, cause } => {
-            assert_eq!(file, name);
-            assert_eq!(*cause, FileCause::Read(slopvac_fs::InputKind::TooLarge));
-        }
-        other => panic!("{other:?}"),
-    }
+    assert!(
+        matches!(
+            &err,
+            TrustError::RotationFile { file, cause }
+                if file == name && *cause == FileCause::Read(slopvac_fs::InputKind::TooLarge)
+        ),
+        "{err:?}"
+    );
     assert_eq!(r.pinned_id(), OLD_KEY_ID);
 }
 
@@ -1537,12 +1538,14 @@ fn k21_a_fingerprint_that_is_not_the_new_keys_is_refused_with_both() {
     let r = Rotation::new(&key(OLD_PUB));
     let named = "0".repeat(64);
     let err = r.rotate(&named, &r.cache(&[])).unwrap_err();
-    match err {
-        TrustError::FingerprintMismatch { expected, actual } => {
-            assert_eq!((expected, actual), (named, new_fp()));
-        }
-        other => panic!("{other:?}"),
-    }
+    assert!(
+        matches!(
+            &err,
+            TrustError::FingerprintMismatch { expected, actual }
+                if *expected == named && *actual == new_fp()
+        ),
+        "{err:?}"
+    );
     assert_eq!(r.pinned_id(), OLD_KEY_ID);
 }
 
