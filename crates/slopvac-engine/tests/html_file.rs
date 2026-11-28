@@ -3,6 +3,8 @@
 //! never edits markup.
 mod common;
 
+use std::mem::{Discriminant, discriminant};
+
 use common::{engine, matched, places, rule, tokens};
 use proptest::prelude::*;
 use rstest::rstest;
@@ -252,7 +254,7 @@ fn forced_finding(html: &str, from: usize, to: usize, text: &str) -> Finding {
     let span = Span::new(from, to).unwrap();
     let end = finding.extent.unwrap().end;
     finding.extent = Some(Extent { span, end });
-    finding.matched_text = html[from..to].to_owned();
+    html[from..to].clone_into(&mut finding.matched_text);
     finding.fix = Some(
         Fix::new(vec![Edit {
             span,
@@ -541,13 +543,13 @@ const FIX_PARTS: [(&str, &str); 23] = [
     ("<b>", "<b>"),
 ];
 
-/// The block kinds and the number of code spans of `html`: its element structure as the
-/// parser reads it.
+/// The kind of each block and the number of code spans of `html`: its element structure as
+/// the parser reads it, without the offsets, which a fix moves.
 #[expect(clippy::unwrap_used, reason = "test helper: a panic is a failed test")]
-fn structure(html: &str) -> (Vec<BlockKind>, usize) {
+fn structure(html: &str) -> (Vec<Discriminant<BlockKind>>, usize) {
     let doc = parse_html(html, Span::new(0, html.len()).unwrap()).unwrap();
     (
-        doc.blocks.iter().map(|b| b.kind.clone()).collect(),
+        doc.blocks.iter().map(|b| discriminant(&b.kind)).collect(),
         doc.code_spans.len(),
     )
 }

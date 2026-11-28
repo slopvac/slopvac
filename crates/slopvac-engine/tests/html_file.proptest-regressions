@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 9510a9dd36454b9ef1cf4ba49ea76dc6b143f205e22d8b4e2827323adf03b70e # shrinks to parts = [(" user&#64;alpha.com ", " user&#64;alpha.com ")]
+cc 7922c38320607d2cc9c531af9c899439bdab0b59ec603c47a7a110fc89c5f52a # shrinks to parts = [(" alpha ", " a&lt;b&amp;c&gt; "), ("<pre>alpha</pre>", "<pre>alpha</pre>")]
