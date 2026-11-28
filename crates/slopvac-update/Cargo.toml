@@ -8,8 +8,8 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
-# Opens `slopvac.toml` without blocking and reads it through the handle. The update lock opens
-# its file with O_NOFOLLOW and compares the file owner with the current user.
+# The update lock opens its file with O_NOFOLLOW and compares the file owner with the current
+# user.
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["fs", "process"] }
 
@@ -30,7 +30,6 @@ slopvac-messages.workspace = true
 slopvac-model.workspace = true
 tar.workspace = true
 thiserror.workspace = true
-toml.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]

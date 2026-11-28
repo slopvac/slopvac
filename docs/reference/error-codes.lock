@@ -265,6 +265,7 @@ config-type-mismatch text
 config-type-mismatch-label text
 config-unknown-key error
 config-unknown-rule notice
+config-unreadable error
 config-unsupported-version error
 config-validate-about text
 config-validate-config text
@@ -326,6 +327,18 @@ diagram-signal-meta-reference text
 diagram-signal-note-long text
 diagram-signal-prose-restates-labels text
 digest-mismatch error
+doctor-config-extends-budget text
+doctor-config-extends-loop text
+doctor-config-extends-no-plugin text
+doctor-config-invalid text
+doctor-config-legacy text
+doctor-config-not-found text
+doctor-config-not-toml text
+doctor-config-not-utf8 text
+doctor-config-too-large text
+doctor-config-unknown-key text
+doctor-config-unreadable text
+doctor-config-unsupported-version text
 document-invalid error
 document-too-large error
 engine-bad-range text

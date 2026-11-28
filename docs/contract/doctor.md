@@ -35,7 +35,7 @@ The 2.x report had its own `schema_version` of 1. The 3.0 report uses 3, like ev
 
 The `update.state` value comes from the cache file that the update check writes (policies.md, section 1.2). It is `available` when the cached release is newer than the running version, `current` when it is not, and `unknown` when no readable answer exists or the cached version is not a semantic version. Doctor does not print an answer it cannot compare. Versions compare as semantic versions, so `3.10.0` is newer than `3.9.0`.
 
-`update.checks` is `disabled` when something in section 1.3 of the policies turns the check off. `disabled_by` names the first reason in this order: `offline`, `ci`, `env` (`NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK` or `DO_NOT_TRACK`) and `config` (`[network] update_check = false`). A disabled check still shows the cached answer.
+`update.checks` is `disabled` when something in section 1.3 of the policies turns the check off. `disabled_by` names the first reason in this order: `offline`, `ci`, `env` (`NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK` or `DO_NOT_TRACK`) and `config` (`[network] update_check = false`, or a configuration that does not resolve, so no check starts). A disabled check still shows the cached answer.
 
 A newer release does not make `ok` false.
 
@@ -45,17 +45,38 @@ A newer release does not make `ok` false.
 
 ### 2.3 Configuration
 
-Each entry has a `layer` (`explicit` for `--config`, `project` for the nearest `slopvac.toml`), a `file` and a `status`:
+Doctor resolves the configuration as `lint` does for the working directory: the `--config` file, or the nearest `slopvac.toml` (config.md, section 2), with every file it extends. `config.sources` lists each file in the order the resolution reads it: the `--config` file or the nearest config first, then each extended file, depth first and in `extends` order. A file that more than one file extends is listed once. A config that a plugin supplies (`<plugin>:<name>`) is not listed. A directory or other non-regular file named `slopvac.toml` is not a config, so the search passes over it.
+
+Each entry has a `layer`, a `file` and a `status`. The layer is `explicit` for the `--config` file, `project` for the nearest config, and `extends` for a file that an `extends` entry names. A 2.x config that the search meets (`.slopvac.toml`, or a `[tool.slopvac]` table in `pyproject.toml`) has the layer `project`. The set of layers can grow.
 
 | Status | Meaning |
 |---|---|
-| `ok` | The file parses and declares `schema_version = 3`. |
+| `ok` | The file reads, parses and passes validation. |
 | `legacy` | A 2.x file. The error says to run `slopvac migrate`. |
-| `missing` | The file does not exist. Only `--config` can produce it. |
-| `unreadable` | The path is not a regular file, is over 1 MiB, or cannot be read. |
-| `invalid` | The file is not valid TOML or has an unsupported `schema_version`. |
+| `missing` | The file does not exist. Only `--config` or an `extends` entry can produce it. |
+| `unreadable` | The path is not a regular file, is over 1 MiB, is not valid UTF-8, or cannot be read. |
+| `invalid` | The file is not valid TOML, has an unsupported `schema_version`, fails validation, or holds an `extends` entry that the resolution refuses. |
 
-The `error` text is a fixed message with no file content. `config.ok` is true when every source has status `ok`. A project with no source runs on the defaults, and `config.ok` is true.
+Resolution stops at the first failure. The failing file is the last entry, and the files after it are not read or listed. Every entry before it is `ok`, because each file is checked before the files it extends are read. A file that an `extends` entry names and that cannot be read gets the status itself, and the file that names it stays `ok`. An `extends` entry that loops, that passes an `extends` budget (policies.md, section 1.9) or that names a plugin config that is not available makes the file that holds it `invalid`.
+
+The `error` text is one of these fixed messages. It holds no file content. `<line>` is the one-based line of the first problem in the file.
+
+| Case | `error` |
+|---|---|
+| The file does not exist. | `file not found` |
+| The file is over 1 MiB. | `larger than 1048576 bytes` |
+| The file is not valid UTF-8. | `not valid UTF-8` |
+| Any other read failure. | `cannot read the file` |
+| A 2.x file. | ``2.x configuration: run `slopvac migrate` `` |
+| Not valid TOML. | `not valid TOML (line <line>)` |
+| An unsupported `schema_version`. | `unsupported schema_version` |
+| An unknown key. | `unknown key (line <line>)` |
+| Any other validation failure. | `invalid configuration (line <line>)` |
+| The `extends` entries form a loop. | ``the `extends` entries form a loop (line <line>)`` |
+| An `extends` budget is passed. | ``the `extends` chain is over its budget (line <line>)`` |
+| An `extends` entry names a plugin config that is not available. | ``an `extends` entry names a plugin config that is not available (line <line>)`` |
+
+A file that an `extends` entry names and that cannot be read for any reason but its size shows `cannot read the file`. `config.ok` is true when every source has status `ok`. A project with no source runs on the defaults, and `config.ok` is true.
 
 ### 2.4 Plugins and trust
 
@@ -88,8 +109,6 @@ The data directory is the plugin store, and the state directory holds the trust 
 A path in the report is relative to the working directory, or `<external>/<file name>` outside it (policies.md, section 1.7). The separator is `/` on every platform. Messages hold no absolute path and no file content. A per-user directory therefore shows as `<external>/slopvac`, and `source` says how the location was chosen.
 
 ## 4. Build status
-
-Configuration discovery comes from a local stand-in until the config layer lands. It handles one `slopvac.toml` and ignores `extends`.
 
 The directory locations come from the shared resolver in `slopvac-fs`, the same one the plugin store and the trust store use.
 

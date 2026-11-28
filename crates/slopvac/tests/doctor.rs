@@ -326,11 +326,14 @@ fn broken_config_files_get_a_status_and_never_echo_their_content() {
 #[test]
 fn doctor_reports_an_unreadable_config_that_stops_every_other_command() {
     let w = World::new();
-    fs::create_dir(w.project().join("slopvac.toml")).unwrap();
+    fs::write(w.project().join("slopvac.toml"), [0xff, 0xfe, 0x00]).unwrap();
     // Doctor runs, prints the document and exits 2 itself.
     let (code, doc) = w.json(&[], |_| {});
     assert_eq!(code, 2);
-    assert_eq!(doc["config"]["sources"][0]["status"], "unreadable");
+    assert_eq!(
+        doc["config"]["sources"],
+        json!([{"layer": "project", "file": "slopvac.toml", "status": "unreadable", "error": "not valid UTF-8"}])
+    );
     // Any other command stops on the same file before it runs.
     Command::cargo_bin("slopvac")
         .unwrap()
@@ -340,30 +343,266 @@ fn doctor_reports_an_unreadable_config_that_stops_every_other_command() {
         .assert()
         .code(2)
         .stdout("")
-        .stderr(predicate::str::contains("error[config-unreadable]"));
-    // And `doctor --help` is help, not a doctor run.
+        .stderr(predicate::str::starts_with("error[config-io]"));
+    // And `doctor --help` is help, not a doctor run, so it skips the preflight.
     Command::cargo_bin("slopvac")
         .unwrap()
         .current_dir(w.project())
         .args(["doctor", "--help"])
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains("error[config-unreadable]"));
+        .code(0);
 }
 
 #[test]
-fn an_oversize_or_non_regular_config_is_unreadable() {
+fn an_oversize_config_is_unreadable() {
     let w = World::new();
     w.write("slopvac.toml", &"#".repeat(1024 * 1024 + 1));
     let (code, doc) = w.json(&[], |_| {});
     assert_eq!(code, 2);
-    assert_eq!(doc["config"]["sources"][0]["status"], "unreadable");
+    assert_eq!(
+        doc["config"]["sources"],
+        json!([{"layer": "project", "file": "slopvac.toml", "status": "unreadable", "error": "larger than 1048576 bytes"}])
+    );
+}
 
-    fs::remove_file(w.project().join("slopvac.toml")).unwrap();
+#[test]
+fn a_directory_named_slopvac_toml_is_not_a_config() {
+    let w = World::new();
     fs::create_dir(w.project().join("slopvac.toml")).unwrap();
     let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 0);
+    assert_eq!(doc["config"], json!({"ok": true, "sources": []}));
+}
+
+#[test]
+fn a_config_option_that_names_a_directory_is_unreadable() {
+    let w = World::new();
+    fs::create_dir(w.project().join("ci")).unwrap();
+    let (code, doc) = w.json(&["--config", "ci"], |_| {});
     assert_eq!(code, 2);
-    assert_eq!(doc["config"]["sources"][0]["error"], "not a regular file");
+    assert_eq!(
+        doc["config"]["sources"],
+        json!([{"layer": "explicit", "file": "ci", "status": "unreadable", "error": "cannot read the file"}])
+    );
+}
+
+/// One `config.sources` entry.
+fn source(layer: &str, file: &str, status: &str, error: Option<&str>) -> Value {
+    json!({"layer": layer, "file": file, "status": status, "error": error})
+}
+
+#[test]
+fn every_extended_file_is_listed_once_in_the_order_it_is_read() {
+    let w = World::new();
+    // slopvac.toml extends a and b, and both extend c: c is read once, under a.
+    w.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"conf/a.toml\", \"conf/b.toml\"]\n",
+    );
+    w.write(
+        "conf/a.toml",
+        "schema_version = 3\nextends = [\"c.toml\"]\n",
+    );
+    w.write(
+        "conf/b.toml",
+        "schema_version = 3\nextends = [\"c.toml\"]\n",
+    );
+    w.write("conf/c.toml", "schema_version = 3\n");
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 0);
+    assert_eq!(
+        doc["config"],
+        json!({"ok": true, "sources": [
+            source("project", "slopvac.toml", "ok", None),
+            source("extends", "conf/a.toml", "ok", None),
+            source("extends", "conf/c.toml", "ok", None),
+            source("extends", "conf/b.toml", "ok", None),
+        ]})
+    );
+}
+
+#[test]
+fn the_config_option_lists_its_extended_files() {
+    let w = World::new();
+    w.write("slopvac.toml", "{{{ not toml");
+    w.write(
+        "ci/other.toml",
+        "schema_version = 3\nextends = [\"base.toml\"]\n",
+    );
+    w.write("ci/base.toml", "schema_version = 3\n");
+    let (code, doc) = w.json(&["--config", "ci/other.toml"], |_| {});
+    assert_eq!(code, 0);
+    assert_eq!(
+        doc["config"]["sources"],
+        json!([
+            source("explicit", "ci/other.toml", "ok", None),
+            source("extends", "ci/base.toml", "ok", None),
+        ])
+    );
+}
+
+#[test]
+fn a_plugin_config_is_not_listed() {
+    let w = World::new();
+    w.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"nopack:base\"]\n",
+    );
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 2);
+    assert_eq!(
+        doc["config"]["sources"],
+        json!([source(
+            "project",
+            "slopvac.toml",
+            "invalid",
+            Some("an `extends` entry names a plugin config that is not available (line 2)")
+        )])
+    );
+}
+
+const EXTENDS_BASE: &str = "schema_version = 3\nextends = [\"base.toml\", \"never.toml\"]\n";
+
+#[rstest::rstest]
+#[case::missing(None, "missing", "file not found")]
+#[case::oversize(Some(vec![b'#'; 1024 * 1024 + 1]), "unreadable", "larger than 1048576 bytes")]
+#[case::not_utf8(Some(vec![0xff, 0xfe]), "unreadable", "cannot read the file")]
+fn an_extended_file_that_cannot_be_read_gets_the_status_and_ends_the_list(
+    #[case] body: Option<Vec<u8>>,
+    #[case] status: &str,
+    #[case] error: &str,
+) {
+    let w = World::new();
+    w.write("slopvac.toml", EXTENDS_BASE);
+    w.write("never.toml", "schema_version = 3\n");
+    if let Some(body) = body {
+        fs::write(w.project().join("base.toml"), body).unwrap();
+    }
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 2);
+    assert_eq!(
+        doc["config"],
+        json!({"ok": false, "sources": [
+            source("project", "slopvac.toml", "ok", None),
+            source("extends", "base.toml", status, Some(error)),
+        ]})
+    );
+}
+
+#[rstest::rstest]
+#[case::not_toml("schema_version = 3\n{{{\n", "invalid", "not valid TOML (line 2)")]
+#[case::legacy(
+    "[vale]\nbinary = \"vale\"\n",
+    "legacy",
+    "2.x configuration: run `slopvac migrate`"
+)]
+#[case::newer("schema_version = 4\n", "invalid", "unsupported schema_version")]
+#[case::unknown_key("schema_version = 3\nbogus = 1\n", "invalid", "unknown key (line 2)")]
+#[case::bad_value(
+    "schema_version = 3\n[network]\noffline = \"yes\"\n",
+    "invalid",
+    "invalid configuration (line 3)"
+)]
+#[case::extends_loop(
+    "schema_version = 3\nextends = [\"slopvac.toml\"]\n",
+    "invalid",
+    "the `extends` entries form a loop (line 2)"
+)]
+fn a_refused_extended_file_gets_a_fixed_message_and_ends_the_list(
+    #[case] body: &str,
+    #[case] status: &str,
+    #[case] error: &str,
+) {
+    let w = World::new();
+    w.write("slopvac.toml", EXTENDS_BASE);
+    w.write("never.toml", "schema_version = 3\n");
+    w.write("base.toml", body);
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 2);
+    assert_eq!(
+        doc["config"],
+        json!({"ok": false, "sources": [
+            source("project", "slopvac.toml", "ok", None),
+            source("extends", "base.toml", status, Some(error)),
+        ]})
+    );
+}
+
+#[test]
+fn a_chain_over_its_depth_budget_makes_the_file_that_passes_it_invalid() {
+    let w = World::new();
+    // Each file extends the next: 40 levels is over the depth budget of 32.
+    w.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"f1.toml\"]\n",
+    );
+    for n in 1..40 {
+        w.write(
+            &format!("f{n}.toml"),
+            &format!("schema_version = 3\nextends = [\"f{}.toml\"]\n", n + 1),
+        );
+    }
+    w.write("f40.toml", "schema_version = 3\n");
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 2);
+    let sources = doc["config"]["sources"].as_array().unwrap();
+    let (last, before) = sources.split_last().unwrap();
+    assert_eq!(last["status"], "invalid");
+    assert_eq!(
+        last["error"],
+        "the `extends` chain is over its budget (line 2)"
+    );
+    assert!(before.iter().all(|s| s["status"] == "ok"), "{sources:?}");
+    assert_eq!(sources[0]["layer"], "project");
+    assert!(
+        sources[1..].iter().all(|s| s["layer"] == "extends"),
+        "{sources:?}"
+    );
+}
+
+#[test]
+fn a_2x_dotfile_met_by_the_search_is_listed_as_the_project_layer() {
+    let w = World::new();
+    w.write(".slopvac.toml", "[vale]\nbinary = \"vale\"\n");
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 2);
+    assert_eq!(
+        doc["config"]["sources"],
+        json!([source(
+            "project",
+            ".slopvac.toml",
+            "legacy",
+            Some("2.x configuration: run `slopvac migrate`")
+        )])
+    );
+}
+
+#[test]
+fn a_config_that_does_not_resolve_turns_update_checks_off() {
+    let w = World::with_updates();
+    w.write("slopvac.toml", "schema_version = 3\nbogus = 1\n");
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 2);
+    assert_eq!(doc["update"]["checks"], "disabled");
+    assert_eq!(doc["update"]["disabled_by"], "config");
+}
+
+#[test]
+fn offline_set_in_an_extended_file_is_a_config_source() {
+    let w = World::new();
+    w.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"base.toml\"]\n[network]\noffline = false\n",
+    );
+    w.write(
+        "base.toml",
+        "schema_version = 3\n[network]\noffline = true\n",
+    );
+    let (_, doc) = w.json(&[], |_| {});
+    assert_eq!(
+        doc["offline"],
+        json!({"effective": true, "sources": ["config"]})
+    );
 }
 
 #[test]

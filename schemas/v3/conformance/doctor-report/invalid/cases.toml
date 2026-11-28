@@ -10,3 +10,4 @@
 "offline-source-repeated.json" = "/offline/sources"
 "directory-missing-source.json" = "/directories/cache"
 "kind-plugin-retired.json" = "/plugins/items/1/kind"
+"config-layer-unknown.json" = "/config/sources/0/layer"

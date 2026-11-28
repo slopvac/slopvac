@@ -1,13 +1,13 @@
 //! `slopvac doctor`: a read-only report on the binary, its configuration and its local state.
 //!
 //! The JSON shape is `schemas/v3/doctor-report.schema.json`; docs/contract/doctor.md specifies
-//! it. Doctor opens no connection and changes no file. Data owned by other beads comes through
-//! the traits below; [`stubs`] holds the local stand-ins.
+//! it. Doctor opens no connection and changes no file. The update facts and the directories come
+//! through the traits below, and [`config`] lists the files of the resolved configuration.
 
+pub mod config;
 pub mod dirs;
 pub mod read;
 mod schema;
-pub mod stubs;
 pub mod update;
 
 use std::path::{Path, PathBuf};
@@ -70,7 +70,7 @@ pub trait UpdateProbe {
 #[serde(rename_all = "lowercase")]
 #[schemars(inline, transform = schema::extensible)]
 pub enum SourceStatus {
-    /// Parses and declares `schema_version` 3.
+    /// Reads, parses and passes validation.
     Ok,
     /// A 2.x file.
     Legacy,
@@ -85,7 +85,7 @@ pub enum SourceStatus {
 /// A config file that was found, before path redaction.
 #[derive(Debug, Clone)]
 pub struct RawSource {
-    /// `explicit` or `project`.
+    /// `explicit`, `project` or `extends`.
     pub layer: &'static str,
     /// Where the file is.
     pub path: PathBuf,
@@ -95,21 +95,17 @@ pub struct RawSource {
     pub error: Option<String>,
 }
 
-/// What a config scan found.
+/// What resolving the configuration found.
 #[derive(Debug, Clone, Default)]
 pub struct ConfigScan {
-    /// Sources in layer order.
+    /// Sources in the order the resolution read them, ending at a failure.
     pub sources: Vec<RawSource>,
-    /// `[network] offline = true` in a source.
+    /// The resolved `[network] offline` is on.
     pub offline: bool,
-    /// `[network] update_check` in a source.
+    /// The resolved `[network] update_check`.
     pub update_check: Option<bool>,
-}
-
-/// Source of [`ConfigScan`].
-pub trait ConfigSources {
-    /// Find the config sources for `cwd`, or the one `--config` file.
-    fn scan(&self, cwd: &Path, explicit: Option<&Path>) -> ConfigScan;
+    /// The configuration does not resolve, so no update check starts.
+    pub unresolved: bool,
 }
 
 /// A per-user directory and how it was chosen.
@@ -159,14 +155,12 @@ pub struct Inputs<'a> {
     pub cwd: &'a Path,
     /// `--offline` was given.
     pub offline_flag: bool,
-    /// `--config FILE`.
-    pub explicit_config: Option<&'a Path>,
     /// The running version.
     pub version: &'a str,
     /// Update facts.
     pub update: &'a dyn UpdateProbe,
-    /// Config discovery.
-    pub config: &'a dyn ConfigSources,
+    /// The configuration sources, from the command preflight.
+    pub config: &'a ConfigScan,
     /// Per-user directories.
     pub dirs: &'a dyn Dirs,
     /// Most entries the size walk of a directory visits. Use [`WALK_LIMIT`].
@@ -258,13 +252,15 @@ struct Offline {
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(transform = x_extensions)]
 struct DoctorConfigFile {
-    /// `explicit` for a file named with `--config`, `project` for the nearest `slopvac.toml`.
+    /// `explicit` for the file named with `--config`, `project` for the nearest config or a 2.x
+    /// config that the search meets, `extends` for a file that an `extends` entry names. The set
+    /// can grow.
     #[schemars(schema_with = "schema::config_layer")]
     layer: &'static str,
     #[schemars(with = "schema::PathText")]
     file: String,
-    /// `ok` when the file parses and declares `schema_version` 3. `legacy` for a 2.x file (no
-    /// `schema_version` or 2). `missing`, `unreadable` or `invalid` otherwise.
+    /// `ok` when the file reads, parses and passes validation. `legacy` for a 2.x file.
+    /// `missing`, `unreadable` or `invalid` otherwise.
     status: SourceStatus,
     #[schemars(schema_with = "schema::nullable_message")]
     error: Option<String>,
@@ -568,7 +564,7 @@ fn trust_report(state_dir: Option<&Path>) -> Trust {
 /// Build the report.
 #[must_use]
 pub fn build(i: &Inputs<'_>) -> Report {
-    let scan = i.config.scan(i.cwd, i.explicit_config);
+    let scan = i.config;
 
     let mut offline_sources = Vec::new();
     if i.offline_flag {
@@ -582,13 +578,20 @@ pub fn build(i: &Inputs<'_>) -> Report {
     }
     let offline_on = !offline_sources.is_empty();
 
+    // While the configuration does not resolve, no update check starts (config.md, section
+    // 2.2), and the reason doctor names is `config`.
+    let update_check = if scan.unresolved {
+        Some(false)
+    } else {
+        scan.update_check
+    };
     let cache = i.dirs.cache(i.env);
     let data = i.dirs.data(i.env);
     let state = i.dirs.state(i.env);
 
     let facts = i
         .update
-        .facts(i.env, offline_on, scan.update_check, cache.path.as_deref());
+        .facts(i.env, offline_on, update_check, cache.path.as_deref());
     // A cached answer that is not a semantic version cannot be compared, so it counts as no
     // answer, and the text is not echoed.
     let cached = facts.cached_latest.as_ref().and_then(|(latest, at)| {
@@ -785,10 +788,9 @@ mod tests {
             env: &env,
             cwd: Path::new("/nonexistent-cwd"),
             offline_flag: false,
-            explicit_config: None,
             version,
             update: &Fixed(cached.map(|v| (v.to_owned(), 7))),
-            config: &stubs::LocalConfigSources,
+            config: &ConfigScan::default(),
             dirs: &dirs::SharedDirs,
             walk_limit: WALK_LIMIT,
         })
@@ -829,10 +831,9 @@ mod tests {
             env: &env,
             cwd: Path::new("/nonexistent-cwd"),
             offline_flag: false,
-            explicit_config: None,
             version: "3.0.0",
             update: &Fixed(None),
-            config: &stubs::LocalConfigSources,
+            config: &ConfigScan::default(),
             dirs: &Dirs(dir.to_owned()),
             walk_limit,
         });

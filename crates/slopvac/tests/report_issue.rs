@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
+use assert_cmd::cargo::CommandCargoExt;
 use predicates::prelude::*;
 use slopvac_cli::cli;
 use slopvac_cli::env::MapEnv;
@@ -1250,25 +1251,35 @@ fn a_non_utf8_environment_variable_does_not_crash_or_print() {
     );
 }
 
-fn slopvac() -> Command {
-    let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
+/// Host variables that would change a binary run: a token, offline mode, logging or forced color.
+const REMOVED_VARS: [&str; 6] = [
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "SLOPVAC_OFFLINE",
+    "SLOPVAC_LOG",
+    "FORCE_COLOR",
+    "CLICOLOR_FORCE",
+];
+
+/// The environment every binary test runs with. Each caller sets its own `PATH`.
+fn isolate(cmd: &mut std::process::Command) {
     // Tests stay off the network: the update notice may refresh its cache after lint, doctor and prime.
-    cmd.env("SLOPVAC_NO_UPDATE_CHECK", "1");
-    let empty = std::env::temp_dir().join("slopvac-report-no-gh-on-path");
-    std::fs::create_dir_all(&empty).unwrap();
-    for var in [
-        "GH_TOKEN",
-        "GITHUB_TOKEN",
-        "SLOPVAC_OFFLINE",
-        "SLOPVAC_LOG",
-        "FORCE_COLOR",
-        "CLICOLOR_FORCE",
-    ] {
+    cmd.env("SLOPVAC_NO_UPDATE_CHECK", "1").env("NO_COLOR", "1");
+    for var in REMOVED_VARS {
         cmd.env_remove(var);
     }
+}
+
+fn slopvac() -> Command {
+    // `CommandCargoExt::cargo_bin` honours `CARGO_TARGET_<TRIPLE>_RUNNER`, as
+    // `assert_cmd::Command::cargo_bin` does.
+    let mut cmd = std::process::Command::cargo_bin("slopvac").expect("binary builds");
+    isolate(&mut cmd);
+    let empty = std::env::temp_dir().join("slopvac-report-no-gh-on-path");
+    std::fs::create_dir_all(&empty).unwrap();
     // No `gh` on the path.
-    cmd.env("PATH", &empty).env("NO_COLOR", "1");
-    cmd
+    cmd.env("PATH", &empty);
+    Command::from_std(cmd)
 }
 
 #[test]
@@ -1482,29 +1493,233 @@ fn the_repository_cannot_be_changed_by_flags_or_config() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains("error[usage]"));
+    // A config with such a key does not resolve, so `--gh --yes` stops on it before any
+    // network action (policies.md, section 1.5), with the code `lint` reports for it:
+    // `config-unknown-key` in `docs/reference/error-codes.lock`.
     let bin_dir = tempfile::tempdir().unwrap();
-    let log = fake_gh(bin_dir.path(), true);
+    let log = counting_gh(bin_dir.path());
     let work = tempfile::tempdir().unwrap();
     std::fs::write(
         work.path().join("slopvac.toml"),
         "schema_version = 3\nrepository = \"other/repo\"\n",
     )
     .unwrap();
-    let body = work.path().join("b.md");
-    let args = bug(&["--body-file", body.to_str().unwrap(), "--gh", "--yes"]);
-    slopvac()
-        .current_dir(work.path())
-        .env("PATH", bin_dir.path())
-        .arg("report")
-        .args(&args)
-        .assert()
-        .code(0);
-    let recorded = std::fs::read_to_string(log).unwrap();
-    assert!(
-        recorded.contains("-R\ngithub.com/slopvac/slopvac\n"),
-        "{recorded}"
+    let submitted = report_gh_yes(work.path(), bin_dir.path());
+    let stderr = String::from_utf8_lossy(&submitted.stderr);
+    assert_eq!(submitted.status.code(), Some(2), "{stderr}");
+    assert_eq!(error_code(&stderr), Some("config-unknown-key"), "{stderr}");
+    assert!(!log.exists(), "gh ran");
+    // `--gh` alone takes no network action, and the command it prints names the project's
+    // own repository.
+    let previewed = report_in(work.path(), bin_dir.path(), &["--gh"]);
+    let stdout = String::from_utf8_lossy(&previewed.stdout);
+    assert_eq!(
+        previewed.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&previewed.stderr)
     );
-    assert!(!recorded.contains("other/repo"));
+    assert!(
+        stdout.contains("gh issue create -R github.com/slopvac/slopvac --title"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("other/repo"), "{stdout}");
+}
+
+/// A fake `gh` on `PATH` that records every call, `auth status` included, one line of
+/// arguments each, and answers as a logged-in `gh` does. No call means no network action.
+#[cfg(unix)]
+fn counting_gh(dir: &std::path::Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let log = dir.join("calls.log");
+    let script = format!(
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nif [ \"$1\" = auth ]; then exit 0; fi\necho https://github.com/slopvac/slopvac/issues/5\n",
+        log.display()
+    );
+    let bin = dir.join("gh");
+    std::fs::write(&bin, script).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    log
+}
+
+/// A project whose config sets `[network] offline = true`, carries a private value, and
+/// extends `base.toml`, which `base` writes when it is `Some`.
+#[cfg(unix)]
+fn offline_project(base: Option<&str>, offline: bool) -> tempfile::TempDir {
+    let work = tempfile::tempdir().unwrap();
+    std::fs::write(
+        work.path().join("slopvac.toml"),
+        format!(
+            "schema_version = 3\nextends = [\"base.toml\"]\n# private-config-sentinel\n\n[network]\noffline = {offline}\n"
+        ),
+    )
+    .unwrap();
+    if let Some(text) = base {
+        std::fs::write(work.path().join("base.toml"), text).unwrap();
+    }
+    work
+}
+
+/// `report` with `args` and the report arguments in `work`, with the fake `gh` of `bin_dir`
+/// on `PATH`. The body file is `b.md` in `work`.
+#[cfg(unix)]
+fn report_in(work: &Path, bin_dir: &Path, args: &[&str]) -> std::process::Output {
+    let body = work.join("b.md");
+    let mut all = vec!["--body-file", body.to_str().unwrap()];
+    all.extend_from_slice(args);
+    slopvac()
+        .current_dir(work)
+        .env("PATH", bin_dir)
+        .arg("report")
+        .args(bug(&all))
+        .output()
+        .unwrap()
+}
+
+/// `report --gh --yes` in `work` with the fake `gh` of `bin_dir` on `PATH`.
+#[cfg(unix)]
+fn report_gh_yes(work: &Path, bin_dir: &Path) -> std::process::Output {
+    report_in(work, bin_dir, &["--gh", "--yes"])
+}
+
+/// Every file under `dir` with its bytes.
+#[cfg(unix)]
+fn tree_of(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    let mut files = std::collections::BTreeMap::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(next) = pending.pop() {
+        for entry in std::fs::read_dir(&next).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let bytes = std::fs::read(&path).unwrap();
+                files.insert(path, bytes);
+            }
+        }
+    }
+    files
+}
+
+/// The code of the first `error[<code>]` line of `stderr`.
+fn error_code(stderr: &str) -> Option<&str> {
+    stderr
+        .strip_prefix("error[")?
+        .split_once(']')
+        .map(|(code, _)| code)
+}
+
+/// While the config does not resolve, its offline setting is unknown, so `report --gh --yes`
+/// takes no network action, writes and prints nothing, and exits 2 with the code that `lint`
+/// reports for the same failure (policies.md, section 1.5). The extended file is missing:
+/// `config-extends-missing` in `docs/reference/error-codes.lock`.
+#[cfg(unix)]
+#[test]
+fn the_binary_gh_yes_refuses_and_runs_no_gh_while_the_config_does_not_resolve() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_gh(bin_dir.path());
+    let work = offline_project(None, true);
+    let linted = slopvac()
+        .current_dir(work.path())
+        .args(["lint", "--stdin"])
+        .write_stdin("Plain.\n")
+        .output()
+        .unwrap();
+    let lint_stderr = String::from_utf8_lossy(&linted.stderr).into_owned();
+    let before = tree_of(work.path());
+    let out = report_gh_yes(work.path(), bin_dir.path());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert_eq!(
+        error_code(&stderr),
+        Some("config-extends-missing"),
+        "{stderr}"
+    );
+    assert_eq!(
+        error_code(&stderr),
+        error_code(&lint_stderr),
+        "the code `lint` reports: {lint_stderr}"
+    );
+    assert!(!stderr.contains("private-config-sentinel"), "{stderr}");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "",
+        "nothing is printed"
+    );
+    assert!(!log.exists(), "gh ran");
+    assert_eq!(
+        tree_of(work.path()),
+        before,
+        "no file is written or changed"
+    );
+}
+
+/// Without `--yes`, `report --gh` takes no network action, so a config that does not
+/// resolve does not stop it: it writes the body file and prints the `gh` command.
+#[cfg(unix)]
+#[test]
+fn the_binary_gh_without_yes_still_previews_while_the_config_does_not_resolve() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_gh(bin_dir.path());
+    let work = offline_project(None, true);
+    let out = report_in(work.path(), bin_dir.path(), &["--gh"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("gh issue create -R github.com/slopvac/slopvac --title"),
+        "{stdout}"
+    );
+    assert!(
+        std::fs::read_to_string(work.path().join("b.md"))
+            .unwrap()
+            .starts_with("### Reporter\n")
+    );
+    assert!(!log.exists(), "gh ran");
+}
+
+/// The control of the test above: with the extended file present and offline off, the same
+/// project reaches `gh issue create`, so the fake `gh` sees a call.
+#[cfg(unix)]
+#[test]
+fn the_binary_gh_yes_runs_gh_once_the_extended_config_resolves() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_gh(bin_dir.path());
+    let work = offline_project(Some("schema_version = 3\n"), false);
+    let out = report_gh_yes(work.path(), bin_dir.path());
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let calls = std::fs::read_to_string(log).unwrap();
+    assert!(
+        calls.lines().any(|call| call.starts_with("issue create ")),
+        "{calls}"
+    );
+}
+
+/// `report` reads `[network] offline` from a config that resolves, through its `extends`
+/// chain too: a resolved offline config refuses the network step, and runs no `gh`.
+#[cfg(unix)]
+#[test]
+fn the_binary_gh_yes_honours_offline_from_a_config_that_resolves() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_gh(bin_dir.path());
+    let work = offline_project(Some("schema_version = 3\n"), true);
+    let out = report_gh_yes(work.path(), bin_dir.path());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.starts_with("error[offline-network-needed]"),
+        "{stderr}"
+    );
+    assert!(!log.exists(), "gh ran");
 }
 
 #[test]
@@ -1726,5 +1941,96 @@ fn dot_slash_dash_writes_a_file_named_dash_in_the_working_directory() {
     assert!(
         out.contains("--title '[bug]: crash on empty input' --body-file ./-\n"),
         "{out}"
+    );
+}
+
+/// A fake browser opener on `PATH`, under both names `SystemOpener` uses (`open` on macOS,
+/// `xdg-open` elsewhere). Each start appends its argument to the log.
+#[cfg(unix)]
+fn counting_opener(dir: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let log = dir.join("opened.log");
+    let script = format!("#!/bin/sh\nprintf '%s\\n' \"$1\" >> '{}'\n", log.display());
+    for name in ["open", "xdg-open"] {
+        let bin = dir.join(name);
+        std::fs::write(&bin, &script).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    log
+}
+
+/// The URLs the opener double was started with, one per start. A missing log means no start;
+/// any other read error fails the test, so it cannot pass as zero starts.
+#[cfg(unix)]
+fn opened(log: &Path) -> Vec<String> {
+    match std::fs::read_to_string(log) {
+        Ok(text) => text.lines().map(str::to_owned).collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => panic!("cannot read the opener log: {:?}", e.kind()),
+    }
+}
+
+/// `report --open` in `work`, with the doubles of `bin_dir` on `PATH`. The binary runs under
+/// a shell that copies its stdout to descriptor 9, which every process it starts inherits,
+/// the detached opener included. Reading stdout to its end therefore waits until the opener
+/// has exited too, so its log is complete when this returns.
+#[cfg(unix)]
+fn report_open(work: &Path, bin_dir: &Path) -> std::process::Output {
+    let binary = assert_cmd::cargo::cargo_bin("slopvac");
+    let mut cmd = std::process::Command::new("/bin/sh");
+    cmd.arg("-c")
+        .arg("exec 9>&1; exec \"$0\" \"$@\"")
+        .arg(binary)
+        .arg("report")
+        .args(bug(&["--open"]))
+        .current_dir(work)
+        .env("PATH", bin_dir);
+    isolate(&mut cmd);
+    cmd.output().unwrap()
+}
+
+/// While the config does not resolve, `report` takes no network action (config.md, section
+/// 2.2), so `--open` prints the URL and starts no browser, as offline mode does.
+#[cfg(unix)]
+#[test]
+fn the_binary_open_starts_no_browser_while_the_config_does_not_resolve() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_opener(bin_dir.path());
+    let work = offline_project(None, true);
+    let out = report_open(work.path(), bin_dir.path());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("Prefilled issue form: https://github.com/slopvac/slopvac/issues/new?"),
+        "{stdout}"
+    );
+    assert_eq!(opened(&log), Vec::<String>::new());
+}
+
+/// The control of the test above: with the extended file present and offline off, `--open`
+/// starts the browser once, with the issue-form URL.
+#[cfg(unix)]
+#[test]
+fn the_binary_open_starts_the_browser_once_the_config_resolves_online() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_opener(bin_dir.path());
+    let work = offline_project(Some("schema_version = 3\n"), false);
+    let out = report_open(work.path(), bin_dir.path());
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let urls = opened(&log);
+    assert_eq!(urls.len(), 1, "{urls:?}");
+    assert!(
+        urls[0].starts_with("https://github.com/slopvac/slopvac/issues/new?template=bug.yml"),
+        "{urls:?}"
     );
 }

@@ -269,3 +269,58 @@ fn stdout_is_flushed_before_the_notice_is_written() -> io::Result<()> {
     );
     Ok(())
 }
+
+#[rstest]
+#[case::update_check("[network]\nupdate_check = false\n", "")]
+#[case::sticky_offline("[network]\noffline = true\n", "[network]\noffline = false\n")]
+fn network_settings_in_an_extended_file_suppress_the_notice(
+    #[case] base: &str,
+    #[case] project: &str,
+) -> io::Result<()> {
+    let fx = fixture()?;
+    fs::write(
+        fx.work.path().join("slopvac.toml"),
+        format!("schema_version = 3\nextends = [\"base.toml\"]\n{project}"),
+    )?;
+    fs::write(
+        fx.work.path().join("base.toml"),
+        format!("schema_version = 3\n{base}"),
+    )?;
+    let cache = seeded_cache()?;
+    let out = run(&fx, cache.path(), &["lint", "doc.md"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "stderr: {stderr}");
+    assert!(!stderr.contains("update-available"), "stderr: {stderr}");
+    Ok(())
+}
+
+#[test]
+fn update_check_false_in_the_config_option_file_suppresses_the_notice() -> io::Result<()> {
+    let fx = fixture()?;
+    fs::write(
+        fx.work.path().join("ci.toml"),
+        "schema_version = 3\n[network]\nupdate_check = false\n",
+    )?;
+    let cache = seeded_cache()?;
+    let out = run(
+        &fx,
+        cache.path(),
+        &["lint", "--config", "ci.toml", "doc.md"],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "stderr: {stderr}");
+    assert!(!stderr.contains("update-available"), "stderr: {stderr}");
+    Ok(())
+}
+
+#[test]
+fn doctor_on_a_config_that_does_not_resolve_shows_no_notice() -> io::Result<()> {
+    let fx = fixture()?;
+    fs::write(fx.work.path().join("slopvac.toml"), "{{{\n")?;
+    let cache = seeded_cache()?;
+    let out = run(&fx, cache.path(), &["doctor"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "stderr: {stderr}");
+    assert!(!stderr.contains("update-available"), "stderr: {stderr}");
+    Ok(())
+}

@@ -89,9 +89,12 @@ pub(super) fn offline_sources(_: &mut SchemaGenerator) -> Schema {
     })
 }
 
-/// The layer a config file came from.
+/// The layer a config file came from. The set grows, so a consumer must tolerate a new value.
 pub(super) fn config_layer(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({ "enum": ["explicit", "project"] })
+    json_schema!({
+        "enum": ["explicit", "project", "extends"],
+        "x-slopvac-extensible": true
+    })
 }
 
 /// What reading the lockfile showed.

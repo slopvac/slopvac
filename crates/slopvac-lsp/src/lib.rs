@@ -13,8 +13,9 @@
 //!
 //! A [`Linter`] can read its config again: the server calls [`Linter::reload`] when a config
 //! file is saved or changes on disk, shows the config warnings, shows a config that fails to
-//! load on the file that failed, and lints every open document again. It asks the client to
-//! watch the config files when the client can.
+//! load on the file that failed, and lints every open document again. A config that fails
+//! to load at startup is shown the same way ([`Server::with_startup_failure`]). It asks the
+//! client to watch the config files when the client can.
 //!
 //! [`command`] and [`run`] are the `slopvac lsp` subcommand.
 
@@ -49,28 +50,17 @@ pub fn command() -> Command {
     Command::new("lsp").about(render(&LspMessage::HelpAbout))
 }
 
-/// Run the language server on standard input and output until the client exits, linting
-/// with `linter` and running each of `checks` next to it. The caller builds the checks from
-/// the project config, as it does `linter`. The client sees `startup_notices` once, as
-/// warnings, right after the handshake.
+/// Run `server` on standard input and output until the client exits. The caller builds it
+/// from the project config: the linter, the checks it runs next to the linter, and the
+/// notices and the config failure the client sees right after the handshake.
 ///
 /// The exit status follows the protocol: 0 after `shutdown` and `exit`, 1 for an `exit`
 /// with no `shutdown` ([`Exit::WithoutShutdown`]).
-pub fn run(
-    _matches: &ArgMatches,
-    linter: impl Linter + 'static,
-    startup_notices: Vec<slopvac_model::Notice>,
-    checks: Vec<std::sync::Arc<dyn Check>>,
-) -> Result<Exit, RunError> {
+pub fn run(_matches: &ArgMatches, server: Server) -> Result<Exit, RunError> {
     let (connection, io_threads) = lsp_server::Connection::stdio();
-    let configured = checks
-        .into_iter()
-        .fold(Server::new(std::sync::Arc::new(linter)), Server::with_check);
-    let served = configured
-        .with_startup_notices(startup_notices)
-        .serve(&connection);
+    let outcome = server.serve(&connection);
     drop(connection);
-    match served {
+    match outcome {
         Ok(exit) => {
             // A reading client gets everything flushed. A client that stopped reading
             // blocks the stdout writer for good, so the wait is bounded and the process

@@ -330,7 +330,7 @@ fn a_ci_value_that_is_not_utf8_still_refuses_a_change(
 fn the_ci_refusal_comes_before_the_project_policy_is_read() {
     let state = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
-    // Over the 1 MiB cap on the policy read, so the policy read fails.
+    // Over the 1 MiB config cap, so the preflight cannot read it.
     fs::write(
         project.path().join("slopvac.toml"),
         vec![b'#'; 1024 * 1024 + 1],
