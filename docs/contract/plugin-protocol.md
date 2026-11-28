@@ -11,7 +11,7 @@ A code plugin is a separate program, and its manifest declares `kind = "code"` (
 ## 1. Constraints from the plan
 
 - The host uses no async runtime. It runs one reader thread per plugin, joined to the work threads by `crossbeam-channel`, and enforces deadlines with `recv_deadline` or `select!`. The spike in `slopvac-8l4.2.17` ran this design with three children, one of which hung, in 49 lines.
-- The host starts a plugin only after `slopvac plugins trust` has recorded the content hash of the plugin. Nothing in this protocol records or implies trust. A code plugin that `slopvac.toml` lists under `[[plugins]]` without trust never starts, and the run reports it with `plugin-untrusted` (section 10) and exits 2.
+- The host starts a plugin only after `slopvac plugins trust` has recorded the content hash of the plugin. Nothing in this protocol records or implies trust. A code plugin that `slopvac.toml` lists under `[[plugins]]` without trust never starts. A command that would call one of its hooks reports it with `plugin-untrusted` (section 10) and exits 2. A command that calls none of its hooks, such as `lint` for a plugin with only a provider hook, reports nothing about it, and its exit code does not change.
 - A plugin that may open connections declares it in its trusted manifest (section 4.3). The host spawns it only when offline mode is off, and policies.md sections 1.5 and 1.6 apply.
 - The unknown-field rule of policies.md section 3.3 applies in both directions (section 9).
 
