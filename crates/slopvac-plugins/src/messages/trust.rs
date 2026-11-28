@@ -551,6 +551,12 @@ pub(crate) enum SignText {
         "key {key_id} is not pinned for namespace `{namespace}`; pin it with `slopvac plugins pin {namespace} <fingerprint> --key <file>`"
     )]
     KeyNotPinned { key_id: String, namespace: String },
+    /// The key id of a lock entry is not pinned for its pair, and another key is.
+    #[code("plugins-sign-key-replaced")]
+    #[text(
+        "key {key_id} is not pinned for namespace `{namespace}`, which pins another key; run `slopvac plugins update` for a release that key signs"
+    )]
+    KeyReplaced { key_id: String, namespace: String },
     /// The statement and the manifest disagree.
     #[code("plugins-sign-mismatch")]
     #[text("the signed statement does not match the manifest: {why}")]
@@ -1239,6 +1245,14 @@ pub(crate) fn key_not_pinned(key_id: &str, namespace: &str) -> String {
     .to_string()
 }
 
+pub(crate) fn key_replaced(key_id: &str, namespace: &str) -> String {
+    SignText::KeyReplaced {
+        key_id: esc(key_id),
+        namespace: esc(namespace),
+    }
+    .to_string()
+}
+
 pub(crate) fn sign_mismatch(why: &str) -> String {
     SignText::Mismatch { why: esc(why) }.to_string()
 }
@@ -1920,6 +1934,13 @@ mod tests {
                     namespace: s("acme"),
                 },
                 "key AB is not pinned for namespace `acme`; pin it with `slopvac plugins pin acme <fingerprint> --key <file>`",
+            ),
+            (
+                SignText::KeyReplaced {
+                    key_id: s("AB"),
+                    namespace: s("acme"),
+                },
+                "key AB is not pinned for namespace `acme`, which pins another key; run `slopvac plugins update` for a release that key signs",
             ),
             (
                 SignText::Mismatch { why: s("w") },

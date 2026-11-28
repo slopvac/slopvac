@@ -91,6 +91,10 @@ pub enum SyncedError {
         /// The field that differs: `id`, `version` or `kind`.
         field: &'static str,
     },
+    /// The lock entry is signed by a key that the policy does not pin for its registry host and
+    /// namespace now. The text names the next step: pin a key, or update after a rotation.
+    #[error("{0}")]
+    Signature(#[source] Box<SyncError>),
     /// Plugins require each other in a loop.
     #[error("{}", PackMessage::RequiresCycle { cycle: crate::messages::join_cycle(.cycle) })]
     RequiresCycle {
@@ -127,6 +131,7 @@ impl SyncedError {
         use crate::messages::code_of;
         Some(match self {
             Self::Pack(e) => return e.code(),
+            Self::Signature(e) => return Some(e.code()),
             Self::NotLocked { .. } => code_of!(NotLocked { id }),
             Self::NotInstalled { .. } => code_of!(NotInstalled { id }),
             Self::Tampered { .. } => code_of!(Tampered { id }),
@@ -250,8 +255,12 @@ fn check_requirements(pack: &LoadedPack, loaded: &[LoadedPack]) -> Result<(), Sy
 /// The result is in dependency order. The built-in core is not part of it: put it first with
 /// [`Packs::with_synced`].
 ///
+/// A signed entry loads only while `policy` pins the key that signed it for the registry host
+/// and namespace of its source. Each plugin is checked before any of its files is read.
+///
 /// # Errors
-/// [`SyncedError`]: a plugin the lock does not pin ([`SyncedError::NotLocked`]), a tree that is
+/// [`SyncedError`]: a plugin the lock does not pin ([`SyncedError::NotLocked`]), a signing key
+/// that `policy` does not pin for the entry ([`SyncedError::Signature`]), a tree that is
 /// absent or differs from its digest, an unsupported extension API, a manifest that disagrees
 /// with the lock, an unmet requirement, a `requires` cycle, or a file that does not load.
 pub fn load_synced(
@@ -316,7 +325,7 @@ fn load_inner(
     requested: &[PackId],
     lock: &Lockfile,
     store: &Store,
-    _policy: &KeyPolicy,
+    policy: &KeyPolicy,
     budget: &mut Budget,
     #[cfg(feature = "test-support")] mut after_hash: Option<HashObserver<'_>>,
 ) -> Result<Vec<LoadedPack>, SyncedError> {
@@ -328,6 +337,13 @@ fn load_inner(
                 id,
                 api: locked.slopvac_api,
             });
+        }
+        // The pin decides, not the verification at sync time, and before any file is read.
+        match slopvac_plugins::sync::pinned_signer(&locked, policy) {
+            Ok(_) => {}
+            // Sync parses the source before it fetches anything, so it installed nothing.
+            Err(SyncError::Fetch { .. }) => return Err(SyncedError::NotInstalled { id }),
+            Err(e) => return Err(SyncedError::Signature(Box::new(e))),
         }
         // The hash comes from the lock and the cached archive, never from a store record, and
         // the tree must hash to it before any file is read (threat model E8).

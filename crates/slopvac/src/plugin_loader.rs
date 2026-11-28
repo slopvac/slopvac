@@ -17,9 +17,9 @@ use slopvac_packs::{
 use slopvac_plugins::extract::{ExtractError, Limits, TreeHash, tree_hash_capturing};
 use slopvac_plugins::host::PluginSpec;
 use slopvac_plugins::lock::{LockedPack, SourceKind};
-use slopvac_plugins::oci::{OciError, Reference};
+use slopvac_plugins::oci::OciError;
 use slopvac_plugins::sign::{KeyPolicy, PublicKey};
-use slopvac_plugins::sync::{Store, SyncError};
+use slopvac_plugins::sync::{Store, SyncError, pinned_signer};
 use slopvac_plugins::trust::VerifiedPlugin;
 use slopvac_plugins::{LoadError, PluginLoader};
 
@@ -125,24 +125,14 @@ impl<'a> InstalledPlugins<'a> {
     /// A signed entry whose source does not parse is refused as not installed: sync parses the
     /// same source before it fetches or verifies anything, so it installed no tree for it.
     fn fingerprint(&self, locked: &LockedPack) -> Result<Option<String>, LoadRefusal> {
-        let Some(signature) = locked.signature.as_ref() else {
-            return Ok(None);
-        };
-        let SourceKind::Oci(text) = locked.source.kind() else {
-            return Ok(None);
-        };
-        let reference =
-            Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).map_err(|e| {
-                LoadRefusal::SourceUnparsed {
-                    id: locked.id.to_string(),
-                    cause: SourceCause::of(&e),
-                }
-            })?;
-        let namespace = reference.repository.split('/').next().unwrap_or_default();
-        Ok(self
-            .policy
-            .signing_key(&reference.registry, namespace, signature.key_id.as_str())
-            .map(PublicKey::fingerprint))
+        match pinned_signer(locked, self.policy) {
+            Ok(key) => Ok(key.map(PublicKey::fingerprint)),
+            Err(SyncError::Fetch { source, .. }) => Err(LoadRefusal::SourceUnparsed {
+                id: locked.id.to_string(),
+                cause: SourceCause::of(&source),
+            }),
+            Err(e) => Err(SyncedError::Signature(Box::new(e)).into()),
+        }
     }
 
     /// The directory sync left for `locked` and the tree hash the lock pins for it. A path
@@ -181,6 +171,8 @@ impl<'a> InstalledPlugins<'a> {
         locked: &LockedPack,
     ) -> Result<(VerifiedPlugin, PluginSpec), LoadRefusal> {
         let name = locked.id.to_string();
+        // The pin decides before any file of the tree is read.
+        let fingerprint = self.fingerprint(locked)?;
         let (root, expected) = self.synced_tree(locked)?;
         // One pass hashes the tree and keeps the manifest bytes it read. The hash is checked
         // before anything is parsed, and the parse reads only the kept bytes.
@@ -211,7 +203,7 @@ impl<'a> InstalledPlugins<'a> {
             return Err(SyncedError::Tampered { id: name }.into());
         }
         let mut context = CodePluginContext::new(expected, PLUGIN_PATH);
-        if let Some(fingerprint) = self.fingerprint(locked)? {
+        if let Some(fingerprint) = fingerprint {
             context = context.with_key_fingerprint(fingerprint);
         }
         Ok(load_code_plugin(

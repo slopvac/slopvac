@@ -69,6 +69,15 @@ pub enum SignError {
         /// Namespace of the artifact id.
         namespace: String,
     },
+    /// The key id of a lock entry is not pinned for its registry host and namespace, and another
+    /// key is, as after a rotation.
+    #[error("{}", messages::key_replaced(.key_id, .namespace))]
+    KeyReplaced {
+        /// Key id the lock entry records.
+        key_id: String,
+        /// Namespace of the artifact.
+        namespace: String,
+    },
     /// The signature does not verify.
     #[error("{}", SignPhrase::BadSignature.as_static())]
     BadSignature,
@@ -313,6 +322,30 @@ impl KeyPolicy {
         self.candidates(registry, namespace)
             .iter()
             .find(|k| k.key_id() == key_id)
+    }
+
+    /// The key that signs for `(registry, namespace)` with `key_id`, or why none does.
+    ///
+    /// # Errors
+    /// [`SignError::KeyNotPinned`] when the policy holds no key for the pair, and
+    /// [`SignError::KeyReplaced`] when it holds other keys for it.
+    pub fn pinned_signer(
+        &self,
+        registry: &str,
+        namespace: &str,
+        key_id: &str,
+    ) -> Result<&PublicKey, SignError> {
+        if let Some(key) = self.signing_key(registry, namespace, key_id) {
+            return Ok(key);
+        }
+        let (key_id, namespace) = (key_id.to_owned(), namespace.to_owned());
+        Err(
+            if self.candidates(registry, namespace.as_str()).is_empty() {
+                SignError::KeyNotPinned { key_id, namespace }
+            } else {
+                SignError::KeyReplaced { key_id, namespace }
+            },
+        )
     }
 
     fn candidates(&self, registry: &str, namespace: &str) -> &[PublicKey] {

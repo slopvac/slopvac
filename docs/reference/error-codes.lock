@@ -1328,6 +1328,7 @@ plugins-rotated text
 plugins-sign-invalid-key text
 plugins-sign-invalid-statement text
 plugins-sign-key-not-pinned text
+plugins-sign-key-replaced text
 plugins-sign-lockfile-version text
 plugins-sign-mismatch text
 plugins-sign-not-canonical text

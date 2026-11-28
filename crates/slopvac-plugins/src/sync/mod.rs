@@ -100,6 +100,44 @@ const MAX_MINISIG_BYTES: u64 = 4 * 1024;
 /// Longest the git commands of one pack may take together.
 const GIT_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// The key that signed `pack`, as the policy holds it now for the registry host and namespace
+/// of its OCI source. `None` for an entry with no signature or a source that is not OCI.
+///
+/// Every load of a synced plugin calls this before it reads the plugin's tree: a verification at
+/// sync time does not outlast the pin.
+///
+/// # Errors
+/// [`SyncError::Fetch`] when the OCI source does not parse, as sync reports it, and
+/// [`SyncError::Sign`] with [`crate::sign::SignError::KeyNotPinned`] or
+/// [`crate::sign::SignError::KeyReplaced`] when the policy holds no key with the entry's key id
+/// for the pair.
+pub fn pinned_signer<'p>(
+    pack: &LockedPack,
+    policy: &'p KeyPolicy,
+) -> Result<Option<&'p crate::sign::PublicKey>, SyncError> {
+    let Some(signature) = pack.signature.as_ref() else {
+        return Ok(None);
+    };
+    let SourceKind::Oci(text) = pack.source.kind() else {
+        return Ok(None);
+    };
+    let reference =
+        Reference::parse(text.strip_prefix("oci://").unwrap_or(text)).map_err(|source| {
+            SyncError::Fetch {
+                id: pack.id.clone(),
+                source,
+            }
+        })?;
+    let namespace = reference.repository.split('/').next().unwrap_or_default();
+    policy
+        .pinned_signer(&reference.registry, namespace, signature.key_id.as_str())
+        .map(Some)
+        .map_err(|source| SyncError::Sign {
+            id: pack.id.clone(),
+            source,
+        })
+}
+
 /// The one layer of a pack manifest that holds the pack, or the sentence that says why it has
 /// none. The signature layers do not count.
 fn payload_layer<'m>(

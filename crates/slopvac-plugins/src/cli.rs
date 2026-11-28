@@ -26,7 +26,7 @@ use crate::revoke::{RevocationError, RevocationNotice, Revocations};
 use crate::sign::{DEFAULT_REGISTRY, KeyPolicy, PinScope};
 use crate::sync::{
     Change, Network, PackState, PackStatus, PythonBuild, PythonState, Store, SyncError, Syncer,
-    status, status_with_python, update_notices,
+    pinned_signer, status, status_with_python, update_notices,
 };
 use crate::trust::{
     NamedFile, RotationFiles, TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin,
@@ -885,7 +885,41 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
     if revoked(runner, pack, &current.list) {
         return Err(RunError::Revoked { id: line(id) });
     }
-    let (vp, spec) = loader.load(pack).map_err(|e| match e {
+    // The cache is not trusted (threat model E8), so the signature is checked again, from the
+    // cached files only, before a person's trust is recorded for what they hold.
+    let store = Store::new(&runner.dirs.cache_dir);
+    let verify_cached = || {
+        Syncer::new(
+            &store,
+            Network::Offline,
+            runner.policy,
+            &runner.dirs.project_root,
+            runner.revocations,
+        )
+        .verify_cached_signature(pack)
+        .map_err(|e| {
+            let reported = cause::sync(&runner.dirs.project_root, &e);
+            match e {
+                // A cached file that is not what its name says is an input that `trust` cannot
+                // use: the command reports it under its own code, as for a tree that differs.
+                SyncError::DigestMismatch { .. } => refused(reported.to_string()),
+                _ => RunError::Failed { source: reported },
+            }
+        })
+    };
+    let load = loader.load(pack);
+    // The loader refuses a key that the policy does not pin for the entry's pair, and the
+    // command withholds the loader's text. The cached signature then reports as it did before
+    // the load checked the pin, and the key refusal reports as sync reports it.
+    if load.is_err()
+        && let Err(e @ SyncError::Sign { .. }) = pinned_signer(pack, runner.policy)
+    {
+        verify_cached()?;
+        return Err(RunError::Failed {
+            source: cause::sync(&runner.dirs.project_root, &e),
+        });
+    }
+    let (vp, spec) = load.map_err(|e| match e {
         // The sentence names the plugin from the locked entry that was loaded, never an id that
         // the loader supplies.
         LoadError::StoreUnreadable { .. } => RunError::Failed {
@@ -896,26 +930,7 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         },
         _ => refused(withheld(TRUST_INPUTS)),
     })?;
-    // The cache is not trusted (threat model E8), so the signature is checked again here, from
-    // the cached files only, before a person's trust is recorded for what they hold.
-    let store = Store::new(&runner.dirs.cache_dir);
-    let signer = Syncer::new(
-        &store,
-        Network::Offline,
-        runner.policy,
-        &runner.dirs.project_root,
-        runner.revocations,
-    )
-    .verify_cached_signature(pack)
-    .map_err(|e| {
-        let reported = cause::sync(&runner.dirs.project_root, &e);
-        match e {
-            // A cached file that is not what its name says is an input that `trust` cannot use:
-            // the command reports it under its own code, as for a tree that differs.
-            SyncError::DigestMismatch { .. } => refused(reported.to_string()),
-            _ => RunError::Failed { source: reported },
-        }
-    })?;
+    let signer = verify_cached()?;
     let (gate, spec) = runner.prepared(&vp, spec, TRUST_INPUTS).map_err(refused)?;
     let (_, state) = gate
         .state(&vp, &spec)
