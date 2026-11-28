@@ -127,7 +127,7 @@ fn a_pack_config_resolves_as_an_extends_target() {
     .unwrap();
     let acme = LoadedPack::load(&DirSource::new(pack_dir.path()), Source::Pack).unwrap();
     let core = LoadedPack::load(&core_source(), Source::Core).unwrap();
-    let packs = Packs::new(vec![core, acme]).unwrap();
+    let packs = Packs::new(vec![core, acme], &[]).unwrap();
 
     let project = Project::new("schema_version = 3\nextends = [\"acme:base\"]\n");
     let resolved = resolve(&project.load(&packs), &packs);

@@ -29,7 +29,7 @@ fn pack(genres: &str, files: &[&str]) -> tempfile::TempDir {
 
 fn genre_ids(dir: &tempfile::TempDir) -> Result<Vec<String>, PackError> {
     let loaded = LoadedPack::load(&DirSource::new(dir.path()), Source::Pack)?;
-    let packs = Packs::new(vec![loaded])?;
+    let packs = Packs::new(vec![loaded], &[])?;
     Ok(packs.genres().map(|g| g.id.clone()).collect())
 }
 

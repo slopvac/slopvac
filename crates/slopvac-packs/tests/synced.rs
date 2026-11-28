@@ -639,7 +639,7 @@ fn a_synced_plugin_registers_its_taggers_after_the_core_ones() {
     ));
     w.install(&spec);
 
-    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap();
 
     let ids: Vec<&str> = packs.taggers().map(|t| t.id.as_str()).collect();
     assert_eq!(ids.len(), Packs::core().unwrap().taggers().count() + 1);
@@ -662,7 +662,7 @@ fn a_synced_tagger_over_the_pattern_cap_is_refused() {
     ));
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
 
     assert_eq!(err.code(), Some("tagger-pattern-too-long"), "{err}");
     assert!(
@@ -676,7 +676,7 @@ fn a_synced_tagger_over_the_pattern_cap_is_refused() {
 fn a_bare_genre_name_that_a_synced_pack_shares_with_the_core_is_ambiguous() {
     let mut w = World::new();
     w.install(&Spec::new("acme").genre("consumer", "profile: strict\n"));
-    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap();
     let at = Reference::new("docs/config.toml", 4, 9);
 
     let err = packs.resolve_genre("consumer", &at).unwrap_err();
@@ -697,7 +697,7 @@ fn a_bare_genre_name_that_a_synced_pack_shares_with_the_core_is_ambiguous() {
 fn a_qualified_genre_name_resolves_to_the_pack_that_supplies_it() {
     let mut w = World::new();
     w.install(&Spec::new("acme").genre("consumer", "profile: strict\n"));
-    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap();
     let at = Reference::new("docs/config.toml", 4, 9);
 
     let (spec, from) = packs.resolve_genre("acme:consumer", &at).unwrap();
@@ -717,7 +717,7 @@ fn a_qualified_genre_name_resolves_to_the_pack_that_supplies_it() {
 fn a_bare_genre_name_only_a_synced_pack_defines_resolves() {
     let mut w = World::new();
     w.install(&Spec::new("acme").genre("memo", ""));
-    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap();
 
     let (_, from) = packs
         .resolve_genre("memo", &Reference::new("c.toml", 1, 1))
@@ -884,6 +884,7 @@ fn the_core_pack_counts_toward_the_run_budget() {
         &w.lock(),
         &w.store(),
         small(|l| l.run_rules = 1),
+        &[],
     )
     .unwrap_err();
 
@@ -912,7 +913,7 @@ fn registering_packs_applies_the_same_budgets_as_loading_them(
     // Loaded under the default limits, then registered under small ones.
     let packs = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
 
-    let err = Packs::new_within(packs, small(set)).unwrap_err();
+    let err = Packs::new_within(packs, small(set), &[]).unwrap_err();
 
     assert!(
         matches!(err, PackError::Budget { budget, .. } if budget == what),
@@ -1100,7 +1101,7 @@ fn owned_rule_sets_list_the_core_first_then_each_plugin_in_load_order() {
     w.install(&Spec::new("base").rules(&["a"]));
     w.install(&Spec::new("top").requires("base").rules(&["b", "c"]));
 
-    let sets = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store())
+    let sets = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store(), &[])
         .unwrap()
         .into_rule_sets();
 
@@ -1121,7 +1122,7 @@ fn a_synced_tagger_that_takes_a_core_tagger_id_is_refused() {
         &format!("schema_version: 3\nid: {id}\ntag: acme-tag\nmatch:\n  - pattern: 'a'\n"),
     ));
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
 
     assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
 }
@@ -1135,7 +1136,7 @@ fn a_synced_tagger_that_emits_a_core_tag_is_refused() {
         &format!("schema_version: 3\nid: acme-t\ntag: {tag}\nmatch:\n  - pattern: 'a'\n"),
     ));
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
 
     assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
 }
@@ -1153,6 +1154,8 @@ fn a_synced_tagger_that_emits_a_core_tag_is_refused() {
 #[case::fresh_id_and_tag("acme-t", "acme-tag", false)]
 #[case::tag_of_a_declarative_tagger_used_as_an_id("procedure", "acme-tag", false)]
 #[case::id_of_a_declarative_tagger("procedure-heading", "acme-tag", true)]
+#[case::id_of_the_declared_context_tagger("declared-contexts", "acme-tag", true)]
+#[case::tag_a_built_in_genre_declares("acme-t", "security", true)]
 fn a_plugin_tagger_is_checked_against_built_in_ids_and_tags_separately(
     #[case] id: &str,
     #[case] tag: &str,
@@ -1166,11 +1169,71 @@ fn a_plugin_tagger_is_checked_against_built_in_ids_and_tags_separately(
     // The plugin loads on its own, so the refusal below is the assembly check.
     let loaded = w.load(&["acme"]).unwrap();
 
-    let assembled = Packs::new(loaded);
+    let assembled = Packs::new(loaded, &[]);
 
     match (refused, assembled) {
         (false, Ok(_)) => {}
         (true, Err(PackError::Artifact { path, fault })) => {
+            assert_eq!(path, "taggers/t.yaml");
+            assert!(matches!(fault, ArtifactFault::Invalid), "{fault:?}");
+        }
+        (_, other) => panic!("refused={refused}: {:?}", other.err()),
+    }
+}
+
+// The project's config can declare context tags for a genre. A plugin tagger must not emit one,
+// for the same reason it must not emit a built-in genre's tag, and the refusal has the same code.
+#[rstest]
+#[case::tag_the_config_declares("config-ctx", true)]
+#[case::tag_the_config_does_not_declare("acme-tag", false)]
+fn a_plugin_tagger_is_checked_against_the_contexts_a_config_declares(
+    #[case] tag: &str,
+    #[case] refused: bool,
+) {
+    let genres = slopvac_context::builtin_genres().unwrap();
+    let genre = genres.ids()[0].to_owned();
+    let genres = genres.with_contexts(&genre, &["config-ctx"]).unwrap();
+    let reserved = genres.declared_context_tags().unwrap();
+    let mut w = World::new();
+    w.install(&with_tagger(
+        "acme",
+        &format!("schema_version: 3\nid: acme-t\ntag: {tag}\nmatch:\n  - pattern: 'a'\n"),
+    ));
+    let loaded = w.load(&["acme"]).unwrap();
+
+    let assembled = Packs::new(loaded, &reserved);
+
+    match (refused, assembled) {
+        (false, Ok(_)) => {}
+        (true, Err(PackError::Artifact { path, fault })) => {
+            assert_eq!(path, "taggers/t.yaml");
+            assert!(matches!(fault, ArtifactFault::Invalid), "{fault:?}");
+        }
+        (_, other) => panic!("refused={refused}: {:?}", other.err()),
+    }
+}
+
+// The synced constructors take the reserved set too, so a caller cannot omit it: a synced plugin
+// tagger that emits a context the project's config declares is refused, with the core loaded.
+#[rstest]
+#[case::tag_the_config_declares("config-ctx", true)]
+#[case::tag_the_config_does_not_declare("acme-tag", false)]
+fn a_synced_plugin_tagger_is_checked_against_the_contexts_a_config_declares(
+    #[case] tag: &str,
+    #[case] refused: bool,
+) {
+    let reserved = vec!["config-ctx".to_owned()];
+    let mut w = World::new();
+    w.install(&with_tagger(
+        "acme",
+        &format!("schema_version: 3\nid: acme-t\ntag: {tag}\nmatch:\n  - pattern: 'a'\n"),
+    ));
+
+    let synced = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &reserved);
+
+    match (refused, synced) {
+        (false, Ok(_)) => {}
+        (true, Err(SyncedError::Pack(PackError::Artifact { path, fault }))) => {
             assert_eq!(path, "taggers/t.yaml");
             assert!(matches!(fault, ArtifactFault::Invalid), "{fault:?}");
         }
@@ -1250,7 +1313,7 @@ fn plugin_with_style_of(len: usize, utf8: bool) -> World {
 fn a_plugin_style_of_exactly_one_mebibyte_loads() {
     let w = plugin_with_style_of(MIB, true);
 
-    let loaded = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store());
+    let loaded = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]);
 
     assert!(loaded.is_ok(), "{:?}", loaded.err());
 }
@@ -1268,7 +1331,7 @@ fn a_plugin_style_over_one_mebibyte_is_refused_as_too_large(
 ) {
     let w = plugin_with_style_of(len, utf8);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
 
     let SyncedError::Pack(PackError::Source(SourceError::StyleTooLarge { style, cap })) = &err
     else {
@@ -1291,7 +1354,7 @@ fn a_one_and_a_half_mebibyte_category_still_loads() {
     let mut w = World::new();
     w.install(&spec);
 
-    let loaded = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store());
+    let loaded = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]);
 
     assert!(loaded.is_ok(), "{:?}", loaded.err());
 }
@@ -1307,7 +1370,7 @@ fn an_oversized_category_that_is_not_utf8_is_refused_as_too_large() {
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
 
     let SyncedError::Pack(PackError::Source(SourceError::TooLarge { cap })) = &err else {
         panic!("{err:?}");
@@ -1324,7 +1387,7 @@ fn two_plugins_that_share_a_bare_rule_id_both_load() {
     w.install(&Spec::new("base").rules(&["a"]));
     w.install(&Spec::new("top").requires("base").rules(&["b"]));
 
-    let packs = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store()).unwrap();
+    let packs = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store(), &[]).unwrap();
 
     let ids: Vec<String> = packs
         .rule_sets()
@@ -1365,7 +1428,7 @@ fn a_plugin_rule_with_a_core_rule_id_is_refused_with_its_own_code() {
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
 
     assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
     assert_eq!(
@@ -1400,7 +1463,7 @@ fn a_plugin_category_that_shares_an_id_with_a_core_category_loads_beside_it() {
     let mut w = World::new();
     w.install(&spec);
 
-    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+    let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap();
 
     let shared: Vec<(String, String)> = packs
         .rule_sets()
@@ -1463,7 +1526,7 @@ fn a_plugin_with_a_category_only_clash_and_a_rule_clash_is_refused_for_the_rule_
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
 
     assert!(
         matches!(
@@ -1490,7 +1553,7 @@ fn a_core_clash_is_reported_before_a_repeated_plugin_listed_ahead_of_it() {
     loaded.extend(load_synced(&ids(&["other"]), &w.lock(), &w.store()).unwrap());
     loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
 
-    let err = Packs::new(loaded).unwrap_err();
+    let err = Packs::new(loaded, &[]).unwrap_err();
 
     assert!(
         matches!(
@@ -1541,7 +1604,7 @@ fn two_core_clashes_in_one_plugin_name_the_lowest_rule_in_either_order(#[case] l
     let mut w = World::new();
     w.install(&spec);
 
-    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store(), &[]).unwrap_err();
 
     assert!(
         matches!(
@@ -1587,7 +1650,7 @@ fn core_clashes_across_plugins_name_the_lowest_qualified_id_in_any_order(#[case]
     }
     loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
 
-    let err = Packs::new(loaded).unwrap_err();
+    let err = Packs::new(loaded, &[]).unwrap_err();
 
     assert!(
         matches!(
@@ -1614,7 +1677,7 @@ fn duplicate_ids_name_the_lowest_qualified_id_in_any_order(#[case] order: &[&'st
         loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
     }
 
-    let err = Packs::new(loaded).unwrap_err();
+    let err = Packs::new(loaded, &[]).unwrap_err();
 
     assert!(
         matches!(
@@ -1650,7 +1713,7 @@ fn core_clashes_of_a_prefix_plugin_pair_follow_byte_order_of_the_whole_id(
     }
     loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
 
-    let err = Packs::new(loaded).unwrap_err();
+    let err = Packs::new(loaded, &[]).unwrap_err();
 
     assert!(
         matches!(
@@ -1676,7 +1739,7 @@ fn duplicates_of_a_prefix_plugin_pair_follow_byte_order_of_the_whole_id(
         loaded.extend(load_synced(&ids(&[name]), &w.lock(), &w.store()).unwrap());
     }
 
-    let err = Packs::new(loaded).unwrap_err();
+    let err = Packs::new(loaded, &[]).unwrap_err();
 
     assert!(
         matches!(
@@ -1695,7 +1758,7 @@ fn the_same_qualified_rule_id_supplied_twice_is_refused() {
     let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
     loaded.extend(load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap());
 
-    let err = Packs::new(loaded).unwrap_err();
+    let err = Packs::new(loaded, &[]).unwrap_err();
 
     assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
 }
@@ -1709,7 +1772,7 @@ fn a_plugin_listed_before_the_core_is_still_checked_against_the_core_ids() {
     let mut loaded = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
     loaded.push(LoadedPack::load(&core_source(), Source::Core).unwrap());
 
-    let err = Packs::new(loaded).unwrap_err();
+    let err = Packs::new(loaded, &[]).unwrap_err();
 
     assert_eq!(err.code(), Some("plugin-rule-id-collision"), "{err}");
 }

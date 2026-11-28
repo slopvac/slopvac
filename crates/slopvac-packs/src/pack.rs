@@ -400,21 +400,30 @@ fn built_in_taggers() -> &'static BuiltIn {
             reason = "the built-in registry is bundled data that the context crate's tests load"
         )]
         let registry = slopvac_context::builtin_registry().expect("the built-in taggers load");
-        BuiltIn {
-            ids: registry.ids().into_iter().map(str::to_owned).collect(),
-            tags: registry
-                .emitted_tags()
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-        }
+        #[expect(
+            clippy::expect_used,
+            reason = "the built-in genres are bundled data that the context crate's tests load"
+        )]
+        let declared = slopvac_context::DeclaredContextTagger::builtin_tags()
+            .expect("the built-in genres load");
+        // The declared-context tagger runs outside the registry, so add its id and tags.
+        let mut ids: Vec<String> = registry.ids().into_iter().map(str::to_owned).collect();
+        ids.push(slopvac_context::DeclaredContextTagger::ID.to_owned());
+        let mut tags: Vec<String> = registry
+            .emitted_tags()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        tags.extend(declared);
+        BuiltIn { ids, tags }
     })
 }
 
 /// Refuse a tagger that takes the id of an earlier plugin's tagger, or emits a context tag that a
 /// core tagger emits. A synced plugin may add tags and taggers, never stand in for the core's:
 /// the core rules read those tags, so a plugin that set `procedure` could turn them on or off.
-fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
+/// The tags in `reserved`, which a config declares for its genres, are held back the same way.
+fn check_taggers(packs: &[LoadedPack], reserved: &[String]) -> Result<(), PackError> {
     // The core's taggers first, wherever the core sits in the list.
     let core_taggers = || {
         packs
@@ -425,6 +434,7 @@ fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
     let built_in = built_in_taggers();
     let mut core_tags: HashSet<&str> = core_taggers().map(|t| t.tag.as_str()).collect();
     core_tags.extend(built_in.tags.iter().map(String::as_str));
+    core_tags.extend(reserved.iter().map(String::as_str));
     let mut ids: HashSet<&str> = core_taggers().map(|t| t.id.as_str()).collect();
     ids.extend(built_in.ids.iter().map(String::as_str));
     for pack in packs.iter().filter(|p| p.origin != Source::Core) {
@@ -501,29 +511,38 @@ pub struct Packs {
 }
 
 impl Packs {
-    /// Register the genres and styles of `packs`, in order.
+    /// Register the genres and styles of `packs`, in order. A plugin tagger may not emit any tag
+    /// in `reserved`, the context tags that the project's config declares for its genres (see
+    /// `GenreRegistry::declared_context_tags`). A caller with no such contexts passes `&[]`.
     ///
     /// # Errors
     /// [`PackError::Budget`] when the packs together pass a cap (X3),
     /// [`PackError::Registry`] when two packs supply the same qualified name,
-    /// [`PackError::MissingParent`] for a genre that extends one no pack supplies, and
-    /// [`PackError::GenreCycle`] for a genre that extends itself through its parents.
-    pub fn new(packs: Vec<LoadedPack>) -> Result<Self, PackError> {
-        Self::new_within(packs, Limits::default())
+    /// [`PackError::MissingParent`] for a genre that extends one no pack supplies,
+    /// [`PackError::GenreCycle`] for a genre that extends itself through its parents, and
+    /// [`PackError::Artifact`] with [`ArtifactFault::Invalid`] for a plugin tagger that takes
+    /// the id of another tagger or emits a tag that a built-in tagger, a built-in genre or
+    /// `reserved` supplies.
+    pub fn new(packs: Vec<LoadedPack>, reserved: &[String]) -> Result<Self, PackError> {
+        Self::new_within(packs, Limits::default(), reserved)
     }
 
     /// Like [`Packs::new`], under `limits` for the run.
     ///
     /// # Errors
     /// As [`Packs::new`].
-    pub fn new_within(packs: Vec<LoadedPack>, limits: Limits) -> Result<Self, PackError> {
+    pub fn new_within(
+        packs: Vec<LoadedPack>,
+        limits: Limits,
+        reserved: &[String],
+    ) -> Result<Self, PackError> {
         let mut budget = Budget::new(limits);
         for pack in &packs {
             budget
                 .charge_pack(pack)
                 .map_err(|e| e.in_plugin(&pack.manifest.id))?;
         }
-        check_taggers(&packs)?;
+        check_taggers(&packs, reserved)?;
         check_rule_ids(&packs)?;
         let mut genres = Registry::new();
         let mut styles = Registry::new();
@@ -553,7 +572,11 @@ impl Packs {
     /// # Errors
     /// [`PackError`] when the embedded pack does not load.
     pub fn core() -> Result<Self, PackError> {
-        Self::new(vec![LoadedPack::load(&crate::core_source(), Source::Core)?])
+        // The core cannot collide with itself, so it reserves nothing.
+        Self::new(
+            vec![LoadedPack::load(&crate::core_source(), Source::Core)?],
+            &[],
+        )
     }
 
     /// The loaded packs, in load order.

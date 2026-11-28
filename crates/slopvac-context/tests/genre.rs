@@ -758,3 +758,32 @@ mod display_escaping {
         clean(&files_match(&[format!("{BAD}\\")], "a.md").unwrap_err());
     }
 }
+
+// Declared contexts come from the genre files, from their parents and from `with_contexts`, in
+// no order and with repeats. The registry reports each tag once, sorted.
+#[test]
+fn declared_context_tags_are_sorted_and_unique_across_files_parents_and_the_host() {
+    let reg = GenreRegistry::new(
+        parse_genres(
+            "
+- schema_version: 3
+  id: base
+  contexts: [zeta, alpha]
+- schema_version: 3
+  id: child
+  extends: [base]
+  contexts: [mid, alpha]
+",
+        )
+        .unwrap(),
+        "child",
+    )
+    .unwrap()
+    .with_contexts("child", &["beta", "zeta"])
+    .unwrap();
+
+    assert_eq!(
+        reg.declared_context_tags().unwrap(),
+        vec!["alpha", "beta", "mid", "zeta"]
+    );
+}
