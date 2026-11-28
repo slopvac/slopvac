@@ -1952,3 +1952,44 @@ fn a_store_that_pins_a_reserved_namespace_is_refused_on_load() {
         "{err:?}"
     );
 }
+
+/// Run `f` on another thread and wait for it at most five seconds.
+#[cfg(unix)]
+fn within_deadline<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the call returned within the deadline")
+}
+
+#[cfg(unix)]
+fn fifo(path: &std::path::Path) {
+    let status = std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+/// A FIFO with no writer would block a read forever, so `pin` refuses it at once as a file
+/// that is not regular, and keeps the cause as a kind with no path.
+#[cfg(unix)]
+#[test]
+fn pin_refuses_a_fifo_key_file_without_waiting_for_a_writer() {
+    let s = Scratch::new("pin-fifo");
+    let file = s.dir("acme.pub");
+    fifo(&file);
+    let state = s.dir("state");
+    let err = within_deadline(move || {
+        TrustStore::open(state)
+            .pin_key_file(&PinScope::new("ghcr.io", "acme"), &"0".repeat(64), &file, SHOWN, NOW)
+            .unwrap_err()
+    });
+    assert_eq!(err.code(), Some("key-invalid"), "{err:?}");
+    let source = std::error::Error::source(&err).expect("a typed source");
+    assert_eq!(source.to_string(), "not a regular file");
+    assert!(std::error::Error::source(source).is_none(), "{source:?}");
+    assert!(!format!("{source:?}").contains("acme.pub"), "{source:?}");
+}

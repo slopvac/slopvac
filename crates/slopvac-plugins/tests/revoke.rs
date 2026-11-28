@@ -1534,3 +1534,35 @@ fn k13_rotate_from_files_refuses_a_reserved_namespace_before_any_read(#[case] na
         "the revocation source was used"
     );
 }
+
+/// A FIFO with no writer would block a read forever, so `rotate` refuses it at once.
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::statement("rotation.json")]
+#[case::old_signature("old.minisig")]
+#[case::new_signature("new.minisig")]
+fn k18_rotate_refuses_a_fifo_without_waiting_for_a_writer(#[case] name: &str) {
+    let r = Rotation::new(&key(OLD_PUB));
+    let path = r.path(name);
+    fs::remove_file(&path).unwrap();
+    let status = std::process::Command::new("mkfifo")
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let revocations = r.cache(&[]);
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(r.rotate(&new_fp(), &revocations).map(drop));
+    });
+    let err = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("rotate returned within the deadline")
+        .unwrap_err();
+    assert!(
+        matches!(&err, TrustError::RotationFile { file, .. } if file == name),
+        "{err:?}"
+    );
+    let source = std::error::Error::source(&err).expect("a typed source");
+    assert_eq!(source.to_string(), "not a regular file");
+}

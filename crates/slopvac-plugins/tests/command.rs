@@ -2358,3 +2358,101 @@ fn trust_with_an_invalid_lock_exits_2_with_its_code_and_records_nothing() {
     assert_eq!(err.exit_code(), 2);
     assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
 }
+
+// ---- The CLI prints the catalog text of each pin and rotate refusal ----
+
+#[test]
+fn pin_with_a_key_of_another_fingerprint_prints_both_fingerprints() {
+    let f = Fixture::new();
+    let key = f.key_file("old.pub", OLD_PUB);
+    let named = "a".repeat(64);
+    let err = f
+        .run(&["pin", "acme", &named, "--key", &key], false, |s| s)
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "key-fingerprint-mismatch");
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "the key has fingerprint {}, not the fingerprint {named} that the command names",
+            pub_key(OLD_PUB).fingerprint()
+        )
+    );
+}
+
+#[test]
+fn pin_with_a_missing_key_file_names_the_file_and_the_reason() {
+    let f = Fixture::new();
+    let missing = f.base.path().join("missing.pub");
+    let err = f
+        .run(
+            &["pin", "acme", &"a".repeat(64), "--key", missing.to_str().unwrap()],
+            false,
+            |s| s,
+        )
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "key-invalid");
+    assert_eq!(
+        err.to_string(),
+        "the key file <external>/missing.pub cannot be used: the file cannot be read"
+    );
+}
+
+#[test]
+fn rotate_without_a_revocation_list_prints_the_command_that_fetches_one() {
+    let f = Fixture::uncached();
+    let args = f.rotation();
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    let err = f.run(&words, false, |s| s).result.unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "rotation refused: no revocation list has been fetched, so a revoked key cannot be ruled out; run `slopvac plugins sync` online"
+    );
+}
+
+#[test]
+fn rotate_with_a_signature_file_over_its_cap_names_the_file() {
+    let f = Fixture::new();
+    let args = f.rotation();
+    fs::write(f.base.path().join("old.minisig"), vec![b'x'; 4097]).unwrap();
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    let err = f.run(&words, false, |s| s).result.unwrap_err();
+    assert_eq!(err.code(), "rotation-invalid");
+    assert_eq!(
+        err.to_string(),
+        "rotation refused: <external>/old.minisig cannot be read or holds more than 4 KiB"
+    );
+}
+
+#[test]
+fn rotate_whose_new_key_did_not_sign_says_the_signature_does_not_verify() {
+    let f = Fixture::new();
+    let args = f.rotation();
+    fs::write(f.base.path().join("new.minisig"), ROTATION_OLD_SIG).unwrap();
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    let err = f.run(&words, false, |s| s).result.unwrap_err();
+    assert_eq!(err.code(), "rotation-invalid");
+    assert_eq!(
+        err.to_string(),
+        "rotation refused: the signature does not verify"
+    );
+}
+
+#[test]
+fn pin_on_the_default_port_pins_the_host_without_it() {
+    let f = Fixture::new();
+    let key = f.key_file("old.pub", OLD_PUB);
+    let fp = pub_key(OLD_PUB).fingerprint();
+    let ran = f.run(
+        &["pin", "acme", &fp, "--key", &key, "--registry", "GHCR.io:443"],
+        false,
+        |s| s,
+    );
+    assert_eq!(ran.result.unwrap(), 0);
+    assert_eq!(
+        ran.out,
+        format!("pinned key {fp} for namespace `acme` on ghcr.io\n")
+    );
+    assert_eq!(f.pinned(), [("ghcr.io".to_owned(), "acme".to_owned(), fp)]);
+}

@@ -187,6 +187,7 @@ mod tests {
     use slopvac_plugins::extract::{Extracted, Limits, extract_targz};
     use slopvac_plugins::lock::read_project_lock;
     use slopvac_plugins::oci::Digest;
+    use slopvac_plugins::sign::PinScope;
 
     /// The tree hash of the fixture below (`bin/fmt` empty, `PLUGIN_TOML` as the manifest),
     /// worked out by hand from the hash format in the threat model and not by the code under
@@ -346,6 +347,68 @@ mod tests {
         assert!(
             matches!(refusal, LoadRefusal::Synced(SyncedError::Tampered { .. })),
             "{refusal:?}"
+        );
+    }
+
+    /// A minisign public key with the key id of `key` and other key bytes.
+    fn twin_of(key: &minisign::PublicKey) -> String {
+        let mut bytes = key.to_bytes();
+        let last = bytes.len() - 1;
+        bytes[last] ^= 0x01;
+        minisign::PublicKey::from_bytes(&bytes).unwrap().to_base64()
+    }
+
+    /// Two registries pin keys that share one minisign key id. A plugin from the second
+    /// registry is recorded with the key that its own registry pins: the key that verification
+    /// on that registry selects, never the first key with the id in another scope.
+    #[test]
+    fn the_recorded_fingerprint_is_the_key_pinned_on_the_plugins_own_registry() {
+        let mut world = World::new();
+        let pk = minisign::KeyPair::generate_unencrypted_keypair().unwrap().pk;
+        let on_ghcr = PublicKey::from_base64(&pk.to_base64()).unwrap();
+        let on_example = PublicKey::from_base64(&twin_of(&pk)).unwrap();
+        assert_eq!(on_ghcr.key_id(), on_example.key_id());
+        assert_ne!(on_ghcr.fingerprint(), on_example.fingerprint());
+        world.policy.pinned = std::collections::BTreeMap::from([
+            (PinScope::new("ghcr.io", "acme"), vec![on_ghcr]),
+            (PinScope::new("registry.example", "acme"), vec![on_example.clone()]),
+        ]);
+
+        // The cache that sync leaves for an OCI plugin: the manifest the lock pins, its one
+        // pack layer, and the tree extracted from that layer.
+        let archive = plugin_archive(PLUGIN_TOML);
+        let layer = Digest::of(&archive);
+        let manifest = format!(
+            "{{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\
+             \"config\":{{\"mediaType\":\"application/vnd.oci.empty.v1+json\",\"digest\":\"{}\",\"size\":2}},\
+             \"layers\":[{{\"mediaType\":\"application/vnd.slopvac.pack.layer.v1.tar+gzip\",\"digest\":\"{layer}\",\"size\":{}}}]}}",
+            Digest::of(b"{}"),
+            archive.len()
+        );
+        let manifest_digest = Digest::of(manifest.as_bytes());
+        let blobs = world.store().join("blobs");
+        fs::create_dir_all(&blobs).unwrap();
+        fs::write(blobs.join(layer.hex()), &archive).unwrap();
+        fs::write(blobs.join(manifest_digest.hex()), &manifest).unwrap();
+        let tree = extract(&archive, &world.dir.path().join("hash")).hash;
+        world.install_as(&archive, &tree);
+        fs::write(
+            world.lock_path(),
+            format!(
+                "schema_version = 3\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\n\
+                 slopvac_api = 1\nsource = \"oci://registry.example/acme/fmt:1.0.0\"\n\
+                 digest = \"{manifest_digest}\"\n[plugins.signature]\nkey_id = \"{}\"\n\
+                 not_before = \"2026-11-01T00:00:00Z\"\n",
+                on_example.key_id()
+            ),
+        )
+        .unwrap();
+
+        let (plugin, _) = world.loader().try_load(&world.fmt()).unwrap();
+
+        assert_eq!(
+            plugin.key_fingerprint.as_deref(),
+            Some(on_example.fingerprint().as_str())
         );
     }
 

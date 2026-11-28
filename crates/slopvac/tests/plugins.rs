@@ -152,6 +152,31 @@ fn k23_a_pin_without_a_registry_host_is_a_damaged_store_that_stops_the_command(#
     assert_eq!(fs::read_to_string(trust_file(&sandbox)).unwrap(), before);
 }
 
+/// `pin` and `rotate` refuse a reserved namespace before the trust store is read, so a damaged
+/// store does not hide the refusal.
+#[rstest::rstest]
+#[case::pin_core(&["plugins", "pin", "core", &"a".repeat(64), "--key", "missing.pub"], "core")]
+#[case::rotate_slopvac(
+    &["plugins", "rotate", "slopvac", &"a".repeat(64), "--statement", "m", "--old-signature", "m", "--new-signature", "m"],
+    "slopvac"
+)]
+fn a_reserved_namespace_is_refused_before_a_damaged_store_is_read(
+    #[case] args: &[&str],
+    #[case] namespace: &str,
+) {
+    let sandbox = Sandbox::new();
+    let file = trust_file(&sandbox);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, "{not json").unwrap();
+    let out = sandbox.slopvac().args(args).assert().code(2);
+    let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert_eq!(
+        stderr,
+        format!("error[namespace-reserved]: namespace `{namespace}` is reserved; no key can be pinned for it\n")
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), "{not json");
+}
+
 /// The plugin store is the per-user data directory (doctor.md, "Directories"), never the cache.
 #[test]
 fn sync_writes_the_plugin_store_to_the_data_directory_and_not_the_cache() {

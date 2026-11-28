@@ -763,6 +763,10 @@ fn one_namespace_pinned_on_two_registries_verifies_each_with_its_own_key() {
 #[rstest]
 #[case::pin_upper_fetch_lower("GHCR.io", "ghcr.io")]
 #[case::pin_lower_fetch_upper("ghcr.io", "GHCR.IO")]
+#[case::pin_default_port_fetch_none("ghcr.io:443", "ghcr.io")]
+#[case::pin_none_fetch_default_port("ghcr.io", "ghcr.io:443")]
+#[case::pin_upper_default_port_fetch_none("GHCR.IO:443", "ghcr.io")]
+#[case::pin_padded_port_fetch_plain("registry.example:05000", "registry.example:5000")]
 fn a_pin_matches_its_registry_host_in_any_case(#[case] pinned: &str, #[case] fetched: &str) {
     let key = Key::new();
     assert_eq!(
@@ -1223,4 +1227,31 @@ fn a_core_statement_is_refused_under_the_compiled_policy_whichever_key_signed_it
         ),
         Err(SignError::KeyNotPinned { .. })
     ));
+}
+
+#[rstest]
+#[case::other_port("ghcr.io:5000", "ghcr.io")]
+#[case::port_on_another_host("registry.example:443", "ghcr.io")]
+fn a_pin_on_another_port_does_not_sign_the_default_port(
+    #[case] pinned: &str,
+    #[case] fetched: &str,
+) {
+    let key = Key::new();
+    assert!(matches!(
+        run(
+            &good(&key),
+            &policy_on(pinned, &[&key]),
+            &on_registry(fetched)
+        ),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[rstest]
+#[case::default_port("ghcr.io:443", "ghcr.io")]
+#[case::upper_case("GHCR.IO", "ghcr.io")]
+#[case::padded_port("registry.example:05000", "registry.example:5000")]
+#[case::other_port_kept("registry.example:5000", "registry.example:5000")]
+fn a_pin_scope_names_its_host_without_the_default_port(#[case] given: &str, #[case] host: &str) {
+    assert_eq!(PinScope::new(given, NS).registry(), host);
 }
