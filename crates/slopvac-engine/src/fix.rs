@@ -23,7 +23,7 @@
 //!
 //! # Standalone HTML
 //!
-//! A standalone HTML file gets no fix in this release. The lint run drops the fix of every
+//! A standalone HTML file gets no fix. The lint run drops the fix of every
 //! finding in one (see `withhold_fixes` in `lint.rs`), and [`fix_document`] refuses as
 //! [`SkipReason::Protected`] any fix a caller built itself, so the file is returned as it is.
 //! A fix run that dropped a fix reports one `fix-html-unavailable` notice for the file, through

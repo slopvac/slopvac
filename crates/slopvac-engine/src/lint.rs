@@ -553,8 +553,8 @@ pub(crate) struct Linted {
 
 /// Drop the fix of every finding in a standalone HTML file, and return how many it dropped.
 ///
-/// This is the one place the rule lives, so the fix run, every report format and the
-/// language server's quick fixes all see no edit for such a file. It runs on the findings
+/// The rule lives only here, so the fix run, every report format and the language
+/// server's quick fixes all see no edit for such a file. It runs on the findings
 /// the report keeps, after suppressions and genre settings, so the count covers only
 /// findings the user sees. Other kinds keep their fixes.
 fn withhold_fixes(kind: Kind, findings: &mut [Finding]) -> usize {
@@ -1019,7 +1019,7 @@ impl Engine {
 
     /// Lint one input and also return its run-level notices.
     ///
-    /// A finding in a standalone HTML file carries no fix: see [`Linted::withheld_fixes`].
+    /// A finding in a standalone HTML file carries no fix.
     ///
     /// The notices are about the run, not about a check that failed to run. An extractor
     /// emits one at level `info` for unsupported content inside a supported input: the
