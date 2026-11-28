@@ -1932,3 +1932,101 @@ fn dot_slash_dash_writes_a_file_named_dash_in_the_working_directory() {
         "{out}"
     );
 }
+
+/// A fake browser opener on `PATH`, under both names `SystemOpener` uses (`open` on macOS,
+/// `xdg-open` elsewhere). Each start appends its argument to the log.
+#[cfg(unix)]
+fn counting_opener(dir: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let log = dir.join("opened.log");
+    let script = format!("#!/bin/sh\nprintf '%s\\n' \"$1\" >> '{}'\n", log.display());
+    for name in ["open", "xdg-open"] {
+        let bin = dir.join(name);
+        std::fs::write(&bin, &script).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    log
+}
+
+/// The URLs the opener double was started with, one per start.
+#[cfg(unix)]
+fn opened(log: &Path) -> Vec<String> {
+    std::fs::read_to_string(log)
+        .map(|text| text.lines().map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// `report --open` in `work`, with the doubles of `bin_dir` on `PATH`. The binary runs under
+/// a shell that copies its stdout to descriptor 9, which every process it starts inherits,
+/// the detached opener included. Reading stdout to its end therefore waits until the opener
+/// has exited too, so its log is complete when this returns.
+#[cfg(unix)]
+fn report_open(work: &Path, bin_dir: &Path) -> std::process::Output {
+    let binary = assert_cmd::cargo::cargo_bin("slopvac");
+    let mut cmd = std::process::Command::new("/bin/sh");
+    cmd.arg("-c")
+        .arg("exec 9>&1; exec \"$0\" \"$@\"")
+        .arg(binary)
+        .arg("report")
+        .args(bug(&["--open"]))
+        .current_dir(work)
+        .env("PATH", bin_dir)
+        .env("SLOPVAC_NO_UPDATE_CHECK", "1");
+    for var in [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "SLOPVAC_OFFLINE",
+        "SLOPVAC_LOG",
+        "FORCE_COLOR",
+        "CLICOLOR_FORCE",
+    ] {
+        cmd.env_remove(var);
+    }
+    cmd.output().unwrap()
+}
+
+/// While the config does not resolve, `report` takes no network action (config.md, section
+/// 2.2), so `--open` prints the URL and starts no browser, as offline mode does.
+#[cfg(unix)]
+#[test]
+fn the_binary_open_starts_no_browser_while_the_config_does_not_resolve() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_opener(bin_dir.path());
+    let work = offline_project(None, true);
+    let out = report_open(work.path(), bin_dir.path());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("Prefilled issue form: https://github.com/slopvac/slopvac/issues/new?"),
+        "{stdout}"
+    );
+    assert_eq!(opened(&log), Vec::<String>::new());
+}
+
+/// The control of the test above: with the extended file present and offline off, `--open`
+/// starts the browser once, with the issue-form URL.
+#[cfg(unix)]
+#[test]
+fn the_binary_open_starts_the_browser_once_the_config_resolves_online() {
+    let bin_dir = tempfile::tempdir().unwrap();
+    let log = counting_opener(bin_dir.path());
+    let work = offline_project(Some("schema_version = 3\n"), false);
+    let out = report_open(work.path(), bin_dir.path());
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let urls = opened(&log);
+    assert_eq!(urls.len(), 1, "{urls:?}");
+    assert!(
+        urls[0].starts_with("https://github.com/slopvac/slopvac/issues/new?template=bug.yml"),
+        "{urls:?}"
+    );
+}
