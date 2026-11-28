@@ -578,11 +578,7 @@ fn a_finding_in_the_sample_is_warned_about_by_its_kind(
     args.push(sample.display().to_string());
     let out = run(dir.path(), &args);
     assert_eq!(out.code, Some(0), "{}", out.stderr);
-    assert!(
-        out.stderr.lines().any(|l| l == warning),
-        "{:?}",
-        out.stderr
-    );
+    assert!(out.stderr.lines().any(|l| l == warning), "{:?}", out.stderr);
 }
 
 const REPORT_HELP: &str = concat!(
