@@ -236,15 +236,15 @@ pub(crate) fn budget_data_of(
 /// `.tsx`.
 fn kind_of_file(kind: &FileKind, file_name: &str) -> Result<Kind, &'static str> {
     match kind {
-        FileKind::Markdown => Ok(Kind::Markdown),
+        // Plain text is read as Markdown, as 2.x reads it.
+        FileKind::Markdown | FileKind::Text => Ok(Kind::Markdown),
         FileKind::Mdx => Ok(Kind::Mdx),
         FileKind::Rst => Ok(Kind::Rst),
+        FileKind::Html => Ok(Kind::Html),
         FileKind::Toml => Ok(Kind::Comments(Language::Toml)),
         FileKind::Source(name) => Language::from_name(name)
             .map(|language| Kind::Comments(language.refine(file_name)))
             .ok_or("this language has no engine parser yet"),
-        // STUB(slopvac-8l4.3.84): HTML and plain text have no engine parser yet.
-        FileKind::Html | FileKind::Text => Err("this file type has no engine parser yet"),
     }
 }
 
@@ -267,9 +267,11 @@ fn kind_of_language(plan: &StdinPlan) -> Result<Kind, &'static str> {
             .ok_or("this language has no engine parser yet");
     }
     match plan.language.as_str() {
-        "markdown" => Ok(Kind::Markdown),
+        // Plain text is read as Markdown, as 2.x reads it.
+        "markdown" | "text" => Ok(Kind::Markdown),
         "mdx" => Ok(Kind::Mdx),
         "rst" => Ok(Kind::Rst),
+        "html" => Ok(Kind::Html),
         _ => Err("this language has no engine parser yet"),
     }
 }
@@ -966,10 +968,15 @@ pub(crate) fn block_errors(shown: &str, text: &str, blocks: &DocumentBlocks) -> 
 }
 
 /// The `slopvac:` block and the inline directives of the item, read under the project's front
-/// matter policy. A top-level `genre` key is ordinary data and never counts.
+/// matter policy. A top-level `genre` key is ordinary data and never counts. A standalone HTML
+/// file has no front matter, as the engine reads it, so only its directives count.
 fn read_block(item: &Item) -> DocumentBlocks {
     let config = item.config.as_ref().map(|(config, _)| &**config);
-    read_block_under(&item.text, &item.shown, config)
+    let mut blocks = read_block_under(&item.text, &item.shown, config);
+    if item.kind == Kind::Html {
+        blocks.front_matter = slopvac_config::frontmatter::Read::default();
+    }
+    blocks
 }
 
 /// Read the `slopvac:` block and the inline directives of `text` under the policy of
@@ -1796,10 +1803,10 @@ mod kind_tests {
     }
 
     #[rstest]
-    #[case::html(FileKind::Html)]
-    #[case::text(FileKind::Text)]
-    fn html_and_text_stay_unsupported(#[case] kind: FileKind) {
-        assert!(kind_of_file(&kind, "a").is_err());
+    #[case::html(FileKind::Html, Kind::Html)]
+    #[case::text(FileKind::Text, Kind::Markdown)]
+    fn html_reads_as_html_and_text_as_markdown(#[case] kind: FileKind, #[case] want: Kind) {
+        assert_eq!(kind_of_file(&kind, "a"), Ok(want));
     }
 
     #[rstest]
@@ -1811,6 +1818,8 @@ mod kind_tests {
     )]
     #[case::unknown("code-comments", "no-such-language", None)]
     #[case::markdown("prose", "markdown", Some(Kind::Markdown))]
+    #[case::html("prose", "html", Some(Kind::Html))]
+    #[case::text("prose", "text", Some(Kind::Markdown))]
     #[case::prose_python("prose", "python", None)]
     fn stdin_kind_follows_mode_and_language(
         #[case] mode: &'static str,
