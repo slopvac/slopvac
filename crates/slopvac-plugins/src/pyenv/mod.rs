@@ -470,6 +470,10 @@ pub struct ManagedEnv {
     record: EnvRecord,
     /// The project root that its errors show paths under (policies section 1.7).
     project: PathBuf,
+    /// The project root with its links resolved, taken once when the store opened. Interpreter
+    /// diagnostics compare against it, because recorded interpreter paths are canonical. `None`
+    /// when the root could not be resolved: those paths then show as external.
+    canonical_project: Option<PathBuf>,
 }
 
 /// The interpreter inside an environment root, as uv lays it out.
@@ -573,11 +577,12 @@ impl ManagedEnv {
     }
 
     /// A canonical path as the project shows it. The recorded interpreter paths are canonical,
-    /// so the root is compared in its canonical form too: a root given through a symlink
-    /// would otherwise show the environment's own interpreter as external.
+    /// so they are compared with the canonical project root that the store resolved once. A
+    /// root that did not resolve shows every such path as `<external>/<file name>`.
     fn shown(&self, canonical: &Path) -> String {
-        let root = fs::canonicalize(&self.project).unwrap_or_else(|_| self.project.clone());
-        slopvac_fs::display_under_root(canonical, &root)
+        // The `.` root accepts only relative paths, and a canonical path is absolute.
+        let root = self.canonical_project.as_deref().unwrap_or(Path::new("."));
+        slopvac_fs::display_under_root(canonical, root)
     }
 
     fn check_interpreter(&self, full: bool) -> Result<(), PyEnvError> {
@@ -632,6 +637,7 @@ pub struct EnvSummary {
 pub struct EnvStore {
     root: PathBuf,
     project: PathBuf,
+    canonical_project: Option<PathBuf>,
     fail_record_writes: bool,
     limits: Limits,
 }
@@ -651,9 +657,11 @@ impl EnvStore {
     /// (policies section 1.7).
     #[must_use]
     pub fn open(root: impl Into<PathBuf>, project: impl Into<PathBuf>) -> Self {
+        let project = project.into();
         Self {
             root: root.into(),
-            project: project.into(),
+            canonical_project: fs::canonicalize(&project).ok(),
+            project,
             fail_record_writes: false,
             limits: Limits {
                 walk: WalkBounds::default(),
@@ -728,6 +736,7 @@ impl EnvStore {
             root: self.root.join(&key),
             record,
             project: self.project.clone(),
+            canonical_project: self.canonical_project.clone(),
         }))
     }
 
@@ -848,6 +857,7 @@ impl EnvStore {
             root: final_root,
             record,
             project: self.project.clone(),
+            canonical_project: self.canonical_project.clone(),
         })
     }
 
