@@ -7,7 +7,7 @@ use slopvac_config::LoadedConfig;
 use slopvac_engine::{Engine, Input};
 use slopvac_migrate::{Configure, DocumentSettings, Error, SettingsOf};
 
-use crate::engine::{block_errors, config_error, file_settings, rel_text};
+use crate::engine::{block_errors, config_error, file_settings, probe_settings, rel_text};
 use crate::errors::CliError;
 use crate::lint_settings::{self, DocumentBlocks, DocumentLayers, Overrides};
 use crate::rule_catalog::Catalog;
@@ -55,14 +55,8 @@ impl Configure for MigrateConfigure {
         // The genre of a document follows its content, and the settings follow the genre, so
         // an engine over the settings before any genre layer reads each document first, as a
         // lint run does. It shares the rule sets this resolver already loaded.
-        let (settings, _) = file_settings(
-            &self.rules,
-            &loaded,
-            Path::new(""),
-            &Overrides::default(),
-            &DocumentLayers::default(),
-        )
-        .map_err(lint_error)?;
+        let settings = probe_settings(&self.rules, &loaded, Path::new(""), &Overrides::default())
+            .map_err(lint_error)?;
         let probe = Engine::new_shared(self.rules.shared_sets(), settings)
             .map_err(|e| Error::Lint(e.to_string()))?;
         Ok(Box::new(move |rel, text| {

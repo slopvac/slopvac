@@ -1035,6 +1035,30 @@ fn settings_of(
     Ok((settings, resolved))
 }
 
+/// The settings of the probe engine for the documents of `config`, from the config that `rel`
+/// resolves to without document layers. The genre that a layer names for `rel` is left out,
+/// so a file whose genre is refused does not take the probe from the files beside it.
+///
+/// # Errors
+/// As [`lint_settings::build`].
+pub(crate) fn probe_settings(
+    rules: &Catalog,
+    config: &LoadedConfig,
+    rel: &Path,
+    overrides: &Overrides,
+) -> Result<slopvac_engine::Settings, CliError> {
+    let resolved = lint_settings::resolve(config, rel, &DocumentLayers::default());
+    let files = config_files(config);
+    let mut settings = lint_settings::build_probe(
+        rules,
+        &resolved,
+        lint_settings::config_sources(&files),
+        overrides,
+    )?;
+    settings.genre_assignments = Some(lint_settings::genre_assignments(config));
+    Ok(settings)
+}
+
 /// The engine input of `item`, as the lint of the item builds it.
 fn input_of<'a>(item: &'a Item, rel: Option<&'a str>, declared: Option<&'a str>) -> Input<'a> {
     let mut input = Input::new(&item.shown, &item.text).with_kind(item.kind);
@@ -1079,19 +1103,13 @@ fn preparse(request: &LintRequest, items: &[Item], rules: &Catalog) -> Reads {
             None => (&none, PathBuf::from(&first.shown)),
         };
         // The probe shares the run's one catalogue, as the engines of the groups do.
-        let probe = file_settings(
-            rules,
-            config,
-            &rel,
-            &request.overrides,
-            &DocumentLayers::default(),
-        )
-        .ok()
-        .and_then(|(settings, _)| {
-            Engine::new_shared(rules.shared_sets(), settings)
-                .ok()
-                .map(|engine| engine.with_project_roots(roots.clone()))
-        });
+        let probe = probe_settings(rules, config, &rel, &request.overrides)
+            .ok()
+            .and_then(|settings| {
+                Engine::new_shared(rules.shared_sets(), settings)
+                    .ok()
+                    .map(|engine| engine.with_project_roots(roots.clone()))
+            });
         let Some(probe) = probe else {
             continue;
         };

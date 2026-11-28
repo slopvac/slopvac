@@ -781,12 +781,17 @@ fn base_settings(
     detected: Option<&GenreResult>,
     sources: Vec<ConfigSource>,
     cli: &Overrides,
+    key: GenreKey,
 ) -> Result<Settings, CliError> {
     let profile = resolved
         .get(&["profile", "name"])
         .and_then(Json::as_str)
         .unwrap_or("normal");
-    let genre = match (resolved.get(&["genre"]).and_then(Json::as_str), detected) {
+    let named = match key {
+        GenreKey::Checked => resolved.get(&["genre"]).and_then(Json::as_str),
+        GenreKey::Ignored => None,
+    };
+    let genre = match (named, detected) {
         (Some(name), _) => {
             check_genre(resolved)?;
             GenreResult {
@@ -933,7 +938,41 @@ pub(crate) fn build_with_origins(
     sources: Vec<ConfigSource>,
     cli: &Overrides,
 ) -> Result<(Settings, Vec<RuleOrigin>), CliError> {
-    let mut settings = base_settings(resolved, detected, sources, cli)?;
+    build_keyed(rules, resolved, detected, sources, cli, GenreKey::Checked)
+}
+
+/// The settings of the probe engine that reads the documents of a config and detects the
+/// genre of each. They come from one file's resolved config, and the genre that a layer names
+/// for that file is left out: it decides neither the parse nor the genres of the other
+/// documents, and each document's own settings still check it through [`build_with_origins`].
+///
+/// # Errors
+/// As [`build`].
+pub(crate) fn build_probe(
+    rules: &Catalog,
+    resolved: &Resolved,
+    sources: Vec<ConfigSource>,
+    cli: &Overrides,
+) -> Result<Settings, CliError> {
+    build_keyed(rules, resolved, None, sources, cli, GenreKey::Ignored).map(|(s, _)| s)
+}
+
+/// Whether the settings take the genre that a layer names, checked, or leave it out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GenreKey {
+    Checked,
+    Ignored,
+}
+
+fn build_keyed(
+    rules: &Catalog,
+    resolved: &Resolved,
+    detected: Option<&GenreResult>,
+    sources: Vec<ConfigSource>,
+    cli: &Overrides,
+    key: GenreKey,
+) -> Result<(Settings, Vec<RuleOrigin>), CliError> {
+    let mut settings = base_settings(resolved, detected, sources, cli, key)?;
     let mut origins = Vec::new();
 
     let shift = resolved

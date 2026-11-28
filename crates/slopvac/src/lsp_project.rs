@@ -36,7 +36,7 @@ use slopvac_lsp::{
 use slopvac_model::{BomMode, ConfigSource, GenreResult, Notice, RuleId};
 
 use crate::engine::{
-    config_error, declared_genre, file_settings, read_block_under, rel_text, rst_roots,
+    config_error, declared_genre, probe_settings, read_block_under, rel_text, rst_roots,
     settings_for,
 };
 use crate::errors::CliError;
@@ -563,14 +563,8 @@ impl Project {
                     if let Some(found) = ready.probes.get(&key) {
                         return Some(Arc::clone(found));
                     }
-                    let (settings, _) = file_settings(
-                        &ready.catalog,
-                        config,
-                        rel,
-                        &Overrides::default(),
-                        &DocumentLayers::default(),
-                    )
-                    .ok()?;
+                    let settings =
+                        probe_settings(&ready.catalog, config, rel, &Overrides::default()).ok()?;
                     (settings, ready.catalog.shared_sets())
                 }
                 State::Failed(_) => return None,
